@@ -12,7 +12,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Electron%20%7C%20Svelte%20%7C%20TypeScript-646cff)
 
-[Русский](#-русский) · [English](#-english) · [Сайт](https://jackdaw.app)
+[Русский](#-русский) · [English](#-english) · [Скачать Android](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [Сайт](https://jackdaw.app)
 
 </div>
 
@@ -40,7 +40,11 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 **Jackdaw Mail** — почтовый клиент с календарём и адресной книгой для Exchange / OWA, EWS, ActiveSync, Graph, IMAP/JMAP и CardDAV/CalDAV.
 
-Desktop на **Electron**, mobile на **Capacitor**, UI — **Svelte + TypeScript**. Разработка — **[uugsx](https://github.com/Uugsx)**.
+В этом репозитории desktop на **Electron**, mobile на **Capacitor**, UI — **Svelte + TypeScript**. Разработка — **[uugsx](https://github.com/Uugsx)**.
+
+### Нативный Android-клиент
+
+Отдельный нативный Android-клиент Jackdaw Mail разрабатывает **[SpliffRa](https://github.com/SpliffRa)**. **[Скачать последнюю Android-версию](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest)** можно на странице релизов, а исходный код и инструкции по сборке находятся в репозитории **[jackdaw-mail-android](https://github.com/SpliffRa/jackdaw-mail-android)**. Это самостоятельное приложение на Kotlin и Jetpack Compose, связанное с концепцией Jackdaw Mail.
 
 ### Особенности
 
@@ -155,6 +159,7 @@ lib/        — общие библиотеки (JPC protocol)
 ### Контакты
 
 - **Maintainer:** [uugsx](https://github.com/Uugsx)
+- **Android-клиент:** [скачать последнюю версию](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [репозиторий](https://github.com/SpliffRa/jackdaw-mail-android) · [SpliffRa](https://github.com/SpliffRa)
 - **Сайт:** [jackdaw.app](https://jackdaw.app)
 - **Репозиторий:** [github.com/Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail)
 
@@ -166,7 +171,11 @@ lib/        — общие библиотеки (JPC protocol)
 
 **Jackdaw Mail** is a mail client with calendar, contacts, interactive reports and live SLA control for Exchange / OWA, EWS, ActiveSync, Graph, IMAP/JMAP, and CardDAV/CalDAV.
 
-**Electron** desktop, **Capacitor** mobile, **Svelte + TypeScript** UI. Maintained by **[uugsx](https://github.com/Uugsx)**.
+This repository contains the **Electron** desktop client, the **Capacitor** mobile shell and the **Svelte + TypeScript** UI. Maintained by **[uugsx](https://github.com/Uugsx)**.
+
+### Native Android client
+
+The standalone native Android client for Jackdaw Mail is developed by **[SpliffRa](https://github.com/SpliffRa)**. **[Download the latest Android release](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest)** from the releases page; the source code and build instructions are available in the **[jackdaw-mail-android](https://github.com/SpliffRa/jackdaw-mail-android)** repository. It is a Kotlin and Jetpack Compose application related to the Jackdaw Mail concept.
 
 ### Highlights
 
@@ -281,6 +290,7 @@ lib/        — shared libraries (JPC protocol)
 ### Links
 
 - **Maintainer:** [uugsx](https://github.com/Uugsx)
+- **Android client:** [download the latest release](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [repository](https://github.com/SpliffRa/jackdaw-mail-android) · [SpliffRa](https://github.com/SpliffRa)
 - **Website:** [jackdaw.app](https://jackdaw.app)
 - **Repository:** [github.com/Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail)
 
