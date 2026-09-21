@@ -58,6 +58,24 @@ describe("renderer tooltips", () => {
     expect(button.getAttribute("title")).toBe("Удалить");
   });
 
+  test("shows an explicit tooltip when the button label is visually hidden", () => {
+    const button = document.createElement("button");
+    button.title = "Почта";
+    button.setAttribute("aria-label", "Почта");
+    button.setAttribute("data-tooltip", "Почта");
+    const hiddenLabel = document.createElement("span");
+    hiddenLabel.textContent = "Почта";
+    button.append(hiddenLabel);
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Почта");
+    expect(tooltip?.dataset.visible).toBe("true");
+  });
+
   test("does not restart while the pointer moves inside the same button", () => {
     const button = document.createElement("button");
     button.setAttribute("aria-label", "Обновить");

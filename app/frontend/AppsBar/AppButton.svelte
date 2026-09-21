@@ -4,6 +4,7 @@
   class:selected
   class:icon-only={iconOnly}
   aria-label={iconOnly ? ariaLabel : undefined}
+  data-tooltip={iconOnly ? ariaLabel : undefined}
   title={iconOnly ? ariaLabel : undefined}
   class:padding
   aria-pressed={selected}
