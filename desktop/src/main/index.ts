@@ -445,12 +445,12 @@ async function createWindow(): Promise<void> {
      * which is considered a new web window and forces them to end up here. */
     mainWindow.webContents.setWindowOpenHandler((details) => {
       // Chrome special-cases "about:blank". Make *sure* that we don't get this here.
-      if (!details.url?.startsWith("https://")) {
-        return { action: 'deny' };
-      }
       // Allow windows opened by us for OAuth2
       // Must match OAuth2Window.ts login()
       if (details?.features?.includes("oauth2popup")) {
+        if (!details.url?.startsWith("https://")) {
+          return { action: 'deny' };
+        }
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
@@ -458,6 +458,9 @@ async function createWindow(): Promise<void> {
             webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true },
           },
         };
+      }
+      if (!isExternalLinkURL(details.url)) {
+        return { action: 'deny' };
       }
       // Open the URL in the system web browser
       shell.openExternal(details.url)
@@ -851,9 +854,16 @@ function allowCrossDomainRequestsFromFrontend() {
 }
 
 function setWindowOpenHandler(webContents: WebContents) {
-  webContents.setWindowOpenHandler(() => {
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (webContents.getType() == "webview" && isExternalLinkURL(url)) {
+      shell.openExternal(url).catch(console.error);
+    }
     return { action: 'deny' };
   });
+}
+
+function isExternalLinkURL(url: string | undefined): boolean {
+  return !!url && /^(?:https?|mailto|tel):/i.test(url);
 }
 
 // In this file you can include the rest of your app"s specific main process
