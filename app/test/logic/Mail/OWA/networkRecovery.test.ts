@@ -1,10 +1,64 @@
 import "../../../../logic/app";
 import { appGlobal } from "../../../../logic/app";
+import { OWAAuth } from "../../../../logic/Auth/OWAAuth";
 import { SpecialFolder } from "../../../../logic/Mail/Folder";
 import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
+import { OWALoginBackground } from "../../../../logic/Mail/OWA/Login/OWALoginBackground";
 import { DummyMailStorage } from "../../../../logic/Mail/Store/DummyMailStorage";
 import { ArrayColl } from "svelte-collections";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+
+test("тихое восстановление OWA сохраняет cookies сессии", async () => {
+  let clearStorageData = vi.fn();
+  appGlobal.remoteApp = { OWA: { clearStorageData } };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let auth = new OWAAuth(account);
+  auth.isLoggedIn = true;
+  (account as any).oAuth2 = auth;
+
+  await account.logout(true);
+
+  expect(auth.isLoggedIn).toBe(false);
+  expect(clearStorageData).not.toHaveBeenCalled();
+});
+
+test("считает вход успешным, если OWA выставил cookies перед ошибкой errorfe.aspx", async () => {
+  vi.useFakeTimers();
+  appGlobal.remoteApp = { OWA: {} };
+  let findLoginElements = vi.spyOn(OWALoginBackground, "findLoginElements")
+    .mockResolvedValue({
+      url: "https://cas.smartds.ru/owa/auth/logon.aspx",
+      form: null,
+      username: null,
+      password: null,
+    } as any);
+  let submitLoginForm = vi.spyOn(OWALoginBackground, "submitLoginForm")
+    .mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      url: "https://cas.smartds.ru/owa/auth/errorfe.aspx",
+    } as any);
+  let account = new OWAAccount();
+  let testLoggedIn = vi.spyOn(account, "testLoggedIn")
+    .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(true);
+
+  try {
+    let loginPromise = (account as any).loginWithPasswordForm();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+    await loginPromise;
+    expect(submitLoginForm).toHaveBeenCalledOnce();
+    expect(testLoggedIn).toHaveBeenCalledTimes(2);
+  } finally {
+    findLoginElements.mockRestore();
+    submitLoginForm.mockRestore();
+    testLoggedIn.mockRestore();
+    vi.useRealTimers();
+  }
+});
 
 test("помечает потерю сети временной и запускает восстановление OWA", async () => {
   appGlobal.remoteApp = {

@@ -492,25 +492,25 @@ export async function fetchJSON(partition: string, url: string, options: any) {
   };
   let session = Session.fromPartition(partition);
   let canary = await getCanaryCookie(session);
-  if (!canary) {
-    result.status = 401;
-    return result;
-  }
+  let requestOptions = options ?? { credentials: "include" };
+  requestOptions.credentials ??= "include";
   if (options) {
-    options.headers ??= {};
-    options.headers[kCanaryName] = canary;
-  } else {
-    url += canary;
+    requestOptions.headers ??= {};
+    if (canary) {
+      requestOptions.headers[kCanaryName] = canary;
+    }
+  } else if (canary) {
+    url += encodeURIComponent(canary);
   }
-  let response = await session.fetch(url, options);
-  let requestAction = options?.headers?.Action ?? new URL(url).searchParams.get("action") ??
+  let response = await session.fetch(url, requestOptions);
+  let requestAction = requestOptions.headers?.Action ?? new URL(url).searchParams.get("action") ??
     new URL(url).searchParams.get("ev");
   if (requestAction == "FinishNotificationRequest" || requestAction == "SubscribeToNotification" || requestAction == "PendingNotificationRequest") {
-    logOWADiagnostic(`request=${requestAction} method=${options?.method ?? "GET"} status=${response.status} contentType=${response.headers.get("Content-Type") ?? ""}`);
+    logOWADiagnostic(`request=${requestAction} method=${requestOptions.method ?? "GET"} status=${response.status} contentType=${response.headers.get("Content-Type") ?? ""}`);
   }
-  if (requestAction == "SubscribeToNotification" && typeof options?.body == "string") {
+  if (requestAction == "SubscribeToNotification" && typeof requestOptions.body == "string") {
     try {
-      let requestBody = JSON.parse(options.body);
+      let requestBody = JSON.parse(requestOptions.body);
       let subscriptions = Array.isArray(requestBody.subscriptionData) ? requestBody.subscriptionData : [];
       let rowSubscriptions = subscriptions.filter((item: any) => item?.Parameters?.NotificationType == "RowNotification");
       let folderKinds = [...new Set(rowSubscriptions.map((item: any) => typeof item?.Parameters?.FolderId))].join(",");

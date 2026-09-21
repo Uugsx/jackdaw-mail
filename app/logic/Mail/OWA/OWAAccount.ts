@@ -72,6 +72,8 @@ const kOWAFolderCountsPerPollShared = 12;
 const kSharedPollConcurrency = 2;
 /** Extra Row subscriptions per shared mailbox for folders that currently have unread. */
 const kSharedUnreadRowSubscriptionLimit = 3;
+/** On-premise OWA may need time to activate a session after the login POST. */
+const kOWALoginSessionRetryDelaysSeconds = [1, 2, 4, 8, 16, 30];
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
 
@@ -269,12 +271,29 @@ export class OWAAccount extends ExchangeMailAccount {
     if (response.status == 401 || responseURL.origin == formURL.origin && /\/auth\/logon\.aspx$/i.test(responseURL.pathname) && responseURL.searchParams.get("reason") == "2") {
       throw new LoginError(null, gt`Password incorrect`);
     }
+    let isSessionActivationError = response.status == 500 && responseURL.origin == formURL.origin && /\/auth\/errorfe\.aspx$/i.test(responseURL.pathname);
     // Successful OWA logon is a 302 to `/owa/`. Treat that as OK even when
     // the backend reports the redirect itself rather than the final page.
+    let loggedIn = false;
     if (!response.ok && ![302, 303].includes(response.status)) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      if (!isSessionActivationError) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      // Some on-premise OWA builds return HTTP 500 from errorfe.aspx after
+      // setting a valid session cookie. Prefer the session check over that
+      // misleading final response so startup login can remain silent.
+      for (let attempt = 0; attempt <= kOWALoginSessionRetryDelaysSeconds.length; attempt++) {
+        loggedIn = await this.testLoggedIn();
+        if (loggedIn || attempt == kOWALoginSessionRetryDelaysSeconds.length) {
+          break;
+        }
+        await sleep(kOWALoginSessionRetryDelaysSeconds[attempt]);
+      }
+      if (!loggedIn) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
     }
-    if (!await this.testLoggedIn()) {
+    if (!loggedIn && !await this.testLoggedIn()) {
       throw new LoginError(null, `Login check failed`);
     }
   }
@@ -478,9 +497,18 @@ export class OWAAccount extends ExchangeMailAccount {
         console.warn("OWA server logoff failed", ex);
       }
     }
-    await super.logout();
-    if (!this.oAuth2 && !keepStoredSession) {
-      await appGlobal.remoteApp.OWA.clearStorageData(this.partition);
+    if (keepStoredSession) {
+      // A silent 401/440 recovery must keep the persistent OWA cookies.
+      // Account.logout() delegates to OWAAuth.logout(), which clears them.
+      if (this.oAuth2 instanceof OWAAuth) {
+        this.oAuth2.isLoggedIn = false;
+      }
+      await this.disconnect();
+    } else {
+      await super.logout();
+      if (!this.oAuth2) {
+        await appGlobal.remoteApp.OWA.clearStorageData(this.partition);
+      }
     }
   }
 
