@@ -1032,31 +1032,35 @@ export class OWAAccount extends ExchangeMailAccount {
     return !!inbox && folder === inbox;
   }
 
-  /** После обновления счётчика сразу загружаем Inbox или открытую папку. */
-  protected syncRootInboxesAfterCountRefresh(folders: OWAFolder[]): void {
-    let synced = new Set<OWAFolder>();
-    for (let folder of folders) {
-      let account = folder.account;
-      if (!(account instanceof OWAAccount)) {
-        continue;
-      }
-      let target = account.isRootInbox(folder)
-        ? account.findInboxFolder()
-        : account.watchedFolder === folder
-          ? folder
-          : null;
-      if (!target || synced.has(target)) {
-        continue;
-      }
-      synced.add(target);
-      void target.syncRecentArrivals().then(() => {
-        account.notifyFolderUIUpdates([target]);
-      }).catch(ex => {
+  protected shouldSyncFolderAfterCountUpdate(
+    folder: OWAFolder,
+    previousTotal: number,
+    previousUnread: number,
+    countTotal: number,
+    countUnread: number,
+  ): boolean {
+    let mailArrived = countUnread > previousUnread || countTotal > previousTotal;
+    let needsBodies = folder.messages.isEmpty && countTotal > 0;
+    return (mailArrived || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);
+  }
+
+  /** Keep a shared-mailbox badge and its first matching header in one UI update. */
+  protected syncFolderAfterServerCountUpdate(
+    folder: OWAFolder,
+    countTotal: number,
+    countUnread: number,
+  ): void {
+    let account = folder.account;
+    folder.syncRecentArrivalsWithServerCounts(countTotal, countUnread).then(
+      () => account.notifyFolderUIUpdates([folder]),
+      ex => {
+        // Do not leave the fresh badge hidden if Exchange's header request fails.
+        account.notifyFolderUIUpdates([folder]);
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           account.errorCallback(ex);
         }
-      });
-    }
+      },
+    );
   }
 
   /** Badge refresh without downloading messages when push arrives for a lazy folder. */
@@ -1125,20 +1129,13 @@ export class OWAAccount extends ExchangeMailAccount {
       if (newUnread == prevUnread && newTotal == prevTotal) {
         return;
       }
-      folder.applyServerCounts(newTotal, newUnread);
-      folder.dirty = true;
-      this.notifyFolderUIUpdates([folder]);
       // Always fetch when mail arrived (unread/total up), or empty folder has mail.
-      let mailArrived = newUnread > prevUnread || newTotal > prevTotal;
-      let needsBodies = folder.messages.isEmpty && newTotal > 0;
-      if ((mailArrived || needsBodies) && this.shouldBackgroundSyncBodies(folder)) {
-        folder.syncRecentArrivals().then(() => {
-          this.notifyFolderUIUpdates([folder]);
-        }).catch(ex => {
-          if (!(ex instanceof OWAError && ex.isSessionLimit)) {
-            this.errorCallback(ex);
-          }
-        });
+      if (this.shouldSyncFolderAfterCountUpdate(folder, prevTotal, prevUnread, newTotal, newUnread)) {
+        this.syncFolderAfterServerCountUpdate(folder, newTotal, newUnread);
+      } else {
+        folder.applyServerCounts(newTotal, newUnread);
+        folder.dirty = true;
+        this.notifyFolderUIUpdates([folder]);
       }
     }).catch(ex => {
       if (!(ex instanceof OWAError && ex.isSessionLimit)) {
@@ -1155,11 +1152,43 @@ export class OWAAccount extends ExchangeMailAccount {
     if (!folders.length) {
       return;
     }
+    let updatedFolders: OWAFolder[] = [];
+    let pendingSync = new Map<OWAFolder, { countTotal: number; countUnread: number }>();
+    let pendingPrevious = new Map<OWAFolder, { countTotal: number; countUnread: number }>();
+    let applyCountUpdate = (folder: OWAFolder, countTotal: number, countUnread: number): void => {
+      let previous = pendingPrevious.get(folder) ?? {
+        countTotal: folder.countTotal,
+        countUnread: folder.countUnread,
+      };
+      if (countTotal == previous.countTotal && countUnread == previous.countUnread) {
+        return;
+      }
+      if (this.shouldSyncFolderAfterCountUpdate(
+        folder, previous.countTotal, previous.countUnread, countTotal, countUnread)) {
+        pendingPrevious.set(folder, { countTotal, countUnread });
+        pendingSync.set(folder, { countTotal, countUnread });
+        return;
+      }
+      pendingPrevious.delete(folder);
+      pendingSync.delete(folder);
+      folder.applyServerCounts(countTotal, countUnread);
+      folder.dirty = true;
+      if (!updatedFolders.includes(folder)) {
+        updatedFolders.push(folder);
+      }
+    };
+    let finishCountUpdates = (): void => {
+      if (updatedFolders.length) {
+        this.notifyFolderUIUpdates(updatedFolders);
+      }
+      for (let [folder, counts] of pendingSync) {
+        this.syncFolderAfterServerCountUpdate(folder, counts.countTotal, counts.countUnread);
+      }
+    };
     if (this.msgFolderRootID) {
       try {
         let result = await this.callOWA(owaFindFolderCountsByRootRequest(this.msgFolderRootID));
         let rawFolders = result?.RootFolder?.Folders ?? [];
-        let updatedFolders: OWAFolder[] = [];
         for (let raw of rawFolders) {
           let id = raw?.FolderId?.Id;
           if (!id) {
@@ -1169,37 +1198,21 @@ export class OWAAccount extends ExchangeMailAccount {
           if (!folder) {
             continue;
           }
-          let prevUnread = folder.countUnread;
-          let prevTotal = folder.countTotal;
-          let newUnread = sanitize.integer(raw.UnreadCount, prevUnread);
-          let newTotal = sanitize.integer(raw.TotalCount, prevTotal);
-          if (newUnread == prevUnread && newTotal == prevTotal) {
-            continue;
-          }
-          folder.applyServerCounts(newTotal, newUnread);
-          folder.dirty = true;
-          updatedFolders.push(folder);
+          let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
+          let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
+          applyCountUpdate(folder, newTotal, newUnread);
         }
         // Parent folder counts (often Inbox/root) also arrive in ParentFolder.
         let parent = result?.RootFolder?.ParentFolder;
         if (parent?.FolderId?.Id) {
           let folder = this.folderMap.get(parent.FolderId.Id);
           if (folder) {
-            let prevUnread = folder.countUnread;
-            let prevTotal = folder.countTotal;
-            let newUnread = sanitize.integer(parent.UnreadCount, prevUnread);
-            let newTotal = sanitize.integer(parent.TotalCount, prevTotal);
-            if (newUnread != prevUnread || newTotal != prevTotal) {
-              folder.applyServerCounts(newTotal, newUnread);
-              folder.dirty = true;
-              updatedFolders.push(folder);
-            }
+            let newUnread = sanitize.integer(parent.UnreadCount, folder.countUnread);
+            let newTotal = sanitize.integer(parent.TotalCount, folder.countTotal);
+            applyCountUpdate(folder, newTotal, newUnread);
           }
         }
-        if (updatedFolders.length) {
-          this.notifyFolderUIUpdates(updatedFolders);
-          this.syncRootInboxesAfterCountRefresh(updatedFolders);
-        }
+        finishCountUpdates();
         return;
       } catch (ex) {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
@@ -1227,7 +1240,6 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       this.pollFolderCountOffset = (offset + take) % rotating.length;
     }
-    let updatedFolders: OWAFolder[] = [];
     for (let folder of batch) {
       try {
         let result = await this.callOWA(owaFolderCountsRequest(folder.id));
@@ -1235,26 +1247,16 @@ export class OWAAccount extends ExchangeMailAccount {
         if (!raw) {
           continue;
         }
-        let prevUnread = folder.countUnread;
-        let prevTotal = folder.countTotal;
-        let newUnread = sanitize.integer(raw.UnreadCount, prevUnread);
-        let newTotal = sanitize.integer(raw.TotalCount, prevTotal);
-        if (newUnread == prevUnread && newTotal == prevTotal) {
-          continue;
-        }
-        folder.applyServerCounts(newTotal, newUnread);
-        folder.dirty = true;
-        updatedFolders.push(folder);
+        let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
+        let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
+        applyCountUpdate(folder, newTotal, newUnread);
       } catch (ex) {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           this.errorCallback(ex);
         }
       }
     }
-    if (updatedFolders.length) {
-      this.notifyFolderUIUpdates(updatedFolders);
-      this.syncRootInboxesAfterCountRefresh(updatedFolders);
-    }
+    finishCountUpdates();
   }
 
   /** Track the open shared folder and subscribe RowNotification for it only. */
@@ -2536,16 +2538,29 @@ export class OWAAccount extends ExchangeMailAccount {
       let rawUnread = notification.unreadCount ?? notification.UnreadCount;
       let rawTotal = notification.itemCount ?? notification.ItemCount;
       let countsMissing = rawUnread == null && rawTotal == null;
+      let deferredCountUpdate: { countTotal: number; countUnread: number } | null = null;
+      let countsChanged = false;
       if (!countsMissing) {
         let unreadCount = sanitize.integer(rawUnread, previousUnread);
         let itemCount = sanitize.integer(rawTotal, previousTotal);
-        folder.applyServerCounts(itemCount, unreadCount);
+        countsChanged = itemCount != previousTotal || unreadCount != previousUnread;
+        if (countsChanged && this.shouldSyncFolderAfterCountUpdate(
+          folder, previousTotal, previousUnread, itemCount, unreadCount)) {
+          deferredCountUpdate = { countTotal: itemCount, countUnread: unreadCount };
+        } else {
+          folder.applyServerCounts(itemCount, unreadCount);
+        }
       }
       if (notification.displayName || notification.DisplayName) {
         folder.name = sanitize.nonemptylabel(notification.displayName ?? notification.DisplayName);
       }
+      if (deferredCountUpdate) {
+        this.syncFolderAfterServerCountUpdate(
+          folder, deferredCountUpdate.countTotal, deferredCountUpdate.countUnread);
+        return;
+      }
       folder.dirty = true;
-      // Badge update is immediate — same path as personal mailbox Hierarchy.
+      // Badge update is immediate for lazy folders and changes without a body sync.
       this.notifyFolderUIUpdates([folder]);
       // Exchange sometimes omits counts on shared Hierarchy; one GetFolder
       // via delegate is enough to paint the badge without opening the folder.
@@ -2555,9 +2570,16 @@ export class OWAAccount extends ExchangeMailAccount {
           if (!raw) {
             return;
           }
-          let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
-          let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
-          let countsChanged = newUnread != folder.countUnread || newTotal != folder.countTotal;
+          let previousUnread = folder.countUnread;
+          let previousTotal = folder.countTotal;
+          let newUnread = sanitize.integer(raw.UnreadCount, previousUnread);
+          let newTotal = sanitize.integer(raw.TotalCount, previousTotal);
+          let countsChanged = newUnread != previousUnread || newTotal != previousTotal;
+          if (countsChanged && this.shouldSyncFolderAfterCountUpdate(
+            folder, previousTotal, previousUnread, newTotal, newUnread)) {
+            this.syncFolderAfterServerCountUpdate(folder, newTotal, newUnread);
+            return;
+          }
           if (countsChanged) {
             folder.applyServerCounts(newTotal, newUnread);
           }
@@ -2567,7 +2589,7 @@ export class OWAAccount extends ExchangeMailAccount {
         }).catch(this.errorCallback);
         return;
       }
-      let countsChanged = folder.countUnread != previousUnread || folder.countTotal != previousTotal;
+      countsChanged = folder.countUnread != previousUnread || folder.countTotal != previousTotal;
       this.syncFolderAfterHierarchyNotification(folder, countsChanged);
     } catch (ex) {
       this.errorCallback(ex);

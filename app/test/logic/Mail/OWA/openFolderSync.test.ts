@@ -155,6 +155,114 @@ test("подтягивает письмо в фоновой синхрониза
   ).toBe(true);
 });
 
+test("объединяет параллельные обновления shared Inbox в один запрос", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let findItemCalls = 0;
+  let release!: () => void;
+  let requestGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem") {
+      findItemCalls++;
+      await requestGate;
+      return findItemResponse(["new-message"]);
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "new-message" },
+          InternetMessageId: "<new-message@example.test>",
+          Subject: "Новое письмо",
+          DateTimeSent: "2026-09-22T10:00:00Z",
+          DateTimeReceived: "2026-09-22T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 1;
+  folder.countUnread = 1;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let first = folder.syncRecentArrivals();
+  let second = folder.syncRecentArrivals();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  expect(findItemCalls).toBe(1);
+
+  release();
+  await Promise.all([first, second]);
+
+  expect(folder.getEmailByItemID("new-message")).toBeDefined();
+  expect(folder.messages.length).toBe(1);
+});
+
+test("публикует счётчик shared Inbox вместе с загруженным письмом", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let release!: () => void;
+  let requestGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem") {
+      await requestGate;
+      return findItemResponse(["new-message"]);
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "new-message" },
+          InternetMessageId: "<new-message@example.test>",
+          Subject: "Новое письмо",
+          DateTimeSent: "2026-09-22T10:00:00Z",
+          DateTimeReceived: "2026-09-22T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+  (folder as any).haveReadFolder = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let snapshots: Array<{ countUnread: number; messages: number }> = [];
+  folder.subscribe(() => {
+    snapshots.push({ countUnread: folder.countUnread, messages: folder.messages.length });
+  });
+
+  let sync = folder.syncRecentArrivalsWithServerCounts(1, 1);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  expect(snapshots).toHaveLength(1);
+
+  release();
+  await sync;
+  folder.notifyObservers();
+
+  expect(snapshots.at(-1)).toEqual({ countUnread: 1, messages: 1 });
+});
+
 test("запускает синхронизацию входящих после hierarchy-события без счётчиков", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

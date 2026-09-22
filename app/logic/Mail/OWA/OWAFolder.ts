@@ -23,6 +23,7 @@ import type { PersonUID } from "../../Abstract/PersonUID";
 import { CreateMIME } from "../SMTP/CreateMIME";
 import { assert, base64ToUint8Array, blobToBase64, ensureArray } from "../../util/util";
 import { Lock } from "../../util/flow/Lock";
+import { RunOnce } from "../../util/flow/RunOnce";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { ArrayColl, Collection } from "svelte-collections";
 import { gt } from "../../../l10n/l10n";
@@ -68,6 +69,8 @@ export class OWAFolder extends ExchangeFolder {
   protected syncFolderItemsUnsupported = false;
   /** Header/unread fetches must not wait on a full-folder FindItem reconcile. */
   protected quickFetchLock = new Lock();
+  /** Coalesce the primary and shared-mailbox pollers into one recent sync. */
+  protected recentSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
   /** Не показывать исходную загрузку папки как новое письмо. */
   protected hasCompletedInitialSync = false;
   /** Пометить письма следующей синхронизации как пришедшие по push-событию. */
@@ -264,23 +267,41 @@ export class OWAFolder extends ExchangeFolder {
 
   /** Fast path after a Hierarchy badge bump or while the open folder is visible. */
   async syncRecentArrivals(): Promise<ArrayColl<OWAEMail>> {
-    await this.readFolder();
-    this.dedupeMessagesByItemID();
-    let completed = false;
+    return this.recentSyncRunOnce.runOnce(async () => {
+      await this.readFolder();
+      this.dedupeMessagesByItemID();
+      let completed = false;
+      try {
+        let messages: ArrayColl<OWAEMail>;
+        if (this.unreadBehindServer()) {
+          messages = await this.fetchUnreadArrivals(Math.min(50, Math.max(10, this.countUnread)));
+        } else {
+          messages = await this.getNewMessages(true) as ArrayColl<OWAEMail>;
+        }
+        completed = true;
+        return messages;
+      } finally {
+        if (completed) {
+          this.completeInitialSync();
+          this.backfillMessageActionFlags();
+        }
+      }
+    });
+  }
+
+  /** Apply a fresh server badge and publish it only after the matching headers are loaded. */
+  async syncRecentArrivalsWithServerCounts(
+    countTotal: number,
+    countUnread: number,
+  ): Promise<ArrayColl<OWAEMail>> {
+    let wasMuted = this._muteObservers;
+    this._muteObservers = true;
     try {
-      let messages: ArrayColl<OWAEMail>;
-      if (this.unreadBehindServer()) {
-        messages = await this.fetchUnreadArrivals(Math.min(50, Math.max(10, this.countUnread)));
-      } else {
-        messages = await this.getNewMessages(true) as ArrayColl<OWAEMail>;
-      }
-      completed = true;
-      return messages;
+      this.applyServerCounts(countTotal, countUnread);
+      this.dirty = true;
+      return await this.syncRecentArrivals();
     } finally {
-      if (completed) {
-        this.completeInitialSync();
-        this.backfillMessageActionFlags();
-      }
+      this._muteObservers = wasMuted;
     }
   }
 
