@@ -240,6 +240,7 @@
   import { ArrayColl } from "svelte-collections";
   import { catchErrors } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { assert } from "../../../logic/util/util";
   import { get } from "svelte/store";
   import { selectedMessages as selectedMessagesStore } from "../Selected";
@@ -389,10 +390,11 @@
 
   async function toggleRead() {
     let list = selectionSnapshot().contents;
-    let toRead = !list[0]?.isRead;
-    for (let m of list) {
-      await m.markRead(toRead);
+    if (message && list.some(target => target !== message && messagesRepresentSameMail(target, message))) {
+      list.push(message);
     }
+    let toRead = !list[0]?.isRead;
+    await markMessagesRead(list, toRead);
     flagsEpoch++;
   }
 

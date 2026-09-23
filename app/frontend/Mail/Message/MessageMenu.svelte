@@ -179,6 +179,7 @@
   import { saveBlobAsFile } from "../../Util/util";
   import { catchErrors, showError } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { selectedMessage, selectedMessages } from "../Selected";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
@@ -199,7 +200,7 @@
   $: canReplyAllMenu = (replyAllRev, computeCanReplyAll(message));
 
   function actionTargets(): EMail[] {
-    return ($selectedMessages?.hasItems && $selectedMessages.contains(message)
+    return ($selectedMessages?.hasItems && message && $selectedMessages.contents.some(target => messagesRepresentSameMail(target, message))
       ? $selectedMessages.contents
       : [message]).slice();
   }
@@ -281,10 +282,11 @@
   }
   async function toggleRead() {
     let list = actionTargets();
-    let toRead = !list[0]?.isRead;
-    for (let m of list) {
-      await m.markRead(toRead);
+    if (message && list.some(target => target !== message && messagesRepresentSameMail(target, message))) {
+      list.push(message);
     }
+    let toRead = !list[0]?.isRead;
+    await markMessagesRead(list, toRead);
   }
 
   /**

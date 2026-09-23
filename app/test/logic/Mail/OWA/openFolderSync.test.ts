@@ -256,11 +256,116 @@ test("публикует счётчик shared Inbox вместе с загру�
 
   expect(snapshots).toHaveLength(1);
 
+  let overlappingSync = folder.syncRecentArrivalsWithServerCounts(1, 1);
   release();
-  await sync;
+  await Promise.all([sync, overlappingSync]);
   folder.notifyObservers();
 
   expect(snapshots.at(-1)).toEqual({ countUnread: 1, messages: 1 });
+});
+
+test("не публикует счётчик до появления строки письма", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+
+  let release!: () => void;
+  let syncGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  (folder as any).syncRecentArrivalsWithServerCounts = async (
+    countTotal: number,
+    countUnread: number,
+  ) => {
+    folder.applyServerCounts(countTotal, countUnread);
+    await syncGate;
+    let message = folder.newEMail();
+    message.itemID = "new-message";
+    folder.addMessagesIfAbsent([message]);
+    return new ArrayColl([message]);
+  };
+
+  let snapshots: Array<{ countUnread: number; messages: number }> = [];
+  (account as any).notifyFolderUIUpdates = (folders: any[]) => {
+    for (let updatedFolder of folders) {
+      snapshots.push({
+        countUnread: updatedFolder.countUnread,
+        messages: updatedFolder.messages.length,
+      });
+    }
+  };
+
+  (account as any).syncFolderAfterServerCountUpdate(folder, 1, 1);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(snapshots).toEqual([]);
+
+  release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(snapshots).toEqual([{ countUnread: 1, messages: 1 }]);
+});
+
+test("повторяет синхронизацию, если счётчик пришёл во время уже идущего запроса", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let release!: () => void;
+  let firstSyncStartedResolve!: () => void;
+  let firstSyncStarted = new Promise<void>(resolve => {
+    firstSyncStartedResolve = resolve;
+  });
+  let firstSyncGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  let fetchUnreadArrivalsStartedResolve!: () => void;
+  let fetchUnreadArrivalsStarted = new Promise<void>(resolve => {
+    fetchUnreadArrivalsStartedResolve = resolve;
+  });
+  let getNewMessagesCalls = 0;
+  let fetchUnreadArrivalsCalls = 0;
+
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+  (folder as any).haveReadFolder = true;
+  (folder as any).getNewMessages = async () => {
+    getNewMessagesCalls++;
+    if (getNewMessagesCalls == 1) {
+      firstSyncStartedResolve();
+      await firstSyncGate;
+      return new ArrayColl<OWAEMail>();
+    }
+    return new ArrayColl<OWAEMail>();
+  };
+  (folder as any).fetchUnreadArrivals = async () => {
+    fetchUnreadArrivalsCalls++;
+    fetchUnreadArrivalsStartedResolve();
+    let message = folder.newEMail();
+    message.itemID = "new-message";
+    message.sent = new Date("2026-09-22T10:00:00Z");
+    message.received = message.sent;
+    message.isRead = false;
+    folder.addMessagesIfAbsent([message]);
+    folder.dirty = false;
+    return new ArrayColl([message]);
+  };
+
+  let initialSync = folder.syncRecentArrivals();
+  await firstSyncStarted;
+  let countSync = folder.syncRecentArrivalsWithServerCounts(1, 1);
+
+  release();
+  await Promise.all([initialSync, countSync]);
+  await fetchUnreadArrivalsStarted;
+
+  expect(getNewMessagesCalls).toBe(1);
+  expect(fetchUnreadArrivalsCalls).toBe(1);
+  expect(folder.countUnread).toBe(1);
+  expect(folder.getEmailByItemID("new-message")).toBeDefined();
+  expect(folder.messages.length).toBe(1);
 });
 
 test("запускает синхронизацию входящих после hierarchy-события без счётчиков", async () => {

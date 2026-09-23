@@ -1044,17 +1044,18 @@ export class OWAAccount extends ExchangeMailAccount {
     return (mailArrived || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);
   }
 
-  /** Keep a shared-mailbox badge and its first matching header in one UI update. */
+  /** Публикует счётчик только после первой загрузки соответствующего заголовка. */
   protected syncFolderAfterServerCountUpdate(
     folder: OWAFolder,
     countTotal: number,
     countUnread: number,
   ): void {
     let account = folder.account;
-    folder.syncRecentArrivalsWithServerCounts(countTotal, countUnread).then(
+    let sync = folder.syncRecentArrivalsWithServerCounts(countTotal, countUnread);
+    sync.then(
       () => account.notifyFolderUIUpdates([folder]),
       ex => {
-        // Do not leave the fresh badge hidden if Exchange's header request fails.
+        // При ошибке синхронизации всё равно показываем свежий счётчик.
         account.notifyFolderUIUpdates([folder]);
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           account.errorCallback(ex);

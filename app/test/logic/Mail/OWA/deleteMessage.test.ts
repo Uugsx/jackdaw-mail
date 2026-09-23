@@ -124,6 +124,45 @@ test("очистка корзины OWA принудительно загруж�
   expect(folder.messages.isEmpty).toBe(true);
 });
 
+test("очистка обычной OWA-папки переносит письма одной операцией", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let source = account.newFolder();
+  source.id = "source-folder";
+  source.specialFolder = SpecialFolder.Normal;
+  let trash = account.newFolder();
+  trash.id = "trash-folder";
+  trash.specialFolder = SpecialFolder.Trash;
+  account.rootFolders.add(source);
+  account.rootFolders.add(trash);
+
+  let requests: any[] = [];
+  (account as any).callOWA = async (request: any) => {
+    requests.push(request);
+    return { ResponseClass: "Success", ResponseCode: "NoError" };
+  };
+
+  for (let id of ["message-1", "message-2", "message-3"]) {
+    let message = source.newEMail();
+    message.itemID = id;
+    source.messages.add(message);
+  }
+  source.countTotal = 3;
+
+  await source.clearFolder();
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0].action).toBe("MoveItem");
+  expect(requests[0].Body.ItemIds.map((item: any) => item.Id)).toEqual([
+    "message-1", "message-2", "message-3",
+  ]);
+  expect(requests[0].Body.ToFolderId.BaseFolderId.Id).toBe("trash-folder");
+  expect(source.messages.isEmpty).toBe(true);
+  expect(source.countTotal).toBe(0);
+  expect(trash.countTotal).toBe(3);
+});
+
 test("удаление письма через OWA сохраняет параметр отмен встреч", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

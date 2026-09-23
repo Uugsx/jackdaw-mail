@@ -15,6 +15,7 @@ import { newPerson, selectedPerson } from "../Contacts/Person/Selected";
 import { filesApp } from "../Files/FilesJackdawApp";
 import { mailApp } from "../Mail/MailJackdawApp";
 import { deleteMessagesFromUI } from "../Mail/mailDeleteUndo";
+import { markMessagesRead } from "../Mail/mailReadActions";
 import {
   selectedAccount,
   selectedFolder,
@@ -278,9 +279,7 @@ async function toggleRead(): Promise<void> {
     throw new Error(gt`Please select a message first`);
   }
   const isRead = !messages[0].isRead;
-  for (const message of messages) {
-    await message.markRead(isRead);
-  }
+  await markMessagesRead(messages, isRead);
 }
 
 async function archiveMessages(): Promise<void> {

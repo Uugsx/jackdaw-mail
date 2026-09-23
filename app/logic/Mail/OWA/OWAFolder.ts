@@ -21,7 +21,7 @@ import {
 import type { EMailCollection } from "../Store/EMailCollection";
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { CreateMIME } from "../SMTP/CreateMIME";
-import { assert, base64ToUint8Array, blobToBase64, ensureArray } from "../../util/util";
+import { assert, base64ToUint8Array, blobToBase64, ensureArray, sleep } from "../../util/util";
 import { Lock } from "../../util/flow/Lock";
 import { RunOnce } from "../../util/flow/RunOnce";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
@@ -50,6 +50,8 @@ const kCategoryBackfillRetryMs = 3_000;
 const kCategoryBackfillRetrySharedMs = 5_000;
 /** Сколько верхних писем проверять при открытии папки из кеша. */
 const kRecentCategoryRefreshCount = 50;
+/** Повторить поиск заголовка, если счётчик уже обновился, а синхронизация ещё отставала. */
+const kServerCountSyncRetryDelaysSeconds = [0.5, 1, 2, 3];
 /** GetItem-обновление видимой страницы, пока папка открыта (Outlook rules/push). */
 const kVisibleMetadataRefreshMs = 12_000;
 const kVisibleMetadataRefreshSharedMs = 8_000;
@@ -71,6 +73,13 @@ export class OWAFolder extends ExchangeFolder {
   protected quickFetchLock = new Lock();
   /** Coalesce the primary and shared-mailbox pollers into one recent sync. */
   protected recentSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
+  /** Объединять синхронизации заголовков по счётчику без потери последнего значения. */
+  protected serverCountSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
+  /** Не запускать несколько одинаковых повторов, пока Exchange догоняет счётчик. */
+  protected serverCountSyncRetryRunOnce = new RunOnce<void>();
+  /** Не выпускать промежуточное изменение счётчика при параллельных sync-вызовах. */
+  protected serverCountSyncObserverMuteDepth = 0;
+  protected serverCountSyncPreviousMute = false;
   /** Не показывать исходную загрузку папки как новое письмо. */
   protected hasCompletedInitialSync = false;
   /** Пометить письма следующей синхронизации как пришедшие по push-событию. */
@@ -289,19 +298,40 @@ export class OWAFolder extends ExchangeFolder {
     });
   }
 
-  /** Apply a fresh server badge and publish it only after the matching headers are loaded. */
+  /** Применяет счётчик и возвращается после первой загрузки соответствующих заголовков. */
   async syncRecentArrivalsWithServerCounts(
     countTotal: number,
     countUnread: number,
   ): Promise<ArrayColl<OWAEMail>> {
-    let wasMuted = this._muteObservers;
+    if (this.serverCountSyncObserverMuteDepth++ == 0) {
+      this.serverCountSyncPreviousMute = this._muteObservers;
+    }
     this._muteObservers = true;
     try {
       this.applyServerCounts(countTotal, countUnread);
       this.dirty = true;
-      return await this.syncRecentArrivals();
+      return await this.serverCountSyncRunOnce.runOnce(async () => {
+        let messages = await this.syncRecentArrivals();
+        void this.serverCountSyncRetryRunOnce.runOnce(
+          () => this.retryRecentArrivalsUntilCaughtUp(),
+        ).catch(ex => this.account.errorCallback(ex));
+        return messages;
+      });
     } finally {
-      this._muteObservers = wasMuted;
+      if (--this.serverCountSyncObserverMuteDepth == 0) {
+        this._muteObservers = this.serverCountSyncPreviousMute;
+      }
+    }
+  }
+
+  /** Повторяет быструю синхронизацию после первой отложенной выдачи заголовка. */
+  protected async retryRecentArrivalsUntilCaughtUp(): Promise<void> {
+    for (let delaySeconds of kServerCountSyncRetryDelaysSeconds) {
+      if (!this.isBehindServer()) {
+        return;
+      }
+      await sleep(delaySeconds);
+      await this.syncRecentArrivals();
     }
   }
 
@@ -342,6 +372,70 @@ export class OWAFolder extends ExchangeFolder {
 
   async fetchNewMailQuick(): Promise<Collection<OWAEMail>> {
     return this.syncRecentArrivals();
+  }
+
+  /** Очищает обычную папку одним MoveItem, а не отдельным запросом на письмо. */
+  override async clearFolder(): Promise<void> {
+    if (this.specialFolder == SpecialFolder.Trash || this.specialFolder == SpecialFolder.Spam) {
+      await this.deleteAllMessages();
+      return;
+    }
+    this.clearProgress = {
+      phase: "preparing",
+      completed: 0,
+      total: Math.max(this.countTotal, this.messages.length),
+    };
+    let messages: OWAEMail[];
+    try {
+      await this.readFolder();
+      if (this.dirty) {
+        await this.refreshCountsFromServer();
+      }
+      if (this.countTotal != this.messages.length) {
+        await this.listMessages(false, true);
+      }
+      if (this.countTotal > this.messages.length) {
+        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+      }
+      messages = [...this.messages.contents];
+      if (!messages.length) {
+        return;
+      }
+      this.clearProgress = {
+        phase: "deleting",
+        completed: 0,
+        total: messages.length,
+      };
+      let trash = this.account.findSpecialFolder(SpecialFolder.Trash);
+      assert(trash, gt`Trash folder is not set. Please go to folder properties and set Use As: Trash.`);
+      if (trash instanceof OWAFolder) {
+        await trash.moveMessagesHereForClear(new ArrayColl(messages));
+      } else {
+        await trash.moveMessagesHere(new ArrayColl(messages));
+      }
+      this.clearProgress = {
+        phase: "deleting",
+        completed: messages.length,
+        total: messages.length,
+      };
+    } finally {
+      this.clearProgress = null;
+    }
+  }
+
+  /** Uses Folder's optimistic local bookkeeping with OWA's one-shot MoveItem. */
+  protected async moveMessagesHereForClear(messages: Collection<OWAEMail>): Promise<void> {
+    if (!messages.hasItems) {
+      return;
+    }
+    let sourceAccount = messages.first.folder.account;
+    let sameServer = (sourceAccount.mainAccount ?? sourceAccount) == (this.account.mainAccount ?? this.account) &&
+      messages.contents.every(message => message.folder.account == sourceAccount);
+    if (!sameServer) {
+      await this.moveMessagesHere(messages);
+      return;
+    }
+    await super.moveOrCopyMessagesHere("move", messages, true);
   }
 
   /** Удаляет корзину/спам пакетными DeleteItem-запросами Exchange. */
@@ -1152,7 +1246,7 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   protected async processSyncReadFlagChange(email: OWAEMail, change: any) {
-    email.isRead = sanitize.boolean(change.IsRead, false);
+    email.setFlags({ IsRead: change.IsRead }, "partial");
     await email.saveWritablePropsLocally();
   }
 

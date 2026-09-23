@@ -21,6 +21,11 @@ import type { ArrayColl } from "svelte-collections";
 export class OWAEMail extends ExchangeEMail {
   declare folder: OWAFolder;
 
+  /** Устаревшее обновление папки не должно отменять локальную отметку письма. */
+  private pendingReadState: boolean | null = null;
+  private readStateMutationVersion = 0;
+  private readStateServerUpdateSucceeded = false;
+
   get itemID(): string | null {
     return this.pID as string | null;
   }
@@ -107,7 +112,12 @@ export class OWAEMail extends ExchangeEMail {
   setFlags(json: Record<string, any>, source: "full" | "list" | "partial" = "partial"): boolean {
     let datesChanged = this.applyHeaderDates(json);
     let oldTagNames = this.tags.contents.map(tag => tag.name);
-    let isRead = "IsRead" in json ? sanitize.boolean(propertyValue(json.IsRead), this.isRead) : this.isRead;
+    let serverIsRead = "IsRead" in json ? sanitize.boolean(propertyValue(json.IsRead), this.isRead) : this.isRead;
+    if ("IsRead" in json && this.pendingReadState != null &&
+        this.readStateServerUpdateSucceeded && serverIsRead == this.pendingReadState) {
+      this.pendingReadState = null;
+    }
+    let isRead = this.pendingReadState ?? serverIsRead;
     let isStarred = "Flag" in json ? propertyValue(json.Flag)?.FlagStatus == "Flagged" : this.isStarred;
     let isDraft = "IsDraft" in json ? sanitize.boolean(propertyValue(json.IsDraft), this.isDraft) : this.isDraft;
     let tagNames: string[];
@@ -188,9 +198,24 @@ export class OWAEMail extends ExchangeEMail {
   }
 
   async markRead(read = true) {
-    await super.markRead(read);
-    await this.saveWritablePropsLocally().catch(() => null);
-    await this.withItemIdRetry(() => this.updateIsReadOnServer(read));
+    let mutationVersion = ++this.readStateMutationVersion;
+    this.pendingReadState = read;
+    this.readStateServerUpdateSucceeded = false;
+    let serverUpdateSucceeded = false;
+    try {
+      await super.markRead(read);
+      await this.saveWritablePropsLocally().catch(() => null);
+      await this.withItemIdRetry(() => this.updateIsReadOnServer(read));
+      serverUpdateSucceeded = true;
+      if (mutationVersion == this.readStateMutationVersion) {
+        this.readStateServerUpdateSucceeded = true;
+      }
+    } finally {
+      if (mutationVersion == this.readStateMutationVersion && !serverUpdateSucceeded) {
+        this.pendingReadState = null;
+        this.readStateServerUpdateSucceeded = false;
+      }
+    }
   }
 
   protected async updateIsReadOnServer(read: boolean) {

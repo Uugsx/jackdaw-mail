@@ -2,6 +2,7 @@ import type { EMail } from "../../logic/Mail/EMail";
 import type { MailListSort } from "./LeftPane/quickFilters";
 import { getMailDayGroupLabel, getMailListGroupKey } from "../Util/date";
 import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
+import { messagesRepresentSameMail } from "./mailReadActions";
 
 export type MailListDayRow = {
   kind: "day";
@@ -140,22 +141,6 @@ export function mailListSectionLabels(rows: readonly MailListRow[]): string[] {
   return rows
     .filter((row): row is MailListDayRow => row.kind == "day")
     .map(row => row.label);
-}
-
-function messagesRepresentSameMail(a: EMail, b: EMail): boolean {
-  if (a == b) {
-    return true;
-  }
-  if (a.dbID != null && b.dbID != null) {
-    return a.dbID == b.dbID;
-  }
-  if (a.pID != null && b.pID != null) {
-    return a.pID == b.pID;
-  }
-  if (a.id != null && b.id != null) {
-    return a.id == b.id;
-  }
-  return false;
 }
 
 export function findMailListRowForMessage(rows: Collection<MailListRow>, message: EMail | null | undefined): MailListMessageRow | null {

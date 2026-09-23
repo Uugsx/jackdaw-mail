@@ -3,6 +3,7 @@ import { deleteMessagesFromUI } from "../mailDeleteUndo";
 import type { EMail } from "../../../logic/Mail/EMail";
 import { selectedMessage, selectedMessages, listVisibleMessages } from "../Selected";
 import { openComposer } from "../open";
+import { markMessagesRead } from "../mailReadActions";
 import { get } from "svelte/store";
 import { isMailPaneFocused } from "../../MainWindow/paneFocus";
 
@@ -80,8 +81,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
     if (event.key == "m") { // Thunderbird
       consume(event);
       let isRead = majority(messages, msg => msg.isRead);
-      await Promise.allSettled(messages.map(msg =>
-        msg.markRead(!isRead)));
+      await markMessagesRead(messages, !isRead);
       return;
     } else if (event.key == "s" || event.key == "Insert") { // s: Thunderbird, Insert: Outlook
       consume(event);
@@ -137,14 +137,12 @@ export async function onKeyOnList(event: KeyboardEvent) {
       openComposer(await message.compose.forward());
       return;
     } else if (event.key == "u") { // Outlook
-        consume(event);
-        await Promise.allSettled(messages.map(msg =>
-          msg.markRead(false)));
-        return;
+      consume(event);
+      await markMessagesRead(messages, false);
+      return;
     } else if (event.key == "q" && event.ctrlKey && !event.metaKey) { // Outlook; Cmd+Q — системное завершение работы macOS
       consume(event);
-      await Promise.allSettled(messages.map(msg =>
-        msg.markRead(true)));
+      await markMessagesRead(messages, true);
       return;
     } else if (event.key == "m") { // Outlook
       consume(event);

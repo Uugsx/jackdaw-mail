@@ -161,6 +161,7 @@
   import { t } from "../../../l10n/l10n";
   import { catchErrors } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { appGlobal } from "../../../logic/app";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
 
@@ -203,7 +204,7 @@
     });
   }
   function actionTargets(): EMail[] {
-    return ($selectedMessages?.hasItems && $selectedMessages.contains(message)
+    return ($selectedMessages?.hasItems && message && $selectedMessages.contents.some(target => messagesRepresentSameMail(target, message))
       ? $selectedMessages.contents
       : (message ? [message] : [])).slice();
   }
@@ -245,10 +246,11 @@
   }
   async function toggleRead() {
     let list = actionTargets();
-    let toRead = !list[0]?.isRead;
-    for (let m of list) {
-      await m.markRead(toRead);
+    if (message && list.some(target => target !== message && messagesRepresentSameMail(target, message))) {
+      list.push(message);
     }
+    let toRead = !list[0]?.isRead;
+    await markMessagesRead(list, toRead);
   }
   async function toggleStar() {
     let list = actionTargets();
