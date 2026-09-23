@@ -2,6 +2,7 @@ import { writable } from "svelte/store";
 import type { EMail } from "../../logic/Mail/EMail";
 import { SpecialFolder, type Folder } from "../../logic/Mail/Folder";
 import { openEMailMessage } from "./open";
+import { runMailActions } from "./mailBulkActions";
 import { gt } from "../../l10n/l10n";
 
 type DeletedEntry = {
@@ -34,9 +35,7 @@ export async function deleteMessagesWithUndo(
     sourceFolder: message.folder,
   }));
   beforeDelete?.();
-  for (let message of list) {
-    await message.deleteMessage();
-  }
+  await runMailActions(list, message => message.deleteMessage());
   showDeleteUndoToast(entries);
 }
 
@@ -81,9 +80,7 @@ export async function deleteMessagesPermanent(messages: readonly EMail[], before
     return;
   }
   beforeDelete?.();
-  for (let message of list) {
-    await message.deleteMessage();
-  }
+  await runMailActions(list, message => message.deleteMessage());
 }
 
 export function deleteMessagesFromUI(messages: readonly EMail[], beforeDelete?: () => void): Promise<void> {

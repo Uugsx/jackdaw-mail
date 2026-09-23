@@ -116,8 +116,10 @@ export async function applyTagCombinationToEmails(
   if (!tags.length) {
     return;
   }
-  for (let email of emails) {
-    await email.addTags(tags);
+  let results = await Promise.allSettled(emails.map(email => email.addTags(tags)));
+  let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+  if (failed) {
+    throw failed.reason;
   }
 }
 

@@ -541,8 +541,11 @@ export class Folder extends Observable implements TreeItem<Folder> {
       await this.listMessages();
     }
     let messages = [...this.messages.contents];
-    for (let msg of messages) {
-      await msg.deleteMessage(DeleteStrategy.DeleteImmediately);
+    let results = await Promise.allSettled(messages.map(message =>
+      message.deleteMessage(DeleteStrategy.DeleteImmediately)));
+    let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+    if (failed) {
+      throw failed.reason;
     }
   }
 

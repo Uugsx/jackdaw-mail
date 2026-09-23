@@ -179,6 +179,8 @@
   import { saveBlobAsFile } from "../../Util/util";
   import { catchErrors, showError } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { runMailActions } from "../mailBulkActions";
+  import { moveMessagesToArchive } from "../mailArchiveActions";
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { selectedMessage, selectedMessages } from "../Selected";
   import { ArrayColl } from "svelte-collections";
@@ -249,11 +251,8 @@
   }
   async function restoreMessage() {
     let list = actionTargets();
-    let last: EMail | null = null;
-    for (let m of list) {
-      await m.restoreFromTrash();
-      last = m;
-    }
+    let last = list.at(-1) ?? null;
+    await runMailActions(list, m => m.restoreFromTrash());
     if (last) {
       await openEMailMessage(last);
     }
@@ -262,23 +261,17 @@
     let list = actionTargets();
     let toSpam = !list[0]?.isSpam;
     goToNextMessage(list[0] ?? message);
-    for (let m of list) {
-      await m.treatSpam(toSpam);
-    }
+    await runMailActions(list, m => m.treatSpam(toSpam));
   }
   async function archiveMessage() {
     let list = actionTargets();
     goToNextMessage(list[0] ?? message);
-    for (let m of list) {
-      await m.moveToArchive();
-    }
+    await moveMessagesToArchive(list);
   }
   async function toggleImportant() {
     let list = actionTargets();
     let toImportant = !list[0]?.isImportant;
-    for (let m of list) {
-      await m.markImportant(toImportant);
-    }
+    await runMailActions(list, m => m.markImportant(toImportant));
   }
   async function toggleRead() {
     let list = actionTargets();
@@ -318,29 +311,31 @@
   }
 
   async function applyCombination(combination: TagCombination) {
-    await applyTagCombinationToEmails(actionTargets(), combination);
-    tagsEpoch++;
+    try {
+      await applyTagCombinationToEmails(actionTargets(), combination);
+    } finally {
+      tagsEpoch++;
+    }
   }
 
   async function toggleTag(tag: Tag) {
     let list = actionTargets();
     let remove = majorityHasTag(tag, list);
-    for (let m of list) {
-      if (remove) {
-        if (m.tags.contains(tag)) {
-          await m.removeTag(tag);
-        }
-      } else if (!m.tags.contains(tag)) {
-        await m.addTag(tag);
-      }
+    let targets = remove
+      ? list.filter(m => m.tags.contains(tag))
+      : list.filter(m => !m.tags.contains(tag));
+    try {
+      await runMailActions(targets, m => remove ? m.removeTag(tag) : m.addTag(tag));
+    } finally {
+      tagsEpoch++;
     }
-    tagsEpoch++;
   }
   async function clearTags() {
-    for (let m of actionTargets()) {
-      await m.clearTags();
+    try {
+      await runMailActions(actionTargets(), m => m.clearTags());
+    } finally {
+      tagsEpoch++;
     }
-    tagsEpoch++;
   }
 
   function goToNextMessage(anchor: EMail = message) {

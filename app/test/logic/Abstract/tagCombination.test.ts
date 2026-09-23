@@ -71,6 +71,28 @@ describe("TagCombination", () => {
     expect(updateCount).toBe(1);
   });
 
+  test("применяет комбинацию ко всем письмам одновременно", async () => {
+    let category = tag("Массовая");
+    let combination = new TagCombination();
+    combination.name = "Bulk";
+    combination.tagNames = [category.name];
+    let started = 0;
+    let release!: () => void;
+    let waitForRelease = new Promise<void>(resolve => release = resolve);
+    let addTags = async () => {
+      started++;
+      await waitForRelease;
+    };
+    let first = { addTags } as any;
+    let second = { addTags } as any;
+
+    let applying = applyTagCombinationToEmails([first, second], combination);
+    await Promise.resolve();
+    expect(started).toBe(2);
+    release();
+    await applying;
+  });
+
   test("save/load сохраняет комбинации", async () => {
     tag("A");
     let combination = new TagCombination();

@@ -1,4 +1,4 @@
-<!-- Editable quoted thread — native contenteditable preserves original HTML; not TipTap. -->
+<!-- Editable quoted thread — controlled text input preserves the original HTML; not TipTap. -->
 <div
   bind:this={rootEl}
   class="compose-quote-html"
@@ -8,6 +8,7 @@
   role="textbox"
   aria-multiline="true"
   use:quoteEditable={{ html, onChange }}
+  on:beforeinput={onBeforeInput}
   on:click={onClick}
   on:dblclick={onDoubleClick}
   on:touchend={onTouchEnd}
@@ -23,6 +24,7 @@
     captureQuoteSelection,
     type QuoteEditorCommand,
   } from "./quoteEditorCommands";
+  import { applyQuoteTextInput } from "./quoteEditorInput";
 
   /** Sanitized HTML (original message body or forward quote). */
   export let html: string;
@@ -34,6 +36,14 @@
 
   function onChange(bodyHtml: string) {
     dispatch("change", bodyHtml);
+  }
+
+  function onBeforeInput(event: InputEvent) {
+    if (event.defaultPrevented || !rootEl || !applyQuoteTextInput(rootEl, event)) {
+      return;
+    }
+    event.preventDefault();
+    rootEl.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   /** Return the native selection when it belongs to the quoted message. */

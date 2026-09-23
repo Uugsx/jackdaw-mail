@@ -7,6 +7,7 @@
       </ErrorBoundary>
     </hbox>
     <hbox class="splitter-bar"
+      class:bar-hidden={hideBar}
       class:dragging={isMouseDown}
       on:pointerdown={onPointerDown}
       style="width: {barWidth}px;"
@@ -64,6 +65,8 @@
   export let name: string = null;
   /** Called after the user finishes dragging the splitter bar. */
   export let onResize: (() => void) | null = null;
+  /** Keep the splitter draggable while removing its visual divider. */
+  export let hideBar = false;
 
 	const barWidth = appGlobal.isMobile ? 6 : 2;
   let rightRatio = JSON.parse(sanitize.nonemptystring(localStorage?.getItem("ui.splitter." + name), null)) ?? initialRightRatio;
@@ -161,6 +164,10 @@
 	}
   .splitter-bar:hover {
     background-color: var(--hover-bg);
+  }
+  .splitter-bar.bar-hidden,
+  .splitter-bar.bar-hidden:hover {
+    background-color: transparent !important;
   }
 
   .left {

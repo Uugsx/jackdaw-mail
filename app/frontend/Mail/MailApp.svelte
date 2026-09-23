@@ -79,8 +79,19 @@
 
 <style>
   .mail-app-root {
+    box-sizing: border-box;
     flex: 1 0 0;
+    min-width: 0;
     min-height: 0;
+    margin-inline: 8px;
+    margin-block: 8px;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
     outline: none;
+  }
+
+  :global(.main-window.mobile) .mail-app-root {
+    margin-block-start: 0;
   }
 </style>

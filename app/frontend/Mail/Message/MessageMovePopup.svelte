@@ -132,6 +132,8 @@
   import { ArrayColl, Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { withMailTransferProgress } from "../mailTransferProgress";
+  import { runMailActions } from "../mailBulkActions";
+  import { moveMessagesToArchive } from "../mailArchiveActions";
   import { createEventDispatcher, onDestroy } from 'svelte';
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -174,18 +176,13 @@
 
   async function onDelete() {
     onClose();
-    for (let message of messages) {
-      await message.deleteMessage();
-    }
+    await runMailActions(messages.contents, message => message.deleteMessage());
     goToNextMessage();
   }
   async function onRestore() {
     onClose();
-    let last: EMail | null = null;
-    for (let message of messages) {
-      await message.restoreFromTrash();
-      last = message;
-    }
+    let last = messages.contents.at(-1) ?? null;
+    await runMailActions(messages.contents, message => message.restoreFromTrash());
     if (last) {
       await openEMailMessage(last);
     }
@@ -193,20 +190,14 @@
   async function toggleSpam() {
     let spam = !messages.first.isSpam;
     onClose();
-    for (let message of messages) {
-      await message.treatSpam(spam);
-    }
+    await runMailActions(messages.contents, message => message.treatSpam(spam));
     goToNextMessage();
   }
 
   async function onArchive() {
     onClose();
     await withMailTransferProgress(sourceFolder, "move", messages.length, $t`Archive`, async update => {
-      let completed = 0;
-      for (let message of messages) {
-        await message.moveToArchive();
-        update(++completed);
-      }
+      await moveMessagesToArchive(messages.contents, update);
     });
     goToNextMessage();
   }

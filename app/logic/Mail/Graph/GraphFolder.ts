@@ -317,10 +317,13 @@ export class GraphFolder extends Folder {
   }
 
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<GraphEMail>) {
-    for (let msg of messages) {
-      await this.account.graphPost(msg.path + "/" + action, {
+    let results = await Promise.allSettled(messages.contents.map(msg =>
+      this.account.graphPost(msg.path + "/" + action, {
         destinationId: this.id,
-      });
+      })));
+    let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+    if (failed) {
+      throw failed.reason;
     }
 
     await this.listChangedMessages();

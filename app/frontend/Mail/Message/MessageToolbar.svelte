@@ -161,6 +161,8 @@
   import { t } from "../../../l10n/l10n";
   import { catchErrors } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { runMailActions } from "../mailBulkActions";
+  import { moveMessagesToArchive } from "../mailArchiveActions";
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { appGlobal } from "../../../logic/app";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
@@ -221,17 +223,12 @@
   async function archiveMessage() {
     let list = actionTargets();
     selectNextAfterAction(list);
-    for (let m of list) {
-      await m.moveToArchive();
-    }
+    await moveMessagesToArchive(list);
   }
   async function restoreMessage() {
     let list = actionTargets();
-    let last: EMail | null = null;
-    for (let m of list) {
-      await m.restoreFromTrash();
-      last = m;
-    }
+    let last = list.at(-1) ?? null;
+    await runMailActions(list, m => m.restoreFromTrash());
     if (last) {
       await openEMailMessage(last);
     }
@@ -240,9 +237,7 @@
     let list = actionTargets();
     let toSpam = !list[0]?.isSpam;
     selectNextAfterAction(list);
-    for (let m of list) {
-      await m.treatSpam(toSpam);
-    }
+    await runMailActions(list, m => m.treatSpam(toSpam));
   }
   async function toggleRead() {
     let list = actionTargets();
@@ -255,9 +250,7 @@
   async function toggleStar() {
     let list = actionTargets();
     let toStar = !list[0]?.isStarred;
-    for (let m of list) {
-      await m.markStarred(toStar);
-    }
+    await runMailActions(list, m => m.markStarred(toStar));
   }
   async function editDraft() {
     await message.loadMIME();

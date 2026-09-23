@@ -221,6 +221,16 @@
   .message-actions {
     min-width: 0;
   }
+  .message-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    max-width: 100%;
+    overflow: visible;
+  }
+  .message-actions :global(.buttons) {
+    min-width: 0;
+    max-width: 100%;
+  }
   .message-details {
     gap: 1px;
     flex: 1 1 0;
@@ -249,8 +259,15 @@
     white-space: nowrap;
   }
   .tags {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
     margin-inline-start: 4px;
-    flex-shrink: 0;
+    overflow: visible;
+  }
+  .tags :global(.tag-list) {
+    min-width: 0;
+    max-width: 100%;
   }
   .subject {
     min-width: 0;
@@ -350,6 +367,31 @@
       margin-inline-end: 2px;
     }
   }
+  @container message-header (max-width: 900px) {
+    .identity-row {
+      align-items: flex-start;
+      flex-wrap: wrap;
+      row-gap: 4px;
+    }
+    .identity-spacer {
+      display: none;
+    }
+    .sender {
+      flex: 1 1 auto;
+    }
+    .message-actions {
+      flex: 1 1 100%;
+      justify-content: flex-start;
+    }
+    .message-actions :global(.buttons) {
+      flex: 1 1 auto;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .tags {
+      flex: 1 1 auto;
+    }
+  }
   @container message-header (max-width: 720px) {
     .subject-line {
       flex-wrap: wrap;
@@ -365,11 +407,11 @@
     }
     .message-actions {
       flex-wrap: wrap;
-      justify-content: flex-end;
+      justify-content: flex-start;
     }
     .message-actions :global(.buttons) {
       flex-wrap: wrap;
-      justify-content: flex-end;
+      justify-content: flex-start;
     }
   }
   @media (prefers-reduced-motion: reduce) {

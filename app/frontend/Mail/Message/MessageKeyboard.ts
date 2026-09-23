@@ -1,5 +1,7 @@
 import { DeleteStrategy } from "../../../logic/Mail/MailAccount";
 import { deleteMessagesFromUI } from "../mailDeleteUndo";
+import { runMailActions } from "../mailBulkActions";
+import { moveMessagesToArchive } from "../mailArchiveActions";
 import type { EMail } from "../../../logic/Mail/EMail";
 import { selectedMessage, selectedMessages, listVisibleMessages } from "../Selected";
 import { openComposer } from "../open";
@@ -86,26 +88,22 @@ export async function onKeyOnList(event: KeyboardEvent) {
     } else if (event.key == "s" || event.key == "Insert") { // s: Thunderbird, Insert: Outlook
       consume(event);
       let isStarred = majority(messages, msg => msg.isStarred);
-      await Promise.allSettled(messages.map(msg =>
-        msg.markStarred(!isStarred)));
+      await runMailActions(messages, msg => msg.markStarred(!isStarred));
       return;
     } else if (event.key == "i") {
       consume(event);
       let isImportant = majority(messages, msg => msg.isImportant);
-      await Promise.allSettled(messages.map(msg =>
-        msg.markImportant(!isImportant)));
+      await runMailActions(messages, msg => msg.markImportant(!isImportant));
       return;
     } else if (event.key == "j") { // Thunderbird
       consume(event);
       goToNextMessage();
-      await Promise.allSettled(messages.map(msg =>
-        msg.treatSpam()));
+      await runMailActions(messages, msg => msg.treatSpam());
       return;
     } else if (event.key == "a") { // Archive
       consume(event);
       goToNextMessage();
-      await Promise.allSettled(messages.map(msg =>
-        msg.moveToArchive()));
+      await moveMessagesToArchive(messages);
       return;
     } else if (event.key == "Delete" || event.key == "Backspace") {
       consume(event);
@@ -179,14 +177,12 @@ export async function onKeyOnList(event: KeyboardEvent) {
   if (event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
     if (event.key == "J") { // Thunderbird
       consume(event);
-      await Promise.allSettled(messages.map(msg =>
-        msg.treatSpam(false)));
+      await runMailActions(messages, msg => msg.treatSpam(false));
       return;
     } else if (event.key == "Delete" || event.key == "Backspace") { // Thunderbird
       consume(event);
       goToNextMessage();
-      await Promise.allSettled(messages.map(msg =>
-        msg.deleteMessage(DeleteStrategy.DeleteImmediately)));
+      await runMailActions(messages, msg => msg.deleteMessage(DeleteStrategy.DeleteImmediately));
       return;
     }
   }

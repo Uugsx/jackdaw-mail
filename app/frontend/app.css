@@ -578,8 +578,14 @@ a:hover {
 .main-window:not(.mobile) .widget-sidebar {
   -webkit-app-region: no-drag;
 }
-.main-window.mail-mode .folder-pane,
+.main-window.mail-mode .folder-pane {
+  background: var(--leftbar-bg);
+}
 .main-window.mail-mode .mail-toolbar {
+  background: var(--main-bg);
+  border-start-end-radius: var(--border-radius);
+}
+.main-window.mail-mode:not(.mobile) .content-shell {
   background: var(--leftbar-bg);
 }
 

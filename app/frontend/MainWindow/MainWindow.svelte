@@ -49,6 +49,7 @@
             rightMinWidth={WIDGET_RAIL_WIDTH_PX + 200}
             hasRight={$widgetsEnabled.value}
             rightFixedWidth={$widgetsEnabled.value && !$widgetsExpanded.value ? WIDGET_RAIL_WIDTH_PX : null}
+            hideBar={true}
             onResize={onWidgetSplitterDragEnd}>
             <Splitter name="sidebar" initialRightRatio={0.25} hasRight={!!sidebar} slot="left">
               <AppContentRoutes slot="left"/>

@@ -1827,7 +1827,7 @@
     overflow-y: auto;
     container: live-sla / inline-size;
     padding: 8px;
-    background: var(--leftbar-bg);
+    background: transparent;
     scrollbar-gutter: stable;
   }
 
@@ -1837,7 +1837,7 @@
     min-width: 0;
     margin-bottom: 10px;
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 12px;
     box-shadow: none;
   }
 
@@ -1907,7 +1907,7 @@
     min-width: 0;
     margin-top: 10px;
     padding: 12px;
-    border-radius: 8px;
+    border-radius: 12px;
   }
 
   @container live-sla (max-width: 720px) {

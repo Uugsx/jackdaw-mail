@@ -240,6 +240,8 @@
   import { ArrayColl } from "svelte-collections";
   import { catchErrors } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
+  import { runMailActions } from "../mailBulkActions";
+  import { moveMessagesToArchive } from "../mailArchiveActions";
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { assert } from "../../../logic/util/util";
   import { get } from "svelte/store";
@@ -329,30 +331,21 @@
     return new ArrayColl<EMail>();
   }
 
-  async function forEachSelected(fn: (m: EMail) => Promise<void>) {
-    for (let m of selectionSnapshot().contents) {
-      await fn(m);
-    }
-  }
-
   async function deleteSelected() {
     await deleteMessagesFromUI(selectionSnapshot().contents);
   }
 
   async function restoreSelected() {
     let list = selectionSnapshot().contents;
-    let last: EMail | null = null;
-    for (let m of list) {
-      await m.restoreFromTrash();
-      last = m;
-    }
+    let last = list.at(-1) ?? null;
+    await runMailActions(list, m => m.restoreFromTrash());
     if (last) {
       await openEMailMessage(last);
     }
   }
 
   async function archiveSelected() {
-    await forEachSelected(m => m.moveToArchive());
+    await moveMessagesToArchive(selectionSnapshot().contents);
   }
 
   async function reply() {
@@ -382,9 +375,7 @@
   async function toggleSpam() {
     let list = selectionSnapshot().contents;
     let toSpam = !list[0]?.isSpam;
-    for (let m of list) {
-      await m.treatSpam(toSpam);
-    }
+    await runMailActions(list, m => m.treatSpam(toSpam));
     flagsEpoch++;
   }
 
@@ -401,18 +392,14 @@
   async function toggleStar() {
     let list = selectionSnapshot().contents;
     let toStar = !list[0]?.isStarred;
-    for (let m of list) {
-      await m.markStarred(toStar);
-    }
+    await runMailActions(list, m => m.markStarred(toStar));
     flagsEpoch++;
   }
 
   async function toggleImportant() {
     let list = selectionSnapshot().contents;
     let toImportant = !list[0]?.isImportant;
-    for (let m of list) {
-      await m.markImportant(toImportant);
-    }
+    await runMailActions(list, m => m.markImportant(toImportant));
     flagsEpoch++;
   }
 
@@ -431,30 +418,32 @@
   }
 
   async function applyCombination(combination: TagCombination) {
-    await applyTagCombinationToEmails(selectionSnapshot().contents, combination);
-    flagsEpoch++;
+    try {
+      await applyTagCombinationToEmails(selectionSnapshot().contents, combination);
+    } finally {
+      flagsEpoch++;
+    }
   }
 
   async function toggleTag(tag: Tag) {
     let list = selectionSnapshot().contents;
     let remove = majorityHasTag(tag);
-    for (let m of list) {
-      if (remove) {
-        if (m.tags.contains(tag)) {
-          await m.removeTag(tag);
-        }
-      } else if (!m.tags.contains(tag)) {
-        await m.addTag(tag);
-      }
+    let targets = remove
+      ? list.filter(m => m.tags.contains(tag))
+      : list.filter(m => !m.tags.contains(tag));
+    try {
+      await runMailActions(targets, m => remove ? m.removeTag(tag) : m.addTag(tag));
+    } finally {
+      flagsEpoch++;
     }
-    flagsEpoch++;
   }
 
   async function clearTags() {
-    for (let m of selectionSnapshot().contents) {
-      await m.clearTags();
+    try {
+      await runMailActions(selectionSnapshot().contents, m => m.clearTags());
+    } finally {
+      flagsEpoch++;
     }
-    flagsEpoch++;
   }
 
   async function getMail() {

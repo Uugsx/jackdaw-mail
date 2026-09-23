@@ -8,6 +8,7 @@ import {
 } from "../../logic/Abstract/TagCombination";
 import type { EMail } from "../../logic/Mail/EMail";
 import { selectedMessage, selectedMessages } from "./Selected";
+import { runMailActions } from "./mailBulkActions";
 
 export type CategoryShortcutTarget =
   | { type: "tag"; id: string }
@@ -293,13 +294,9 @@ export async function applyCategoryShortcut(target: CategoryShortcutTarget): Pro
 /** Переключает категории по той же majority-логике, что и меню категорий. */
 async function toggleCategoryTags(messages: readonly EMail[], tags: readonly Tag[]): Promise<void> {
   let remove = tags.every(tag => majorityHasTag(tag, messages));
-  for (let message of messages) {
-    if (remove) {
-      await message.removeTags(tags);
-    } else {
-      await message.addTags(tags);
-    }
-  }
+  await runMailActions(messages, message => remove
+    ? message.removeTags(tags)
+    : message.addTags(tags));
 }
 
 function majorityHasTag(tag: Tag, messages: readonly EMail[]): boolean {

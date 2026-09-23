@@ -249,10 +249,15 @@
   }
   .brand-bar {
     align-items: center;
-    min-height: 48px;
+    height: 56px;
+    min-height: 56px;
     padding: 0 12px;
     box-sizing: border-box;
-    border-block-end: 1px solid var(--border);
+    border-block-end: 1px solid var(--glass-border-subtle);
+  }
+  :global(.main-window.ui-density-large) .brand-bar {
+    height: 74px;
+    min-height: 74px;
   }
   .folder-pane-toggle {
     display: inline-flex;

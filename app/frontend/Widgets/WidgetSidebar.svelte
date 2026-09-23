@@ -1,4 +1,4 @@
-<hbox flex class="widget-sidebar" bind:this={sidebarE}>
+<hbox flex class="widget-sidebar" class:expanded={$widgetsExpanded.value} bind:this={sidebarE}>
   <vbox flex class="widget-panel" class:collapsed={!$widgetsExpanded.value}>
     {#if activeWidget && $widgetsExpanded.value}
       <hbox class="widget-header">
@@ -305,31 +305,49 @@
 
 <style>
   .widget-sidebar {
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     min-inline-size: 0;
     min-height: 0;
     height: 100%;
     overflow: hidden;
+    gap: 8px;
+    padding: 8px;
     background: var(--leftbar-bg);
     color: var(--leftbar-fg);
-    border-inline-start: 1px solid var(--glass-border-subtle);
+  }
+  .widget-sidebar:not(.expanded) {
+    gap: 0;
+    padding-inline: 0;
   }
   .widget-panel {
+    box-sizing: border-box;
     width: 0;
     min-width: 0;
     min-inline-size: 0;
     min-height: 0;
     flex: 1 1 auto;
-    max-width: calc(100% - 44px);
-    max-inline-size: calc(100% - 44px);
+    max-width: calc(100% - 52px);
+    max-inline-size: calc(100% - 52px);
+    overflow: hidden;
+    border-inline: 0;
+    border-block: 0;
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
+    box-shadow: none;
   }
   .widget-panel.collapsed {
     flex: 0 0 0;
     width: 0;
     min-width: 0;
+    max-width: 0;
+    max-inline-size: 0;
     overflow: hidden;
     pointer-events: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
   .widget-panel.collapsed .widget-body {
     display: none;
@@ -342,12 +360,18 @@
     height: 0 !important;
   }
   .widget-header {
+    box-sizing: border-box;
     align-items: center;
     gap: 4px;
-    min-height: 36px;
-    padding: 4px 8px 4px 12px;
-    border-block-end: 1px solid var(--border);
-    background: var(--headerbar-bg);
+    height: 56px;
+    min-height: 56px;
+    padding: 10px 8px 8px 16px;
+    border-block-end: 1px solid var(--glass-border-subtle);
+    background: var(--main-bg);
+  }
+  :global(.main-window.ui-density-large) .widget-header {
+    height: 74px;
+    min-height: 74px;
   }
   .widget-title {
     min-width: 0;
@@ -421,14 +445,15 @@
     color: color-mix(in srgb, var(--leftbar-fg) 68%, transparent);
   }
   .widget-rail {
+    box-sizing: border-box;
     width: 44px;
     min-width: 44px;
     align-items: center;
     gap: 4px;
     padding-block: 8px 10px;
-    box-sizing: border-box;
-    border-inline-start: 1px solid var(--border);
-    background: var(--appbar-bg);
+    border: 0;
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
   }
   .rail-spacer {
     min-height: 8px;
