@@ -164,7 +164,7 @@ describe("sticker media", () => {
 });
 
 describe("inline media lifecycle", () => {
-  test("inserts media with a bounded resize container", async () => {
+  test("inserts media with a fixed resize container", async () => {
     let insertedImage: any;
     let chain = {
       focus: vi.fn(),
@@ -193,8 +193,8 @@ describe("inline media lifecycle", () => {
 
     expect(insertedImage).toEqual(expect.objectContaining({
       width: 128,
-      containerStyle: "width: 128px; max-width: 100%; height: auto;",
-      wrapperStyle: "display: block; max-width: 100%; margin: 0;",
+      containerStyle: "width: 128px; height: auto;",
+      wrapperStyle: "display: block; margin: 0;",
     }));
     expect(chain.setImage).toHaveBeenCalledOnce();
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
@@ -231,8 +231,8 @@ describe("inline media lifecycle", () => {
         type: "imageResize",
         attrs: {
           width: 128,
-          containerStyle: "width: 128px; max-width: 100%; height: auto;",
-          wrapperStyle: "display: block; max-width: 100%; margin: 0;",
+          containerStyle: "width: 128px; height: auto;",
+          wrapperStyle: "display: block; margin: 0;",
         },
       });
     } finally {

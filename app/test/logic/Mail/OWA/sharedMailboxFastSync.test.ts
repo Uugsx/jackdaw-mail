@@ -42,6 +42,23 @@ test("shared mailbox использует тот же интервал polling, 
   expect((account as any).pollIntervalMs).toBe(42_000);
 });
 
+test("основной ящик обновляет счётчики подпапок в фоне", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let refreshCalls = 0;
+  main.refreshAllFolderCounts = async () => {
+    refreshCalls++;
+  };
+
+  try {
+    (main as any).startSharedCountsPolling();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(refreshCalls).toBeGreaterThan(0);
+  } finally {
+    (main as any).stopPolling();
+  }
+});
+
 test("pollOneDependentSharedAccount синхронизирует dirty-папки помимо Inbox", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = makeMainAccount();

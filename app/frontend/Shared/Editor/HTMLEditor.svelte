@@ -1,6 +1,6 @@
 <!-- TODO Jail content into an iframe -->
 
-<div bind:this={rootEl} class="html-editor" lang={getUILocale()} />
+<div bind:this={rootEl} class="html-editor" class:fixed-image-size={fixedImageSize} lang={getUILocale()} />
 
 <script lang="ts">
   import { Editor } from '@tiptap/core';
@@ -18,6 +18,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { getUILocale } from '../../../l10n/l10n';
+  import { backgroundError } from '../../Util/error';
   const dispatchEvent = createEventDispatcher<{ change: string }>();
 
   /** in/out */
@@ -27,6 +28,10 @@
   export let tabindex = null;
   /** Additional TipTap extensions to include alongside the defaults */
   export let extraExtensions: any[] = [];
+  /** Сохранять для изображений сохранённую или исходную ширину. */
+  export let fixedImageSize = false;
+  /** Обработать вставку файла изображения из системного буфера. */
+  export let onImagePaste: ((file: File, displayWidth: number) => Promise<void> | void) | null = null;
 
   let rootEl: HTMLDivElement;
   let lastHTML: string = null;
@@ -57,7 +62,9 @@
           allowBase64: true,
           inline: false,
           HTMLAttributes: {
-            style: "max-width: 100%; height: auto; margin: 0; display: block;"
+            style: fixedImageSize
+              ? "height: auto; margin: 0; display: block;"
+              : "max-width: 100%; height: auto; margin: 0; display: block;"
           },
         }),
         BoldStar,
@@ -70,6 +77,22 @@
         // }),
         ...extraExtensions,
       ],
+      editorProps: fixedImageSize && onImagePaste ? {
+        handlePaste: (view, event) => {
+          const clipboardItem = Array.from(event.clipboardData?.items ?? [])
+            .find(item => item.kind == "file" && item.type.startsWith("image/"));
+          const file = clipboardItem?.getAsFile();
+          if (!file) {
+            return false;
+          }
+          const displayWidth = view.dom.clientWidth || rootEl.clientWidth;
+          if (!displayWidth) {
+            return false;
+          }
+          void Promise.resolve(onImagePaste(file, displayWidth)).catch(backgroundError);
+          return true;
+        },
+      } : undefined,
       content: html,
       onTransaction: () => {
         // force re-render so `editor.isActive` works as expected
@@ -165,6 +188,19 @@
   .html-editor :global(img) {
     max-width: 100%;
     height: auto;
+  }
+  .html-editor.fixed-image-size :global(img) {
+    max-width: none !important;
+  }
+  /* ImageResize строит изображение как wrapper > container > img. Убираем
+     адаптивные ограничения у обоих контейнеров, чтобы узкое окно композера
+     незаметно не меняло сохранённую ширину изображения. */
+  .html-editor.fixed-image-size :global(.ProseMirror > div:has(> div > img)) {
+    max-width: none !important;
+  }
+  .html-editor.fixed-image-size :global(.ProseMirror > div > div:has(> img)) {
+    max-width: none !important;
+    flex-shrink: 0;
   }
   .html-editor :global(table) {
     border-collapse: collapse;

@@ -20,9 +20,17 @@
           on:input={() => personUID.nameIsUnknown = false}
           on:keydown={(event) => onKeyEnter(event, onClose)}
           placeholder={$t`Enter a name for the person`} />
-        <input class="email font-normal" type="email"
-          bind:value={personUID.emailAddress}
-          placeholder={$t`Email address to be used here`} />
+        <hbox class="email-row">
+          <input class="email font-normal" type="email"
+            bind:value={personUID.emailAddress}
+            placeholder={$t`Email address to be used here`} />
+          <Button plain iconOnly iconSize="16px"
+            label={$t`Copy email address`}
+            icon={CopyIcon}
+            classes="email-copy-button"
+            onClick={copyEmailAddress}
+            />
+        </hbox>
       </vbox>
       <!--
       <vbox class="top-right buttons">
@@ -36,7 +44,16 @@
     {:else}
       <vbox class="name-primary-mail" flex>
         <value class="name">{$personUID.name}</value>
-        <value class="email">{$personUID.emailAddress}</value>
+        <hbox class="email-row">
+          <value class="email">{$personUID.emailAddress}</value>
+          <Button plain iconOnly iconSize="16px"
+            label={$t`Copy email address`}
+            icon={CopyIcon}
+            classes="email-copy-button"
+            onClick={copyEmailAddress}
+            {disabled}
+            />
+        </hbox>
       </vbox>
       <vbox class="top-right buttons">
         <Button plain iconOnly iconSize="14px"
@@ -93,6 +110,7 @@
   import AvatarFallbackIcon from "lucide-svelte/icons/user";
   import EditIcon from "lucide-svelte/icons/pencil";
   import CheckIcon from "lucide-svelte/icons/check";
+  import CopyIcon from "lucide-svelte/icons/copy";
   import MailIcon from "lucide-svelte/icons/mail";
   import { createIsSame, onKeyEnter } from "../../Util/util";
   import { backgroundError } from "../../Util/error";
@@ -148,6 +166,14 @@
     onClose();
     openPersonFromOtherApp(personUID.createPerson(appGlobal.personalAddressbook));
   }
+
+  async function copyEmailAddress() {
+    let emailAddress = personUID.emailAddress?.trim();
+    if (emailAddress) {
+      await navigator.clipboard.writeText(emailAddress);
+    }
+  }
+
   function useOtherEmailAddress(emailAddress: string) {
     personUID.emailAddress = emailAddress;
     contactEntry = person.emailAddresses.find(c => c.value == personUID.emailAddress);
@@ -175,6 +201,24 @@
   }
   .name-primary-mail .name {
     margin-block-end: 3px;
+  }
+  .email-row {
+    align-items: center;
+    min-width: 0;
+  }
+  .email-row input,
+  .email-row .email {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .email-row .email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .email-row :global(.email-copy-button) {
+    flex: 0 0 auto;
+    padding: 4px;
   }
   .name-primary-mail,
   .name-primary-mail input {

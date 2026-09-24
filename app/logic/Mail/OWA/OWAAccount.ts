@@ -562,7 +562,7 @@ export class OWAAccount extends ExchangeMailAccount {
     this.sharedFoldersPoller = setInterval(tick, kOWAPollIntervalMs);
   }
 
-  /** Badge-only sync for shared mailboxes: GetFolder counts, no message bodies. */
+  /** Обновление счётчиков основного и общих ящиков через GetFolder без загрузки тел писем. */
   protected startSharedCountsPolling(): void {
     if (this.sharedCountsPoller) {
       clearInterval(this.sharedCountsPoller);
@@ -572,16 +572,17 @@ export class OWAAccount extends ExchangeMailAccount {
         return;
       }
       let retryRowSubscriptions = false;
-      for (let account of this.dependentAccounts()) {
-        if (!(account instanceof OWAAccount) || !account.isDependentAccount) {
+      for (let account of [this, ...this.dependentAccounts()]) {
+        if (!(account instanceof OWAAccount) || !account.isLoggedIn) {
           continue;
         }
         let mailboxKey = account.emailAddress.toLowerCase();
-        let blockedUntil = this.sharedMailboxBlockedUntil.get(mailboxKey) ?? 0;
-        if (blockedUntil > Date.now()) {
+        let isDependent = account.isDependentAccount;
+        let blockedUntil = isDependent ? this.sharedMailboxBlockedUntil.get(mailboxKey) ?? 0 : 0;
+        if (isDependent && blockedUntil > Date.now()) {
           continue;
         }
-        if (blockedUntil > 0) {
+        if (isDependent && blockedUntil > 0) {
           this.sharedMailboxBlockedUntil.delete(mailboxKey);
           if (this.sharedRowSubscriptionFailures.delete(account.id)) {
             retryRowSubscriptions = true;
@@ -1145,8 +1146,8 @@ export class OWAAccount extends ExchangeMailAccount {
     });
   }
 
-  /** Refresh unread/total badges for shared folders without Explicit Logon.
-   * One Deep FindFolder by msgFolderRoot (delegate) updates the whole tree. */
+  /** Обновляет счётчики всех известных папок без загрузки тел писем.
+   * Один Deep FindFolder по msgFolderRoot обновляет всё дерево. */
   async refreshAllFolderCounts(): Promise<void> {
     let folders = this.getAllFolders().contents
       .filter((folder): folder is OWAFolder => folder instanceof OWAFolder && !!folder.id);
@@ -1313,7 +1314,7 @@ export class OWAAccount extends ExchangeMailAccount {
 
   /**
    * Keep shared mailboxes in sync: watched folder and any dirty/behind folders.
-   * Folder badges are updated separately by sharedCountsPoller.
+   * Счётчики папок обновляются отдельно через sharedCountsPoller.
    */
   protected async pollDependentSharedFolders(): Promise<void> {
     let accounts = this.dependentAccounts().contents.filter(

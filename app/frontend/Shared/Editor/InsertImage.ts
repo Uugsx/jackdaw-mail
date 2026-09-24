@@ -6,7 +6,7 @@ import { blobToDataURL } from "../../../logic/util/util";
 const kDefaultInsertedImageWidth = 192;
 const kMinimumInsertedImageWidth = 1;
 const kMaximumInsertedImageWidth = 1024;
-const kInsertedImageWrapperStyle = "display: block; max-width: 100%; margin: 0;";
+const kInsertedImageWrapperStyle = "display: block; margin: 0;";
 
 type InsertedImageAttributes = {
   src: string;
@@ -54,17 +54,21 @@ export async function insertImage(
   file: File,
   message: Message,
   displayWidth = kDefaultInsertedImageWidth,
+  maximumDisplayWidth = kMaximumInsertedImageWidth,
 ) {
   // let url = URL.createObjectURL(file);
   let url = await blobToDataURL(file);
   let horizontalScroll = captureHorizontalScroll(editor);
   // TipTap удаляет blob-URL из image-узлов, поэтому сохраняем data URL в редакторе.
-  let width = Number.isFinite(displayWidth)
-    ? Math.min(kMaximumInsertedImageWidth, Math.max(kMinimumInsertedImageWidth, Math.round(displayWidth)))
+  const maximumWidth = Number.isFinite(maximumDisplayWidth)
+    ? Math.max(kMinimumInsertedImageWidth, Math.round(maximumDisplayWidth))
+    : kMaximumInsertedImageWidth;
+  const width = Number.isFinite(displayWidth)
+    ? Math.min(maximumWidth, Math.max(kMinimumInsertedImageWidth, Math.round(displayWidth)))
     : kDefaultInsertedImageWidth;
   // Расширение resize строит изображение как wrapper > container > img. Задаём
-  // обоим элементам явную ограниченную ширину, чтобы выбранный стикер/GIF не
-  // расширял весь композер до исходной ширины документа.
+  // контейнеру фактическую ширину вставки без max-width: 100%: это сохраняет
+  // размер изображения при изменении ширины окна редактора.
   // ImageResize заменяет базовый image-узел на `imageResize`. Его команда
   // setImage использует фактическое имя узла расширения и сохраняет атрибуты
   // изменения размера. Жёстко заданный JSON-узел `image` может считаться
@@ -73,7 +77,7 @@ export async function insertImage(
     src: url,
     alt: file.name,
     width,
-    containerStyle: `width: ${width}px; max-width: 100%; height: auto;`,
+    containerStyle: `width: ${width}px; height: auto;`,
     wrapperStyle: kInsertedImageWrapperStyle,
   } as InsertedImageAttributes)
     .run();

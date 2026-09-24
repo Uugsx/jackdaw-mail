@@ -149,6 +149,8 @@
             <vbox class="editor" class:loading={loading} spellcheck={$spellcheckEnabled.value}
               style:zoom={editorZoom / 100}>
               <HTMLEditor bind:html={editableHtml} bind:editor tabindex={1}
+                fixedImageSize={true}
+                onImagePaste={onImagePaste}
                 extraExtensions={composeEditorExtensions}
                 on:change={onEditorChange} />
             </vbox>
@@ -732,6 +734,18 @@
     for (let file of files) {
       await insertImage(editor, file, mail);
     }
+  }
+
+  async function onImagePaste(file: File, displayWidth: number) {
+    let width = displayWidth;
+    try {
+      const imageBitmap = await createImageBitmap(file);
+      width = Math.min(displayWidth, imageBitmap.width);
+      imageBitmap.close();
+    } catch {
+      // Если формат изображения не поддерживает ImageBitmap, используем ширину редактора.
+    }
+    await insertImage(editor, file, mail, width, width);
   }
 
   let showEmojis = false;
