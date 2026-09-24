@@ -8,10 +8,10 @@
         <hbox class="label">{label}</hbox>
         <label class="swatch">
           <input type="color"
-            value={swatchHex(cssVar)}
+            value={swatchHex(cssVar, colors, computed)}
             on:input={(event) => onPick(cssVar, event.currentTarget.value)}
             />
-          <hbox class="swatch-face" style:background={swatchHex(cssVar)} />
+          <hbox class="swatch-face" style:background={swatchHex(cssVar, colors, computed)} />
         </label>
         <Button
           label={$t`Clear`}
@@ -32,13 +32,17 @@
   import Button from "../../Shared/Button.svelte";
   import XIcon from "lucide-svelte/icons/x";
   import { t } from "../../../l10n/l10n";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   let themeSetting = getLocalStorage("appearance.theme", "system");
   let colorsSetting = getLocalStorage("appearance.colors", {});
   let colors = (colorsSetting.value ?? {}) as Record<string, string>;
   let theme = themeSetting.value;
   let clearVersion = 0;
+  let isMounted = false;
+  let computedRefreshFrame: number | null = null;
+  let computedRefreshVersion = 0;
+  let computed: Record<string, string> = {};
 
   // ObservableLocalStorageSetting не является стандартным Svelte store:
   // реактивное чтение `$setting.value` может увидеть старое значение до
@@ -50,6 +54,27 @@
   });
   let unsubscribeTheme = themeSetting.subscribe(setting => {
     theme = setting.value;
+    scheduleComputedRefresh();
+  });
+  onMount(() => {
+    isMounted = true;
+    let colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    let onColorSchemeChange = (): void => {
+      // Нативная тема может измениться, пока обновление уже запланировано.
+      // Инвалидируем вычисленные цвета напрямую, чтобы событие media query
+      // не объединилось со старым кадром и не потерялось.
+      computedRefreshVersion += 1;
+    };
+    colorScheme.addEventListener("change", onColorSchemeChange);
+    scheduleComputedRefresh();
+    return () => {
+      isMounted = false;
+      colorScheme.removeEventListener("change", onColorSchemeChange);
+      if (computedRefreshFrame !== null) {
+        cancelAnimationFrame(computedRefreshFrame);
+        computedRefreshFrame = null;
+      }
+    };
   });
   onDestroy(() => {
     unsubscribeColors();
@@ -74,10 +99,31 @@
     "selected-bg": $t`Selection`,
   };
 
-  $: computed = readComputed(theme, colors);
+  $: computed = readComputed(theme, colors, computedRefreshVersion);
 
-  function readComputed(_theme: string, _colors: Record<string, string>): Record<string, string> {
-    if (typeof document == "undefined") {
+  function scheduleComputedRefresh(): void {
+    if (!isMounted || computedRefreshFrame !== null) {
+      return;
+    }
+    computedRefreshFrame = requestAnimationFrame(() => {
+      computedRefreshFrame = requestAnimationFrame(() => {
+        computedRefreshFrame = null;
+        computedRefreshVersion += 1;
+      });
+    });
+  }
+
+  function readComputed(
+    themeValue: string,
+    colorValues: Record<string, string>,
+    refreshVersion: number,
+  ): Record<string, string> {
+    if (
+      typeof document == "undefined"
+      || !["system", "light", "dark"].includes(themeValue)
+      || colorValues == null
+      || refreshVersion < 0
+    ) {
       return {};
     }
     // В desktop-теме значения по умолчанию задаются на оболочке окна, а не
@@ -87,13 +133,19 @@
     let style = getComputedStyle(themeRoot);
     let result: Record<string, string> = {};
     for (let cssVar of Object.keys(cssVars)) {
-      result[cssVar] = cssColorToHex(style.getPropertyValue("--" + cssVar)) || "#000000";
+      result[cssVar] = cssColorToHex(style.getPropertyValue("--" + cssVar))
+        || cssColorToHex(colorValues[cssVar] ?? "")
+        || "#000000";
     }
     return result;
   }
 
-  function swatchHex(cssVar: string): string {
-    return colors[cssVar] || computed[cssVar] || "#000000";
+  function swatchHex(
+    cssVar: string,
+    colorValues: Record<string, string>,
+    computedValues: Record<string, string>,
+  ): string {
+    return colorValues[cssVar] || computedValues[cssVar] || "#000000";
   }
 
   function saveColors(next: Record<string, string>) {

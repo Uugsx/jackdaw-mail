@@ -91,6 +91,21 @@
     outline: none;
   }
 
+  :global(.main-window:not(.mobile)) .mail-app-root {
+    margin-block: 4px;
+  }
+
+  /* Keep one 8px surface gap when the outer widget splitter is present.
+   * Its hidden drag bar takes 2px; the expanded widget panel adds 4px of
+   * leading padding, while the collapsed rail has no leading padding. */
+  :global(.main-window:not(.mobile).widgets-enabled) .mail-app-root {
+    margin-inline-end: 6px;
+  }
+
+  :global(.main-window:not(.mobile).widgets-enabled.widgets-expanded) .mail-app-root {
+    margin-inline-end: 2px;
+  }
+
   :global(.main-window.mobile) .mail-app-root {
     margin-block-start: 0;
   }

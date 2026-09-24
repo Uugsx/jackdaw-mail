@@ -18,6 +18,8 @@
   class:mobile={$appGlobal.isMobile}
   class:desktop={!$appGlobal.isMobile}
   class:mail-mode={mailMode}
+  class:widgets-enabled={$widgetsEnabled.value}
+  class:widgets-expanded={$widgetsEnabled.value && $widgetsExpanded.value}
   class:ui-density-compact={uiDensity == "compact"}
   class:ui-density-normal={uiDensity == "normal"}
   class:ui-density-large={uiDensity == "large"}
@@ -48,7 +50,7 @@
             initialRightRatio={0.24}
             rightMinWidth={WIDGET_RAIL_WIDTH_PX + 200}
             hasRight={$widgetsEnabled.value}
-            rightFixedWidth={$widgetsEnabled.value && !$widgetsExpanded.value ? WIDGET_RAIL_WIDTH_PX : null}
+            rightFixedWidth={$widgetsEnabled.value && !$widgetsExpanded.value ? WIDGET_COLLAPSED_WIDTH_PX : null}
             hideBar={true}
             onResize={onWidgetSplitterDragEnd}>
             <Splitter name="sidebar" initialRightRatio={0.25} hasRight={!!sidebar} slot="left">
@@ -121,6 +123,7 @@
     widgetsEnabled,
     widgetsExpanded,
     widgetsListSetting,
+    WIDGET_COLLAPSED_WIDTH_PX,
     WIDGET_RAIL_WIDTH_PX,
     widgetSplitterResetKey,
   } from "../Widgets/widgetState";
@@ -435,7 +438,8 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     margin-block: var(--chrome-inset-block);
     border-radius: var(--border-radius) 0 0 var(--border-radius);
     border: 1px solid var(--glass-border-subtle);
-    box-shadow: var(--glass-highlight);
+    border-block-start-color: transparent;
+    box-shadow: none;
     overflow: hidden;
     min-width: 0;
   }

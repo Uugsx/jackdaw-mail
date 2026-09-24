@@ -312,14 +312,14 @@
     min-height: 0;
     height: 100%;
     overflow: hidden;
-    gap: 8px;
-    padding: 8px;
+    gap: 4px;
+    padding: 4px;
     background: var(--leftbar-bg);
     color: var(--leftbar-fg);
   }
   .widget-sidebar:not(.expanded) {
     gap: 0;
-    padding-inline: 0;
+    padding-inline: 0 4px;
   }
   .widget-panel {
     box-sizing: border-box;
@@ -328,8 +328,8 @@
     min-inline-size: 0;
     min-height: 0;
     flex: 1 1 auto;
-    max-width: calc(100% - 52px);
-    max-inline-size: calc(100% - 52px);
+    max-width: calc(100% - 48px);
+    max-inline-size: calc(100% - 48px);
     overflow: hidden;
     border-inline: 0;
     border-block: 0;

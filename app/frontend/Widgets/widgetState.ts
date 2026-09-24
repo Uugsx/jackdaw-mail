@@ -29,6 +29,9 @@ export const WIDGET_REFRESH_MINUTES: WidgetRefreshMinutes[] = [0, 1, 2, 5, 10, 3
 export const WIDGET_PANEL_WIDTHS: Array<number | null> = [null, 280, 320, 360, 420, 480, 560];
 
 export const WIDGET_RAIL_WIDTH_PX = 44;
+export const WIDGET_RAIL_TRAILING_INSET_PX = 4;
+export const WIDGET_COLLAPSED_WIDTH_PX =
+  WIDGET_RAIL_WIDTH_PX + WIDGET_RAIL_TRAILING_INSET_PX;
 export const WIDGET_DEFAULT_PANEL_WIDTH_PX = 320;
 export const LIVE_SLA_WIDGET_ID = "live-sla";
 

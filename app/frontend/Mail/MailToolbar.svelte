@@ -273,6 +273,7 @@
     width: 100%;
     align-items: center;
     gap: 8px;
+    height: 56px;
     min-height: 56px;
     padding: 10px 16px 8px;
     box-sizing: border-box;
@@ -584,7 +585,8 @@
   .mail-toolbar.toolbar-large :global(.mail-create-item-menu .menu-button) {
     width: 44px;
   }
-  .mail-toolbar.toolbar-large {
+  .mail-toolbar.toolbar-large:not(.toolbar-stacked) {
+    height: 74px;
     min-height: 74px;
   }
   .mail-toolbar.toolbar-large :global(.quick-filters .pill) {
@@ -602,6 +604,7 @@
   }
 
   .mail-toolbar.toolbar-stacked {
+    height: auto;
     flex-wrap: wrap;
     align-content: flex-start;
     row-gap: 4px;
