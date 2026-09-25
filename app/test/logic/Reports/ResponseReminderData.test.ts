@@ -401,7 +401,7 @@ describe("ResponseReminderData", () => {
     }
   });
 
-  test("shows a new external incoming follow-up but ignores an employee reply copy", async () => {
+  test("tracks every incoming follow-up, including an employee reply copy", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "response-reminder-copy-"));
     const database = new InProcessSQLiteDatabase(path.join(tempDir, "mail.db"));
     const now = new Date("2026-09-09T10:00:00.000Z");
@@ -483,7 +483,9 @@ describe("ResponseReminderData", () => {
         },
       );
 
-      expect(requests.map((request) => request.emailId)).toEqual([102]);
+      // Первый запрос закрыт копией ответа сотрудника. Сама копия и
+      // последующее письмо клиента — отдельные неотвеченные запросы.
+      expect(requests.map((request) => request.emailId)).toEqual([101, 102]);
     } finally {
       database.close();
       rmSync(tempDir, { recursive: true, force: true });

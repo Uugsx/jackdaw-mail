@@ -70,16 +70,6 @@ export async function loadPendingResponseRequests(
     ...getConfiguredMailAddresses(),
   ]);
   const mailboxDomains = mailAddressDomains(mailboxAddresses);
-  const incomingKnownSenderPredicate = knownSenderAddresses.length
-    ? sql`LOWER(TRIM(COALESCE(e.contactEmail, ''))) IN ${knownSenderAddresses}`
-    : sql`0`;
-  const incomingDomainSenderPredicate = mailboxDomains.length
-    ? sql`
-      LOWER(SUBSTR(
-        TRIM(COALESCE(e.contactEmail, '')),
-        INSTR(TRIM(COALESCE(e.contactEmail, '')), '@') + 1
-      )) IN ${mailboxDomains}`
-    : sql`0`;
   const replyKnownSenderPredicate = knownSenderAddresses.length
     ? sql`LOWER(TRIM(COALESCE(reply.contactEmail, ''))) IN ${knownSenderAddresses}`
     : sql`0`;
@@ -90,32 +80,6 @@ export async function loadPendingResponseRequests(
         INSTR(TRIM(COALESCE(reply.contactEmail, '')), '@') + 1
       )) IN ${mailboxDomains}`
     : sql`0`;
-  const incomingResponseCopyPredicate =
-    mailboxAddresses.length &&
-    (knownSenderAddresses.length || mailboxDomains.length)
-      ? sql`
-      (
-        (
-          $${incomingKnownSenderPredicate} OR
-          $${incomingDomainSenderPredicate}
-        )
-        AND EXISTS (
-          SELECT 1
-          FROM emailPersonRel recipientRel
-          JOIN emailPerson recipientPerson
-            ON recipientPerson.id = recipientRel.emailPersonID
-          WHERE recipientRel.emailID = e.id
-            AND recipientRel.recipientType IN (2, 3, 4)
-            AND LOWER(TRIM(recipientPerson.emailAddress)) IN ${mailboxAddresses}
-        )
-        AND (
-          (e.parentMsgID IS NOT NULL AND TRIM(e.parentMsgID) != '') OR
-          LOWER(TRIM(COALESCE(e.subject, ''))) LIKE 're:%' OR
-          LOWER(TRIM(COALESCE(e.subject, ''))) LIKE 'fw:%' OR
-          LOWER(TRIM(COALESCE(e.subject, ''))) LIKE 'fwd:%'
-        )
-      )`
-      : sql`0`;
   const replyResponseCopyPredicate =
     mailboxAddresses.length &&
     (knownSenderAddresses.length || mailboxDomains.length)
@@ -142,11 +106,11 @@ export async function loadPendingResponseRequests(
         )
       )`
       : sql`0`;
+  // Каждое входящее письмо — отдельный SLA-запрос, включая Re/Fw-копии.
   const incomingMessagePredicate = sql`
     NOT (
       e.outgoing = 1 OR
-      LOWER(COALESCE(f.specialUse, '')) IN ('sent', 'outbox') OR
-      $${incomingResponseCopyPredicate}
+      LOWER(COALESCE(f.specialUse, '')) IN ('sent', 'outbox')
     )`;
   const replyMessagePredicate = sql`
     (
@@ -223,6 +187,7 @@ export async function loadPendingResponseRequests(
         WHERE (
             $${replyMessagePredicate}
           )
+          AND reply.id != e.id
           AND reply.dateSent >= e.dateReceived
           AND (
             (

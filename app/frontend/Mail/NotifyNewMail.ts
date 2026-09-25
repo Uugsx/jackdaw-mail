@@ -1,6 +1,6 @@
 import type { EMail } from "../../logic/Mail/EMail";
 import { MailAccount } from "../../logic/Mail/MailAccount";
-import { SpecialFolder, type Folder } from "../../logic/Mail/Folder";
+import type { Folder } from "../../logic/Mail/Folder";
 import { selectedMessage, selectedFolder, selectedAccount } from "./Selected";
 import { mailApp } from "./MailJackdawApp";
 import { openApp, bringAppToFront } from "../AppsBar/selectedApp";
@@ -17,6 +17,14 @@ import {
   getMailNotificationSound,
   readMailAccountNotificationSettings,
 } from "./mailNotificationSettings";
+import {
+  canNotifyMailFolder,
+  getMailFolderNotificationSetting,
+  getMailFolderNotificationSound,
+  readMailFolderNotificationSettings,
+  stopMailFolderNotificationPolling,
+  syncMailFolderNotificationPolling,
+} from "./mailFolderNotificationSettings";
 
 export async function newMailListener() {
   appGlobal.emailAccounts.registerObserver(accountsObserver);
@@ -30,12 +38,12 @@ export async function showNewMail(messages: EMail[]) {
     return;
   }
 
-  let account = messages[0]?.folder?.account;
-  if (account && !readMailAccountNotificationSettings(
-    getMailAccountNotificationSetting(account).value,
-  ).enabled) {
+  messages = messages.filter(message => shouldNotifyMessage(message));
+  if (!messages.length) {
     return;
   }
+
+  let account = messages[0]?.folder?.account;
 
   // settings
   const kinds = new NotificationKinds(getLocalStorage("notifications.mail", ["popup", "sound"]).value);
@@ -76,7 +84,11 @@ export async function showNewMail(messages: EMail[]) {
     body,
     "New Mail",
     "mail-incoming",
-    account ? getMailNotificationSound(account) : undefined,
+    firstMsg.folder
+      ? getMailFolderNotificationSound(firstMsg.folder)
+      : account
+        ? getMailNotificationSound(account)
+        : undefined,
   );
   // Which mailbox received this. With several accounts, or a shared mailbox,
   // the subject alone does not say where the mail landed.
@@ -166,6 +178,7 @@ class NewMessageObserver extends CollectionObserver<EMail> {
 let newMessageObserver = new NewMessageObserver();
 
 const hookedAccounts = new WeakSet<Account>();
+const accountLoginStateUnsubscribers = new WeakMap<MailAccount, () => void>();
 
 function hookMailAccount(account: Account): void {
   if (!(account instanceof MailAccount) || hookedAccounts.has(account)) {
@@ -177,6 +190,7 @@ function hookMailAccount(account: Account): void {
   for (let folder of account.getAllFolders().contents) {
     observeMailFolders([folder]);
   }
+  observeMailAccountLoginState(account);
   account.dependentAccounts().registerObserver(dependentsObserver);
   for (let dependent of account.dependentAccounts()) {
     hookMailAccount(dependent);
@@ -191,11 +205,15 @@ class AccountsObserver extends CollectionObserver<MailAccount> {
   }
   removed(accounts: MailAccount[]) {
     for (let account of accounts) {
+      account.rootFolders.unregisterObserver(foldersObserver);
       for (let folder of account.getAllFolders().contents) {
-        if (shouldNotifyFolder(folder)) {
-          folder.messages.unregisterObserver(newMessageObserver);
-        }
+        folder.subFolders.unregisterObserver(foldersObserver);
+        folder.messages.unregisterObserver(newMessageObserver);
+        stopMailFolderNotificationPolling(folder);
       }
+      accountLoginStateUnsubscribers.get(account)?.();
+      accountLoginStateUnsubscribers.delete(account);
+      hookedAccounts.delete(account);
     }
   }
 }
@@ -220,32 +238,67 @@ class FoldersObserver extends CollectionObserver<Folder> {
     observeMailFolders(folders);
   }
   removed(folders: Folder[]) {
-    // do nothing
+    for (let folder of folders) {
+      unobserveMailFolderTree(folder);
+    }
   }
 }
 let foldersObserver = new FoldersObserver();
 
-function shouldNotifyFolder(folder: Folder): boolean {
-  switch (folder.specialFolder) {
-    case SpecialFolder.Sent:
-    case SpecialFolder.Drafts:
-    case SpecialFolder.Trash:
-    case SpecialFolder.Spam:
-    case SpecialFolder.Outbox:
-    case SpecialFolder.All:
-    case SpecialFolder.Search:
-      return false;
-    default:
-      return true;
+function unobserveMailFolderTree(folder: Folder): void {
+  for (let descendant of folder.getInclusiveDescendants()) {
+    descendant.subFolders.unregisterObserver(foldersObserver);
+    descendant.messages.unregisterObserver(newMessageObserver);
+    stopMailFolderNotificationPolling(descendant);
   }
+}
+
+function observeMailAccountLoginState(account: MailAccount): void {
+  let wasLoggedIn = account.isLoggedIn;
+  let unsubscribe = account.subscribe(() => {
+    let isLoggedIn = account.isLoggedIn;
+    if (isLoggedIn && !wasLoggedIn) {
+      for (let folder of account.getAllFolders().contents) {
+        syncMailFolderNotificationPolling(folder, true);
+      }
+    } else if (!isLoggedIn && wasLoggedIn) {
+      for (let folder of account.getAllFolders().contents) {
+        stopMailFolderNotificationPolling(folder);
+      }
+    }
+    wasLoggedIn = isLoggedIn;
+  });
+  accountLoginStateUnsubscribers.set(account, unsubscribe);
+}
+
+function shouldNotifyMessage(message: EMail): boolean {
+  let folder = message.folder;
+  if (!folder) {
+    return true;
+  }
+  if (!canNotifyMailFolder(folder)) {
+    return false;
+  }
+  let accountEnabled = readMailAccountNotificationSettings(
+    getMailAccountNotificationSetting(folder.account).value,
+  ).enabled;
+  let folderEnabled = readMailFolderNotificationSettings(
+    getMailFolderNotificationSetting(folder).value,
+  ).enabled;
+  return accountEnabled && folderEnabled;
 }
 
 function observeMailFolders(folders: Folder[]) {
   for (let folder of folders) {
-    if (!shouldNotifyFolder(folder)) {
+    folder.subFolders.unregisterObserver(foldersObserver);
+    folder.subFolders.registerObserver(foldersObserver);
+    if (!canNotifyMailFolder(folder)) {
+      folder.messages.unregisterObserver(newMessageObserver);
+      stopMailFolderNotificationPolling(folder);
       continue;
     }
     folder.messages.unregisterObserver(newMessageObserver);
     folder.messages.registerObserver(newMessageObserver);
+    syncMailFolderNotificationPolling(folder);
   }
 }

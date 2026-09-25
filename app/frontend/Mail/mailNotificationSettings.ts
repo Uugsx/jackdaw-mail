@@ -59,7 +59,7 @@ export function readMailAccountNotificationSettings(
   ) {
     sound = stored.sound;
   }
-  let customSoundDataURL = normalizeCustomSoundDataURL(
+  let customSoundDataURL = normalizeCustomNotificationSoundDataURL(
     stored.customSoundDataURL,
   );
   if (sound == "custom" && !customSoundDataURL) {
@@ -73,7 +73,7 @@ export function readMailAccountNotificationSettings(
     sound,
     customSoundDataURL,
     customSoundName: customSoundDataURL
-      ? normalizeCustomSoundName(stored.customSoundName)
+      ? normalizeCustomNotificationSoundName(stored.customSoundName)
       : null,
   };
 }
@@ -118,7 +118,7 @@ function settingKey(account: MailAccount | null | undefined): string {
   return `${kMailAccountNotificationSettingsPrefix}${account?.id ?? "default"}`;
 }
 
-function normalizeCustomSoundDataURL(value: unknown): string | null {
+export function normalizeCustomNotificationSoundDataURL(value: unknown): string | null {
   return typeof value == "string" &&
     value.startsWith("data:audio/") &&
     value.length <= kMaxCustomNotificationSoundDataURLLength
@@ -126,6 +126,6 @@ function normalizeCustomSoundDataURL(value: unknown): string | null {
     : null;
 }
 
-function normalizeCustomSoundName(value: unknown): string | null {
+export function normalizeCustomNotificationSoundName(value: unknown): string | null {
   return typeof value == "string" && value ? value.slice(0, 120) : null;
 }

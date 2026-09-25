@@ -103,6 +103,12 @@
     "day" | "answered" | "average" | "maximum" | "overTarget";
   type ResponseDetailSortColumn =
     "received" | "replied" | "responseTime" | "responder" | "topic" | "status";
+  type OutsideHoursSortColumn =
+    | "replied"
+    | "responder"
+    | "responseTime"
+    | "topic"
+    | "status";
   type ResponderSortColumn =
     | "name"
     | "requests"
@@ -195,6 +201,7 @@
   let responseDaySort: ReportSortState<ResponseDaySortColumn> | null = null;
   let responseDetailSort: ReportSortState<ResponseDetailSortColumn> | null =
     null;
+  let outsideHoursSort: ReportSortState<OutsideHoursSortColumn> | null = null;
   let responderSort: ReportSortState<ResponderSortColumn> | null = null;
   let topicSort: ReportSortState<TopicSortColumn> | null = null;
   let categorySort: ReportSortState<CategorySortColumn> | null = null;
@@ -317,8 +324,14 @@
     0,
     responseDetailVisibleCount,
   );
+  $: sortedOutsideWorkingHoursResponseTimes = sortReportRows(
+    outsideWorkingHoursResponseTimes,
+    outsideHoursSort,
+    (row, column) =>
+      outsideHoursSortValue(row, column, outsideHoursOwnerCategoryNames),
+  );
   $: renderedOutsideWorkingHoursResponseTimes =
-    outsideWorkingHoursResponseTimes.slice(0, outsideHoursVisibleCount);
+    sortedOutsideWorkingHoursResponseTimes.slice(0, outsideHoursVisibleCount);
   $: reportCategories = report?.mail.categories ?? [];
   $: selectedMailAccount =
     mailAccounts.find(
@@ -344,6 +357,10 @@
     selectedResponderCategoryNames,
     categoryFilter,
   );
+  $: outsideHoursOwnerCategoryNames =
+    responderAttributionMode == "category"
+      ? effectiveResponderCategoryNames
+      : responderCategoryCandidates;
   $: rhythmCategoryNames =
     responderAttributionMode == "category"
       ? effectiveResponderCategoryNames
@@ -512,6 +529,7 @@
     ];
     responseDaySort = restoreSortState(snapshot.responseDaySort);
     responseDetailSort = restoreSortState(snapshot.responseDetailSort);
+    outsideHoursSort = restoreSortState(snapshot.outsideHoursSort ?? null);
     responderSort = restoreSortState(snapshot.responderSort);
     topicSort = restoreSortState(snapshot.topicSort);
     categorySort = restoreSortState(snapshot.categorySort);
@@ -552,6 +570,7 @@
       selectedResponderCategoryNames: [...selectedResponderCategoryNames],
       responseDaySort,
       responseDetailSort,
+      outsideHoursSort,
       responderSort,
       topicSort,
       categorySort,
@@ -793,12 +812,39 @@
       case "topic":
         return row.subject;
       case "status":
-        return row.withinTarget === true
-          ? 0
-          : row.withinTarget === false
-            ? 1
-            : 2;
+        return responseStatusSortValue(row);
     }
+  }
+
+  function outsideHoursSortValue(
+    row: ReportData["mail"]["responseTimes"][number],
+    column: OutsideHoursSortColumn,
+    ownerCategoryNames: string[],
+  ): ReportSortValue {
+    switch (column) {
+      case "replied":
+        return row.responseAt;
+      case "responder":
+        return responseAfterHoursOwnerLabel(row, ownerCategoryNames);
+      case "responseTime":
+        return row.withinTarget == null
+          ? row.actualDurationSeconds
+          : row.durationSeconds;
+      case "topic":
+        return row.subject;
+      case "status":
+        return responseStatusSortValue(row);
+    }
+  }
+
+  function responseStatusSortValue(row: {
+    withinTarget: boolean | null;
+  }): ReportSortValue {
+    return row.withinTarget === true
+      ? 0
+      : row.withinTarget === false
+        ? 1
+        : 2;
   }
 
   function responderSortValue(
@@ -1343,13 +1389,16 @@
     );
   }
 
-  function responseAfterHoursOwnerLabel(response: {
-    accountName: string;
-    responderAccountName?: string | null;
-    categoryNames: string[];
-  }): string {
+  function responseAfterHoursOwnerLabel(
+    response: {
+      accountName: string;
+      responderAccountName?: string | null;
+      categoryNames: string[];
+    },
+    ownerCategoryNames = currentEmployeeCategoryNames(),
+  ): string {
     const employeeNames = response.categoryNames.filter((name) =>
-      currentEmployeeCategoryNames().includes(name.trim()),
+      ownerCategoryNames.includes(name.trim()),
     );
     return employeeNames.length
       ? employeeNames.join(", ")
@@ -3262,13 +3311,108 @@
                       >
                       <thead>
                         <tr>
-                          <th scope="col">{$t`Replied`}</th>
-                          <th scope="col">{$t`Employee / profile`}</th>
-                          <th scope="col" class="numeric"
-                            >{$t`Response time`}</th
+                          <th
+                            scope="col"
+                            aria-sort={reportSortAriaValue(
+                              outsideHoursSort,
+                              "replied",
+                            )}
                           >
-                          <th scope="col">{$t`Topic`}</th>
-                          <th scope="col">{$t`Status`}</th>
+                            <ReportSortButton
+                              label={$t`Replied`}
+                              direction={reportSortDirection(
+                                outsideHoursSort,
+                                "replied",
+                              )}
+                              on:sort={() =>
+                                (outsideHoursSort = toggleReportSort(
+                                  outsideHoursSort,
+                                  "replied",
+                                ))}
+                            />
+                          </th>
+                          <th
+                            scope="col"
+                            aria-sort={reportSortAriaValue(
+                              outsideHoursSort,
+                              "responder",
+                            )}
+                          >
+                            <ReportSortButton
+                              label={$t`Employee / profile`}
+                              direction={reportSortDirection(
+                                outsideHoursSort,
+                                "responder",
+                              )}
+                              on:sort={() =>
+                                (outsideHoursSort = toggleReportSort(
+                                  outsideHoursSort,
+                                  "responder",
+                                ))}
+                            />
+                          </th>
+                          <th
+                            scope="col"
+                            class="numeric"
+                            aria-sort={reportSortAriaValue(
+                              outsideHoursSort,
+                              "responseTime",
+                            )}
+                          >
+                            <ReportSortButton
+                              label={$t`Response time`}
+                              align="right"
+                              direction={reportSortDirection(
+                                outsideHoursSort,
+                                "responseTime",
+                              )}
+                              on:sort={() =>
+                                (outsideHoursSort = toggleReportSort(
+                                  outsideHoursSort,
+                                  "responseTime",
+                                ))}
+                            />
+                          </th>
+                          <th
+                            scope="col"
+                            aria-sort={reportSortAriaValue(
+                              outsideHoursSort,
+                              "topic",
+                            )}
+                          >
+                            <ReportSortButton
+                              label={$t`Topic`}
+                              direction={reportSortDirection(
+                                outsideHoursSort,
+                                "topic",
+                              )}
+                              on:sort={() =>
+                                (outsideHoursSort = toggleReportSort(
+                                  outsideHoursSort,
+                                  "topic",
+                                ))}
+                            />
+                          </th>
+                          <th
+                            scope="col"
+                            aria-sort={reportSortAriaValue(
+                              outsideHoursSort,
+                              "status",
+                            )}
+                          >
+                            <ReportSortButton
+                              label={$t`Status`}
+                              direction={reportSortDirection(
+                                outsideHoursSort,
+                                "status",
+                              )}
+                              on:sort={() =>
+                                (outsideHoursSort = toggleReportSort(
+                                  outsideHoursSort,
+                                  "status",
+                                ))}
+                            />
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3334,6 +3478,8 @@
                     <span aria-live="polite">
                       {#if renderedOutsideWorkingHoursResponseTimes.length < outsideWorkingHoursResponseTimes.length}
                         {$t`Showing ${renderedOutsideWorkingHoursResponseTimes.length} of ${outsideWorkingHoursResponseTimes.length} replies outside working hours.`}
+                      {:else if outsideHoursSort}
+                        {$t`The list is sorted by the selected column. Click a column to change sorting or a topic to open the email.`}
                       {:else}
                         {$t`The list is sorted by reply time, newest first. Click a topic to open the email.`}
                       {/if}

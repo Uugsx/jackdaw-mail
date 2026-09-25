@@ -17,6 +17,9 @@
       />
   </hbox>
   <FolderGeneral {folder} />
+  {#if canNotifyMailFolder(folder)}
+    <FolderNotifications {folder} />
+  {/if}
   <FolderActions />
 </HeaderGroupBox>
 
@@ -25,7 +28,9 @@
   import { SavedSearchFolder } from "../../logic/Mail/Virtual/SavedSearchFolder";
   import { selectedFolder } from "./Selected";
   import FolderGeneral from "../Settings/Mail/Account/FolderGeneral.svelte";
+  import FolderNotifications from "../Settings/Mail/Account/FolderNotifications.svelte";
   import FolderActions from "../Settings/Mail/Account/FolderActions.svelte";
+  import { canNotifyMailFolder } from "./mailFolderNotificationSettings";
   import HeaderGroupBox from "../Shared/HeaderGroupBox.svelte";
   import Button from "../Shared/Button.svelte";
   import PlusIcon from "lucide-svelte/icons/plus";

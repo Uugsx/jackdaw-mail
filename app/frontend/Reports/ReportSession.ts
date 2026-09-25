@@ -20,6 +20,7 @@ export interface ReportSessionSnapshot {
   selectedResponderCategoryNames: string[];
   responseDaySort: ReportSortState<string> | null;
   responseDetailSort: ReportSortState<string> | null;
+  outsideHoursSort: ReportSortState<string> | null;
   responderSort: ReportSortState<string> | null;
   topicSort: ReportSortState<string> | null;
   categorySort: ReportSortState<string> | null;
