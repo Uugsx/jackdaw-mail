@@ -683,6 +683,15 @@ a:hover {
   --message-toolbar-control-size: 28px;
   --message-toolbar-control-padding: 4px;
 }
+.main-window.ui-density-extra-compact {
+  --ui-font-scale: 0.88;
+  --border-radius: 8px;
+  --message-header-padding-inline: 10px;
+  --message-header-padding-block-start: 5px;
+  --message-header-padding-block-end: 5px;
+  --message-toolbar-control-size: 26px;
+  --message-toolbar-control-padding: 3px;
+}
 .main-window.ui-density-normal {
   --ui-font-scale: 1;
   --border-radius: 12px;
@@ -695,6 +704,11 @@ a:hover {
   --message-header-padding-block-end: 12px;
   --message-toolbar-control-size: 34px;
   --message-toolbar-control-padding: 6px;
+}
+
+.main-window.ui-density-extra-compact .message-list-pane {
+  --msg-list-fs: clamp(10px, 0.18rem + 2.1cqi, 12px);
+  --msg-list-fs-sm: clamp(9px, 0.14rem + 1.8cqi, 11px);
 }
 
 /* Базовая обратная связь для нативных кнопок, у которых нет собственного

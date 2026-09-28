@@ -22,7 +22,7 @@
           <FolderHeader folder={selectedFolder} {searchMessages} />
           <MailUndoToast />
           {#key selectedFolder?.id ?? ""}
-            <VerticalMessageList {messages} emptyDueToFilter={!!searchMessages}
+            <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages}
               bind:selectedMessage bind:selectedMessages />
           {/key}
         </vbox>

@@ -37,6 +37,23 @@ afterEach(() => {
 });
 
 describe("QuickFilterBar", () => {
+  function fakeFolder(id: string, accountID = "test-account") {
+    return {
+      id,
+      account: { id: accountID },
+      messages: new ArrayColl(),
+      countUnread: 0,
+      countTotal: 0,
+      countNewArrived: 0,
+      subscribe(
+        observer: (folder: any, property: string | null, oldValue: any) => void,
+      ) {
+        observer(this, null, null);
+        return () => {};
+      },
+    } as any;
+  }
+
   test("keeps one sort menu and one filter menu on the toolbar", async () => {
     let folder = {
       id: "INBOX",
@@ -155,5 +172,54 @@ describe("QuickFilterBar", () => {
     let popup = document.body.querySelector(".popup") as HTMLElement;
     expect(popup).toBeTruthy();
     expect(popup.style.transform).toContain("420px");
+  });
+
+  test("keeps sort choices separate for each folder", async () => {
+    let firstTarget = document.createElement("div");
+    document.body.append(firstTarget);
+    let firstFolder = fakeFolder("INBOX");
+    let first = mount(QuickFilterBar, {
+      target: firstTarget,
+      props: { folder: firstFolder, searchMessages: null },
+    });
+    mounted.push(first);
+
+    let firstSortButton = firstTarget.querySelector("button.sort-menu-trigger") as HTMLButtonElement;
+    firstSortButton.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await tick();
+    let bySubject = [...document.querySelectorAll("button.menuitem")]
+      .find(button => button.textContent?.trim() == "By subject") as HTMLButtonElement;
+    bySubject.click();
+    await tick();
+    expect(firstSortButton.getAttribute("aria-label")).toContain("By subject");
+
+    unmount(mounted.pop()!);
+    firstTarget.remove();
+
+    let secondTarget = document.createElement("div");
+    document.body.append(secondTarget);
+    let second = mount(QuickFilterBar, {
+      target: secondTarget,
+      props: { folder: fakeFolder("Archive"), searchMessages: null },
+    });
+    mounted.push(second);
+    await tick();
+    expect((secondTarget.querySelector("button.sort-menu-trigger") as HTMLButtonElement)
+      .getAttribute("aria-label")).toContain("Newest");
+
+    unmount(mounted.pop()!);
+    secondTarget.remove();
+
+    let restoredTarget = document.createElement("div");
+    document.body.append(restoredTarget);
+    let restored = mount(QuickFilterBar, {
+      target: restoredTarget,
+      props: { folder: firstFolder, searchMessages: null },
+    });
+    mounted.push(restored);
+    await tick();
+    expect((restoredTarget.querySelector("button.sort-menu-trigger") as HTMLButtonElement)
+      .getAttribute("aria-label")).toContain("By subject");
   });
 });

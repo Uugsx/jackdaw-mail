@@ -216,6 +216,8 @@
     return (rowE?.firstElementChild as HTMLElement) ?? null;
   }
 
+  let observedContentRow: HTMLElement | null = null;
+
   /**
    * Call this when either the number of entries changes,
    * or the DOM size of <fastlist> changes.
@@ -230,6 +232,15 @@
       let contentRow = firstRegularRowElement();
       if (!contentRow) {
         return;
+      }
+      // Density changes resize the row without resizing the list viewport.
+      // Observe the rendered row so virtualization recalculates its geometry.
+      if (observedContentRow !== contentRow) {
+        if (observedContentRow) {
+          resizeObserver.unobserve(observedContentRow);
+        }
+        observedContentRow = contentRow;
+        resizeObserver.observe(contentRow);
       }
       //console.log("size", "contentrow", contentRow.offsetHeight, "list", listE.offsetHeight, "header", headerE.offsetHeight);
       rowHeight = contentRow.offsetHeight;

@@ -2,7 +2,7 @@
   on:swipedown={() => catchErrors(onCheckMail)}>
   <FolderHeader folder={selectedFolder} {searchMessages} />
   <FetchingM folder={selectedFolder} bind:this={fetching} />
-  <VerticalMessageList {messages} emptyDueToFilter={!!searchMessages} bind:selectedMessage bind:selectedMessages bind:isAtTop
+  <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages} bind:selectedMessage bind:selectedMessages bind:isAtTop
     on:click={() => catchErrors(goToMessage)} />
   <FolderFooter folder={selectedFolder} bind:searchMessages showGetMail={false} />
   <MessageListBarM folder={selectedFolder} />

@@ -368,4 +368,108 @@
   :global(.row:not(:hover)) .move.button {
     display: none;
   }
+
+  /* Однострочный режим списка для дополнительной плотности интерфейса. */
+  :global(.desktop.main-window.ui-density-extra-compact) .message {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 23%) minmax(4rem, 1fr) minmax(0, 22%) auto 18px 18px auto auto;
+    grid-template-rows: 24px;
+    grid-auto-rows: 24px;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 24px;
+    height: 24px;
+    padding: 0 8px 0 6px !important;
+    column-gap: 6px;
+    grid-auto-flow: dense;
+    min-width: 0;
+    overflow: hidden;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .top-row,
+  :global(.desktop.main-window.ui-density-extra-compact) .bottom-row {
+    display: contents;
+    width: auto;
+    height: auto;
+    padding: 0;
+    overflow: visible;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .top-row > hbox[flex] {
+    display: none;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .direction {
+    grid-column: 1;
+    grid-row: 1;
+    width: 22px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 16px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    gap: 0;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .direction :global(svg) {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .action-date {
+    display: none;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .contact {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .subject {
+    grid-column: 3;
+    grid-row: 1;
+    width: 100%;
+    min-width: 4rem;
+    margin-inline-end: 0;
+    line-height: 1.15;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .date {
+    grid-column: 5;
+    grid-row: 1;
+    padding-top: 0;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) :global(.message-tags) {
+    grid-column: 4;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    font-size: 10px;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) :global(.message-tags .tag) {
+    border-radius: 6px;
+    padding-inline: 4px;
+    line-height: 1.25;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .attachments {
+    grid-column: 6;
+    grid-row: 1;
+    width: 18px;
+    min-width: 18px;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .unread-dot {
+    grid-column: 7;
+    grid-row: 1;
+    width: 18px;
+    min-width: 18px;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .move {
+    grid-column: 8;
+    grid-row: 1;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .star {
+    grid-column: 9;
+    grid-row: 1;
+  }
+  :global(.desktop.main-window.ui-density-extra-compact) .message::before {
+    inset-inline-start: 5px;
+    top: 10%;
+    height: 80%;
+  }
 </style>

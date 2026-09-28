@@ -132,7 +132,11 @@
 
   $: tags = message.tags;
   $: density = normalizeUIDensity($uiDensitySetting.value);
-  $: avatarSize = density == "compact" ? 28 : density == "large" ? 40 : 32;
+  $: avatarSize = density == "extra-compact"
+    ? 24
+    : density == "compact"
+      ? 28
+      : density == "large" ? 40 : 32;
 
   let readDelaySetting = getLocalStorage("mail.read.after", 0); // 0 = Immediately; -1 = Manually; 1 to 20 = delay in seconds
   $: readDelay = $readDelaySetting.value;

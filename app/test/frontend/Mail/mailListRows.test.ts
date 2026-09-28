@@ -7,6 +7,8 @@ import {
   mailListSectionLabels,
   mailListTopicLabels,
   type MailListMessageRow,
+  type MailListSenderRow,
+  type MailListTopicRow,
 } from "../../../frontend/Mail/mailListRows";
 
 // The day-header labels go through the l10n date formatter, which reads the
@@ -42,6 +44,14 @@ function sectionLabels(rows: ArrayColl<any>): string[] {
 
 function topicLabels(rows: ArrayColl<any>): string[] {
   return mailListTopicLabels(rows.contents);
+}
+
+function topicRows(rows: ArrayColl<any>): MailListTopicRow[] {
+  return rows.contents.filter((row): row is MailListTopicRow => row.kind == "topic");
+}
+
+function senderRows(rows: ArrayColl<any>): MailListSenderRow[] {
+  return rows.contents.filter((row): row is MailListSenderRow => row.kind == "sender");
 }
 
 const jan1 = new Date(2026, 0, 1, 9, 0);
@@ -114,7 +124,7 @@ describe("MailListRows", () => {
     model.dispose();
   });
 
-  test("omits header for today's mail", () => {
+  test("groups today's mail with a count and can collapse the day", () => {
     let messages = new ArrayColl<EMail>([
       fakeMail("today early", jan3),
       fakeMail("today later", new Date(2026, 0, 3, 18, 0)),
@@ -123,7 +133,16 @@ describe("MailListRows", () => {
     let model = new MailListRows();
     model.setSource(messages, "date-desc");
 
-    expect(sectionLabels(model.rows)).toEqual(["Yesterday"]);
+    expect(sectionLabels(model.rows)).toEqual(["Today", "Yesterday"]);
+    expect(model.rows.contents.filter(row => row.kind == "day").map(row => row.count)).toEqual([2, 1]);
+
+    model.toggleGroup("day:today");
+
+    expect(subjects(model.rows)).toEqual(["yesterday"]);
+    expect(model.rows.contents.find(row => row.id == "day:today")).toMatchObject({
+      count: 2,
+      collapsed: true,
+    });
     model.dispose();
   });
 
@@ -138,12 +157,60 @@ describe("MailListRows", () => {
     model.setSource(messages, "subject");
 
     expect(topicLabels(model.rows)).toEqual(["Other topic", "Project update"]);
+    expect(topicRows(model.rows).map(row => row.count)).toEqual([1, 3]);
     expect(subjects(model.rows)).toEqual([
       "Other topic",
       "FW: Project update",
       "Re: Project update",
       "Project update",
     ]);
+    model.dispose();
+  });
+
+  test("collapses a topic group while keeping its total count", () => {
+    let messages = new ArrayColl<EMail>([
+      fakeMail("Re: Project update", jan1),
+      fakeMail("Other topic", jan2),
+      fakeMail("FW: Project update", jan1Later),
+      fakeMail("Project update", jan1),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "subject");
+
+    model.toggleTopic("topic:project update");
+
+    expect(subjects(model.rows)).toEqual(["Other topic"]);
+    expect(topicRows(model.rows).find(row => row.id == "topic:project update")).toMatchObject({
+      count: 3,
+      collapsed: true,
+    });
+
+    model.toggleTopic("topic:project update");
+
+    expect(subjects(model.rows)).toHaveLength(4);
+    expect(topicRows(model.rows).find(row => row.id == "topic:project update")?.collapsed).toBe(false);
+    model.dispose();
+  });
+
+  test("groups by sender while sorting by sender", () => {
+    let messages = new ArrayColl<EMail>([
+      fakeMail("first from Zoe", jan1, "zoe@example.com"),
+      fakeMail("from Anna", jan2, "anna@example.com"),
+      fakeMail("second from Zoe", jan1Later, "zoe@example.com"),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "sender");
+
+    expect(senderRows(model.rows).map(row => row.label)).toEqual([
+      "anna@example.com",
+      "zoe@example.com",
+    ]);
+    expect(senderRows(model.rows).map(row => row.count)).toEqual([1, 2]);
+
+    model.toggleGroup("sender:zoe@example.com");
+
+    expect(subjects(model.rows)).toEqual(["from Anna"]);
+    expect(senderRows(model.rows).find(row => row.id == "sender:zoe@example.com")?.collapsed).toBe(true);
     model.dispose();
   });
 

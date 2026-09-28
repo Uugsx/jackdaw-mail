@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { installTooltips } from "../../../frontend/Shared/tooltip";
+import { hideTooltips, installTooltips } from "../../../frontend/Shared/tooltip";
 
 let uninstallTooltips: () => void;
 
@@ -122,6 +122,23 @@ describe("renderer tooltips", () => {
     expect(first.getAttribute("title")).toBe("Первый");
     expect(second.hasAttribute("title")).toBe(false);
     expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.textContent).toBe("Второй");
+  });
+
+  test("hides an open tooltip after a programmatic menu action", () => {
+    const button = document.createElement("button");
+    button.title = "Сортировать письма";
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+    hideTooltips();
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.dataset.visible).toBe("false");
+    expect(button.getAttribute("title")).toBe("Сортировать письма");
+
+    vi.advanceTimersByTime(140);
+    expect(tooltip?.hidden).toBe(true);
   });
 
   test("ignores titles on non-interactive mail content", () => {

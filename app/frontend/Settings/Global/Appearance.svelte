@@ -15,6 +15,12 @@
       <hbox class="density-options" role="group" aria-label={$t`Interface density`}>
         <button
           type="button"
+          class:active={uiDensity == "extra-compact"}
+          aria-pressed={uiDensity == "extra-compact"}
+          on:click={() => setDensity("extra-compact")}
+          >{$t`Extra compact`}</button>
+        <button
+          type="button"
           class:active={uiDensity == "compact"}
           aria-pressed={uiDensity == "compact"}
           on:click={() => setDensity("compact")}
@@ -162,6 +168,8 @@
   }
   .density-options {
     width: fit-content;
+    max-width: 100%;
+    flex-wrap: wrap;
     padding: 3px;
     gap: 2px;
     border-radius: 10px;
@@ -176,6 +184,7 @@
     color: color-mix(in srgb, var(--main-fg) 68%, transparent);
     font: inherit;
     font-size: 13px;
+    white-space: normal;
     cursor: pointer;
     transition:
       background-color 160ms ease,

@@ -70,8 +70,10 @@
   import {
     type QuickFilterId,
     type MailListSort,
+    activateMailListSort,
     allQuickFilters,
     mailListSort,
+    setMailListSort,
   } from "./quickFilters";
   import Menu from "../../Shared/Menu/Menu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
@@ -81,6 +83,7 @@
   import { t } from "../../../l10n/l10n";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import ListFilterIcon from "lucide-svelte/icons/list-filter";
+  import { hideTooltips } from "../../Shared/tooltip";
 
   export let folder: Folder;
   export let searchMessages: ArrayColl<EMail> | null; /** out */
@@ -92,6 +95,7 @@
 
   $: filterDefs = allQuickFilters.filter(f => f.kind == "filter");
   $: sortDefs = allQuickFilters.filter(f => f.kind == "sort");
+  $: activateMailListSort(folder);
   $: currentSortDef = sortDefs.find(s => s.sort === $mailListSort) ?? sortDefs[0];
   $: currentSortLabel = currentSortDef?.label() ?? $t`Newest`;
   $: sortTooltip = `${$t`Sort messages`}: ${currentSortLabel}`;
@@ -149,6 +153,7 @@
         quickSearch.isReplied = quickSearch.isReplied ? null : true;
         break;
     }
+    hideTooltips();
   }
 
   function onSortClick(event: MouseEvent) {
@@ -156,6 +161,7 @@
       return;
     }
     sortAnchor = event.currentTarget;
+    hideTooltips();
     filterMenuOpen = false;
     setTimeout(() => {
       sortMenuOpen = !sortMenuOpen;
@@ -167,6 +173,7 @@
       return;
     }
     filterAnchor = event.currentTarget;
+    hideTooltips();
     sortMenuOpen = false;
     setTimeout(() => {
       filterMenuOpen = !filterMenuOpen;
@@ -174,7 +181,8 @@
   }
 
   function selectSort(sort: MailListSort) {
-    mailListSort.set(sort);
+    setMailListSort(folder, sort);
+    hideTooltips();
     sortMenuOpen = false;
   }
 
@@ -186,6 +194,7 @@
     quickSearch.isOutgoing = null;
     quickSearch.isReplied = null;
     filterMenuOpen = false;
+    hideTooltips();
   }
 
   async function runSearch() {

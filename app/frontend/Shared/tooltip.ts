@@ -6,6 +6,14 @@ const interactiveSelector = "button, a, select, [role=\"button\"]";
 const showDelayMs = 420;
 const hideAnimationMs = 140;
 const edgeGapPx = 8;
+const installedTooltipHiders = new Set<() => void>();
+
+/** Скрывает открытые делегированные подсказки после программного действия. */
+export function hideTooltips(): void {
+  for (let hideTooltip of installedTooltipHiders) {
+    hideTooltip();
+  }
+}
 
 /**
  * Installs one delegated tooltip for the whole renderer window.
@@ -352,6 +360,7 @@ export function installTooltips(doc: Document = document): () => void {
     hideTooltip();
   }
 
+  installedTooltipHiders.add(hideTooltip);
   doc.addEventListener("pointerover", onPointerOver);
   doc.addEventListener("pointermove", onPointerMove);
   doc.addEventListener("pointerout", onPointerOut);
@@ -374,6 +383,7 @@ export function installTooltips(doc: Document = document): () => void {
     clearShowTimer();
     clearHideTimer();
     clearTransitionTimer();
+    installedTooltipHiders.delete(hideTooltip);
     if (currentTarget) {
       restoreTargetAttributes(currentTarget);
     }

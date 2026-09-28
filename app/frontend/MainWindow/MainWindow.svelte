@@ -20,6 +20,7 @@
   class:mail-mode={mailMode}
   class:widgets-enabled={$widgetsEnabled.value}
   class:widgets-expanded={$widgetsEnabled.value && $widgetsExpanded.value}
+  class:ui-density-extra-compact={uiDensity == "extra-compact"}
   class:ui-density-compact={uiDensity == "compact"}
   class:ui-density-normal={uiDensity == "normal"}
   class:ui-density-large={uiDensity == "large"}
