@@ -92,7 +92,7 @@
           void Promise.resolve(onImagePaste(file, displayWidth)).catch(backgroundError);
           return true;
         },
-      } : undefined,
+      } : {},
       content: html,
       onTransaction: () => {
         // force re-render so `editor.isActive` works as expected
