@@ -204,6 +204,7 @@
           request,
           refreshNow,
           workingHours,
+          excludedCategoryNames,
         ),
       }));
       lastUpdatedAt = new Date();
@@ -346,7 +347,7 @@
       <p class="live-control-kicker">{$t`LIVE SLA`}</p>
       <h2 id="live-control-title">{$t`Live response control`}</h2>
       <p>
-        {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
+        {$t`The timer follows the selected mailbox schedule until a message is taken into work. If it is taken outside working hours, the timer continues without pausing from that moment.`}
       </p>
     </div>
     <button

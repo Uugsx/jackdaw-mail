@@ -252,14 +252,11 @@ export function getResponseSlaProgress(
   const continuousClock = usesContinuousClock(
     request,
     startAt,
-    now,
     workingHours,
   );
   const elapsedSeconds = Math.max(
     0,
-    Math.floor(
-      elapsedResponseSeconds(request, startAt, now, workingHours),
-    ),
+    Math.floor(elapsedResponseSeconds(request, startAt, now, workingHours)),
   );
   const remainingSeconds = Math.max(targetSeconds - elapsedSeconds, 0);
   const overdueSeconds = Math.max(elapsedSeconds - targetSeconds, 0);
@@ -356,7 +353,7 @@ export function getNextResponseReminderAt(
   if (nextInterval == null) {
     return null;
   }
-  return usesContinuousClock(request, slaStartedAt, now, workingHours)
+  return usesContinuousClock(request, slaStartedAt, workingHours)
     ? new Date(
         slaStartedAt.getTime() + nextInterval * SECONDS_PER_MINUTE * 1_000,
       )
@@ -415,7 +412,7 @@ function elapsedResponseSeconds(
   now: Date,
   workingHours: WorkingHoursSchedule,
 ): number {
-  return usesContinuousClock(request, startAt, now, workingHours)
+  return usesContinuousClock(request, startAt, workingHours)
     ? Math.max(0, (now.getTime() - startAt.getTime()) / 1_000)
     : workingSecondsBetween(startAt, now, workingHours);
 }
@@ -423,18 +420,12 @@ function elapsedResponseSeconds(
 function usesContinuousClock(
   request: PendingResponseRequest,
   startAt: Date,
-  now: Date,
   workingHours: WorkingHoursSchedule,
 ): boolean {
   if (isWithinWorkingHours(request.receivedAt, workingHours)) {
     return false;
   }
-  return (
-    startAt.getTime() > request.receivedAt.getTime() ||
-    (!isWithinWorkingHours(now, workingHours) &&
-      (request.isRead === true ||
-        request.categoryNames.some((name) => name.trim().length > 0)))
-  );
+  return startAt.getTime() > request.receivedAt.getTime();
 }
 
 function normalizeSlaTargetMinutes(value: number): number {

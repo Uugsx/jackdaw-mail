@@ -415,13 +415,6 @@
     background-color: var(--hover-bg);
     color: var(--hover-fg);
   }
-  .mail-toolbar :global(.quick-filters-scroll) {
-    flex: 0 1 auto;
-    width: max-content;
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-  }
   .mail-toolbar :global(.quick-filters) {
     flex: 0 0 auto;
     min-width: 0;
@@ -441,7 +434,7 @@
     font-size: 11px;
   }
   .mail-toolbar :global(.quick-filters .pill.sort),
-  .mail-toolbar :global(.quick-filters .pill.add) {
+  .mail-toolbar :global(.quick-filters .pill.filter-menu-trigger) {
     flex: 0 0 34px;
     width: 34px;
     min-width: 34px;
@@ -543,7 +536,7 @@
     height: 28px;
   }
   .mail-toolbar.toolbar-compact :global(.quick-filters .pill.sort),
-  .mail-toolbar.toolbar-compact :global(.quick-filters .pill.add) {
+  .mail-toolbar.toolbar-compact :global(.quick-filters .pill.filter-menu-trigger) {
     flex-basis: 28px;
     width: 28px;
     min-width: 28px;
@@ -594,7 +587,7 @@
     padding-inline: 12px;
   }
   .mail-toolbar.toolbar-large :global(.quick-filters .pill.sort),
-  .mail-toolbar.toolbar-large :global(.quick-filters .pill.add) {
+  .mail-toolbar.toolbar-large :global(.quick-filters .pill.filter-menu-trigger) {
     flex: 0 0 44px;
     width: 44px;
     min-width: 44px;
@@ -631,11 +624,6 @@
     flex-basis: 160px;
     min-width: 120px;
   }
-  .mail-toolbar.toolbar-narrow :global(.quick-filters-scroll) {
-    flex: 1 1 80px;
-    width: auto;
-  }
-
   /* Keep a CSS fallback for non-Electron builds while ResizeObserver updates the class. */
   @container mail-toolbar (max-width: 900px) {
     .mail-toolbar {
@@ -666,10 +654,6 @@
     .search-wrap {
       flex-basis: 160px;
       min-width: 120px;
-    }
-    .mail-toolbar :global(.quick-filters-scroll) {
-      flex: 1 1 80px;
-      width: auto;
     }
   }
 </style>

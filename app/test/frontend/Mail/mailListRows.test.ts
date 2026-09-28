@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ArrayColl } from "svelte-collections";
 import type { EMail } from "../../../logic/Mail/EMail";
-import { findMailListRowForMessage, MailListRows, mailListSectionLabels, type MailListMessageRow } from "../../../frontend/Mail/mailListRows";
+import {
+  findMailListRowForMessage,
+  MailListRows,
+  mailListSectionLabels,
+  mailListTopicLabels,
+  type MailListMessageRow,
+} from "../../../frontend/Mail/mailListRows";
 
 // The day-header labels go through the l10n date formatter, which reads the
 // user's locale from localStorage.
@@ -32,6 +38,10 @@ function subjects(rows: ArrayColl<any>): string[] {
 
 function sectionLabels(rows: ArrayColl<any>): string[] {
   return mailListSectionLabels(rows.contents);
+}
+
+function topicLabels(rows: ArrayColl<any>): string[] {
+  return mailListTopicLabels(rows.contents);
 }
 
 const jan1 = new Date(2026, 0, 1, 9, 0);
@@ -117,7 +127,39 @@ describe("MailListRows", () => {
     model.dispose();
   });
 
-  test("omits day headers when sorting by sender or subject", () => {
+  test("groups normalized subjects while sorting by subject", () => {
+    let messages = new ArrayColl<EMail>([
+      fakeMail("Re: Project update", jan1, "anna@example.com"),
+      fakeMail("Other topic", jan2, "zoe@example.com"),
+      fakeMail("FW: Project update", jan1Later, "zoe@example.com"),
+      fakeMail("Project update", jan1, "mike@example.com"),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "subject");
+
+    expect(topicLabels(model.rows)).toEqual(["Other topic", "Project update"]);
+    expect(subjects(model.rows)).toEqual([
+      "Other topic",
+      "FW: Project update",
+      "Re: Project update",
+      "Project update",
+    ]);
+    model.dispose();
+  });
+
+  test("shows a topic header for messages without a subject", () => {
+    let messages = new ArrayColl<EMail>([
+      fakeMail("", jan2),
+      fakeMail("Re: Project update", jan1),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "subject");
+
+    expect(topicLabels(model.rows)).toEqual(["", "Project update"]);
+    model.dispose();
+  });
+
+  test("omits day headers when sorting by sender", () => {
     let messages = new ArrayColl<EMail>([
       fakeMail("b", jan1, "anna@example.com"),
       fakeMail("a", jan2, "zoe@example.com"),
@@ -128,10 +170,6 @@ describe("MailListRows", () => {
     // would appear above nearly every message.
     model.setSource(messages, "sender");
     expect(subjects(model.rows)).toEqual(["b", "a"]);
-    expect(sectionLabels(model.rows)).toEqual([]);
-
-    model.setSource(messages, "subject");
-    expect(subjects(model.rows)).toEqual(["a", "b"]);
     expect(sectionLabels(model.rows)).toEqual([]);
     model.dispose();
   });

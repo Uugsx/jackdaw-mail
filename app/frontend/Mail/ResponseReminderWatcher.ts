@@ -13,8 +13,8 @@ import {
 import { normalizeResponseTargetMinutes } from "../../logic/Reports/ReportsData";
 import {
   elapsedResponseMinutes,
-  getDueResponseReminderIntervals,
   getResponseSlaStartAt,
+  getDueResponseReminderIntervals,
   getResponseSlaProgress,
   isResponseRequestExcluded,
   isResponseRequestTakenInWork,
@@ -158,20 +158,24 @@ export function getResponseReminderSlaStartAt(
   request: PendingResponseRequest,
   now = new Date(),
   workingHours: WorkingHoursSchedule,
+  excludedCategoryNames: readonly string[] = [],
 ): Date {
   const state = readState();
   const key = responseReminderKey(request);
   const receivedAt = request.receivedAt.getTime();
   const previous =
     state[key]?.receivedAt == receivedAt ? state[key] : undefined;
-  const takenInWork = isResponseRequestTakenInWork(request);
-  const takenInWorkNow =
-    previous?.takenInWork === false &&
-    takenInWork &&
-    !isWithinWorkingHours(request.receivedAt, workingHours) &&
-    !isWithinWorkingHours(now, workingHours)
-      ? now.getTime()
-      : undefined;
+  const takenInWork = isResponseRequestTakenInWork(
+    request,
+    excludedCategoryNames,
+  );
+  const takenInWorkNow = getTakenInWorkStartAt(
+    previous,
+    request,
+    takenInWork,
+    now,
+    workingHours,
+  );
   const slaStartedAt = getResponseSlaStartAt(
     request,
     now,
@@ -353,14 +357,13 @@ async function evaluateResponseReminders(): Promise<void> {
             candidate,
             config.excludedCategoryNames,
           );
-          const takenInWorkNow =
-            previous?.receivedAt == receivedAt &&
-            previous.takenInWork === false &&
-            takenInWork &&
-            !isWithinWorkingHours(candidate.receivedAt, workingHours) &&
-            !isWithinWorkingHours(now, workingHours)
-              ? now.getTime()
-              : undefined;
+          const takenInWorkNow = getTakenInWorkStartAt(
+            previous,
+            candidate,
+            takenInWork,
+            now,
+            workingHours,
+          );
           const slaStartedAt = getResponseSlaStartAt(
             candidate,
             now,
@@ -564,6 +567,32 @@ async function evaluateResponseReminders(): Promise<void> {
   }
 }
 
+/**
+ * Возвращает момент перехода в работу вне графика.
+ * Состояние без `startedAt` также восстанавливается после промежуточной
+ * версии, которая сохраняла только признак `takenInWork`.
+ */
+function getTakenInWorkStartAt(
+  previous: ResponseReminderStateEntry | undefined,
+  request: PendingResponseRequest,
+  takenInWork: boolean,
+  now: Date,
+  workingHours: WorkingHoursSchedule,
+): number | undefined {
+  if (
+    !takenInWork ||
+    previous?.receivedAt != request.receivedAt.getTime() ||
+    isWithinWorkingHours(request.receivedAt, workingHours) ||
+    isWithinWorkingHours(now, workingHours)
+  ) {
+    return undefined;
+  }
+  const isNewTakenInWork = previous.takenInWork === false;
+  const isRecoveredInterimState =
+    previous.takenInWork === true && previous.startedAt == null;
+  return isNewTakenInWork || isRecoveredInterimState ? now.getTime() : undefined;
+}
+
 /** Не доставляет уведомления, которые устарели после изменения настроек. */
 function isCurrentResponseReminderCandidate(
   candidate: ResponseReminderCandidate,
@@ -667,7 +696,7 @@ async function showResponseEventNotification(
       : gt`Request taken into work`,
     event == "overdue"
       ? gt`No reply to “${subject}” within ${targetMinutes} working minutes.`
-      : gt`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`,
+      : gt`The timer follows the selected mailbox schedule until a message is taken into work. If it is taken outside working hours, the timer continues without pausing from that moment.`,
     `response-sla:${event}:${responseReminderKey(candidate)}`,
     soundEvent,
   );
@@ -746,14 +775,12 @@ function readState(): Record<string, ResponseReminderStateEntry> {
       startedAtSource == "taken-in-work"
         ? finiteTimestamp(rawRecord.startedAt)
         : undefined;
-    const takenInWork = optionalBoolean(
-      (raw as Record<string, unknown>).takenInWork,
-    );
-    const overdue = optionalBoolean((raw as Record<string, unknown>).overdue);
+    const takenInWork = optionalBoolean(rawRecord.takenInWork);
+    const overdue = optionalBoolean(rawRecord.overdue);
     state[key] = {
       receivedAt,
       firedIntervalsMinutes: normalizeFiredIntervals(
-        (raw as Record<string, unknown>).firedIntervalsMinutes,
+        rawRecord.firedIntervalsMinutes,
       ),
       ...(startedAt == null
         ? {}
@@ -776,6 +803,11 @@ function normalizeFiredIntervals(value: unknown): number[] {
         .filter((item) => Number.isInteger(item) && item > 0),
     ),
   ].sort((a, b) => a - b);
+}
+
+function finiteTimestamp(value: unknown): number | undefined {
+  const result = Number(value);
+  return Number.isFinite(result) && result > 0 ? Math.floor(result) : undefined;
 }
 
 function pruneState(
@@ -814,11 +846,6 @@ function numericId(value: number | string | null): number | null {
 
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value == "boolean" ? value : undefined;
-}
-
-function finiteTimestamp(value: unknown): number | undefined {
-  const result = Number(value);
-  return Number.isFinite(result) && result > 0 ? Math.floor(result) : undefined;
 }
 
 function toError(value: unknown): Error {

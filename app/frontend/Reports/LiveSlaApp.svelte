@@ -694,7 +694,7 @@
         <p class="live-page-kicker">{$t`LIVE SLA`}</p>
         <h1>{$t`Live response control`}</h1>
         <p class="live-page-lead">
-          {$t`An operational queue of incoming messages that are waiting for a reply. The timer counts only working minutes according to the selected mailbox schedule.`}
+          {$t`An operational queue of incoming messages that are waiting for a reply. The timer follows the selected mailbox schedule; messages taken into work outside working hours continue without pausing.`}
         </p>
       </div>
       <div class="live-page-actions">
@@ -966,7 +966,7 @@
                 <div>
                   <h3>{$t`SLA tracking and reminders`}</h3>
                   <p>
-                    {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
+                    {$t`The timer follows the selected mailbox schedule until a message is taken into work. If it is taken outside working hours, the timer continues without pausing from that moment.`}
                   </p>
                 </div>
                 <span
@@ -1154,7 +1154,7 @@
           </div>
         </div>
         <p class="live-scope-note">
-          {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
+          {$t`The timer follows the selected mailbox schedule until a message is taken into work. If it is taken outside working hours, the timer continues without pausing from that moment.`}
         </p>
       </section>
     {/if}

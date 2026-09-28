@@ -1,65 +1,42 @@
-<!-- Outlook-style filter + sort pills above the message list -->
+<!-- Меню сортировки и фильтров над списком писем в стиле Outlook -->
 {#if folder}
-  <HorizontalScroll edgeButtons bind:this={filterScroll} className="quick-filters-scroll content-fit">
-    <hbox class="quick-filters font-smallest">
-    {#each visibleDefs as filter (filter.id)}
-      {#if filter.kind == "sort"}
-        <button type="button"
-          class="pill sort sort-menu-trigger"
-          class:active={true}
-          aria-haspopup="menu"
-          aria-expanded={sortMenuOpen}
-          aria-pressed={true}
-          title={sortTooltip}
-          aria-label={sortTooltip}
-          bind:this={sortAnchor}
-          on:click|stopPropagation={onSortClick}>
-          <ChevronDownIcon size="14px" strokeWidth={2.25} />
-        </button>
-      {:else}
-        <hbox class="filter-pill"
-          class:active={isActive(filter.id, $quickSearch, $mailListSort)}>
-          <button type="button"
-            class="pill filter-trigger"
-            class:active={isActive(filter.id, $quickSearch, $mailListSort)}
-            aria-pressed={isActive(filter.id, $quickSearch, $mailListSort)}
-            on:click={() => catchErrors(() => toggleFilter(filter.id))}>
-            <span class="pill-label">{filter.label()}</span>
-          </button>
-          <button type="button"
-            class="pill-remove"
-            aria-label={$t`Remove this filter button`}
-            title={$t`Remove this filter button`}
-            on:click|stopPropagation={() => catchErrors(() => onRemove(filter.id))}>×</button>
-        </hbox>
-      {/if}
-    {/each}
-
-    <button type="button" class="pill add" title={$t`Add filter`} aria-label={$t`Add filter`}
-      bind:this={addAnchor}
-      on:click|stopPropagation={onAddClick}>
-      <ListFilterPlusIcon size="16px" strokeWidth={1.9} />
+  <hbox class="quick-filters font-smallest">
+    <button type="button"
+      class="pill sort sort-menu-trigger"
+      class:active={true}
+      aria-haspopup="menu"
+      aria-expanded={sortMenuOpen}
+      title={sortTooltip}
+      aria-label={sortTooltip}
+      bind:this={sortAnchor}
+      on:click|stopPropagation={onSortClick}>
+      <ChevronDownIcon size="14px" strokeWidth={2.25} aria-hidden="true" />
     </button>
 
-    <!-- Keep Menu always mounted so the opening click doesn't race with mount+autoClose -->
-    <Menu bind:isMenuOpen={addMenuOpen} anchor={addAnchor} placement="bottom-start">
-      {#each hiddenDefs as filter (filter.id)}
-        <MenuItem
-          label={filter.label()}
-          onClick={() => onAdd(filter.id)} />
-      {/each}
-      {#if !hiddenDefs.length}
-        <MenuItem
-          label={$t`All filters shown`}
-          disabled={true}
-          onClick={() => {}} />
+    <button type="button"
+      class="pill filter-menu-trigger"
+      class:active={anyActive}
+      aria-haspopup="menu"
+      aria-expanded={filterMenuOpen}
+      aria-pressed={anyActive}
+      title={filterTooltip}
+      aria-label={filterTooltip}
+      bind:this={filterAnchor}
+      on:click|stopPropagation={onFilterClick}>
+      <ListFilterIcon size="16px" strokeWidth={1.9} aria-hidden="true" />
+      {#if anyActive}
+        <span class="active-count" aria-hidden="true">{activeFilterCount}</span>
       {/if}
-      <MenuDivider />
-      <MenuItem
-        label={$t`Reset filters`}
-        onClick={onReset} />
-    </Menu>
+    </button>
 
+    {#if anyActive}
+      <button type="button" class="pill clear" title={$t`Clear filters`}
+        on:click={() => catchErrors(clearFilters)}>
+        {$t`Clear`}
+      </button>
+    {/if}
+
+    <!-- Оба меню монтируются заранее, чтобы открытие не конфликтовало с autoClose. -->
     <Menu bind:isMenuOpen={sortMenuOpen} anchor={sortAnchor} placement="bottom-start">
       {#each sortDefs as sort (sort.id)}
         <MenuItem
@@ -69,14 +46,21 @@
       {/each}
     </Menu>
 
-    {#if anyActive}
-      <button type="button" class="pill clear" title={$t`Clear filters`}
-        on:click={() => catchErrors(clearFilters)}>
-        {$t`Clear`}
-      </button>
-    {/if}
-    </hbox>
-  </HorizontalScroll>
+    <Menu bind:isMenuOpen={filterMenuOpen} anchor={filterAnchor} placement="bottom-start">
+      {#each filterDefs as filter (filter.id)}
+        <MenuItem
+          label={filter.label()}
+          selected={isActive(filter.id, $quickSearch)}
+          closeOnClick={false}
+          onClick={() => catchErrors(() => toggleFilter(filter.id))} />
+      {/each}
+      <MenuDivider />
+      <MenuItem
+        label={$t`Reset filters`}
+        disabled={!anyActive}
+        onClick={() => catchErrors(clearFilters)} />
+    </Menu>
+  </hbox>
 {/if}
 
 <script lang="ts">
@@ -85,13 +69,8 @@
   import { quickSearch } from "../Selected";
   import {
     type QuickFilterId,
-    type QuickFilterDef,
     type MailListSort,
     allQuickFilters,
-    getVisibleQuickFilters,
-    addQuickFilter,
-    removeQuickFilter,
-    resetQuickFilters,
     mailListSort,
   } from "./quickFilters";
   import Menu from "../../Shared/Menu/Menu.svelte";
@@ -101,45 +80,40 @@
   import type { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
-  import ListFilterPlusIcon from "lucide-svelte/icons/list-filter-plus";
-  import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
+  import ListFilterIcon from "lucide-svelte/icons/list-filter";
 
   export let folder: Folder;
   export let searchMessages: ArrayColl<EMail> | null; /** out */
 
-  let filterScroll: HorizontalScroll;
-
-  let visibleIds = getVisibleQuickFilters();
-  let addMenuOpen = false;
-  let addAnchor: HTMLElement;
   let sortMenuOpen = false;
   let sortAnchor: HTMLElement;
+  let filterMenuOpen = false;
+  let filterAnchor: HTMLElement;
 
-  $: visibleDefs = visibleIds
-    .map(id => allQuickFilters.find(f => f.id == id))
-    .filter((filter): filter is QuickFilterDef => !!filter);
-  $: hiddenDefs = allQuickFilters.filter(f => !visibleIds.includes(f.id));
+  $: filterDefs = allQuickFilters.filter(f => f.kind == "filter");
   $: sortDefs = allQuickFilters.filter(f => f.kind == "sort");
-  $: visibleDefs, filterScroll?.refresh();
-  $: anyActive, filterScroll?.refresh();
   $: currentSortDef = sortDefs.find(s => s.sort === $mailListSort) ?? sortDefs[0];
   $: currentSortLabel = currentSortDef?.label() ?? $t`Newest`;
   $: sortTooltip = `${$t`Sort messages`}: ${currentSortLabel}`;
-  $: anyActive =
-    $quickSearch.isRead === false ||
-    $quickSearch.isStarred === true ||
-    $quickSearch.isImportant === true ||
-    $quickSearch.hasAttachment === true ||
-    $quickSearch.isOutgoing === true ||
-    $quickSearch.isOutgoing === false ||
-    $quickSearch.isReplied === true;
+  $: activeFilterCount = [
+    $quickSearch.isRead === false,
+    $quickSearch.isStarred === true,
+    $quickSearch.isImportant === true,
+    $quickSearch.hasAttachment === true,
+    $quickSearch.isOutgoing === true || $quickSearch.isOutgoing === false,
+    $quickSearch.isReplied === true,
+  ].filter(Boolean).length;
+  $: anyActive = activeFilterCount > 0;
+  $: filterTooltip = anyActive
+    ? `${$t`Search filters`}: ${activeFilterCount}`
+    : $t`Search filters`;
 
   $: localMsgCount = folder?.messages ? $folder.messages.length : 0;
   $: quickSearch.folder = folder;
   $: folder && ($folder.countUnread, $folder.countTotal, $folder.countNewArrived, localMsgCount) &&
     $quickSearch && catchErrors(runSearch);
 
-  function isActive(id: QuickFilterId, search = quickSearch, sort?: MailListSort): boolean {
+  function isActive(id: QuickFilterId, search = quickSearch): boolean {
     switch (id) {
       case "unread": return search.isRead === false;
       case "starred": return search.isStarred === true;
@@ -148,19 +122,10 @@
       case "fromMe": return search.isOutgoing === true;
       case "toMe": return search.isOutgoing === false;
       case "replied": return search.isReplied === true;
-      case "newest": return sort === "date-desc";
-      case "oldest": return sort === "date-asc";
-      case "bySender": return sort === "sender";
-      case "bySubject": return sort === "subject";
     }
   }
 
   function toggleFilter(id: QuickFilterId) {
-    let def = allQuickFilters.find(f => f.id == id);
-    if (def?.kind == "sort" && def.sort) {
-      mailListSort.set(def.sort);
-      return;
-    }
     switch (id) {
       case "unread":
         quickSearch.isRead = quickSearch.isRead === false ? null : false;
@@ -186,9 +151,25 @@
     }
   }
 
-  function onSortClick() {
+  function onSortClick(event: MouseEvent) {
+    if (!(event.currentTarget instanceof HTMLElement)) {
+      return;
+    }
+    sortAnchor = event.currentTarget;
+    filterMenuOpen = false;
     setTimeout(() => {
       sortMenuOpen = !sortMenuOpen;
+    }, 0);
+  }
+
+  function onFilterClick(event: MouseEvent) {
+    if (!(event.currentTarget instanceof HTMLElement)) {
+      return;
+    }
+    filterAnchor = event.currentTarget;
+    sortMenuOpen = false;
+    setTimeout(() => {
+      filterMenuOpen = !filterMenuOpen;
     }, 0);
   }
 
@@ -204,61 +185,25 @@
     quickSearch.hasAttachment = null;
     quickSearch.isOutgoing = null;
     quickSearch.isReplied = null;
+    filterMenuOpen = false;
   }
 
   async function runSearch() {
     searchMessages = await quickSearch.startSearch();
   }
 
-  function refreshVisible() {
-    visibleIds = getVisibleQuickFilters();
-  }
-
-  function onAdd(id: QuickFilterId) {
-    addQuickFilter(id);
-    refreshVisible();
-    addMenuOpen = false;
-  }
-
-  function onRemove(id: QuickFilterId) {
-    if (isActive(id) && allQuickFilters.find(f => f.id == id)?.kind == "filter") {
-      toggleFilter(id);
-    }
-    removeQuickFilter(id);
-    refreshVisible();
-  }
-
-  function onAddClick(event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    // Defer open so the same click doesn't hit Popup's window autoClose
-    setTimeout(() => {
-      addMenuOpen = !addMenuOpen;
-    }, 0);
-  }
-
-  function onReset() {
-    resetQuickFilters();
-    refreshVisible();
-    addMenuOpen = false;
-  }
 </script>
 
 <style>
-  :global(.quick-filters-scroll) {
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: 100%;
-  }
   .quick-filters {
     align-items: center;
     gap: 6px;
-    padding: 4px 10px;
+    flex: 0 0 auto;
+    min-width: 0;
     flex-wrap: nowrap;
     min-height: 36px;
     box-sizing: border-box;
-    background-color: var(--main-bg);
-    border-block-end: 1px solid var(--border);
+    background-color: transparent;
   }
   .pill {
     display: inline-flex;
@@ -272,40 +217,14 @@
     font: inherit;
     font-size: 11px;
     letter-spacing: -0.01em;
-    cursor: default;
+    cursor: pointer;
     line-height: 1.2;
-    max-width: 14em;
-  }
-  .filter-pill {
-    display: inline-flex;
-    align-items: center;
-    max-width: 14em;
-    border: 1px solid var(--border);
-    border-radius: var(--border-radius);
-    background-color: transparent;
-    color: var(--main-fg);
-    overflow: hidden;
-  }
-  .filter-pill.active {
-    background-color: var(--selected-bg);
-    color: var(--selected-fg);
-    border-color: transparent;
-  }
-  .filter-trigger {
-    min-width: 0;
-    max-width: none;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    border-radius: 0;
-    padding-inline-end: 4px;
-  }
-  .filter-trigger:hover {
-    background-color: transparent;
-    color: inherit;
-  }
-  .filter-trigger:focus-visible {
-    outline-offset: -2px;
+    flex-shrink: 0;
+    transition:
+      background-color 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+      color 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .pill:hover {
     background-color: var(--hover-bg);
@@ -320,7 +239,7 @@
     border-style: dashed;
   }
   .pill.sort,
-  .pill.add {
+  .pill.filter-menu-trigger {
     width: 34px;
     min-width: 34px;
     height: 34px;
@@ -329,44 +248,37 @@
     justify-content: center;
     box-sizing: border-box;
   }
-  .sort-menu-trigger {
-    cursor: default;
+  .sort-menu-trigger,
+  .filter-menu-trigger {
+    cursor: pointer;
   }
   .sort-menu-trigger :global(svg) {
     flex-shrink: 0;
     display: block;
   }
-  .pill-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pill-remove {
-    flex: 0 0 auto;
-    opacity: 0;
-    font-size: 14px;
-    line-height: 1;
-    border: 0;
-    border-radius: 0;
-    padding: 3px 8px 3px 2px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-  .filter-pill:hover .pill-remove,
-  .filter-pill.active .pill-remove,
-  .pill-remove:focus-visible {
-    opacity: 0.55;
-  }
-  .pill-remove:hover {
-    opacity: 1 !important;
-  }
-  .pill.add {
-    opacity: 0.7;
+  .active-count {
+    min-width: 1.15em;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
   .pill.clear {
     border-style: dashed;
     opacity: 0.75;
+  }
+  .pill:focus-visible {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 1px;
+  }
+  .pill:active {
+    transform: translateY(1px) scale(0.98);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill {
+      transition: none;
+    }
+    .pill:active {
+      transform: none;
+    }
   }
 </style>

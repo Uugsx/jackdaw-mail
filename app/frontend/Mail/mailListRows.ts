@@ -1,5 +1,6 @@
 import type { EMail } from "../../logic/Mail/EMail";
 import type { MailListSort } from "./LeftPane/quickFilters";
+import { normalizeRelatedSubject } from "../../logic/Mail/RelatedEMail";
 import { getMailDayGroupLabel, getMailListGroupKey } from "../Util/date";
 import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
 import { messagesRepresentSameMail } from "./mailReadActions";
@@ -10,13 +11,21 @@ export type MailListDayRow = {
   label: string;
 };
 
+export type MailListTopicRow = {
+  kind: "topic";
+  id: string;
+  label: string;
+};
+
 export type MailListMessageRow = {
   kind: "message";
   id: string;
   message: EMail;
 };
 
-export type MailListRow = MailListDayRow | MailListMessageRow;
+export type MailListRow = MailListDayRow | MailListTopicRow | MailListMessageRow;
+
+const subjectPrefixPattern = /^(?:(?:re|fw|fwd|aw|ответ|пересылка)\s*:\s*)+/iu;
 
 function messageRowID(message: EMail): string {
   return String(message.dbID ?? message.pID ?? message.id ?? message.subject);
@@ -29,14 +38,51 @@ function listDisplayDate(message: EMail): Date {
   return message.received ?? message.sent;
 }
 
-/** Flat list with day headers for FastList (messages must already be sorted).
- * Day headers only make sense when the list is in date order; grouping a
- * by-sender list would put a header above nearly every message. */
-export function buildMailListRows(messages: readonly EMail[], withDayHeaders = true): MailListRow[] {
+function subjectGroupKey(subject: string | null | undefined): string {
+  return normalizeRelatedSubject(subject);
+}
+
+function subjectGroupLabel(subject: string | null | undefined): string {
+  return (subject ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(subjectPrefixPattern, "")
+    .trim();
+}
+
+function listDisplayTimestamp(message: EMail): number {
+  let timestamp = listDisplayDate(message)?.getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareText(a: string, b: string): number {
+  return a.localeCompare(b);
+}
+
+/** Плоский список с заголовками периода или темы для FastList. */
+export function buildMailListRows(
+  messages: readonly EMail[],
+  withDayHeaders = true,
+  withTopicHeaders = false,
+): MailListRow[] {
   let rows: MailListRow[] = [];
   let lastGroup = "";
+  let lastTopic = "";
+  let hasTopic = false;
   for (let message of messages) {
-    if (withDayHeaders) {
+    if (withTopicHeaders) {
+      let topic = subjectGroupKey(message.subject);
+      if (!hasTopic || topic != lastTopic) {
+        rows.push({
+          kind: "topic",
+          id: `topic:${topic || "no-subject"}`,
+          label: subjectGroupLabel(message.subject),
+        });
+        lastTopic = topic;
+        hasTopic = true;
+      }
+    } else if (withDayHeaders) {
       let displayDate = listDisplayDate(message);
       let groupKey = getMailListGroupKey(displayDate);
       if (groupKey && groupKey != lastGroup) {
@@ -65,13 +111,18 @@ export function buildMailListRows(messages: readonly EMail[], withDayHeaders = t
 function sortComparator(sort: MailListSort): ((a: EMail, b: EMail) => number) | null {
   switch (sort) {
   case "date-asc":
-    return (a, b) => listDisplayDate(a)?.getTime() - listDisplayDate(b)?.getTime();
+    return (a, b) => listDisplayTimestamp(a) - listDisplayTimestamp(b) ||
+      compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject));
   case "sender":
-    return (a, b) => senderName(a).localeCompare(senderName(b));
+    return (a, b) => compareText(senderName(a), senderName(b)) ||
+      listDisplayTimestamp(b) - listDisplayTimestamp(a);
   case "subject":
-    return (a, b) => (a.subject || "").toLowerCase().localeCompare((b.subject || "").toLowerCase());
+    return (a, b) => compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject)) ||
+      listDisplayTimestamp(b) - listDisplayTimestamp(a) ||
+      compareText(senderName(a), senderName(b));
   default:
-    return (a, b) => listDisplayDate(b)?.getTime() - listDisplayDate(a)?.getTime();
+    return (a, b) => listDisplayTimestamp(b) - listDisplayTimestamp(a) ||
+      compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject));
   }
 }
 
@@ -129,7 +180,8 @@ export class MailListRows {
     let messages = this.source ? this.source.contents.slice() : [];
     messages.sort(sortComparator(this.sort));
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
-    this.rows.replaceAll(buildMailListRows(messages, byDate));
+    let byTopic = this.sort == "subject";
+    this.rows.replaceAll(buildMailListRows(messages, byDate, byTopic));
   }
 }
 
@@ -140,6 +192,12 @@ export function mailListRowSelectable(row: MailListRow | null | undefined): bool
 export function mailListSectionLabels(rows: readonly MailListRow[]): string[] {
   return rows
     .filter((row): row is MailListDayRow => row.kind == "day")
+    .map(row => row.label);
+}
+
+export function mailListTopicLabels(rows: readonly MailListRow[]): string[] {
+  return rows
+    .filter((row): row is MailListTopicRow => row.kind == "topic")
     .map(row => row.label);
 }
 
