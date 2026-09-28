@@ -12,6 +12,7 @@ import {
   isResponseRequestExcluded,
   shouldNotifyResponseReminderEvent,
   isResponseRequestTakenInWork,
+  isResponseRequestSuppressedUntilTakenInWork,
   type PendingResponseRequest,
 } from "../../../logic/Reports/ResponseReminder";
 import type { WorkingHoursSchedule } from "../../../logic/Reports/WorkingHours";
@@ -100,6 +101,52 @@ describe("ResponseReminder", () => {
         ["Переписка (мы в копии)"],
       ),
     ).toBe(false);
+  });
+
+  test("снимает письмо с SLA после возврата в непрочитанное состояние", () => {
+    const trackedRequest = {
+      ...request,
+      categoryNames: [],
+      isRead: false,
+    };
+    const takenInWorkState = {
+      receivedAt: request.receivedAt.getTime(),
+      firedIntervalsMinutes: [10],
+      startedAt: new Date("2026-09-09T08:55:00.000Z").getTime(),
+      startedAtSource: "taken-in-work" as const,
+      takenInWork: true,
+      overdue: false,
+    };
+
+    expect(
+      isResponseRequestSuppressedUntilTakenInWork(
+        trackedRequest,
+        takenInWorkState,
+      ),
+    ).toBe(true);
+    expect(
+      isResponseRequestSuppressedUntilTakenInWork(
+        { ...trackedRequest, isRead: true },
+        takenInWorkState,
+      ),
+    ).toBe(false);
+    expect(
+      isResponseRequestSuppressedUntilTakenInWork(
+        {
+          ...trackedRequest,
+          categoryNames: ["Никита Галкин"],
+        },
+        takenInWorkState,
+      ),
+    ).toBe(false);
+    expect(
+      isResponseRequestSuppressedUntilTakenInWork(trackedRequest, {
+        receivedAt: request.receivedAt.getTime(),
+        firedIntervalsMinutes: [],
+        takenInWork: false,
+        suppressedUntilTakenInWork: true,
+      }),
+    ).toBe(true);
   });
 
   test("сигналит только при переходе состояния и не повторяет его", () => {

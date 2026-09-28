@@ -37,6 +37,8 @@ export interface ResponseReminderStateEntry {
   startedAtSource?: "taken-in-work";
   /** Последнее известное состояние: запрос взят в работу или ещё нет. */
   takenInWork?: boolean;
+  /** Письмо сняли с контроля возвратом в непрочитанное состояние. */
+  suppressedUntilTakenInWork?: boolean;
   /** Последнее известное состояние: запрос уже просрочен или ещё нет. */
   overdue?: boolean;
 }
@@ -165,6 +167,29 @@ export function isResponseRequestTakenInWork(
   return (
     request.isRead === true ||
     request.categoryNames.some((name) => name.trim().length > 0)
+  );
+}
+
+/**
+ * Определяет, нужно ли убрать письмо из живого SLA после возврата в
+ * непрочитанное состояние. Явно назначенная рабочая категория снимает это
+ * подавление: категория означает, что письмо снова взяли в работу.
+ */
+export function isResponseRequestSuppressedUntilTakenInWork(
+  request: PendingResponseRequest,
+  state: ResponseReminderStateEntry | null | undefined,
+  excludedCategoryNames: readonly string[] = [],
+): boolean {
+  if (
+    state?.receivedAt != request.receivedAt.getTime() ||
+    isResponseRequestTakenInWork(request, excludedCategoryNames)
+  ) {
+    return false;
+  }
+  return (
+    state.suppressedUntilTakenInWork === true ||
+    state.takenInWork === true ||
+    state.startedAtSource === "taken-in-work"
   );
 }
 

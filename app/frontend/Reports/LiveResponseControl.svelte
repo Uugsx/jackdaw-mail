@@ -35,7 +35,9 @@
   import { getLocalStorage } from "../Util/LocalStorage";
   import { openPendingResponseMessage } from "../Mail/openPendingResponse";
   import {
+    getResponseReminderStateSnapshot,
     getResponseReminderSlaStartAt,
+    isResponseReminderRequestSuppressed,
     responseReminderMailEpoch,
   } from "../Mail/ResponseReminderWatcher";
   import {
@@ -198,15 +200,26 @@
       if (requestId !== refreshRequestId) {
         return;
       }
-      requests = nextRequests.map((request) => ({
-        ...request,
-        slaStartedAt: getResponseReminderSlaStartAt(
-          request,
-          refreshNow,
-          workingHours,
-          excludedCategoryNames,
-        ),
-      }));
+      const reminderState = getResponseReminderStateSnapshot();
+      requests = nextRequests
+        .filter(
+          (request) =>
+            !isResponseReminderRequestSuppressed(
+              request,
+              excludedCategoryNames,
+              reminderState,
+            ),
+        )
+        .map((request) => ({
+          ...request,
+          slaStartedAt: getResponseReminderSlaStartAt(
+            request,
+            refreshNow,
+            workingHours,
+            excludedCategoryNames,
+            reminderState,
+          ),
+        }));
       lastUpdatedAt = new Date();
     } catch (ex) {
       if (requestId === refreshRequestId) {

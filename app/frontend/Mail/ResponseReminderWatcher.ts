@@ -18,6 +18,7 @@ import {
   getResponseSlaProgress,
   isResponseRequestExcluded,
   isResponseRequestTakenInWork,
+  isResponseRequestSuppressedUntilTakenInWork,
   isResponseReminderRequestAfterActivation,
   normalizeResponseReminderIntervals,
   responseReminderKey,
@@ -150,6 +151,28 @@ export const responseReminderLiveState = writable<ResponseReminderLiveSnapshot>(
   emptyLiveSnapshot(),
 );
 
+/** Возвращает нормализованный снимок локального состояния SLA. */
+export function getResponseReminderStateSnapshot(): Record<
+  string,
+  ResponseReminderStateEntry
+> {
+  return readState();
+}
+
+/** Возвращает, скрыто ли письмо из SLA до следующего взятия в работу. */
+export function isResponseReminderRequestSuppressed(
+  request: PendingResponseRequest,
+  excludedCategoryNames: readonly string[] = [],
+  stateSnapshot?: Record<string, ResponseReminderStateEntry>,
+): boolean {
+  const state = stateSnapshot ?? readState();
+  return isResponseRequestSuppressedUntilTakenInWork(
+    request,
+    state[responseReminderKey(request)],
+    excludedCategoryNames,
+  );
+}
+
 /**
  * Возвращает якорь SLA и фиксирует переход письма вне рабочего графика
  * в непрерывный режим отсчёта.
@@ -159,8 +182,9 @@ export function getResponseReminderSlaStartAt(
   now = new Date(),
   workingHours: WorkingHoursSchedule,
   excludedCategoryNames: readonly string[] = [],
+  stateSnapshot?: Record<string, ResponseReminderStateEntry>,
 ): Date {
-  const state = readState();
+  const state = stateSnapshot ?? readState();
   const key = responseReminderKey(request);
   const receivedAt = request.receivedAt.getTime();
   const previous =
@@ -169,8 +193,31 @@ export function getResponseReminderSlaStartAt(
     request,
     excludedCategoryNames,
   );
+  if (
+    isResponseRequestSuppressedUntilTakenInWork(
+      request,
+      previous,
+      excludedCategoryNames,
+    )
+  ) {
+    const nextStateEntry = suppressedResponseReminderState(receivedAt);
+    if (responseReminderStateEntryChanged(previous, nextStateEntry)) {
+      state[key] = nextStateEntry;
+      responseReminderStateSetting.value = state;
+    }
+    return request.receivedAt;
+  }
+  const previousForTracking =
+    previous?.suppressedUntilTakenInWork === true
+      ? {
+          receivedAt,
+          firedIntervalsMinutes: [],
+          takenInWork: false,
+          overdue: false,
+        }
+      : previous;
   const takenInWorkNow = getTakenInWorkStartAt(
-    previous,
+    previousForTracking,
     request,
     takenInWork,
     now,
@@ -183,9 +230,9 @@ export function getResponseReminderSlaStartAt(
     previous?.startedAt ?? takenInWorkNow,
   );
   const nextStateEntry: ResponseReminderStateEntry = {
-    ...previous,
+    ...previousForTracking,
     receivedAt,
-    firedIntervalsMinutes: previous?.firedIntervalsMinutes ?? [],
+    firedIntervalsMinutes: previousForTracking?.firedIntervalsMinutes ?? [],
     takenInWork,
     ...(slaStartedAt.getTime() == receivedAt
       ? {}
@@ -196,12 +243,7 @@ export function getResponseReminderSlaStartAt(
             (takenInWorkNow == null ? undefined : "taken-in-work"),
         }),
   };
-  if (
-    previous?.receivedAt != nextStateEntry.receivedAt ||
-    previous?.takenInWork != nextStateEntry.takenInWork ||
-    previous?.startedAt != nextStateEntry.startedAt ||
-    previous?.startedAtSource != nextStateEntry.startedAtSource
-  ) {
+  if (responseReminderStateEntryChanged(previous, nextStateEntry)) {
     state[key] = nextStateEntry;
     responseReminderStateSetting.value = state;
   }
@@ -349,16 +391,39 @@ async function evaluateResponseReminders(): Promise<void> {
           }
           const receivedAt = candidate.receivedAt.getTime();
           const previous = state[key];
+          if (
+            isResponseRequestSuppressedUntilTakenInWork(
+              candidate,
+              previous,
+              config.excludedCategoryNames,
+            )
+          ) {
+            const suppressedEntry = suppressedResponseReminderState(receivedAt);
+            if (responseReminderStateEntryChanged(previous, suppressedEntry)) {
+              state[key] = suppressedEntry;
+              stateChanged = true;
+            }
+            continue;
+          }
           const entry =
             previous?.receivedAt == receivedAt
               ? previous
               : { receivedAt, firedIntervalsMinutes: [] };
+          const entryForTracking =
+            entry.suppressedUntilTakenInWork === true
+              ? {
+                  receivedAt,
+                  firedIntervalsMinutes: [],
+                  takenInWork: false,
+                  overdue: false,
+                }
+              : entry;
           const takenInWork = isResponseRequestTakenInWork(
             candidate,
             config.excludedCategoryNames,
           );
           const takenInWorkNow = getTakenInWorkStartAt(
-            previous,
+            entryForTracking,
             candidate,
             takenInWork,
             now,
@@ -368,17 +433,17 @@ async function evaluateResponseReminders(): Promise<void> {
             candidate,
             now,
             workingHours,
-            entry.startedAt ?? takenInWorkNow,
+            entryForTracking.startedAt ?? takenInWorkNow,
           );
           const entryWithStart: ResponseReminderStateEntry =
             slaStartedAt.getTime() == receivedAt ||
-            entry.startedAt == slaStartedAt.getTime()
-              ? entry
+            entryForTracking.startedAt == slaStartedAt.getTime()
+              ? entryForTracking
               : {
-                  ...entry,
+                  ...entryForTracking,
                   startedAt: slaStartedAt.getTime(),
                   startedAtSource:
-                    entry.startedAtSource ??
+                    entryForTracking.startedAtSource ??
                     (takenInWorkNow == null ? undefined : "taken-in-work"),
                 };
           const progress = getResponseSlaProgress(
@@ -467,12 +532,7 @@ async function evaluateResponseReminders(): Promise<void> {
             takenInWork: stateTakenInWork,
             overdue: stateOverdue,
           };
-          if (
-            previous?.receivedAt != receivedAt ||
-            previous?.takenInWork !== stateTakenInWork ||
-            previous?.overdue !== stateOverdue ||
-            previous?.startedAt !== nextStateEntry.startedAt
-          ) {
+          if (responseReminderStateEntryChanged(previous, nextStateEntry)) {
             state[key] = nextStateEntry;
             stateChanged = true;
           }
@@ -591,6 +651,40 @@ function getTakenInWorkStartAt(
   const isRecoveredInterimState =
     previous.takenInWork === true && previous.startedAt == null;
   return isNewTakenInWork || isRecoveredInterimState ? now.getTime() : undefined;
+}
+
+function suppressedResponseReminderState(
+  receivedAt: number,
+): ResponseReminderStateEntry {
+  return {
+    receivedAt,
+    firedIntervalsMinutes: [],
+    takenInWork: false,
+    suppressedUntilTakenInWork: true,
+    overdue: false,
+  };
+}
+
+function responseReminderStateEntryChanged(
+  previous: ResponseReminderStateEntry | undefined,
+  next: ResponseReminderStateEntry,
+): boolean {
+  if (!previous || previous.receivedAt != next.receivedAt) {
+    return true;
+  }
+  return (
+    previous.firedIntervalsMinutes.length !=
+      next.firedIntervalsMinutes.length ||
+    previous.firedIntervalsMinutes.some(
+      (interval, index) => interval != next.firedIntervalsMinutes[index],
+    ) ||
+    previous.startedAt != next.startedAt ||
+    previous.startedAtSource != next.startedAtSource ||
+    previous.takenInWork != next.takenInWork ||
+    previous.suppressedUntilTakenInWork !=
+      next.suppressedUntilTakenInWork ||
+    previous.overdue != next.overdue
+  );
 }
 
 /** Не доставляет уведомления, которые устарели после изменения настроек. */
@@ -776,6 +870,8 @@ function readState(): Record<string, ResponseReminderStateEntry> {
         ? finiteTimestamp(rawRecord.startedAt)
         : undefined;
     const takenInWork = optionalBoolean(rawRecord.takenInWork);
+    const suppressedUntilTakenInWork =
+      rawRecord.suppressedUntilTakenInWork === true;
     const overdue = optionalBoolean(rawRecord.overdue);
     state[key] = {
       receivedAt,
@@ -786,6 +882,9 @@ function readState(): Record<string, ResponseReminderStateEntry> {
         ? {}
         : { startedAt, startedAtSource: "taken-in-work" as const }),
       ...(takenInWork == null ? {} : { takenInWork }),
+      ...(suppressedUntilTakenInWork
+        ? { suppressedUntilTakenInWork: true }
+        : {}),
       ...(overdue == null ? {} : { overdue }),
     };
   }
