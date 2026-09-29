@@ -93,8 +93,61 @@ export class OWAFolder extends ExchangeFolder {
   /** Не допускать параллельных GetItem для видимой папки. */
   protected visibleMetadataRefreshPromise: Promise<void> | null = null;
 
+  /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
+  protected lastMarkReadAt = 0;
+  /** Последний необработанный счётчик, полученный непосредственно от Exchange. */
+  protected lastServerCountTotal: number | null = null;
+  protected lastServerCountUnread: number | null = null;
+  /** Ожидаемый локальный счётчик после последней отметки прочитанности. */
+  protected localUnreadAfterReadMutation: number | null = null;
+
   newEMail(): OWAEMail {
     return new OWAEMail(this);
+  }
+
+  /** Проверяет наличие ожидающих применения на сервере отметок прочитанности. */
+  hasPendingReadMutations(): boolean {
+    for (let message of this.messages) {
+      if (message instanceof OWAEMail && message.hasPendingReadState()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Фиксирует серверную точку отсчёта до локального изменения прочитанности. */
+  noteLocalReadMutation(expectedUnread = this.countUnread): void {
+    this.lastServerCountTotal ??= this.countTotal;
+    this.lastServerCountUnread ??= this.countUnread;
+    this.lastMarkReadAt = Date.now();
+    this.localUnreadAfterReadMutation = Math.max(0, expectedUnread);
+    this.dirty = true;
+  }
+
+  /**
+   * Защита от устаревшего серверного счётчика Exchange после локального прочтения.
+   * Exchange пересчитывает FindFolder/GetFolder счётчик с задержкой в несколько секунд/минут.
+   */
+  isSuppressingStaleServerUnread(countTotal: number, countUnread: number): boolean {
+    let recentlyMarked = Date.now() - this.lastMarkReadAt < 120_000;
+    let hasPendingReadMutation = this.hasPendingReadMutations();
+    if (!this.haveReadFolder && !recentlyMarked && !hasPendingReadMutation) {
+      return false;
+    }
+    let localUnread = this.localUnreadCount();
+    if (recentlyMarked || hasPendingReadMutation) {
+      let expectedUnread = this.localUnreadAfterReadMutation ?? this.countUnread;
+      let previousServerTotal = this.lastServerCountTotal ?? this.countTotal;
+      let newArrivals = Math.max(0, countTotal - previousServerTotal);
+      expectedUnread = Math.max(expectedUnread, this.countUnread) + newArrivals;
+      return countUnread != expectedUnread;
+    }
+    let newArrivals = Math.max(0, countTotal - this.countTotal);
+    let expectedMaxUnread = Math.max(localUnread, this.countUnread) + newArrivals;
+    if (countUnread <= expectedMaxUnread) {
+      return false;
+    }
+    return hasPendingReadMutation || recentlyMarked || (this.countUnread == 0 && localUnread == 0);
   }
 
   applyServerCounts(countTotal: number, countUnread: number): void {
@@ -103,19 +156,47 @@ export class OWAFolder extends ExchangeFolder {
     if (countTotal < this.countTotal) {
       this.countTotalDecreased = true;
     }
-    if (countUnread > this.countUnread) {
-      this.countNewArrived += countUnread - this.countUnread;
-    } else if (countUnread < this.countUnread) {
-      this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - countUnread));
+    let effectiveUnread = countUnread;
+    let suppressingStaleUnread = this.isSuppressingStaleServerUnread(countTotal, countUnread);
+    if (suppressingStaleUnread) {
+      let recentlyMarked = Date.now() - this.lastMarkReadAt < 120_000;
+      let hasPendingReadMutation = this.hasPendingReadMutations();
+      if (recentlyMarked || hasPendingReadMutation) {
+        let previousServerTotal = this.lastServerCountTotal ?? this.countTotal;
+        let newArrivals = Math.max(0, countTotal - previousServerTotal);
+        let minimumUnread = Math.max(this.localUnreadAfterReadMutation ?? this.countUnread, this.countUnread);
+        let expectedUnread = minimumUnread + newArrivals;
+        // Exchange may answer with either side of the local transition while
+        // its unread index catches up. Keep the local target, but still allow
+        // genuinely new messages inferred from TotalCount to increase it.
+        effectiveUnread = Math.max(minimumUnread,
+          Math.min(countUnread, expectedUnread));
+      } else {
+        let newArrivals = Math.max(0, countTotal - this.countTotal);
+        effectiveUnread = Math.min(countUnread, this.countUnread + newArrivals);
+      }
     }
-    if (this.countTotal != countTotal || this.countUnread != countUnread) {
+    if (effectiveUnread > this.countUnread) {
+      this.countNewArrived += effectiveUnread - this.countUnread;
+    } else if (effectiveUnread < this.countUnread) {
+      this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - effectiveUnread));
+    }
+    if (this.countTotal != countTotal || this.countUnread != effectiveUnread) {
       this.dirty = true;
       if (this.recentSyncRunOnce.running) {
         this.recentSyncPending = true;
       }
     }
+    if (suppressingStaleUnread) {
+      // Exchange может прислать устаревший счётчик даже после завершения
+      // UpdateItem. Оставляем папку dirty, чтобы открытая папка повторила
+      // сверку и подтянула реальные новые заголовки.
+      this.dirty = true;
+    }
     this.countTotal = countTotal;
-    this.countUnread = countUnread;
+    this.countUnread = effectiveUnread;
+    this.lastServerCountTotal = countTotal;
+    this.lastServerCountUnread = countUnread;
   }
 
   fromJSON(json: any, archiveMailbox = false) {
@@ -206,10 +287,11 @@ export class OWAFolder extends ExchangeFolder {
 
   /** Снимает устаревший dirty только после сверки обоих счётчиков с кешем. */
   protected markCountsReconciled(): void {
-    if (this.countTotal == this.messages.length &&
-        this.countUnread == this.localUnreadCount()) {
-      this.dirty = false;
-      this.countTotalDecreased = false;
+    if (this.countUnread == this.localUnreadCount()) {
+      if (this.countTotal == this.messages.length || (this.messages.hasItems && !this.countTotalDecreased)) {
+        this.dirty = false;
+        this.countTotalDecreased = false;
+      }
     }
   }
 
@@ -240,7 +322,7 @@ export class OWAFolder extends ExchangeFolder {
    * moved the badge but Row/NewMail did not arrive yet. Does not wait on full
    * folder scans that can take minutes on large Inboxes.
    */
-  async fetchUnreadArrivals(maxResults = 30): Promise<ArrayColl<OWAEMail>> {
+  async fetchUnreadArrivals(maxResults = 50): Promise<ArrayColl<OWAEMail>> {
     if (!this.id) {
       return new ArrayColl();
     }
@@ -250,9 +332,10 @@ export class OWAFolder extends ExchangeFolder {
       let queryResult: any = null;
       let queryFailed = false;
       let expectedUnread = this.countUnread;
+      let queryMaxResults = Math.min(250, Math.max(50, this.countUnread, maxResults));
       try {
         queryResult = await this.account.callOWA(
-          owaFindMsgsByQueryRequest(this.id, "isread:no", maxResults));
+          owaFindMsgsByQueryRequest(this.id, "isread:no", queryMaxResults));
         items = queryResult?.RootFolder?.Items ?? [];
       } catch (ex) {
         console.warn("OWA unread query failed; falling back to recent FindItem", this.name, ex);
@@ -266,11 +349,16 @@ export class OWAFolder extends ExchangeFolder {
         if (!id) {
           continue;
         }
-        unreadItemIDs.add(id);
         if (this.deletions.has(id)) {
           continue;
         }
         let email = this.getEmailByItemID(id);
+        // Если письмо уже есть локально и прочитано или в процессе отметки,
+        // серверный AQS-поиск отстаёт от транзакционной базы Exchange. Не считаем его непрочитанным.
+        if (email && (email.isRead || email.hasPendingReadState(true))) {
+          continue;
+        }
+        unreadItemIDs.add(id);
         if (email) {
           if (email.setFlags(message, "list")) {
             flagsChanged = true;
@@ -289,7 +377,7 @@ export class OWAFolder extends ExchangeFolder {
         flagsChanged = true;
       }
       if (!queryFailed && this.unreadQueryIsComplete(
-        queryResult, maxResults, expectedUnread, unreadItemIDs)) {
+        queryResult, queryMaxResults, expectedUnread, unreadItemIDs)) {
         // Запрос `isread:no` можно считать источником истины только после
         // получения полного результата. Это исправляет и обратный рассинхрон:
         // устаревший локальный кеш мог содержать больше непрочитанных строк,
@@ -316,18 +404,20 @@ export class OWAFolder extends ExchangeFolder {
       if (flagsChanged) {
         this.notifyObservers();
       }
-      // Некоторые shared/on-premise OWA-серверы возвращают пустой результат
-      // AQS, хотя счётчик папки уже показывает непрочитанные письма. Фоновая
-      // проверка должна использовать тот же fallback через FindItem, что и
-      // открытие папки, иначе письмо появляется только после перезапуска.
-      if (queryFailed || this.isBehindServer()) {
+      // Некоторые shared/on-premise OWA-серверы возвращают неполный или пустой
+      // результат AQS, хотя счётчик папки уже показывает непрочитанные письма.
+      // Даже после локального прочтения нужно добрать недостающие заголовки:
+      // pendingReadState защищает уже прочитанное письмо от устаревшего FindItem,
+      // а запрет fallback оставлял в списке только один случайно возвращённый
+      // заголовок до перезапуска приложения.
+      if (queryFailed || this.unreadBehindServer()) {
         let recent = await this.listMessages(true, true);
-        if (this.isBehindServer()) {
-          // Непустая первая страница не доказывает, что расхождение устранено:
-          // сервер мог вернуть только один из нескольких новых заголовков.
-          recent = await this.listMessages(false, true);
-        }
         newMsgs.addAll(recent);
+        // В общем ящике быстрая страница может вернуть только одно письмо,
+        // хотя серверный счётчик уже показывает несколько непрочитанных.
+        if (this.unreadBehindServer()) {
+          newMsgs.addAll(await this.listMessages(false, true));
+        }
       }
       void this.downloadMessages(newMsgs).catch(this.account.errorCallback);
       this.completeInitialSync();
@@ -351,7 +441,8 @@ export class OWAFolder extends ExchangeFolder {
     if ((includesLast || hasCompleteCount) && unreadItemIDs.size == expectedUnread) {
       return true;
     }
-    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == 0 && this.localUnreadCount() == 0) {
+    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == 0 && this.localUnreadCount() == 0 &&
+        this.countTotal == this.messages.length) {
       return true;
     }
     return false;
@@ -725,7 +816,7 @@ export class OWAFolder extends ExchangeFolder {
       // reconcile the whole folder only if the counters still disagree.
       msgs = await this.listMessages(true, true);
       if (!msgs.hasItems && this.isBehindServer()) {
-        msgs = await this.listMessages(false, true);
+        msgs = await this.listMessages(false, true, kMaxFetchCount * 2);
       }
       await this.finishNewMessages(msgs, true);
     }
@@ -826,16 +917,13 @@ export class OWAFolder extends ExchangeFolder {
     if (this.dirty) {
       return true;
     }
-    if (this.countTotal != this.messages.length) {
+    if (this.messages.isEmpty && this.countTotal > 0) {
       return true;
     }
-    let localUnread = 0;
-    for (let message of this.messages) {
-      if (!message.isRead) {
-        localUnread++;
-      }
+    if (this.messages.length > this.countTotal) {
+      return true;
     }
-    return this.countUnread != localUnread;
+    return this.unreadCountsDifferFromServer();
   }
 
   /** Surplus local messages prove a server-side delete or move. */
@@ -848,7 +936,7 @@ export class OWAFolder extends ExchangeFolder {
    * the background poll so existing message properties stay current.
    * `force` is used to reconcile a count decrease after the quick poll.
    */
-  async listMessages(recentOnly = false, force = false): Promise<Collection<OWAEMail>> {
+  async listMessages(recentOnly = false, force = false, maxItems?: number): Promise<Collection<OWAEMail>> {
     await this.readFolder();
     let lock = await this.listMessagesLock.lock();
     try {
@@ -884,6 +972,7 @@ export class OWAFolder extends ExchangeFolder {
       );
       let result: any = { RootFolder: { IncludesLastItemInRange: false } };
       let firstPage = true;
+      let reachedLimit = false;
       while (true) {
         result = await this.account.callOWA(request);
         let messages = result?.RootFolder?.Items;
@@ -925,6 +1014,11 @@ export class OWAFolder extends ExchangeFolder {
           break;
         }
 
+        if (maxItems != null && (allMsgs.length + newMsgs.length) >= maxItems) {
+          reachedLimit = true;
+          break;
+        }
+
         let nextOffset = result.RootFolder?.IndexedPagingOffset;
         if (typeof nextOffset === "number" && nextOffset > request.Body.Paging.Offset) {
           request.Body.Paging.Offset = nextOffset;
@@ -945,7 +1039,7 @@ export class OWAFolder extends ExchangeFolder {
         }
       }
 
-      if (recentOnly) {
+      if (recentOnly || reachedLimit) {
         if (newMsgs.hasItems) {
           this.addMessagesIfAbsent(newMsgs);
           this.refreshMessageContacts();
@@ -1492,7 +1586,7 @@ export class OWAFolder extends ExchangeFolder {
 
     if (this.account.isDependentAccount) {
       let newMsgs = await this.listMessages(true);
-      if (!newMsgs.hasItems && this.needsRecentRefresh()) {
+      if (!recentOnly && !newMsgs.hasItems && this.needsRecentRefresh()) {
         newMsgs = await this.listMessages(false, true);
       }
       if (recentOnly && this.needsFullReconcile()) {
@@ -1508,7 +1602,7 @@ export class OWAFolder extends ExchangeFolder {
       }
       // If the recent page still left us empty but the server reports mail,
       // force a full FindItem reconcile (shared SortOrder quirks).
-      if (this.messages.isEmpty && this.countTotal > 0) {
+      if (!recentOnly && this.messages.isEmpty && this.countTotal > 0) {
         newMsgs = await this.listMessages(false, true);
       }
       return this.finishNewMessages(newMsgs, recentOnly);
@@ -1527,7 +1621,7 @@ export class OWAFolder extends ExchangeFolder {
         newMsgs = await this.listMessages(false, true);
       }
     }
-    if (this.messages.isEmpty && this.countTotal > 0) {
+    if (!recentOnly && this.messages.isEmpty && this.countTotal > 0) {
       newMsgs = await this.listMessages(false, true);
     }
     return this.finishNewMessages(newMsgs, recentOnly);
@@ -2105,9 +2199,102 @@ export class OWAFolder extends ExchangeFolder {
     await this.account.callOWA(owaDeleteFolderRequest(this.id));
   }
 
+  override async markMessagesRead(messages: OWAEMail[], read: boolean): Promise<void> {
+    let toUpdate = messages.filter(
+      (msg): msg is OWAEMail => msg instanceof OWAEMail && (msg.isRead !== read || msg.hasPendingReadState(!read))
+    );
+    if (!toUpdate.length) {
+      return;
+    }
+    let changedUnreadCount = 0;
+    let versions = new Map<OWAEMail, number>();
+    for (let msg of toUpdate) {
+      let version = msg.beginPendingReadState(read);
+      versions.set(msg, version);
+      let wasRead = msg.isRead;
+      msg.isRead = read;
+      if (wasRead !== read) {
+        changedUnreadCount++;
+      }
+      void msg.saveWritablePropsLocally().catch(() => null);
+    }
+    this.noteLocalReadMutation(this.countUnread + (read ? -changedUnreadCount : changedUnreadCount));
+    if (changedUnreadCount > 0) {
+      if (read) {
+        this.countUnread = Math.max(0, this.countUnread - changedUnreadCount);
+        this.countNewArrived = Math.max(0, this.countNewArrived - changedUnreadCount);
+      } else {
+        this.countUnread += changedUnreadCount;
+      }
+      this.notifyObservers();
+    }
+
+    let withIDs = toUpdate.filter(msg => !!msg.itemID);
+    if (!withIDs.length) {
+      return;
+    }
+
+    const kMaxBatchSize = 50;
+    let batches: OWAEMail[][] = [];
+    for (let i = 0; i < withIDs.length; i += kMaxBatchSize) {
+      batches.push(withIDs.slice(i, i + kMaxBatchSize));
+    }
+
+    let firstError: any = null;
+    for (let batch of batches) {
+      let itemIDs = batch.map(msg => msg.itemID as string);
+      let request = new OWAUpdateItemRequest(itemIDs, {
+        MessageDisposition: "SaveOnly",
+        SendCalendarInvitationsOrCancellations: "SendToNone",
+        SuppressReadReceipts: true,
+      });
+      request.addField("Message", "IsRead", read, "message:IsRead");
+      try {
+        await this.account.callOWA(request);
+        for (let msg of batch) {
+          let version = versions.get(msg);
+          if (version !== undefined) {
+            msg.commitPendingReadState(version);
+          }
+        }
+      } catch (ex) {
+        for (let msg of batch) {
+          let version = versions.get(msg);
+          if (version !== undefined) {
+            msg.rollbackPendingReadState(version);
+          }
+        }
+        if (!firstError) {
+          firstError = ex;
+        }
+      }
+    }
+    if (firstError) {
+      throw firstError;
+    }
+  }
+
   async markAllRead() {
+    this.noteLocalReadMutation(0);
+    let versions = new Map<OWAEMail, number>();
+    for (let msg of this.messages) {
+      if (msg instanceof OWAEMail && !msg.isRead) {
+        versions.set(msg, msg.beginPendingReadState(true));
+      }
+    }
     await super.markAllRead();
-    await this.account.callOWA(owaFolderMarkAllMsgsReadRequest(this.id, true));
+    this.notifyObservers();
+    try {
+      await this.account.callOWA(owaFolderMarkAllMsgsReadRequest(this.id, true));
+      for (let [msg, version] of versions) {
+        msg.commitPendingReadState(version);
+      }
+    } catch (ex) {
+      for (let [msg, version] of versions) {
+        msg.rollbackPendingReadState(version);
+      }
+      throw ex;
+    }
   }
 
   async markAllUnread() {

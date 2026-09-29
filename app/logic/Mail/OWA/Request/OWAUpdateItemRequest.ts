@@ -13,9 +13,20 @@ export class OWAUpdateItemRequest extends OWARequest {
     }],
   };
 
-  constructor(id: string, attributes?: { [key: string]: string | boolean | object }) {
+  constructor(id: string | string[], attributes?: { [key: string]: string | boolean | object }) {
     super("UpdateItem");
-    this.itemChange.ItemId.Id = id;
+    if (Array.isArray(id)) {
+      this.Body.ItemChanges = id.map(itemId => ({
+        __type: "ItemChange:#Exchange",
+        ItemId: {
+          __type: "ItemId:#Exchange",
+          Id: itemId,
+        },
+        Updates: [],
+      }));
+    } else {
+      this.itemChange.ItemId.Id = id;
+    }
     Object.assign(this.Body, attributes);
   }
 
@@ -27,7 +38,7 @@ export class OWAUpdateItemRequest extends OWARequest {
    * @param PropertyTag the MAPI property tag, e.g. "0x1081"
    * @param PropertyType the MAPI property type, e.g. "Integer" */
   addExtendedField(type: string, PropertyTag: string, PropertyType: string, value: any) {
-    this.itemChange.Updates.unshift({
+    let update = {
       __type: "SetItemField:#Exchange",
       Path: {
         __type: "ExtendedPropertyUri:#Exchange",
@@ -41,7 +52,10 @@ export class OWAUpdateItemRequest extends OWARequest {
           Value: String(value),
         }],
       },
-    });
+    };
+    for (let itemChange of this.Body.ItemChanges) {
+      itemChange.Updates.unshift(update);
+    }
   }
 
   addField(type: string, key: string, value: any, FieldURI: string) {
@@ -59,6 +73,8 @@ export class OWAUpdateItemRequest extends OWARequest {
       };
       field.Item[key] = value;
     }
-    this.itemChange.Updates.unshift(field); // reverse order for Event time zone
+    for (let itemChange of this.Body.ItemChanges) {
+      itemChange.Updates.unshift(field); // reverse order for Event time zone
+    }
   }
 }

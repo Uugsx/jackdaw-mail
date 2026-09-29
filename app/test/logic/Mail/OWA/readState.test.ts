@@ -43,3 +43,131 @@ test("не возвращает письмо в непрочитанные из-
   message.setFlags({ IsRead: false }, "list");
   expect(message.isRead).toBe(false);
 });
+
+test("уведомляет папку после автоматического прочтения письма", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countUnread = 1;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  let observedUnreadCounts: number[] = [];
+  folder.subscribe(() => observedUnreadCounts.push(folder.countUnread));
+
+  await message.markRead(true);
+
+  expect(folder.countUnread).toBe(0);
+  expect(observedUnreadCounts).toContain(0);
+});
+
+test("не возвращает устаревший счётчик после чтения в частично загруженной папке", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 9875;
+  folder.countUnread = 104;
+  (folder as any).haveReadFolder = true;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  await folder.markMessagesRead([message], true);
+  expect(folder.countUnread).toBe(103);
+  expect(folder.dirty).toBe(true);
+
+  // GetFolder может вернуть старый unread-count после успешного UpdateItem.
+  folder.applyServerCounts(9875, 104);
+  expect(folder.countUnread).toBe(103);
+});
+
+test("не занижает счётчик после возврата письма в непрочитанные при лаге OWA", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 9875;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = true;
+  folder.messages.add(message);
+
+  await folder.markMessagesRead([message], false);
+  expect(folder.countUnread).toBe(1);
+
+  // После UpdateItem Exchange ещё может вернуть старый unread-count = 0.
+  folder.applyServerCounts(9875, 0);
+  expect(folder.countUnread).toBe(1);
+  expect(message.isRead).toBe(false);
+});
+
+test("защищает счётчик до завершения первой загрузки папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 9875;
+  folder.countUnread = 104;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  await folder.markMessagesRead([message], true);
+  expect(folder.countUnread).toBe(103);
+
+  folder.applyServerCounts(9875, 104);
+  expect(folder.countUnread).toBe(103);
+});
+
+test("не возвращает старый счётчик, если TotalCount уже обновился до чтения", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 9875;
+  folder.countUnread = 104;
+  (folder as any).haveReadFolder = true;
+
+  // Новый серверный счётчик уже пришёл до локальной отметки письма.
+  folder.applyServerCounts(9880, 109);
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  await folder.markMessagesRead([message], true);
+  expect(folder.countUnread).toBe(108);
+
+  // Повторный ответ с устаревшим UnreadCount не должен вернуть письмо.
+  folder.applyServerCounts(9880, 109);
+  expect(folder.countUnread).toBe(108);
+  expect(folder.dirty).toBe(true);
+});

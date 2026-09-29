@@ -495,6 +495,14 @@ export class Folder extends Observable implements TreeItem<Folder> {
   protected async deleteItOnServer() {
   }
 
+  async markMessagesRead(messages: EMail[], read: boolean): Promise<void> {
+    let results = await Promise.allSettled(messages.map(message => message.markRead(read)));
+    let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
+  }
+
   async markAllRead(): Promise<void> {
     this.countUnread = 0;
     this.countNewArrived = 0;

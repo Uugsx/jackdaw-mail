@@ -26,6 +26,33 @@ export class OWAEMail extends ExchangeEMail {
   private readStateMutationVersion = 0;
   private readStateServerUpdateSucceeded = false;
 
+  hasPendingReadState(expectedState?: boolean): boolean {
+    if (expectedState !== undefined) {
+      return this.pendingReadState === expectedState;
+    }
+    return this.pendingReadState !== null;
+  }
+
+  beginPendingReadState(read: boolean): number {
+    let mutationVersion = ++this.readStateMutationVersion;
+    this.pendingReadState = read;
+    this.readStateServerUpdateSucceeded = false;
+    return mutationVersion;
+  }
+
+  commitPendingReadState(mutationVersion?: number): void {
+    if (mutationVersion === undefined || mutationVersion == this.readStateMutationVersion) {
+      this.readStateServerUpdateSucceeded = true;
+    }
+  }
+
+  rollbackPendingReadState(mutationVersion?: number): void {
+    if (mutationVersion === undefined || (mutationVersion == this.readStateMutationVersion && !this.readStateServerUpdateSucceeded)) {
+      this.pendingReadState = null;
+      this.readStateServerUpdateSucceeded = false;
+    }
+  }
+
   get itemID(): string | null {
     return this.pID as string | null;
   }
@@ -198,22 +225,25 @@ export class OWAEMail extends ExchangeEMail {
   }
 
   async markRead(read = true) {
-    let mutationVersion = ++this.readStateMutationVersion;
-    this.pendingReadState = read;
-    this.readStateServerUpdateSucceeded = false;
+    let wasRead = this.isRead;
+    if (this.folder && "lastMarkReadAt" in this.folder) {
+      let unreadDelta = this.isRead == read ? 0 : (read ? -1 : 1);
+      (this.folder as any).noteLocalReadMutation?.(this.folder.countUnread + unreadDelta);
+    }
+    let mutationVersion = this.beginPendingReadState(read);
     let serverUpdateSucceeded = false;
     try {
       await super.markRead(read);
+      if (this.folder && wasRead != read) {
+        this.folder.notifyObservers();
+      }
       await this.saveWritablePropsLocally().catch(() => null);
       await this.withItemIdRetry(() => this.updateIsReadOnServer(read));
       serverUpdateSucceeded = true;
-      if (mutationVersion == this.readStateMutationVersion) {
-        this.readStateServerUpdateSucceeded = true;
-      }
+      this.commitPendingReadState(mutationVersion);
     } finally {
-      if (mutationVersion == this.readStateMutationVersion && !serverUpdateSucceeded) {
-        this.pendingReadState = null;
-        this.readStateServerUpdateSucceeded = false;
+      if (!serverUpdateSucceeded) {
+        this.rollbackPendingReadState(mutationVersion);
       }
     }
   }

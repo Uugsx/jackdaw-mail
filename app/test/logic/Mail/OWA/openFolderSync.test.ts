@@ -159,6 +159,7 @@ test("делает полную сверку после частичного unr
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
 
   let fullReconcileCalls = 0;
   (account as any).callOWA = async (request: any) => {
@@ -211,6 +212,69 @@ test("делает полную сверку после частичного unr
   expect(fullReconcileCalls).toBe(1);
   expect(folder.messages.length).toBe(4);
   expect(folder.getEmailByItemID("unread-3")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(3);
+});
+
+test("добирает заголовки после прочтения при частичном unread-ответе", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let fullReconcileCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      return findItemResponse(["unread-1"]);
+    }
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 4, UnreadCount: 3 }] };
+    }
+    if (request.action == "FindItem" && request.Body.Paging.BasePoint == "End") {
+      return findItemResponse(["unread-2"]);
+    }
+    if (request.action == "FindItem") {
+      fullReconcileCalls++;
+      return findItemResponse(["cached-message", "unread-1", "unread-2", "unread-3"]);
+    }
+    if (request.action == "GetItem") {
+      let ids = request.Body.ItemIds.map((item: any) => item.Id);
+      return {
+        Items: ids.map((id: string) => ({
+          ItemId: { Id: id },
+          InternetMessageId: `<${id}@example.test>`,
+          Subject: id,
+          DateTimeSent: "2026-09-22T10:00:00Z",
+          DateTimeReceived: "2026-09-22T10:00:00Z",
+          IsRead: id == "cached-message" ? true : false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 4;
+  folder.countUnread = 3;
+  folder.dirty = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  // Exchange может ещё отдавать старый unread-count после локального чтения.
+  // Это не должно запрещать добор остальных писем из папки.
+  folder.noteLocalReadMutation(2);
+
+  await folder.syncRecentArrivals();
+
+  expect(fullReconcileCalls).toBe(1);
+  expect(folder.messages.length).toBe(4);
   expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(3);
 });
 
@@ -958,4 +1022,134 @@ test("refreshMessages уменьшает счётчик непрочитанны
   expect(folder.countUnread).toBe(0);
   expect(folder.countNewArrived).toBe(0);
   expect(observerNotified).toBe(true);
+});
+
+test("пакетная пометка прочитанными отправляет один UpdateItem и не откатывается лагом AQS", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let updateItemRequests: any[] = [];
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "UpdateItem") {
+      updateItemRequests.push(request);
+      return {
+        ResponseMessages: {
+          Items: request.Body.ItemChanges.map(() => ({
+            ResponseClass: "Success",
+            ResponseCode: "NoError",
+          })),
+        },
+      };
+    }
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      // Имитируем отставание поискового индекса Exchange AQS:
+      // он всё ещё возвращает те же 39 ID как непрочитанные
+      return {
+        RootFolder: {
+          TotalItemsInView: 39,
+          IncludesLastItemInRange: true,
+          Items: Array.from({ length: 39 }, (_, i) => ({
+            ItemId: { Id: `msg-${i}` },
+            IsRead: false,
+          })),
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "folder-errors";
+  folder.countTotal = 2740;
+  folder.countUnread = 39;
+  folder.countNewArrived = 39;
+  (folder as any).haveReadFolder = true;
+
+  let messages: any[] = [];
+  for (let i = 0; i < 39; i++) {
+    let msg = folder.newEMail();
+    msg.itemID = `msg-${i}`;
+    msg.isRead = false;
+    folder.messages.add(msg);
+    messages.push(msg);
+  }
+
+  // 1. Помечаем все 39 писем прочитанными
+  await folder.markMessagesRead(messages, true);
+
+  // Должен был уйти ровно один пакетный UpdateItem со всеми 39 письмами
+  expect(updateItemRequests.length).toBe(1);
+  expect(updateItemRequests[0].Body.ItemChanges.length).toBe(39);
+  expect(updateItemRequests[0].Body.ItemChanges[0].Updates[0].Item.IsRead).toBe(true);
+
+  // Счётчики должны мгновенно стать 0
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(messages.every(m => m.isRead)).toBe(true);
+
+  // 2. Имитируем опрос fetchUnreadArrivals при отстающем AQS сервере
+  await folder.fetchUnreadArrivals(50);
+
+  // Письма не должны откатиться в непрочитанные, счётчик должен остаться 0
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(messages.every(m => m.isRead)).toBe(true);
+
+  // 3. Имитируем получение устаревшего счётчика GetFolder / FindFolder с сервера
+  folder.applyServerCounts(2740, 39);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+
+  // 4. Имитируем поступление одного нового письма при продолжающемся отставании сервера
+  folder.applyServerCounts(2741, 39);
+  expect(folder.countUnread).toBe(1);
+  expect(folder.countNewArrived).toBe(1);
+
+  // 5. Имитируем поступление ещё одного письма (всего 2 новых)
+  folder.applyServerCounts(2742, 39);
+  expect(folder.countUnread).toBe(2);
+  expect(folder.countNewArrived).toBe(2);
+});
+
+test("large folder with partial local history reconciles dirty without full-scan", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+  (account as any).callOWA = async () => ({ Folders: [] });
+  Object.defineProperty(account, "isLoggedIn", { value: true });
+  let folder = account.newFolder();
+  folder.id = "folder-large";
+  folder.countTotal = 9758;
+  folder.countUnread = 0;
+  folder.countNewArrived = 0;
+  (folder as any).haveReadFolder = true;
+
+  // Локально загружено только 372 письма из 9758
+  for (let i = 0; i < 372; i++) {
+    let msg = folder.newEMail();
+    msg.itemID = `msg-${i}`;
+    msg.isRead = true;
+    folder.messages.add(msg);
+  }
+
+  folder.dirty = true;
+  (folder as any).markCountsReconciled();
+  // dirty должен сброситься, несмотря на то что local 372 < total 9758
+  expect(folder.dirty).toBe(false);
+
+  // needsRecentRefresh не должен возвращать true, если все локальные письма прочитаны
+  expect((folder as any).needsRecentRefresh()).toBe(false);
+
+  // getNewMessages(true) не должен вызывать listMessages(false, true)
+  let listMessagesCalls: Array<{ recentOnly: boolean; force: boolean }> = [];
+  (folder as any).listMessages = async (recentOnly = false, force = false) => {
+    listMessagesCalls.push({ recentOnly, force });
+    return new ArrayColl();
+  };
+
+  await folder.getNewMessages(true);
+  expect(listMessagesCalls.some(call => !call.recentOnly)).toBe(false);
 });

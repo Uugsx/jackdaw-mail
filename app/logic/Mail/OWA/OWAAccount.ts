@@ -216,38 +216,45 @@ export class OWAAccount extends ExchangeMailAccount {
     if (this.mainAccount) {
       throw new NotReached();
     }
-    this.authorizationHeader = await appGlobal.remoteApp.OWA.getAnyScrapedAuth(this.partition);
-    let url = this.url + 'service.svc?action=FindFolder&EP=1';
-    let options = {
-      body: JSON.stringify(owaFindFoldersRequest(false)),
-      headers: {
-        Action: "FindFolder",
-        Authorization: this.authorizationHeader,
-        "Content-Type": "application/json",
-        "x-anchormailbox": this.emailAddress,
-      },
-      method: "POST",
-    };
-    if (this.authorizationHeader) {
-      let response = await fetch(url, options);
+    try {
+      this.authorizationHeader = await appGlobal.remoteApp.OWA.getAnyScrapedAuth(this.partition);
+      let url = this.url + 'service.svc?action=FindFolder&EP=1';
+      let options = {
+        body: JSON.stringify(owaFindFoldersRequest(false)),
+        headers: {
+          Action: "FindFolder",
+          Authorization: this.authorizationHeader,
+          "Content-Type": "application/json",
+          "x-anchormailbox": this.emailAddress,
+        },
+        method: "POST",
+      };
+      if (this.authorizationHeader) {
+        let response = await fetch(url, options);
+        if ([401, 440].includes(response.status)) {
+          return false;
+        }
+        try {
+          await response.json();
+          return true;
+        } catch (ex) {
+          return false;
+        }
+      }
+      let response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
       if ([401, 440].includes(response.status)) {
         return false;
       }
-      try {
-        await response.json();
-        return true;
-      } catch (ex) {
+      if (!response.json && response.url != url && response.contentType?.toLowerCase().split(";")[0].trim() == "text/html") {
         return false;
       }
+      return Boolean(response.ok || response.json);
+    } catch (ex) {
+      if (isNetworkError(ex)) {
+        this.scheduleNetworkRecovery(ex);
+      }
+      throw ex;
     }
-    let response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
-    if ([401, 440].includes(response.status)) {
-      return false;
-    }
-    if (!response.json && response.url != url && response.contentType?.toLowerCase().split(";")[0].trim() == "text/html") {
-      return false;
-    }
-    return Boolean(response.ok || response.json);
   }
 
   async verifyLogin(): Promise<void> {
@@ -1121,6 +1128,9 @@ export class OWAAccount extends ExchangeMailAccount {
     countTotal: number,
     countUnread: number,
   ): boolean {
+    if (folder.isSuppressingStaleServerUnread(countTotal, countUnread)) {
+      return false;
+    }
     let mailArrived = countUnread > previousUnread || countTotal > previousTotal;
     let needsBodies = folder.messages.isEmpty && countTotal > 0;
     return (mailArrived || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);

@@ -122,6 +122,26 @@ test("помечает timeout сети временной ошибкой", asyn
   expect(recoveryCount).toBe(1);
 });
 
+test("проверка OWA-сессии не показывает timeout как ошибку авторизации", async () => {
+  let timeout = new Error("net::ERR_CONNECTION_TIMED_OUT");
+  appGlobal.remoteApp = {
+    OWA: {
+      getAnyScrapedAuth: vi.fn().mockResolvedValue(""),
+      fetchJSON: vi.fn().mockRejectedValue(timeout),
+    },
+  };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let recoveryCount = 0;
+  account.recoverAfterNetworkRestored = async () => {
+    recoveryCount++;
+  };
+
+  await expect(account.testLoggedIn()).rejects.toBe(timeout);
+  expect(timeout.doNotShow).toBe(true);
+  expect(recoveryCount).toBe(1);
+});
+
 test("refreshMessages не показывает ошибку при timeout GetItem", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

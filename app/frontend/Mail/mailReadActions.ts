@@ -1,4 +1,5 @@
 import type { EMail } from "../../logic/Mail/EMail";
+import type { Folder } from "../../logic/Mail/Folder";
 
 export function messagesRepresentSameMail(a: EMail, b: EMail): boolean {
   if (a == b) {
@@ -27,17 +28,53 @@ export async function markMessagesRead(messages: readonly EMail[], read: boolean
       uniqueMessages.push(message);
     }
   }
-  let results = await Promise.allSettled(uniqueMessages.map(message => message.markRead(read)));
-  for (let i = 0; i < uniqueMessages.length; i++) {
+  let byFolder = new Map<Folder, EMail[]>();
+  let individualMessages: EMail[] = [];
+  for (let message of uniqueMessages) {
+    if (message.folder && typeof (message.folder as any).markMessagesRead === "function") {
+      let list = byFolder.get(message.folder);
+      if (!list) {
+        list = [];
+        byFolder.set(message.folder, list);
+      }
+      list.push(message);
+    } else {
+      individualMessages.push(message);
+    }
+  }
+
+  type TaskEntry = {
+    messages: EMail[];
+    promise: Promise<void>;
+  };
+  let taskEntries: TaskEntry[] = [];
+  for (let [folder, folderMsgs] of byFolder) {
+    taskEntries.push({
+      messages: folderMsgs,
+      promise: folder.markMessagesRead(folderMsgs, read),
+    });
+  }
+  for (let message of individualMessages) {
+    taskEntries.push({
+      messages: [message],
+      promise: message.markRead(read),
+    });
+  }
+
+  let results = await Promise.allSettled(taskEntries.map(entry => entry.promise));
+  for (let i = 0; i < taskEntries.length; i++) {
     if (results[i].status != "fulfilled") {
       continue;
     }
-    for (let message of messages) {
-      if (messagesRepresentSameMail(uniqueMessages[i], message)) {
-        message.isRead = read;
+    for (let unique of taskEntries[i].messages) {
+      for (let message of messages) {
+        if (messagesRepresentSameMail(unique, message)) {
+          message.isRead = read;
+        }
       }
     }
   }
+
   let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
   if (failed) {
     throw failed.reason;
