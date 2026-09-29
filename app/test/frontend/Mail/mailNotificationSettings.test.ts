@@ -181,3 +181,28 @@ test("использует резервный опрос для протокол
     vi.useRealTimers();
   }
 });
+
+test("передаёт включённую OWA-папку в нативный polling", () => {
+  stubStorage();
+  let setNotificationFolderPolling = vi.fn();
+  let account = {
+    id: "folder-notification-native-test",
+    protocol: "owa",
+    isLoggedIn: true,
+    errorCallback: vi.fn(),
+    setNotificationFolderPolling,
+  } as unknown as MailAccount;
+  let folder = {
+    id: "important",
+    dbID: 106,
+    account,
+    specialFolder: "normal",
+    fetchNewMailQuick: vi.fn(() => Promise.resolve()),
+  } as unknown as Folder;
+
+  updateMailFolderNotificationSettings(folder, { enabled: true });
+  expect(setNotificationFolderPolling).toHaveBeenLastCalledWith(folder, true);
+
+  updateMailFolderNotificationSettings(folder, { enabled: false });
+  expect(setNotificationFolderPolling).toHaveBeenLastCalledWith(folder, false);
+});

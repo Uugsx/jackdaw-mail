@@ -37,6 +37,10 @@ const notificationPollingFolders = new WeakSet<Folder>();
 const notificationPollingTimers = new WeakMap<Folder, ReturnType<typeof setInterval>>();
 const kFallbackMailFolderNotificationPollingIntervalMs = 60 * 1000;
 
+type NativeFolderNotificationPollingAccount = {
+  setNotificationFolderPolling?: (folder: Folder, enabled: boolean) => void;
+};
+
 const defaultMailFolderNotificationSettings: MailFolderNotificationSettings = {
   enabled: true,
   sound: "account",
@@ -156,6 +160,13 @@ export function syncMailFolderNotificationPolling(
     stopPolling?: () => void;
     fetchNewMailQuick?: () => Promise<unknown>;
   };
+  if (typeof (folder.account as NativeFolderNotificationPollingAccount)
+    .setNotificationFolderPolling == "function") {
+    stopMailFolderNotificationPolling(folder);
+    (folder.account as NativeFolderNotificationPollingAccount)
+      .setNotificationFolderPolling!(folder, true);
+    return;
+  }
   if (forceRestart && notificationPollingFolders.has(folder)) {
     if (folder.specialFolder != "inbox") {
       pollable.stopPolling?.();
@@ -186,7 +197,12 @@ export function syncMailFolderNotificationPolling(
 }
 
 export function stopMailFolderNotificationPolling(folder: Folder | null | undefined): void {
-  if (!folder || !notificationPollingFolders.has(folder)) {
+  if (!folder) {
+    return;
+  }
+  (folder.account as NativeFolderNotificationPollingAccount)
+    .setNotificationFolderPolling?.(folder, false);
+  if (!notificationPollingFolders.has(folder)) {
     return;
   }
   let timer = notificationPollingTimers.get(folder);

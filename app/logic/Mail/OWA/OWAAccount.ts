@@ -138,6 +138,9 @@ export class OWAAccount extends ExchangeMailAccount {
   protected notificationChannelReady = false;
   protected notificationChannelReadyPromise: Promise<void> | null = null;
   protected rowNotificationsDisabled = false;
+  /** Папки с явно включёнными уведомлениями, которые нужно опрашивать постоянно. */
+  protected notificationFolders = new Set<OWAFolder>();
+  protected notificationFoldersPollInProgress = false;
   /** Avoid duplicate SubscribeToNotification calls on the same OWA channel. */
   protected notificationsSubscribedForChannel: string | null = null;
   /** Row folder set last pushed to Exchange for dependent mailboxes. */
@@ -159,6 +162,38 @@ export class OWAAccount extends ExchangeMailAccount {
 
   newFolder(): OWAFolder {
     return new OWAFolder(this);
+  }
+
+  /** Регистрирует папку с включёнными уведомлениями в нативном OWA polling. */
+  setNotificationFolderPolling(folder: Folder, enabled: boolean): void {
+    if (!(folder instanceof OWAFolder) || folder.account !== this) {
+      return;
+    }
+    if (enabled) {
+      this.notificationFolders.add(folder);
+    } else {
+      this.notificationFolders.delete(folder);
+      return;
+    }
+    let main = this.mainAccount instanceof OWAAccount ? this.mainAccount : this;
+    if (main.isLoggedIn && !main.poller) {
+      main.startPolling();
+    }
+    if (main.notificationChannelReady) {
+      void main.refreshNotificationSubscriptions();
+    }
+  }
+
+  protected notificationFoldersToSync(): OWAFolder[] {
+    let folders: OWAFolder[] = [];
+    for (let folder of this.notificationFolders) {
+      if (folder.account !== this) {
+        this.notificationFolders.delete(folder);
+      } else if (folder.id) {
+        folders.push(folder);
+      }
+    }
+    return folders;
   }
 
   /**
@@ -703,8 +738,14 @@ export class OWAAccount extends ExchangeMailAccount {
     if (this.watchedFolder?.id && !ids.includes(this.watchedFolder.id)) {
       ids.push(this.watchedFolder.id);
     }
-    // Personal: Inbox + open folder only (lazy sync for everything else).
-    // Shared: same Row scope as above. Calendar/contacts still get Row subscriptions.
+    for (let folder of this.notificationFoldersToSync()) {
+      if (folder.id && !ids.includes(folder.id)) {
+        ids.push(folder.id);
+      }
+    }
+    // Для личного ящика: Входящие, открытая папка и отмеченные папки.
+    // Для shared-ящиков этот список формирует sharedAccountRowFolderIDs ниже.
+    // Календари и контакты по-прежнему получают Row-подписки.
     this.appendCalendarContactFolderIDs(ids);
     return ids;
   }
@@ -739,6 +780,11 @@ export class OWAAccount extends ExchangeMailAccount {
     let watched = account.watchedFolder;
     if (watched instanceof OWAFolder && watched.id && !ids.includes(watched.id)) {
       ids.push(watched.id);
+    }
+    for (let folder of account.notificationFoldersToSync()) {
+      if (folder.id && !ids.includes(folder.id)) {
+        ids.push(folder.id);
+      }
     }
     for (let folder of account.getAllFolders().contents
       .filter((f): f is OWAFolder =>
@@ -1009,16 +1055,51 @@ export class OWAAccount extends ExchangeMailAccount {
     } finally {
       this.pollInProgress = false;
     }
+    if (!this.isDependentAccount) {
+      void this.pollNotificationFolders(inbox).catch(ex => this.handlePollingError(ex));
+    }
     void this.pollInboxBackground(inbox).catch(this.errorCallback);
   }
 
-  /** Personal mailbox: background body sync only for root Inbox and the open folder.
-   * Subfolders and other folders stay lazy (badges update via Hierarchy). */
+  /** Проверяет явно настроенные папки тем же быстрым путём, что и Inbox. */
+  protected async pollNotificationFolders(exclude?: OWAFolder): Promise<void> {
+    if (this.notificationFoldersPollInProgress || !this.isLoggedIn) {
+      return;
+    }
+    let folders = this.notificationFoldersToSync().filter(folder => folder !== exclude);
+    if (!folders.length) {
+      return;
+    }
+    this.notificationFoldersPollInProgress = true;
+    let updatedFolders: OWAFolder[] = [];
+    try {
+      for (let folder of folders) {
+        try {
+          await folder.syncRecentArrivals();
+          folder.dirty = false;
+          updatedFolders.push(folder);
+        } catch (ex) {
+          this.handlePollingError(ex);
+        }
+      }
+      if (updatedFolders.length) {
+        this.notifyFolderUIUpdates(updatedFolders);
+      }
+    } finally {
+      this.notificationFoldersPollInProgress = false;
+    }
+  }
+
+  /** Фоновая синхронизация тел: Входящие, открытая и явно отмеченная папка.
+   * Остальные папки остаются ленивыми и получают только обновление badge. */
   shouldBackgroundSyncBodies(folder: OWAFolder): boolean {
     if (!folder?.id) {
       return false;
     }
     if (folder === this.watchedFolder) {
+      return true;
+    }
+    if (this.notificationFolders.has(folder)) {
       return true;
     }
     if (this.sharedFolderRoot || this.isDependentAccount) {
@@ -1344,12 +1425,18 @@ export class OWAAccount extends ExchangeMailAccount {
 
     let inbox = account.findInboxFolder() as OWAFolder | null;
     let watched = account.watchedFolder;
+    let notificationFolders = account.notificationFoldersToSync();
     let toSync: OWAFolder[] = [];
     if (watched instanceof OWAFolder && watched.account === account) {
       toSync.push(watched);
     }
     if (inbox && !toSync.includes(inbox)) {
       toSync.push(inbox);
+    }
+    for (let folder of notificationFolders) {
+      if (!toSync.includes(folder)) {
+        toSync.push(folder);
+      }
     }
     let syncLimit = account.sharedFolderRoot ? kOWAMaxDirtyFoldersPerPollShared : kOWAMaxDirtyFoldersPerPoll;
     for (let folder of account.getAllFolders().contents
@@ -1361,7 +1448,7 @@ export class OWAAccount extends ExchangeMailAccount {
     }
     for (let folder of toSync) {
       try {
-        if (folder === inbox || folder === watched) {
+        if (folder === inbox || folder === watched || notificationFolders.includes(folder)) {
           await folder.syncRecentArrivals();
         } else {
           await folder.getNewMessages(true);
@@ -2119,6 +2206,7 @@ export class OWAAccount extends ExchangeMailAccount {
     let newMessages = new Map<OWAFolder, string[]>();
     let refreshes = new Map<OWAFolder, string[]>();
     let deletions = new Map<OWAFolder, string[]>();
+    let badgeRefreshes = new Set<OWAFolder>();
     for (let notification of flattenNotifications(messages)) {
       if (notification?.data == "reinitSubscription" || notification?.id == "reinitSubscription") {
         // Exchange reset its notification state and wants us to subscribe again.
@@ -2169,9 +2257,10 @@ export class OWAAccount extends ExchangeMailAccount {
           }
           if (folder.account instanceof OWAAccount &&
               (folder.account.sharedFolderRoot || folder.account.isDependentAccount) &&
-              folder !== folder.account.watchedFolder) {
-            // Still enqueue headers above; also refresh badge for sidebar.
-            folder.account.refreshFolderBadge(folder);
+              folder !== folder.account.watchedFolder &&
+              folder.account.shouldBackgroundSyncBodies(folder)) {
+            // Сначала добавим заголовок, затем обновим badge, чтобы они не расходились.
+            badgeRefreshes.add(folder);
           }
         } else if (folder) {
           if (folder instanceof OWAFolder && folder.account instanceof OWAAccount &&
@@ -2196,8 +2285,9 @@ export class OWAAccount extends ExchangeMailAccount {
         if (targetFolder) {
           if (targetFolder.account instanceof OWAAccount &&
               (targetFolder.account.sharedFolderRoot || targetFolder.account.isDependentAccount) &&
-              targetFolder !== targetFolder.account.watchedFolder) {
-            targetFolder.account.refreshFolderBadge(targetFolder);
+              targetFolder !== targetFolder.account.watchedFolder &&
+              targetFolder.account.shouldBackgroundSyncBodies(targetFolder)) {
+            badgeRefreshes.add(targetFolder);
           }
           if (targetFolder.account instanceof OWAAccount &&
               !targetFolder.account.shouldBackgroundSyncBodies(targetFolder)) {
@@ -2331,6 +2421,12 @@ export class OWAAccount extends ExchangeMailAccount {
       });
     }));
 
+    for (let folder of newMessages.keys()) {
+      if (folder.account.sharedFolderRoot || folder.account.isDependentAccount) {
+        badgeRefreshes.add(folder);
+      }
+    }
+
     await Promise.all([...deletions].map(async ([folder, itemIDs]) => {
       for (let itemID of itemIDs) {
         let email = folder.getEmailByItemID(itemID);
@@ -2340,6 +2436,10 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       folder.noteServerDeletes();
     }));
+
+    for (let folder of badgeRefreshes) {
+      folder.account.refreshFolderBadge(folder);
+    }
 
     this.notifyFolderUIUpdates([...newMessages.keys(), ...refreshes.keys(), ...deletions.keys()]);
   }

@@ -188,14 +188,16 @@
   }
 
   function openAccountSettings() {
-    if (selectedAccount) {
-      openSettingsCategoryForAccount(selectedAccount);
+    let account = selectedFolder?.account ?? selectedAccount;
+    if (account) {
+      openSettingsCategoryForAccount(account);
     } else {
       openGlobalSettings();
     }
   }
 
   function onFolderSettings(folder: Folder) {
+    selectedAccount = folder.account;
     selectedFolder = folder;
     $openFolderProperties = true;
   }

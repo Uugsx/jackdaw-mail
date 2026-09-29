@@ -64,7 +64,7 @@
     type FavoriteFolderRef,
   } from "./favoriteFolders";
   import { excludeQuickAccessFolder } from "./quickAccessUtils";
-  import { selectedFolder } from "../Selected";
+  import { selectedAccount, selectedFolder } from "../Selected";
   import { openFolderProperties } from "../FolderPropertiesPage.svelte";
 
   export let folder: Folder;
@@ -99,6 +99,7 @@
   }
 
   function openFolderSettings(): void {
+    $selectedAccount = folder.account;
     $selectedFolder = folder;
     $openFolderProperties = true;
   }

@@ -97,7 +97,7 @@
 
 <script lang="ts">
   import { type Folder, SpecialFolder } from "../../../logic/Mail/Folder";
-  import { selectedFolder } from "../Selected";
+  import { selectedAccount, selectedFolder } from "../Selected";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import MenuLabel from "../../Shared/Menu/MenuLabel.svelte";
   import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
@@ -186,6 +186,7 @@
   }
 
   function openFolderSettings() {
+    $selectedAccount = folder.account;
     $selectedFolder = folder;
     $openFolderProperties = true;
   }

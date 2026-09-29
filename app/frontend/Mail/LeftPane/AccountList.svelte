@@ -1,5 +1,6 @@
 <vbox class="account-list">
-  <FastList items={accounts} bind:selectedItem={selectedAccount} columns="1fr">
+  <FastList items={accounts} bind:selectedItem={selectedAccount} columns="1fr" {autoHeight}
+    on:selected={event => dispatch("select", event.detail)}>
     <svelte:fragment slot="header">
       <hbox class="header">
         <hbox class="header-label font-smallest">{$t`Accounts`}</hbox>
@@ -8,7 +9,7 @@
       </hbox>
     </svelte:fragment>
     <svelte:fragment slot="row" let:item={account}>
-      <AccountListItem {account} />
+      <AccountListItem {account} showExpand={false} />
     </svelte:fragment>
   </FastList>
 </vbox>
@@ -19,9 +20,13 @@
   import FastList from "../../Shared/FastList.svelte";
   import type { Collection } from 'svelte-collections';
   import { t } from "../../../l10n/l10n";
+  import { createEventDispatcher } from "svelte";
 
   export let accounts: Collection<MailAccount>;
   export let selectedAccount: MailAccount; /* in/out */
+  export let autoHeight = false;
+
+  const dispatch = createEventDispatcher<{ select: MailAccount }>();
 </script>
 
 <style>

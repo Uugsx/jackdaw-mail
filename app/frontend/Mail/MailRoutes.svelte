@@ -212,7 +212,7 @@
           return;
         }
         catchErrors(async () => {
-          if (!(folder instanceof OWAFolder) || !folder.unreadBehindServer()) {
+          if (!(folder instanceof OWAFolder) || !folder.unreadCountsDifferFromServer()) {
             return;
           }
           await folder.syncRecentArrivals();

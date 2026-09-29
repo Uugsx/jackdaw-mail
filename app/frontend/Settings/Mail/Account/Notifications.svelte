@@ -55,19 +55,31 @@
   export let account: MailAccount;
 
   let setting = getMailAccountNotificationSetting(account);
+  let notificationSettings = readMailAccountNotificationSettings(setting.value);
+  let previewSound = getMailNotificationSound(account);
   $: setting = getMailAccountNotificationSetting(account);
   $: notificationSettings = readMailAccountNotificationSettings($setting.value);
-  $: previewSound = getMailNotificationSound(account);
+  $: {
+    notificationSettings;
+    previewSound = getMailNotificationSound(account);
+  }
 
   function onEnabledChange(event: Event): void {
+    let enabled = (event.currentTarget as HTMLInputElement).checked;
+    notificationSettings = { ...notificationSettings, enabled };
     updateMailAccountNotificationSettings(account, {
-      enabled: (event.currentTarget as HTMLInputElement).checked,
+      enabled,
     });
   }
 
   function onSoundChange(event: CustomEvent<NotificationSoundPickerChange>): void {
     let value = event.detail.sound;
     if (value == "global" || value == "custom" || isNotificationSoundId(value)) {
+      notificationSettings = readMailAccountNotificationSettings({
+        ...notificationSettings,
+        ...event.detail,
+        sound: value,
+      });
       updateMailAccountNotificationSettings(account, {
         ...event.detail,
         sound: value,

@@ -155,6 +155,111 @@ test("подтягивает письмо в фоновой синхрониза
   ).toBe(true);
 });
 
+test("делает полную сверку после частичного unread-ответа", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let fullReconcileCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      return findItemResponse(["unread-1"]);
+    }
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 4, UnreadCount: 3 }] };
+    }
+    if (request.action == "FindItem" && request.Body.Paging.BasePoint == "End") {
+      return findItemResponse(["unread-2"]);
+    }
+    if (request.action == "FindItem") {
+      fullReconcileCalls++;
+      return findItemResponse(["cached-message", "unread-1", "unread-2", "unread-3"]);
+    }
+    if (request.action == "GetItem") {
+      let ids = request.Body.ItemIds.map((item: any) => item.Id);
+      return {
+        Items: ids.map((id: string) => ({
+          ItemId: { Id: id },
+          InternetMessageId: `<${id}@example.test>`,
+          Subject: id,
+          DateTimeSent: "2026-09-22T10:00:00Z",
+          DateTimeReceived: "2026-09-22T10:00:00Z",
+          IsRead: id == "cached-message" ? true : false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 4;
+  folder.countUnread = 3;
+  folder.dirty = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  await folder.syncRecentArrivals();
+
+  expect(fullReconcileCalls).toBe(1);
+  expect(folder.messages.length).toBe(4);
+  expect(folder.getEmailByItemID("unread-3")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(3);
+});
+
+test("исправляет лишние локальные непрочитанные письма по полному unread-ответу", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let unreadIDs = Array.from({ length: 10 }, (_, index) => `unread-${index}`);
+  let unreadQueryCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      unreadQueryCalls++;
+      return {
+        RootFolder: {
+          Items: unreadIDs.map(ItemId => ({ ItemId: { Id: ItemId }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          TotalItemsInView: unreadIDs.length,
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 15;
+  folder.countUnread = unreadIDs.length;
+  folder.dirty = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  for (let index = 0; index < 15; index++) {
+    let message = folder.newEMail();
+    message.itemID = `unread-${index}`;
+    message.sent = new Date(2026, 8, 29, 17, index);
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+
+  await folder.syncRecentArrivals();
+
+  expect(unreadQueryCalls).toBe(1);
+  expect(folder.countUnread).toBe(10);
+  expect(folder.dirty).toBe(false);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(10);
+});
+
 test("объединяет параллельные обновления shared Inbox в один запрос", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
@@ -366,6 +471,94 @@ test("повторяет синхронизацию, если счётчик п�
   expect(folder.countUnread).toBe(1);
   expect(folder.getEmailByItemID("new-message")).toBeDefined();
   expect(folder.messages.length).toBe(1);
+});
+
+test("не публикует счётчик во время обычной быстрой синхронизации", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let firstSyncStartedResolve!: () => void;
+  let firstSyncStarted = new Promise<void>(resolve => {
+    firstSyncStartedResolve = resolve;
+  });
+  let release!: () => void;
+  let syncGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  let getNewMessagesCalls = 0;
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+  (folder as any).haveReadFolder = true;
+  (folder as any).getNewMessages = async () => {
+    getNewMessagesCalls++;
+    if (getNewMessagesCalls == 1) {
+      folder.applyServerCounts(1, 1);
+      firstSyncStartedResolve();
+      await syncGate;
+      return new ArrayColl<OWAEMail>();
+    }
+    return new ArrayColl<OWAEMail>();
+  };
+  (folder as any).fetchUnreadArrivals = async () => {
+    let message = folder.newEMail();
+    message.itemID = "new-message";
+    message.isRead = false;
+    folder.addMessagesIfAbsent([message]);
+    folder.dirty = false;
+    return new ArrayColl([message]);
+  };
+
+  let snapshots: Array<{ countUnread: number; messages: number }> = [];
+  folder.subscribe(() => {
+    snapshots.push({ countUnread: folder.countUnread, messages: folder.messages.length });
+  });
+
+  let sync = folder.syncRecentArrivals();
+  await firstSyncStarted;
+  expect(snapshots).toEqual([{ countUnread: 0, messages: 0 }]);
+
+  release();
+  await sync;
+
+  expect(snapshots.at(-1)).toEqual({ countUnread: 1, messages: 1 });
+});
+
+test("повторяет быструю синхронизацию, если новый заголовок появляется с задержкой", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "integrators-inbox";
+  folder.name = "Входящие";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 1;
+  folder.countUnread = 1;
+
+  let fetchCalls = 0;
+  (folder as any).fetchUnreadArrivals = async () => {
+    fetchCalls++;
+    if (fetchCalls == 1) {
+      return new ArrayColl<OWAEMail>();
+    }
+    let message = folder.newEMail();
+    message.itemID = "delayed-message";
+    message.isRead = false;
+    folder.addMessagesIfAbsent([message]);
+    return new ArrayColl([message]);
+  };
+
+  let finished = false;
+  let sync = folder.syncRecentArrivals().then(() => {
+    finished = true;
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(finished).toBe(false);
+
+  await sync;
+  expect(fetchCalls).toBe(2);
+  expect(folder.getEmailByItemID("delayed-message")).toBeDefined();
 });
 
 test("запускает синхронизацию входящих после hierarchy-события без счётчиков", async () => {

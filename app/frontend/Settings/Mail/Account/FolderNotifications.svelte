@@ -38,19 +38,31 @@
   export let folder: Folder;
 
   let setting = getMailFolderNotificationSetting(folder);
+  let notificationSettings = readMailFolderNotificationSettings(setting.value);
+  let previewSound = getMailFolderNotificationSound(folder);
   $: setting = getMailFolderNotificationSetting(folder);
   $: notificationSettings = readMailFolderNotificationSettings($setting.value);
-  $: previewSound = getMailFolderNotificationSound(folder);
+  $: {
+    notificationSettings;
+    previewSound = getMailFolderNotificationSound(folder);
+  }
 
   function onEnabledChange(event: Event): void {
+    let enabled = (event.currentTarget as HTMLInputElement).checked;
+    notificationSettings = { ...notificationSettings, enabled };
     updateMailFolderNotificationSettings(folder, {
-      enabled: (event.currentTarget as HTMLInputElement).checked,
+      enabled,
     });
   }
 
   function onSoundChange(event: CustomEvent<NotificationSoundPickerChange>): void {
     let value = event.detail.sound;
     if (value == "account" || value == "custom" || isNotificationSoundId(value)) {
+      notificationSettings = readMailFolderNotificationSettings({
+        ...notificationSettings,
+        ...event.detail,
+        sound: value,
+      });
       updateMailFolderNotificationSettings(folder, {
         ...event.detail,
         sound: value,

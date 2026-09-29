@@ -1,9 +1,9 @@
 <Splitter name="mail.3pane.folders" initialRightRatio={4}>
   <vbox flex class="folder-pane" slot="left">
-    <AccountList {accounts} bind:selectedAccount>
-      <hbox class="above-accounts" slot="top-right" />
-    </AccountList>
-    <FolderList bind:selectedFolder={folder}  folders={selectedAccount ? selectedAccount.rootFolders : new ArrayColl()} bind:selectedFolders />
+    <AccountList {accounts} bind:selectedAccount autoHeight on:select={onAccountSelect} />
+    {#key selectedAccount}
+      <FolderList bind:selectedFolder={folder} folders={selectedAccount ? selectedAccount.rootFolders : new ArrayColl()} bind:selectedFolders />
+    {/key}
   </vbox>
   <vbox class="main" slot="right" flex>
     <hbox class="top">
@@ -63,8 +63,25 @@
   export let accounts: Collection<MailAccount>; /** in */
   export let selectedAccount: MailAccount; /** in/out */
 
-  let selectedFolders: ArrayColl<Folder>;
+  let selectedFolders = new ArrayColl<Folder>();
   let isCreating = false;
+
+  // При открытии страницы папка является источником начального ящика.
+  $: if (folder?.account && selectedAccount !== folder.account) {
+    selectedAccount = folder.account;
+  }
+
+  function onAccountSelect(event: CustomEvent<MailAccount>) {
+    let account = event.detail;
+    let nextFolder = account.inbox ?? account.rootFolders.first;
+    if (!nextFolder) {
+      return;
+    }
+    selectedAccount = account;
+    folder = nextFolder;
+    selectedFolders = new ArrayColl<Folder>();
+    isCreating = false;
+  }
 
   function onClose() {
     $openFolderProperties = false;
@@ -72,8 +89,9 @@
 </script>
 
 <style>
-  .above-accounts {
-    height: 52px;
+  .folder-pane :global(.folder-list .fast-list .row > *:not(.folder)) {
+    background-color: transparent;
+    color: inherit;
   }
   h2 {
     margin-block-start: 0px;
