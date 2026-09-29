@@ -105,3 +105,54 @@ test("удаляет устаревшую локальную копию при �
   expect(folder.messages.contents).toEqual([kept]);
   expect(deletedIDs).toEqual(["deleted-message"]);
 });
+
+test("полная повторная синхронизация удаляет локальные письма после удаления в Outlook", async () => {
+  let deletedIDs: string[] = [];
+  let account = fakeAccount(request => {
+    if (request.action == "FindItem") {
+      return findItemResponse(["kept-message"]);
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  });
+  account.storage.deleteMessage = async email => {
+    deletedIDs.push(String((email as OWAEMail).itemID));
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  (folder as any).actionFlagsCheckedIDs = new Set(["kept-message", "deleted-message"]);
+  (folder as any).attachmentFlagsSynced = true;
+  // Серверный счётчик в кеше ещё старый — это тот же случай, что после
+  // массового удаления писем в Outlook при выключенном Jackdaw.
+  folder.countTotal = 2;
+  folder.countUnread = 0;
+
+  let deleted = folder.newEMail();
+  deleted.itemID = "deleted-message";
+  deleted.isRead = true;
+  let kept = folder.newEMail();
+  kept.itemID = "kept-message";
+  kept.isRead = true;
+  folder.messages.addAll([deleted, kept]);
+
+  await folder.fullResync();
+
+  expect(folder.messages.contents).toEqual([kept]);
+  expect(folder.countTotal).toBe(1);
+  expect(deletedIDs).toEqual(["deleted-message"]);
+});
+
+test("синхронизирует папку с уведомлениями после уменьшения серверного счётчика", () => {
+  let account = fakeAccount(() => ({}));
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  account.watchedFolder = folder;
+  folder.countTotal = 2;
+  let message = folder.newEMail();
+  message.itemID = "old-message";
+  folder.messages.add(message);
+
+  expect((account as any).shouldSyncFolderAfterCountUpdate(folder, 2, 0, 1, 0)).toBe(true);
+});

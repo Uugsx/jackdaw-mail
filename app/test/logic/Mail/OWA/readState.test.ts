@@ -94,6 +94,33 @@ test("не возвращает устаревший счётчик после �
   expect(folder.countUnread).toBe(103);
 });
 
+test("не принимает повторно завышенный локальный счётчик за новое письмо", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 1;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  await message.markRead(true);
+  expect(folder.countUnread).toBe(0);
+
+  // Имитируем гонку: другой поток уже успел вернуть старую цифру до
+  // следующего серверного ответа.
+  folder.countUnread = 1;
+  folder.applyServerCounts(1, 1);
+  expect(folder.countUnread).toBe(0);
+});
+
 test("не занижает счётчик после возврата письма в непрочитанные при лаге OWA", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
@@ -170,4 +197,39 @@ test("не возвращает старый счётчик, если TotalCount
   folder.applyServerCounts(9880, 109);
   expect(folder.countUnread).toBe(108);
   expect(folder.dirty).toBe(true);
+});
+
+test("сбрасывает stale unread-счётчик по полному локальному кешу", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      return {
+        RootFolder: {
+          // Exchange ещё видит письмо непрочитанным, хотя локальный флаг уже read.
+          Items: [{ ItemId: { Id: "message-1" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 1;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = true;
+  folder.messages.add(message);
+
+  await folder.fetchUnreadArrivals();
+
+  expect(folder.countUnread).toBe(0);
+  expect(folder.dirty).toBe(false);
 });

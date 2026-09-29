@@ -1083,7 +1083,9 @@ export class OWAAccount extends ExchangeMailAccount {
       for (let folder of folders) {
         try {
           await folder.syncRecentArrivals();
-          folder.dirty = false;
+          if (!folder.isBehindServer()) {
+            folder.dirty = false;
+          }
           updatedFolders.push(folder);
         } catch (ex) {
           this.handlePollingError(ex);
@@ -1129,11 +1131,14 @@ export class OWAAccount extends ExchangeMailAccount {
     countUnread: number,
   ): boolean {
     if (folder.isSuppressingStaleServerUnread(countTotal, countUnread)) {
-      return false;
+      if (!(countTotal < previousTotal && folder.messages.hasItems)) {
+        return false;
+      }
     }
     let mailArrived = countUnread > previousUnread || countTotal > previousTotal;
+    let mailRemoved = countTotal < previousTotal && folder.messages.hasItems;
     let needsBodies = folder.messages.isEmpty && countTotal > 0;
-    return (mailArrived || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);
+    return (mailArrived || mailRemoved || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);
   }
 
   /** Публикует счётчик только после первой загрузки соответствующего заголовка. */
@@ -1180,7 +1185,9 @@ export class OWAAccount extends ExchangeMailAccount {
         .slice(0, syncLimit);
       for (let folder of foldersToSync) {
         await folder.getNewMessages(true).catch(this.errorCallback);
-        folder.dirty = false;
+        if (!folder.isBehindServer()) {
+          folder.dirty = false;
+        }
       }
       if (foldersToSync.length) {
         this.notifyFolderUIUpdates(foldersToSync);
@@ -1463,7 +1470,9 @@ export class OWAAccount extends ExchangeMailAccount {
         } else {
           await folder.getNewMessages(true);
         }
-        folder.dirty = false;
+        if (!folder.isBehindServer()) {
+          folder.dirty = false;
+        }
         this.notifyFolderUIUpdates([folder]);
       } catch (ex) {
         this.errorCallback(ex);

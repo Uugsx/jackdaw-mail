@@ -93,6 +93,31 @@ test("загружает письмо при открытии shared-папки 
   ).toBe(true);
 });
 
+test("не сбрасывает dirty после незавершённой синхронизации при открытии папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 100;
+  folder.countUnread = 1;
+  folder.dirty = true;
+
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = false;
+  folder.messages.add(message);
+  folder.getNewMessages = async () => new ArrayColl([message]);
+
+  await folder.syncOnFolderOpen();
+
+  expect(folder.dirty).toBe(true);
+  expect(folder.isBehindServer()).toBe(true);
+});
+
 test("подтягивает письмо в фоновой синхронизации после пустого unread-запроса", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

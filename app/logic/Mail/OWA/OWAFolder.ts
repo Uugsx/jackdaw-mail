@@ -98,6 +98,8 @@ export class OWAFolder extends ExchangeFolder {
   /** Последний необработанный счётчик, полученный непосредственно от Exchange. */
   protected lastServerCountTotal: number | null = null;
   protected lastServerCountUnread: number | null = null;
+  /** Счётчик TotalCount до серии локальных отметок прочитанности. */
+  protected readMutationBaseTotal: number | null = null;
   /** Ожидаемый локальный счётчик после последней отметки прочитанности. */
   protected localUnreadAfterReadMutation: number | null = null;
 
@@ -117,7 +119,11 @@ export class OWAFolder extends ExchangeFolder {
 
   /** Фиксирует серверную точку отсчёта до локального изменения прочитанности. */
   noteLocalReadMutation(expectedUnread = this.countUnread): void {
-    this.lastServerCountTotal ??= this.countTotal;
+    // Сохраняем базу именно для текущей операции. Если папка получает новые
+    // письма после отметки, последующие ответы Exchange должны добавлять их
+    // к одной и той же базе, а не считать только дельту между соседними
+    // ответами. Следующая локальная отметка начнёт новую операцию.
+    this.readMutationBaseTotal = this.lastServerCountTotal ?? this.countTotal;
     this.lastServerCountUnread ??= this.countUnread;
     this.lastMarkReadAt = Date.now();
     this.localUnreadAfterReadMutation = Math.max(0, expectedUnread);
@@ -137,9 +143,14 @@ export class OWAFolder extends ExchangeFolder {
     let localUnread = this.localUnreadCount();
     if (recentlyMarked || hasPendingReadMutation) {
       let expectedUnread = this.localUnreadAfterReadMutation ?? this.countUnread;
-      let previousServerTotal = this.lastServerCountTotal ?? this.countTotal;
+      let previousServerTotal = this.readMutationBaseTotal ??
+        this.lastServerCountTotal ?? this.countTotal;
       let newArrivals = Math.max(0, countTotal - previousServerTotal);
-      expectedUnread = Math.max(expectedUnread, this.countUnread) + newArrivals;
+      // Текущий счётчик уже мог повторно вырасти из-за устаревшего ответа
+      // GetFolder. В качестве нижней границы используем локальные флаги,
+      // а не потенциально устаревшее значение счётчика.
+      expectedUnread = Math.max(expectedUnread, localUnread,
+        (this.localUnreadAfterReadMutation ?? expectedUnread) + newArrivals);
       return countUnread != expectedUnread;
     }
     let newArrivals = Math.max(0, countTotal - this.countTotal);
@@ -162,13 +173,17 @@ export class OWAFolder extends ExchangeFolder {
       let recentlyMarked = Date.now() - this.lastMarkReadAt < 120_000;
       let hasPendingReadMutation = this.hasPendingReadMutations();
       if (recentlyMarked || hasPendingReadMutation) {
-        let previousServerTotal = this.lastServerCountTotal ?? this.countTotal;
+        let previousServerTotal = this.readMutationBaseTotal ??
+          this.lastServerCountTotal ?? this.countTotal;
         let newArrivals = Math.max(0, countTotal - previousServerTotal);
-        let minimumUnread = Math.max(this.localUnreadAfterReadMutation ?? this.countUnread, this.countUnread);
-        let expectedUnread = minimumUnread + newArrivals;
-        // Exchange may answer with either side of the local transition while
-        // its unread index catches up. Keep the local target, but still allow
-        // genuinely new messages inferred from TotalCount to increase it.
+        let minimumUnread = Math.max(this.localUnreadAfterReadMutation ?? this.countUnread,
+          this.localUnreadCount());
+        let expectedUnread = Math.max(minimumUnread,
+          (this.localUnreadAfterReadMutation ?? minimumUnread) + newArrivals);
+        // Exchange может вернуть любое из состояний локального перехода,
+        // пока его индекс непрочитанных догоняет изменения. Сохраняем локальную
+        // цель, но разрешаем увеличить её на действительно новые письма,
+        // выявленные по TotalCount.
         effectiveUnread = Math.max(minimumUnread,
           Math.min(countUnread, expectedUnread));
       } else {
@@ -285,14 +300,29 @@ export class OWAFolder extends ExchangeFolder {
     return this.countUnread > this.localUnreadCount();
   }
 
-  /** Снимает устаревший dirty только после сверки обоих счётчиков с кешем. */
-  protected markCountsReconciled(): void {
-    if (this.countUnread == this.localUnreadCount()) {
+  /** Сверяет счётчик непрочитанных с локальным кешем после завершённого прохода. */
+  protected markCountsReconciled(): boolean {
+    let localUnread = this.localUnreadCount();
+    let countChanged = false;
+    // Если в кеше ровно столько заголовков, сколько сообщает сервер, набор
+    // полный. В этом случае локальные флаги прочитанности точнее запаздывающего
+    // GetFolder/AQS-счётчика и должны немедленно попасть в sidebar/tooltip.
+    if (this.countTotal == this.messages.length && this.countUnread != localUnread) {
+      if (localUnread < this.countUnread) {
+        this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - localUnread));
+      } else {
+        this.countNewArrived += localUnread - this.countUnread;
+      }
+      this.countUnread = localUnread;
+      countChanged = true;
+    }
+    if (this.countUnread == localUnread) {
       if (this.countTotal == this.messages.length || (this.messages.hasItems && !this.countTotalDecreased)) {
         this.dirty = false;
         this.countTotalDecreased = false;
       }
     }
+    return countChanged;
   }
 
   async withQuickFetchLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -400,7 +430,9 @@ export class OWAFolder extends ExchangeFolder {
           flagsChanged = true;
         }
       }
-      this.markCountsReconciled();
+      if (this.markCountsReconciled()) {
+        flagsChanged = true;
+      }
       if (flagsChanged) {
         this.notifyObservers();
       }
@@ -789,6 +821,15 @@ export class OWAFolder extends ExchangeFolder {
     }
   }
 
+  /** Для OWA нужна полноценная сверка через FindItem: базовая реализация может
+   * ограничиться первой страницей, если кешированный счётчик уже обновился. */
+  override async fullResync(): Promise<void> {
+    this.syncState = null;
+    this.dirty = true;
+    await this.listMessages(false, true);
+    await this.storage.saveFolder(this);
+  }
+
   /** User opened the folder — load headers when the cache is empty or badges moved. */
   async syncOnFolderOpen(): Promise<Collection<OWAEMail>> {
     await this.readFolder();
@@ -820,7 +861,9 @@ export class OWAFolder extends ExchangeFolder {
       }
       await this.finishNewMessages(msgs, true);
     }
-    this.dirty = false;
+    if (!this.isBehindServer()) {
+      this.dirty = false;
+    }
     this.completeInitialSync();
     this.refreshVisibleMessageMetadataInBackground();
     this.backfillMessageActionFlags();
@@ -973,8 +1016,13 @@ export class OWAFolder extends ExchangeFolder {
       let result: any = { RootFolder: { IncludesLastItemInRange: false } };
       let firstPage = true;
       let reachedLimit = false;
+      let serverTotal: number | null = null;
       while (true) {
         result = await this.account.callOWA(request);
+        let resultTotal = Number(result?.RootFolder?.TotalItemsInView);
+        if (Number.isFinite(resultTotal)) {
+          serverTotal = Math.max(0, Math.trunc(resultTotal));
+        }
         let messages = result?.RootFolder?.Items;
         if (!messages?.length) {
           // This folder is empty or no more items.
@@ -1046,7 +1094,7 @@ export class OWAFolder extends ExchangeFolder {
         }
         this.markCountsReconciled();
         this.notifyObservers();
-      } else if (firstPage && this.countTotal > 0) {
+      } else if (firstPage && this.countTotal > 0 && !(force && maxItems == null)) {
         // The server gave us nothing for a folder it says is not empty. Taking
         // that at face value would delete the whole local copy of the folder.
         this.notifyObservers();
@@ -1065,6 +1113,12 @@ export class OWAFolder extends ExchangeFolder {
         allMsgs.addAll(newMsgs);
         this.messages.replaceAll(allMsgs);
         this.refreshMessageContacts();
+        // A forced/full FindItem is authoritative, including an empty result.
+        // Persist the server total so a later restart cannot resurrect headers
+        // that were deleted in Outlook while Jackdaw was not running.
+        if (!recentOnly && !reachedLimit) {
+          this.countTotal = serverTotal ?? this.messages.length;
+        }
         let reconciledUnread = this.localUnreadCount();
         let unreadChanged = false;
         if (this.countUnread != reconciledUnread) {
@@ -1074,9 +1128,12 @@ export class OWAFolder extends ExchangeFolder {
           this.countUnread = reconciledUnread;
           unreadChanged = true;
         }
-        this.markCountsReconciled();
-        if (newMsgs.hasItems || unreadChanged) {
+        let countsReconciled = this.markCountsReconciled();
+        if (newMsgs.hasItems || unreadChanged || countsReconciled) {
           this.notifyObservers();
+        }
+        if (!recentOnly && !reachedLimit) {
+          await this.storage.saveFolderProperties(this);
         }
       }
       this.completeInitialSync();

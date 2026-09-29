@@ -37,3 +37,9 @@ Use the local directory build; do not report only `app/dist` as the application 
 ## Secrets (never commit)
 
 - `JACKDAW_GH_UPDATE_TOKEN` — optional GitHub Actions secret; was baked into installers when repo was private
+
+## Компьютерное зрение и UI-проверки
+
+- Выполнять компьютерные проверки в фоне и не забирать фокус у пользователя.
+- Не активировать, не разворачивать и не переключать окна поверх текущего приложения пользователя.
+- Перед любым UI-действием убедиться, что оно не прервёт работу пользователя; если безопасный фоновый режим недоступен, остановиться и предупредить пользователя.
