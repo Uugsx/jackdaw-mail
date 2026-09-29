@@ -303,6 +303,14 @@ export class OWAFolder extends ExchangeFolder {
             await this.persistEmailFlags(email);
           }
         }
+        if (this.countUnread != unreadItemIDs.size) {
+          let serverUnread = unreadItemIDs.size;
+          if (serverUnread < this.countUnread) {
+            this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - serverUnread));
+          }
+          this.countUnread = serverUnread;
+          flagsChanged = true;
+        }
       }
       this.markCountsReconciled();
       if (flagsChanged) {
@@ -340,7 +348,13 @@ export class OWAFolder extends ExchangeFolder {
     let totalItems = rootFolder?.TotalItemsInView;
     let hasCompleteCount = totalItems != null && Number.isFinite(Number(totalItems)) &&
       Number(totalItems) <= maxResults;
-    return (includesLast || hasCompleteCount) && unreadItemIDs.size == expectedUnread;
+    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == expectedUnread) {
+      return true;
+    }
+    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == 0 && this.localUnreadCount() == 0) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -423,6 +437,9 @@ export class OWAFolder extends ExchangeFolder {
     } finally {
       if (--this.serverCountSyncObserverMuteDepth == 0) {
         this._muteObservers = this.serverCountSyncPreviousMute;
+        if (!this._muteObservers) {
+          this.notifyObservers();
+        }
       }
     }
   }
@@ -883,8 +900,15 @@ export class OWAFolder extends ExchangeFolder {
           }
           let email = this.getEmailByItemID(id);
           if (email) {
+            let wasUnread = !email.isRead;
             if (email.setFlags(message, "list")) {
               await this.persistEmailFlags(email);
+              if (wasUnread && email.isRead) {
+                this.countUnread = Math.max(0, this.countUnread - 1);
+                this.countNewArrived = Math.max(0, this.countNewArrived - 1);
+              } else if (!wasUnread && !email.isRead) {
+                this.countUnread++;
+              }
             }
             allMsgs.add(email);
           } else {
@@ -926,6 +950,7 @@ export class OWAFolder extends ExchangeFolder {
           this.addMessagesIfAbsent(newMsgs);
           this.refreshMessageContacts();
         }
+        this.markCountsReconciled();
         this.notifyObservers();
       } else if (firstPage && this.countTotal > 0) {
         // The server gave us nothing for a folder it says is not empty. Taking
@@ -946,8 +971,17 @@ export class OWAFolder extends ExchangeFolder {
         allMsgs.addAll(newMsgs);
         this.messages.replaceAll(allMsgs);
         this.refreshMessageContacts();
+        let reconciledUnread = this.localUnreadCount();
+        let unreadChanged = false;
+        if (this.countUnread != reconciledUnread) {
+          if (reconciledUnread < this.countUnread) {
+            this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - reconciledUnread));
+          }
+          this.countUnread = reconciledUnread;
+          unreadChanged = true;
+        }
         this.markCountsReconciled();
-        if (newMsgs.hasItems) {
+        if (newMsgs.hasItems || unreadChanged) {
           this.notifyObservers();
         }
       }
@@ -1122,6 +1156,7 @@ export class OWAFolder extends ExchangeFolder {
       let email = id ? (this.getEmailByItemID(id) ?? this.account.getEmailByItemID(id)) : undefined;
       if (email) {
         try {
+          let wasUnread = !email.isRead;
           let oldTagNames = email.tags.contents.map(tag => tag.name);
           email.fromJSON(item);
           await email.saveMetadataLocally();
@@ -1130,6 +1165,22 @@ export class OWAFolder extends ExchangeFolder {
           if (oldTagNames.length != newTagNames.length ||
               oldTagNames.some((name, i) => name != newTagNames[i])) {
             changed = true;
+          }
+          if (email.folder) {
+            if (wasUnread && email.isRead) {
+              email.folder.countUnread = Math.max(0, email.folder.countUnread - 1);
+              email.folder.countNewArrived = Math.max(0, email.folder.countNewArrived - 1);
+              if (email.folder != this) {
+                email.folder.notifyObservers();
+              }
+              changed = true;
+            } else if (!wasUnread && !email.isRead) {
+              email.folder.countUnread++;
+              if (email.folder != this) {
+                email.folder.notifyObservers();
+              }
+              changed = true;
+            }
           }
         } catch (ex) {
           this.account.errorCallback(ex);
@@ -1152,6 +1203,7 @@ export class OWAFolder extends ExchangeFolder {
       changed = true;
     }
     if (changed) {
+      this.markCountsReconciled();
       this.notifyObservers();
     }
   }

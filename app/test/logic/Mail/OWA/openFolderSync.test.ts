@@ -780,3 +780,182 @@ test("не блокирует открытие папки на фоновом о
   release();
   await folder.refreshVisibleMessageMetadata();
 });
+
+test("сбрасывает зависший счётчик непрочитанных, когда все письма прочитаны", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let unreadQueryCalls = 0;
+  let fullReconcileCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      unreadQueryCalls++;
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      fullReconcileCalls++;
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 824;
+  folder.countUnread = 9;
+  folder.countNewArrived = 9;
+  folder.dirty = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  for (let index = 0; index < 824; index++) {
+    let message = folder.newEMail();
+    message.itemID = `msg-${index}`;
+    message.sent = new Date(2026, 8, 29, 17, index);
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+
+  await folder.syncRecentArrivals();
+
+  expect(unreadQueryCalls).toBe(1);
+  expect(fullReconcileCalls).toBe(0);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(folder.dirty).toBe(false);
+});
+
+test("полная сверка синхронизирует countUnread, если на сервере все письма прочитаны", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let fullReconcileCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    if (request.action == "FindItem" && (request.Body.SortOrder || request.Body.Paging.BasePoint == "End")) {
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      fullReconcileCalls++;
+      return {
+        RootFolder: {
+          Items: [
+            { ItemId: { Id: "msg-1" }, IsRead: true },
+            { ItemId: { Id: "msg-2" }, IsRead: true },
+          ],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 2,
+        },
+      };
+    }
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 2, UnreadCount: 0 }] };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 2;
+  folder.countUnread = 2;
+  folder.countNewArrived = 2;
+  folder.dirty = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let m1 = folder.newEMail();
+  m1.itemID = "msg-1";
+  m1.isRead = false;
+  folder.messages.add(m1);
+
+  let m2 = folder.newEMail();
+  m2.itemID = "msg-2";
+  m2.isRead = false;
+  folder.messages.add(m2);
+
+  await folder.syncRecentArrivals();
+
+  expect(fullReconcileCalls).toBe(1);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(folder.dirty).toBe(false);
+});
+
+test("refreshMessages уменьшает счётчик непрочитанных при смене статуса на прочитано", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetItem") {
+      return {
+        Items: [
+          {
+            ItemId: { Id: "msg-1" },
+            InternetMessageId: "<msg-1@example.test>",
+            Subject: "Тест",
+            DateTimeSent: "2026-09-29T10:00:00Z",
+            IsRead: true,
+            ItemClass: "IPM.Note",
+          },
+        ],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "inbox";
+  folder.countTotal = 1;
+  folder.countUnread = 1;
+  folder.countNewArrived = 1;
+
+  let message = folder.newEMail();
+  message.itemID = "msg-1";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  let observerNotified = false;
+  folder.subscribe((_f, prop) => {
+    if (prop === "countUnread" || prop == null) {
+      observerNotified = true;
+    }
+  });
+
+  await folder.refreshMessages(["msg-1"]);
+
+  expect(message.isRead).toBe(true);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(observerNotified).toBe(true);
+});
