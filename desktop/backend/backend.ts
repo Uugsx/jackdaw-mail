@@ -794,38 +794,57 @@ const macDmgDownloadRunOnce = new RunOnce<void>();
 type GhReleaseAsset = { name: string; url: string; size: number };
 type GhRelease = { assets: GhReleaseAsset[] };
 
-function ghApiHeaders(): Record<string, string> {
+function ghApiHeaders(useAuthorization = true): Record<string, string> {
   let headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "User-Agent": "Jackdaw-Mail-Updater",
   };
-  let token = resolveGhUpdateToken();
-  if (token) {
-    headers.Authorization = `token ${token}`;
+  if (useAuthorization) {
+    let token = resolveGhUpdateToken();
+    if (token) {
+      headers.Authorization = `token ${token}`;
+    }
   }
   return headers;
 }
 
 async function fetchReleaseByTag(version: string): Promise<GhRelease> {
   let tag = version.startsWith("v") ? version : `v${version}`;
-  let response = await fetch(`https://api.github.com/repos/${kGhOwner}/${kGhRepo}/releases/tags/${tag}`, {
-    headers: ghApiHeaders(),
-  });
+  let url = `https://api.github.com/repos/${kGhOwner}/${kGhRepo}/releases/tags/${tag}`;
+  let headers = ghApiHeaders();
+  let response = await fetch(url, { headers });
+  if (response.status === 401 && headers.Authorization) {
+    // Публичные релизы доступны без PAT: просроченный необязательный токен
+    // не должен блокировать обновление.
+    await response.arrayBuffer();
+    response = await fetch(url, { headers: ghApiHeaders(false) });
+  }
   if (!response.ok) {
     throw new Error(`Release ${tag} not found (${response.status})`);
   }
   return await response.json() as GhRelease;
 }
 
-function downloadGithubAsset(asset: GhReleaseAsset, destPath: string, onProgress: (pct: number) => void): Promise<void> {
+function downloadGithubAsset(
+  asset: GhReleaseAsset,
+  destPath: string,
+  onProgress: (pct: number) => void,
+  useAuthorization = true,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let headers = {
-      ...ghApiHeaders(),
+      ...ghApiHeaders(useAuthorization),
       Accept: "application/octet-stream",
     };
     let request = https.get(asset.url, { headers }, response => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress).then(resolve, reject);
+        response.resume();
+        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress, false).then(resolve, reject);
+        return;
+      }
+      if (response.statusCode === 401 && useAuthorization) {
+        response.resume();
+        downloadGithubAsset(asset, destPath, onProgress, false).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {

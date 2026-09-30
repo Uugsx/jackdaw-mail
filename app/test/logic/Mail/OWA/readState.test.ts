@@ -233,3 +233,43 @@ test("сбрасывает stale unread-счётчик по полному ло�
   expect(folder.countUnread).toBe(0);
   expect(folder.dirty).toBe(false);
 });
+
+test("синхронизирует счётчик после внешнего прочтения письма", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("SyncFolderItems");
+    return {
+      Changes: {
+        ReadFlagChange: [
+          { ItemId: { Id: "message-1" }, IsRead: true },
+          { ItemId: { Id: "message-2" }, IsRead: true },
+          { ItemId: { Id: "message-3" }, IsRead: true },
+        ],
+      },
+      SyncState: "state-2",
+      IncludesLastItemInRange: true,
+    };
+  };
+
+  let folder = account.newFolder();
+  folder.id = "inbox";
+  folder.syncState = "state-1";
+  folder.countTotal = 3;
+  folder.countUnread = 3;
+  folder.countNewArrived = 3;
+
+  for (let itemID of ["message-1", "message-2", "message-3"]) {
+    let message = folder.newEMail();
+    message.itemID = itemID;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+
+  await folder.updateChangedMessages();
+
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+  expect(folder.messages.every(message => message.isRead)).toBe(true);
+});

@@ -259,7 +259,10 @@ export class OWAFolder extends ExchangeFolder {
 
   /** Pull TotalCount/UnreadCount from Exchange and reconcile local state. */
   async refreshCountsFromServer(): Promise<void> {
-    let result = await this.account.callOWA(owaFolderCountsRequest(this.id));
+    let result = await this.account.callOWA(
+      owaFolderCountsRequest(this.id),
+      this.account.isDependentAccount ? this.account.username : undefined,
+    );
     let folder = result?.Folders?.[0];
     if (!folder) {
       return;
@@ -936,7 +939,10 @@ export class OWAFolder extends ExchangeFolder {
       this.dirty = false;
       return true;
     }
-    let result = await this.account.callOWA(owaFolderCountsRequest(this.id));
+    let result = await this.account.callOWA(
+      owaFolderCountsRequest(this.id),
+      this.account.isDependentAccount ? this.account.username : undefined,
+    );
     let folder = result?.Folders?.[0];
     if (!folder) {
       return false;
@@ -1552,13 +1558,32 @@ export class OWAFolder extends ExchangeFolder {
     return newIDs;
   }
 
+  protected applyServerFlagUpdate(
+    email: OWAEMail,
+    update: any,
+    source: "full" | "list" | "partial" = "partial",
+  ): boolean {
+    let wasRead = email.isRead;
+    let changed = email.setFlags(update, source);
+    if (wasRead == email.isRead) {
+      return changed;
+    }
+    if (email.isRead) {
+      this.countUnread = Math.max(0, this.countUnread - 1);
+      this.countNewArrived = Math.max(0, this.countNewArrived - 1);
+    } else {
+      this.countUnread++;
+    }
+    return changed;
+  }
+
   protected async processSyncReadFlagChange(email: OWAEMail, change: any) {
-    email.setFlags({ IsRead: change.IsRead }, "partial");
+    this.applyServerFlagUpdate(email, { IsRead: change.IsRead }, "partial");
     await email.saveWritablePropsLocally();
   }
 
   protected async processSyncUpdate(email: OWAEMail, update: any) {
-    if (email.setFlags(update, "list")) {
+    if (this.applyServerFlagUpdate(email, update, "list")) {
       await this.persistEmailFlags(email);
     }
   }

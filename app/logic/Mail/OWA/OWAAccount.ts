@@ -115,6 +115,8 @@ export class OWAAccount extends ExchangeMailAccount {
   protected pollInProgress = false;
   protected pollBackgroundInProgress = false;
   protected sharedFoldersPollInProgress = false;
+  /** Не ставить новый цикл счётчиков в очередь поверх ещё не завершённого. */
+  protected folderCountsRefreshPromise: Promise<void> | null = null;
   /** Один цикл восстановления для всех запросов во время одного сбоя. */
   protected networkRecoveryPromise: Promise<void> | null = null;
   protected pollFolderCountOffset = 0;
@@ -1217,7 +1219,10 @@ export class OWAAccount extends ExchangeMailAccount {
     if (!folder?.id) {
       return;
     }
-    this.callOWA(owaFolderCountsRequest(folder.id)).then(result => {
+    this.callOWA(
+      owaFolderCountsRequest(folder.id),
+      this.isDependentAccount ? this.username : undefined,
+    ).then(result => {
       let raw = result?.Folders?.[0];
       if (!raw) {
         return;
@@ -1244,9 +1249,25 @@ export class OWAAccount extends ExchangeMailAccount {
     });
   }
 
+  /** Обновляет счётчики всех известных папок без параллельных дублей. */
+  async refreshAllFolderCounts(): Promise<void> {
+    if (this.folderCountsRefreshPromise) {
+      return this.folderCountsRefreshPromise;
+    }
+    let refresh = this.refreshAllFolderCountsInternal();
+    this.folderCountsRefreshPromise = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.folderCountsRefreshPromise == refresh) {
+        this.folderCountsRefreshPromise = null;
+      }
+    }
+  }
+
   /** Обновляет счётчики всех известных папок без загрузки тел писем.
    * Один Deep FindFolder по msgFolderRoot обновляет всё дерево. */
-  async refreshAllFolderCounts(): Promise<void> {
+  protected async refreshAllFolderCountsInternal(): Promise<void> {
     let folders = this.getAllFolders().contents
       .filter((folder): folder is OWAFolder => folder instanceof OWAFolder && !!folder.id);
     if (!folders.length) {
@@ -1287,10 +1308,17 @@ export class OWAAccount extends ExchangeMailAccount {
     };
     if (this.msgFolderRootID) {
       try {
-        let result = await this.callOWA(owaFindFolderCountsByRootRequest(this.msgFolderRootID));
-        let rawFolders = result?.RootFolder?.Folders ?? [];
+        let countRequest = this.isDependentAccount && this.sharedFolderRoot
+          ? owaFindFoldersRequest(true, this.sharedFolderRoot, this.username ?? undefined)
+          : owaFindFolderCountsByRootRequest(this.msgFolderRootID);
+        let result = await this.callOWA(
+          countRequest,
+          this.isDependentAccount ? this.username : undefined,
+        );
+        let rawFolders = ensureArray(result?.RootFolder?.Folders);
+        let matchedFolders = 0;
         for (let raw of rawFolders) {
-          let id = raw?.FolderId?.Id;
+          let id = objectID(raw?.FolderId) ?? objectID(raw?.folderId);
           if (!id) {
             continue;
           }
@@ -1298,22 +1326,31 @@ export class OWAAccount extends ExchangeMailAccount {
           if (!folder) {
             continue;
           }
+          matchedFolders++;
           let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
           let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
           applyCountUpdate(folder, newTotal, newUnread);
         }
         // Parent folder counts (often Inbox/root) also arrive in ParentFolder.
         let parent = result?.RootFolder?.ParentFolder;
-        if (parent?.FolderId?.Id) {
-          let folder = this.folderMap.get(parent.FolderId.Id);
+        let parentID = objectID(parent?.FolderId) ?? objectID(parent?.folderId);
+        if (parentID) {
+          let folder = this.folderMap.get(parentID);
           if (folder) {
+            matchedFolders++;
             let newUnread = sanitize.integer(parent.UnreadCount, folder.countUnread);
             let newTotal = sanitize.integer(parent.TotalCount, folder.countTotal);
             applyCountUpdate(folder, newTotal, newUnread);
           }
         }
-        finishCountUpdates();
-        return;
+        // Успешный ответ OWA всё равно может не содержать пригодных папок,
+        // если контекст делегата был проигнорирован. Не считаем такой ответ
+        // завершённым обновлением и используем расположенный ниже fallback
+        // с Explicit Logon для каждой папки.
+        if (matchedFolders > 0) {
+          finishCountUpdates();
+          return;
+        }
       } catch (ex) {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           this.errorCallback(ex);
@@ -1342,7 +1379,10 @@ export class OWAAccount extends ExchangeMailAccount {
     }
     for (let folder of batch) {
       try {
-        let result = await this.callOWA(owaFolderCountsRequest(folder.id));
+        let result = await this.callOWA(
+          owaFolderCountsRequest(folder.id),
+          this.isDependentAccount ? this.username : undefined,
+        );
         let raw = result?.Folders?.[0];
         if (!raw) {
           continue;
@@ -1742,7 +1782,7 @@ export class OWAAccount extends ExchangeMailAccount {
   async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {
     if (this.mainAccount) {
       let mainAccount = this.mainAccount as OWAAccount;
-      if (this.sharedFolderRoot && !OWAAccount.needsExplicitLogon(aRequest)) {
+      if (this.sharedFolderRoot && !mailbox && !OWAAccount.needsExplicitLogon(aRequest)) {
         return await mainAccount.callOWA(aRequest, undefined, this.emailAddress);
       }
       return await mainAccount.callOWA(aRequest, mailbox ?? this.username);
@@ -2686,7 +2726,10 @@ export class OWAAccount extends ExchangeMailAccount {
       // Exchange sometimes omits counts on shared Hierarchy; one GetFolder
       // via delegate is enough to paint the badge without opening the folder.
       if (countsMissing) {
-        this.callOWA(owaFolderCountsRequest(folder.id)).then(result => {
+        this.callOWA(
+          owaFolderCountsRequest(folder.id),
+          this.isDependentAccount ? this.username : undefined,
+        ).then(result => {
           let raw = result?.Folders?.[0];
           if (!raw) {
             return;

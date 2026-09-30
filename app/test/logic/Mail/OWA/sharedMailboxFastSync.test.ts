@@ -208,6 +208,119 @@ test("обновление счётчика shared Inbox загружает от
   expect(folder.countUnread).toBe(1);
 });
 
+test("счётчики дополнительного OWA запрашиваются через явный вход в mailbox", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+
+  let folder = shared.newFolder();
+  folder.id = "shared-inbox";
+  folder.specialFolder = SpecialFolder.Inbox;
+  folder.countTotal = 3;
+  folder.countUnread = 3;
+  shared.rootFolders.add(folder);
+  shared.folderMap.set(folder.id, folder);
+
+  let requests: any[] = [];
+  let explicitMailboxes: (string | undefined)[] = [];
+  let delegateAnchors: (string | undefined)[] = [];
+  main.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    requests.push(request);
+    explicitMailboxes.push(mailbox);
+    delegateAnchors.push(delegateAnchor);
+    return {
+      RootFolder: {
+        Folders: [{ FolderId: { Id: folder.id }, TotalCount: 0, UnreadCount: 0 }],
+      },
+    };
+  };
+
+  await shared.refreshAllFolderCounts();
+
+  expect(explicitMailboxes).toEqual(["shared@example.test"]);
+  expect(delegateAnchors).toEqual([undefined]);
+  expect(requests[0].Body.ParentFolderIds[0].Id).toBe("msgfolderroot");
+  expect(requests[0].Body.ParentFolderIds[0].Mailbox.EmailAddress).toBe("shared@example.test");
+  expect(folder.countTotal).toBe(0);
+  expect(folder.countUnread).toBe(0);
+});
+
+test("не ставит новый цикл счётчиков shared-папок в очередь поверх текущего", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+
+  let folder = shared.newFolder();
+  folder.id = "shared-inbox";
+  folder.specialFolder = SpecialFolder.Inbox;
+  shared.rootFolders.add(folder);
+  shared.folderMap.set(folder.id, folder);
+
+  let calls = 0;
+  let release!: () => void;
+  let requestFinished = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  main.callOWA = async () => {
+    calls++;
+    await requestFinished;
+    return {
+      RootFolder: {
+        Folders: [{ FolderId: { Id: folder.id }, TotalCount: 0, UnreadCount: 0 }],
+      },
+    };
+  };
+
+  let first = shared.refreshAllFolderCounts();
+  await Promise.resolve();
+  let second = shared.refreshAllFolderCounts();
+  await Promise.resolve();
+
+  try {
+    expect(calls).toBe(1);
+  } finally {
+    release();
+    await Promise.all([first, second]);
+  }
+});
+
+test("пустой Deep FindFolder не блокирует fallback счётчика shared-папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+
+  let folder = shared.newFolder();
+  folder.id = "shared-inbox";
+  folder.specialFolder = SpecialFolder.Inbox;
+  folder.countTotal = 2;
+  folder.countUnread = 2;
+  shared.rootFolders.add(folder);
+  shared.folderMap.set(folder.id, folder);
+
+  let actions: string[] = [];
+  let explicitMailboxes: string[] = [];
+  main.callOWA = async (request: any, mailbox?: string) => {
+    actions.push(request.action);
+    if (mailbox) {
+      explicitMailboxes.push(mailbox);
+    }
+    if (request.action == "FindFolder") {
+      return { RootFolder: { Folders: [] } };
+    }
+    return { Folders: [{ TotalCount: 0, UnreadCount: 0 }] };
+  };
+
+  await shared.refreshAllFolderCounts();
+
+  expect(actions).toEqual(["FindFolder", "GetFolder"]);
+  expect(explicitMailboxes).toEqual(["shared@example.test", "shared@example.test"]);
+  expect(folder.countTotal).toBe(0);
+  expect(folder.countUnread).toBe(0);
+});
+
 test("push shared Inbox обновляет счётчик после добавления заголовка", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = makeMainAccount();

@@ -13,7 +13,7 @@ Related generic docs: [electron-builder.md](./electron-builder.md), [macos.md](.
 | Piece | Role |
 |-------|------|
 | **CI** | `.github/workflows/publish-desktop-jackdaw.yml` — builds Mac and/or Windows, one prerelease |
-| **Version** | `0.9.38-dev.<UTC timestamp>` — suffix from job `prepare` (`OTA_BUILD_SUFFIX`) |
+| **Version** | `0.9.41-dev.<UTC timestamp>` — suffix from job `prepare` (`OTA_BUILD_SUFFIX`) |
 | **Updater backend** | `desktop/backend/backend.ts` — `electron-updater`, auth, platform-specific install |
 | **Updater UI** | `app/frontend/Settings/About/Update.svelte`, `About.svelte` |
 | **Main process** | `desktop/src/main/index.ts` — startup check, quit-for-update |
@@ -60,15 +60,15 @@ Carry-forward copies the **previous** prerelease’s `latest*.yml` and installer
 
 Example after a Windows-only fix:
 
-- `latest.yml` → `0.9.38-dev.NEW` (Windows users update)
-- `latest-mac.yml` → still `0.9.38-dev.OLD` (Mac users stay put)
+- `latest.yml` → `0.9.41-dev.NEW` (Windows users update)
+- `latest-mac.yml` → still `0.9.41-dev.OLD` (Mac users stay put)
 
 **Push to `main` always builds both** — use manual dispatch for single-OS releases.
 
 ### Job `prepare` (ubuntu)
 
 1. `OTA_BUILD_SUFFIX=$(date -u +%Y%m%d%H%M%S)`
-2. Tag: `v0.9.38-dev.${OTA_BUILD_SUFFIX}` on current commit
+2. Tag: `v0.9.41-dev.${OTA_BUILD_SUFFIX}` on current commit
 3. **Delete** existing release with that tag (if any)
 4. **`gh release create`** empty prerelease
 
@@ -146,10 +146,15 @@ Auth: `autoUpdater.addAuthHeader('token …')` — **do not use `setFeedURL()`**
 - **Check:** `electron-updater` (GitHub provider, `allowPrerelease` for `-dev` versions)
 - **Download:** Custom — **`.dmg`** from GitHub Releases API with progress (`downloadMacDmgUpdate`)
 - **Install:** **Not** Squirrel/ShipIt (ad-hoc builds fail code signature validation)
+
   1. Spawn detached bash script
   2. **Quit** running app (`shutdownBackend`, `app.exit`)
   3. Script waits for PID, mounts DMG, `ditto` to `/Applications/Jackdaw Mail.app`, `open` new app
 - **Metadata on release:** `latest-mac.yml`, `.zip` (for metadata); user-facing install path is **DMG**
+
+The optional `JACKDAW_GH_UPDATE_TOKEN` is used when available, but a `401` from GitHub
+automatically retries public release and asset requests without the token. Redirects to
+GitHub's CDN are also requested without forwarding the token.
 
 If Apple Developer ID + notarization are added later, Mac could switch back to zip + `quitAndInstall` — until then, keep DMG path.
 
