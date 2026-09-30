@@ -172,7 +172,7 @@
     folder.notifyObservers();
   }
 
-  /** While a shared folder is open, refresh it on a short interval (delegate access, one folder). */
+  /** Пока папка открыта, проверяем её счётчик и список коротким интервалом. */
   let sharedWatchTimer: ReturnType<typeof setInterval> | null = null;
   let primaryWatchTimer: ReturnType<typeof setInterval> | null = null;
   let metadataWatchTimer: ReturnType<typeof setInterval> | null = null;
@@ -212,11 +212,7 @@
           return;
         }
         catchErrors(async () => {
-          if (!(folder instanceof OWAFolder) ||
-              (!folder.unreadCountsDifferFromServer() && !folder.isBehindServer())) {
-            return;
-          }
-          await folder.syncRecentArrivals();
+          await folder.refreshOpenFolder();
           folder.notifyObservers();
         });
       };

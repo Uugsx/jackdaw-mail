@@ -118,6 +118,41 @@ test("не сбрасывает dirty после незавершённой си
   expect(folder.isBehindServer()).toBe(true);
 });
 
+test("обновляет открытую папку без переключения профиля", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 1;
+  folder.countUnread = 0;
+  let existing = folder.newEMail();
+  existing.itemID = "cached-message";
+  existing.isRead = true;
+  folder.messages.add(existing);
+
+  let syncCalls = 0;
+  folder.syncRecentArrivals = async () => {
+    syncCalls++;
+    return new ArrayColl();
+  };
+  let getFolderCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("GetFolder");
+    getFolderCalls++;
+    return { Folders: [{ TotalCount: 2, UnreadCount: 1 }] };
+  };
+
+  await folder.refreshOpenFolder();
+
+  expect(getFolderCalls).toBe(1);
+  expect(syncCalls).toBe(1);
+  expect(folder.countTotal).toBe(2);
+  expect(folder.countUnread).toBe(1);
+});
+
 test("подтягивает письмо в фоновой синхронизации после пустого unread-запроса", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

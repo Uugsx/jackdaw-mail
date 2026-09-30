@@ -144,6 +144,35 @@ test("полная повторная синхронизация удаляет 
   expect(deletedIDs).toEqual(["deleted-message"]);
 });
 
+test("не очищает локальный кеш при противоречивом пустом полном ответе", async () => {
+  let account = fakeAccount(request => {
+    if (request.action == "FindItem") {
+      return findItemResponse([]);
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  });
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 2;
+  folder.countUnread = 0;
+
+  for (let itemID of ["cached-message-1", "cached-message-2"]) {
+    let message = folder.newEMail();
+    message.itemID = itemID;
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+
+  await folder.fullResync();
+
+  expect(folder.messages.length).toBe(2);
+  expect(folder.countTotal).toBe(2);
+  expect(folder.dirty).toBe(true);
+});
+
 test("синхронизирует папку с уведомлениями после уменьшения серверного счётчика", () => {
   let account = fakeAccount(() => ({}));
   let folder = account.newFolder();

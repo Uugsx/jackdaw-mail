@@ -92,6 +92,8 @@ export class OWAFolder extends ExchangeFolder {
   protected actionFlagsBackfillRunning = false;
   /** Не допускать параллельных GetItem для видимой папки. */
   protected visibleMetadataRefreshPromise: Promise<void> | null = null;
+  /** Не допускать параллельных проверок счётчика открытой папки. */
+  protected openFolderRefreshPromise: Promise<void> | null = null;
 
   /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
   protected lastMarkReadAt = 0;
@@ -367,9 +369,22 @@ export class OWAFolder extends ExchangeFolder {
       let expectedUnread = this.countUnread;
       let queryMaxResults = Math.min(250, Math.max(50, this.countUnread, maxResults));
       try {
-        queryResult = await this.account.callOWA(
-          owaFindMsgsByQueryRequest(this.id, "isread:no", queryMaxResults));
+        let queryRequest = owaFindMsgsByQueryRequest(this.id, "isread:no", queryMaxResults);
+        queryResult = await this.account.callOWA(queryRequest);
         items = queryResult?.RootFolder?.Items ?? [];
+        // Для shared-папок delegate-контекст иногда возвращает пустой или
+        // укороченный FindItem, хотя явный mailbox-контекст уже видит письмо.
+        // Повторяем только незавершённый запрос и только когда счётчик требует
+        // больше результатов — обычный быстрый путь не получает лишний запрос.
+        let mailbox = this.account.username;
+        if (this.account.isDependentAccount && mailbox && expectedUnread > items.length) {
+          let explicitResult = await this.account.callOWA(queryRequest, mailbox);
+          let explicitItems = explicitResult?.RootFolder?.Items ?? [];
+          if (explicitItems.length > items.length) {
+            queryResult = explicitResult;
+            items = explicitItems;
+          }
+        }
       } catch (ex) {
         console.warn("OWA unread query failed; falling back to recent FindItem", this.name, ex);
         queryFailed = true;
@@ -473,7 +488,9 @@ export class OWAFolder extends ExchangeFolder {
     let totalItems = rootFolder?.TotalItemsInView;
     let hasCompleteCount = totalItems != null && Number.isFinite(Number(totalItems)) &&
       Number(totalItems) <= maxResults;
-    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == expectedUnread) {
+    let allUnreadHeadersAvailable = [...unreadItemIDs].every(id => !!this.getEmailByItemID(id));
+    if ((includesLast || hasCompleteCount) && unreadItemIDs.size == expectedUnread &&
+        allUnreadHeadersAvailable) {
       return true;
     }
     if ((includesLast || hasCompleteCount) && unreadItemIDs.size == 0 && this.localUnreadCount() == 0 &&
@@ -516,6 +533,31 @@ export class OWAFolder extends ExchangeFolder {
         }
       }
     });
+  }
+
+  /**
+   * Обновляет серверный счётчик открытой папки и при необходимости её строки.
+   * Переключение профиля раньше неявно запускало именно такой полный проход,
+   * из-за чего обычная открытая папка могла оставаться на старом кеше.
+   */
+  async refreshOpenFolder(): Promise<void> {
+    if (this.openFolderRefreshPromise) {
+      return this.openFolderRefreshPromise;
+    }
+    let refresh = (async () => {
+      let countsChanged = await this.folderCountsChanged(true);
+      if (countsChanged || this.isBehindServer()) {
+        await this.syncRecentArrivals();
+      }
+    })();
+    this.openFolderRefreshPromise = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.openFolderRefreshPromise === refresh) {
+        this.openFolderRefreshPromise = null;
+      }
+    }
   }
 
   /** Выполняет один проход быстрой синхронизации. */
@@ -934,8 +976,8 @@ export class OWAFolder extends ExchangeFolder {
    * OWA sync uses SyncFolderItems when available; otherwise falls back to
    * count-driven FindItem paging (see listMessages).
    */
-  async folderCountsChanged() {
-    if (this.dirty) {
+  async folderCountsChanged(forceServerRefresh = false) {
+    if (this.dirty && !forceServerRefresh) {
       this.dirty = false;
       return true;
     }
@@ -1023,6 +1065,7 @@ export class OWAFolder extends ExchangeFolder {
       let firstPage = true;
       let reachedLimit = false;
       let serverTotal: number | null = null;
+      let headerFetchIncomplete = false;
       while (true) {
         result = await this.account.callOWA(request);
         let resultTotal = Number(result?.RootFolder?.TotalItemsInView);
@@ -1030,6 +1073,24 @@ export class OWAFolder extends ExchangeFolder {
           serverTotal = Math.max(0, Math.trunc(resultTotal));
         }
         let messages = result?.RootFolder?.Items;
+        if (!messages?.length && this.account.isDependentAccount && this.account.username &&
+            (this.countTotal > 0 || this.countUnread > 0)) {
+          // Не доверяем пустой выдаче delegate-контекста для папки, которую
+          // GetFolder уже считает непустой. Явный mailbox-контекст устраняет
+          // расхождение shared-папок без изменения обычного пути.
+          try {
+            result = await this.account.callOWA(request, this.account.username);
+            let explicitTotal = Number(result?.RootFolder?.TotalItemsInView);
+            if (Number.isFinite(explicitTotal)) {
+              serverTotal = Math.max(0, Math.trunc(explicitTotal));
+            }
+            messages = result?.RootFolder?.Items;
+          } catch (ex) {
+            if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+              this.account.errorCallback(ex);
+            }
+          }
+        }
         if (!messages?.length) {
           // This folder is empty or no more items.
           break;
@@ -1059,6 +1120,16 @@ export class OWAFolder extends ExchangeFolder {
           }
         }
         let newMsgsInIteration = await this.getNewMessageHeaders(newMessageIDs);
+        let loadedHeaderIDs = new Set(newMsgsInIteration.contents
+          .map(message => message.itemID)
+          .filter((itemID): itemID is string => !!itemID));
+        if (newMessageIDs.some(itemID =>
+          !loadedHeaderIDs.has(itemID) && !this.getEmailByItemID(itemID))) {
+          // FindItem уже доказал наличие ItemId, поэтому неполный GetItem не
+          // может считаться полной сверкой. Иначе replaceAll удалит строки,
+          // а счётчик продолжит сообщать о письмах, которых UI не показывает.
+          headerFetchIncomplete = true;
+        }
         for (let msg of newMsgsInIteration) {
           msg.isNewArrived = isNewMail;
         }
@@ -1099,10 +1170,25 @@ export class OWAFolder extends ExchangeFolder {
           this.refreshMessageContacts();
         }
         this.markCountsReconciled();
+        if (headerFetchIncomplete) {
+          this.dirty = true;
+        }
         this.notifyObservers();
-      } else if (firstPage && this.countTotal > 0 && !(force && maxItems == null)) {
+      } else if (firstPage && (this.countTotal > 0 || this.countUnread > 0)) {
         // The server gave us nothing for a folder it says is not empty. Taking
         // that at face value would delete the whole local copy of the folder.
+        // Даже force не отменяет защиту: сначала должен прийти подтверждённый
+        // GetFolder-счётчик 0, иначе временный пустой ответ Exchange является
+        // рассинхроном, а не доказательством удаления.
+        this.dirty = true;
+        this.notifyObservers();
+      } else if (headerFetchIncomplete) {
+        // Сохраняем уже загруженные заголовки, но не удаляем старый кеш и не
+        // сохраняем неполный результат как authoritative full reconcile.
+        this.addMessagesIfAbsent(newMsgs);
+        this.refreshMessageContacts();
+        this.markCountsReconciled();
+        this.dirty = true;
         this.notifyObservers();
       } else {
         // `subtract()` is a live collection observing both operands, so adding
@@ -1246,8 +1332,27 @@ export class OWAFolder extends ExchangeFolder {
       return newMsgs;
     }
     try {
+      let getItems = (results: any): any[] => results?.ResponseMessages
+        ? this.account.itemsFromResponses(results.ResponseMessages.Items ?? [])
+        : ensureArray(results?.Items);
       let results = await this.account.callOWA(owaGetNewMsgHeadersRequest(ids));
-      let items = results.ResponseMessages ? this.account.itemsFromResponses(results.ResponseMessages.Items) : results.Items;
+      let items = getItems(results);
+      let loadedIDs = new Set(items.map(item =>
+        sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "")));
+      let missingIDs = ids.filter(id => !loadedIDs.has(id));
+      // GetItem через delegate-anchor на некоторых Exchange возвращает только
+      // часть ItemIds. Добираем именно отсутствующие заголовки через явный
+      // mailbox, иначе счётчик уже обновится, а строки письма не появятся.
+      let mailbox = this.account.username;
+      if (missingIDs.length && this.account.isDependentAccount && mailbox) {
+        try {
+          let explicitResults = await this.account.callOWA(
+            owaGetNewMsgHeadersRequest(missingIDs), mailbox);
+          items = items.concat(getItems(explicitResults));
+        } catch (ex) {
+          this.account.errorCallback(ex);
+        }
+      }
       for (let item of items) {
         try {
           let id = sanitize.nonemptystring(item?.ItemId?.Id, "");
