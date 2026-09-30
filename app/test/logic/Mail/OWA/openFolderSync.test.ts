@@ -153,6 +153,78 @@ test("обновляет открытую папку без переключен
   expect(folder.countUnread).toBe(1);
 });
 
+test("загружает новые письма открытой папки, даже если серверный счётчик не изменился", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  mainAccount.storage = new DummyMailStorage();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 12;
+  folder.countUnread = 0;
+
+  for (let index = 0; index < 2; index++) {
+    let message = folder.newEMail();
+    message.itemID = `cached-${index}`;
+    message.sent = new Date(`2026-09-30T12:0${index}:00Z`);
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+
+  (folder as any).lastOpenFolderRecentRefreshAt = Date.now() - 60_000;
+  folder.downloadMessages = async messages => messages;
+  let requests: { request: any; mailbox?: string }[] = [];
+  (mainAccount as any).callOWA = async (request: any, mailbox?: string) => {
+    requests.push({ request, mailbox });
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem") {
+      return {
+        RootFolder: {
+          Items: Array.from({ length: 10 }, (_, index) => ({
+            ItemId: { Id: `new-${index}` },
+            IsRead: false,
+          })),
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 12,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any, index: number) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: `Ошибка ${index + 1}`,
+          DateTimeSent: `2026-09-30T14:${String(index).padStart(2, "0")}:00Z`,
+          DateTimeReceived: `2026-09-30T14:${String(index).padStart(2, "0")}:00Z`,
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.refreshOpenFolder();
+
+  expect(requests.some(({ request, mailbox }) =>
+    request.action == "FindItem" && !request.Body.QueryString &&
+    request.Body.Paging.BasePoint == "End" && mailbox == "integrators@example.test",
+  )).toBe(true);
+  expect(Array.from({ length: 10 }, (_, index) => folder.getEmailByItemID(`new-${index}`)))
+    .not.toContain(undefined);
+  expect(folder.messages.length).toBe(12);
+  expect(folder.countUnread).toBe(10);
+});
+
 test("полностью сверяет список после уменьшения total при обновлении открытой папки", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

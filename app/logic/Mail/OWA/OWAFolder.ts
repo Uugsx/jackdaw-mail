@@ -55,6 +55,8 @@ const kServerCountSyncRetryDelaysSeconds = [0.5, 1, 2, 3];
 /** GetItem-обновление видимой страницы, пока папка открыта (Outlook rules/push). */
 const kVisibleMetadataRefreshMs = 12_000;
 const kVisibleMetadataRefreshSharedMs = 8_000;
+/** Проверять последние письма, даже если счётчики Exchange не изменились. */
+const kOpenFolderRecentRefreshMs = 15_000;
 /** Не считать «без категорий» окончательным для свежих писем (Exchange rules). */
 const kRecentCategoryGraceMs = 15 * 60_000;
 
@@ -94,6 +96,8 @@ export class OWAFolder extends ExchangeFolder {
   protected visibleMetadataRefreshPromise: Promise<void> | null = null;
   /** Не допускать параллельных проверок счётчика открытой папки. */
   protected openFolderRefreshPromise: Promise<void> | null = null;
+  /** Время последней независимой проверки последних писем открытой папки. */
+  protected lastOpenFolderRecentRefreshAt: number | null = null;
 
   /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
   protected lastMarkReadAt = 0;
@@ -567,7 +571,19 @@ export class OWAFolder extends ExchangeFolder {
     let refresh = (async () => {
       let countsChanged = await this.folderCountsChanged(true);
       if (countsChanged || this.isBehindServer()) {
+        this.lastOpenFolderRecentRefreshAt = Date.now();
         await this.syncRecentArrivals();
+      } else {
+        let now = Date.now();
+        if (this.lastOpenFolderRecentRefreshAt == null ||
+            now - this.lastOpenFolderRecentRefreshAt >= kOpenFolderRecentRefreshMs) {
+          // GetFolder может отставать от FindItem или не менять счётчики при
+          // появлении строк. Проверяем последнюю страницу напрямую, чтобы
+          // открытый список не зависел от бейджа или переключения профиля.
+          this.lastOpenFolderRecentRefreshAt = now;
+          let messages = await this.listMessages(true, true);
+          await this.finishNewMessages(messages, true);
+        }
       }
     })();
     this.openFolderRefreshPromise = refresh;
