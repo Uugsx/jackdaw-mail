@@ -153,6 +153,71 @@ test("обновляет открытую папку без переключен
   expect(folder.countUnread).toBe(1);
 });
 
+test("чистая shared-подпапка проверяется при открытии, даже когда кешированный счётчик не изменился", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = main;
+  account.username = "integrators@example.test";
+  let folder = account.newFolder();
+  folder.id = "server-errors";
+  folder.countTotal = 1;
+  (folder as any).haveReadFolder = true;
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+  let refreshed = 0;
+  folder.refreshOpenFolder = async () => { refreshed++; };
+
+  await folder.syncOnFolderOpen();
+
+  expect(refreshed).toBe(1);
+});
+
+test("shared-подпапка добирает новый заголовок из альтернативного контекста непустой страницы", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = main;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+  (account as any).sharedFolderRoot = "msgfolderroot";
+  let folder = account.newFolder();
+  folder.id = "server-errors";
+  folder.countTotal = 1;
+  (folder as any).haveReadFolder = true;
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+  folder.downloadMessages = async messages => messages;
+
+  main.callOWA = async (request: any, mailbox?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 1, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem") {
+      return { RootFolder: { Items: [
+        { ItemId: { Id: mailbox ? "cached-message" : "new-message" }, IsRead: !!mailbox },
+      ], IncludesLastItemInRange: true, TotalItemsInView: 1 } };
+    }
+    if (request.action == "GetItem") {
+      return { Items: [{ ItemId: { Id: "new-message" },
+        InternetMessageId: "<new-message@example.test>", Subject: "Свежая ошибка",
+        DateTimeSent: "2026-09-30T13:40:00Z", DateTimeReceived: "2026-09-30T13:40:00Z",
+        IsRead: false, ItemClass: "IPM.Note" }] };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.listMessages(true, true);
+
+  expect(folder.getEmailByItemID("new-message")?.subject).toBe("Свежая ошибка");
+});
+
 test("загружает новые письма открытой папки, даже если серверный счётчик не изменился", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let mainAccount = new OWAAccount();
@@ -1356,4 +1421,232 @@ test("large folder with partial local history reconciles dirty without full-scan
 
   await folder.getNewMessages(true);
   expect(listMessagesCalls.some(call => !call.recentOnly)).toBe(false);
+});
+
+test("останавливает полный FindItem, если Exchange бесконечно повторяет одну страницу", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 100;
+
+  let cachedIDs = Array.from({ length: 50 }, (_, index) => "cached-" + index);
+  for (let id of [...cachedIDs, "must-not-be-deleted"]) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+
+  let findItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    findItemCalls++;
+    return {
+      RootFolder: {
+        Items: cachedIDs.map(Id => ({ ItemId: { Id }, IsRead: true })),
+        IncludesLastItemInRange: false,
+      },
+    };
+  };
+
+  await folder.listMessages(false, true);
+
+  expect(findItemCalls).toBe(2);
+  expect(folder.messages.length).toBe(51);
+  expect(folder.getEmailByItemID("must-not-be-deleted")).toBeDefined();
+  expect(folder.dirty).toBe(true);
+});
+
+test("не зацикливает FindItem при обновлении флагов вложений", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  let cached = folder.newEMail();
+  cached.itemID = "missing-cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let findItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    findItemCalls++;
+    return {
+      RootFolder: {
+        Items: [{ ItemId: { Id: "server-message" }, IsRead: true }],
+        IncludesLastItemInRange: false,
+      },
+    };
+  };
+
+  await folder.syncHasAttachmentFlags();
+
+  expect(findItemCalls).toBe(2);
+  expect((folder as any).attachmentFlagsSynced).toBe(false);
+  await folder.syncHasAttachmentFlags();
+  expect(findItemCalls).toBe(2);
+  (folder as any).nextAttachmentFlagsSyncAt = 0;
+  await folder.syncHasAttachmentFlags();
+  expect(findItemCalls).toBe(4);
+});
+
+test("долгое обновление флагов вложений не блокирует свежие письма открытой папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.countTotal = 1;
+  (folder as any).haveReadFolder = true;
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let scanStarted!: () => void;
+  let scanning = new Promise<void>(resolve => { scanStarted = resolve; });
+  let releaseScan!: () => void;
+  let blockedScan = new Promise<void>(resolve => { releaseScan = resolve; });
+  let findCalls = 0;
+  account.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 1, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem") {
+      if (++findCalls == 1) {
+        scanStarted();
+        await blockedScan;
+      }
+      return { RootFolder: { Items: [{ ItemId: { Id: "cached-message" }, IsRead: true }],
+        IncludesLastItemInRange: true, TotalItemsInView: 1 } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let attachmentScan = folder.syncHasAttachmentFlags();
+  await scanning;
+  let recentFinished = false;
+  let recent = folder.listMessages(true, true).then(() => { recentFinished = true; });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(recentFinished).toBe(true);
+  } finally {
+    releaseScan();
+    await Promise.all([attachmentScan, recent]);
+  }
+});
+
+test("не сканирует десять тысяч писем целиком при отстающем unread-поиске", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.countTotal = 9_743;
+  folder.countUnread = 11;
+  (folder as any).haveReadFolder = true;
+  folder.downloadMessages = async messages => messages;
+  folder.getNewMessageHeaders = async () => new ArrayColl();
+
+  let fullPages = 0;
+  account.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 9_743, UnreadCount: 11 }] };
+    }
+    if (request.action == "FindItem" && request.Body.QueryString) {
+      return { RootFolder: { Items: [], IncludesLastItemInRange: true, TotalItemsInView: 0 } };
+    }
+    if (request.action == "FindItem") {
+      if (request.Body.Paging.BasePoint == "Beginning" && !request.Body.SortOrder) {
+        fullPages++;
+      }
+      return { RootFolder: { Items: Array.from({ length: 50 }, (_, index) => ({
+        ItemId: { Id: `old-${request.Body.Paging.Offset + index}` }, IsRead: true,
+      })), IncludesLastItemInRange: false, TotalItemsInView: 9_743 } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.fetchUnreadArrivals();
+
+  expect(fullPages).toBeLessThanOrEqual(2);
+  expect(folder.isBehindServer()).toBe(true);
+});
+
+test("заканчивает обновление флагов после обработки всех закешированных писем", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.name = "Ошибки серверов";
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let findItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    findItemCalls++;
+    return {
+      RootFolder: {
+        Items: [{ ItemId: { Id: "cached-message" }, IsRead: true, HasAttachments: true }],
+        IncludesLastItemInRange: false,
+        TotalItemsInView: 9_743,
+      },
+    };
+  };
+
+  await folder.syncHasAttachmentFlags();
+
+  expect(findItemCalls).toBe(1);
+  expect((folder as any).attachmentFlagsSynced).toBe(true);
+});
+
+test("ограничивает полный FindItem, если сервер бесконечно выдаёт новые страницы", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 500;
+
+  let cached = folder.newEMail();
+  cached.itemID = "must-not-be-deleted";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let findItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem") {
+      findItemCalls++;
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "new-" + findItemCalls }, IsRead: true }],
+          IncludesLastItemInRange: false,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return { Items: [] };
+    }
+    throw new Error("Неожиданный запрос OWA: " + request.action);
+  };
+
+  await folder.listMessages(false, true);
+
+  expect(findItemCalls).toBe(200);
+  expect(folder.messages.length).toBe(1);
+  expect(folder.getEmailByItemID("must-not-be-deleted")).toBeDefined();
+  expect(folder.dirty).toBe(true);
 });

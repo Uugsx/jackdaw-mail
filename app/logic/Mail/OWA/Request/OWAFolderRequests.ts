@@ -535,6 +535,11 @@ export function owaGetPermissionsRequest(folderID: string): OWARequest {
 }
 
 export function owaFolderCountsRequest(folderID: string): OWARequest {
+  return owaFolderCountsBatchRequest([folderID]);
+}
+
+/** Один GetFolder для нескольких папок дополнительного ящика. */
+export function owaFolderCountsBatchRequest(folderIDs: string[]): OWARequest {
   return new OWARequest("GetFolder", {
     __type: "GetFolderRequest:#Exchange",
     FolderShape: {
@@ -548,10 +553,10 @@ export function owaFolderCountsRequest(folderID: string): OWARequest {
         FieldURI: "folder:TotalCount",
       }],
     },
-    FolderIds: [{
+    FolderIds: folderIDs.map(folderID => ({
       __type: "FolderId:#Exchange",
       Id: folderID,
-    }],
+    })),
   });
 }
 

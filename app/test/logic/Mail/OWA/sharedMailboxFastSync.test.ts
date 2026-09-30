@@ -271,6 +271,139 @@ test("shared unread-поиск добирает заголовок через я
   ]));
 });
 
+test("shared unread-поиск выбирает полный ответ delegate, совпадающий со счётчиком", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 9_743;
+  folder.countUnread = 27;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let delegateIDs = Array.from({ length: 27 }, (_, index) => "unread-" + index);
+  let explicitIDs = delegateIDs.slice(0, 12);
+  let folderListRequests = 0;
+  let headerRequests: { mailbox?: string; delegateAnchor?: string; ids: string[] }[] = [];
+  main.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      let ids = mailbox ? explicitIDs : delegateIDs;
+      return {
+        RootFolder: {
+          Items: ids.map(Id => ({ ItemId: { Id }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          TotalItemsInView: ids.length,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      folderListRequests++;
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      let ids = request.Body.ItemIds.map((item: any) => item.Id);
+      headerRequests.push({ mailbox, delegateAnchor, ids });
+      let availableIDs = mailbox
+        ? ids.filter((id: string) => explicitIDs.includes(id))
+        : ids;
+      return {
+        Items: availableIDs.map((Id: string) => ({
+          ItemId: { Id },
+          InternetMessageId: "<" + Id + "@example.test>",
+          Subject: Id,
+          DateTimeSent: "2026-09-30T12:00:00Z",
+          DateTimeReceived: "2026-09-30T12:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error("Неожиданный запрос OWA: " + request.action);
+  };
+
+  await folder.fetchUnreadArrivals();
+
+  expect(folder.messages.length).toBe(27);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(27);
+  expect(folder.countUnread).toBe(27);
+  expect(headerRequests.find(request => request.mailbox)?.ids).toEqual(expect.arrayContaining(explicitIDs));
+  expect(headerRequests.find(request => request.delegateAnchor)?.ids).toEqual(expect.arrayContaining(
+    delegateIDs.filter(id => !explicitIDs.includes(id)),
+  ));
+  expect(folderListRequests).toBe(0);
+});
+
+test("shared unread-поиск отбрасывает устаревшие непрочитанные сверх счётчика", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 9_743;
+  folder.countUnread = 10;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let delegateIDs = Array.from({ length: 10 }, (_, index) => "unread-" + index);
+  let staleExplicitIDs = [...delegateIDs, "stale-10", "stale-11"];
+  let folderListRequests = 0;
+  main.callOWA = async (request: any, mailbox?: string) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      let ids = mailbox ? staleExplicitIDs : delegateIDs;
+      return {
+        RootFolder: {
+          Items: ids.map(Id => ({ ItemId: { Id }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          TotalItemsInView: ids.length,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      folderListRequests++;
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 0,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      let ids = request.Body.ItemIds.map((item: any) => item.Id);
+      return {
+        Items: ids.map((Id: string) => ({
+          ItemId: { Id },
+          InternetMessageId: "<" + Id + "@example.test>",
+          Subject: Id,
+          DateTimeSent: "2026-09-30T12:00:00Z",
+          DateTimeReceived: "2026-09-30T12:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error("Неожиданный запрос OWA: " + request.action);
+  };
+
+  await folder.fetchUnreadArrivals();
+
+  expect(folder.messages.length).toBe(10);
+  expect(folder.countUnread).toBe(10);
+  expect([...folder.messages].map(message => message.itemID)).toEqual(expect.arrayContaining(delegateIDs));
+  expect(folder.getEmailByItemID("stale-10")).toBeUndefined();
+  expect(folder.getEmailByItemID("stale-11")).toBeUndefined();
+  expect(folderListRequests).toBe(0);
+});
+
 test("полная сверка shared-папки не принимает delegate-список за список mailbox", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = makeMainAccount();
@@ -445,6 +578,146 @@ test("пустой Deep FindFolder не блокирует fallback счётчи
   expect(explicitMailboxes).toEqual(["shared@example.test", "shared@example.test"]);
   expect(folder.countTotal).toBe(0);
   expect(folder.countUnread).toBe(0);
+});
+
+test("shared-подпапка сверяется через GetFolder, даже если Deep FindFolder вернул старые счётчики", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+
+  let inbox = shared.newFolder();
+  inbox.id = "shared-inbox";
+  inbox.specialFolder = SpecialFolder.Inbox;
+  shared.rootFolders.add(inbox);
+  shared.folderMap.set(inbox.id, inbox);
+
+  let subfolder = shared.newFolder();
+  subfolder.id = "server-errors";
+  subfolder.name = "Ошибки серверов";
+  subfolder.specialFolder = SpecialFolder.Normal;
+  subfolder.countTotal = 9_600;
+  shared.rootFolders.add(subfolder);
+  shared.folderMap.set(subfolder.id, subfolder);
+
+  let actions: string[] = [];
+  main.callOWA = async (request: any, mailbox?: string) => {
+    expect(mailbox).toBe("shared@example.test");
+    actions.push(request.action);
+    if (request.action == "FindFolder") {
+      return { RootFolder: { Folders: [
+        { FolderId: { Id: inbox.id }, TotalCount: 3_355, UnreadCount: 0 },
+        { FolderId: { Id: subfolder.id }, TotalCount: 9_597, UnreadCount: 0 },
+      ] } };
+    }
+    if (request.action == "GetFolder") {
+      return { ResponseMessages: { Items: request.Body.FolderIds.map((entry: any) => ({
+        ResponseClass: "Success",
+        Folders: [{ FolderId: { Id: entry.Id }, TotalCount: entry.Id == subfolder.id ? 9_608 : 3_355,
+          UnreadCount: entry.Id == subfolder.id ? 11 : 0 }],
+      })) } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await shared.refreshAllFolderCounts();
+
+  expect(actions).toContain("GetFolder");
+  expect(subfolder.countTotal).toBe(9_608);
+  expect(subfolder.countUnread).toBe(11);
+  expect((subfolder as any).countTotalDecreased).toBe(false);
+});
+
+test("неполный batch GetFolder не оставляет хвост shared-подпапок без обновления", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+
+  let inbox = shared.newFolder();
+  inbox.id = "shared-inbox";
+  inbox.specialFolder = SpecialFolder.Inbox;
+  shared.rootFolders.add(inbox);
+  shared.folderMap.set(inbox.id, inbox);
+  let subfolders = Array.from({ length: 35 }, (_, index) => {
+    let folder = shared.newFolder();
+    folder.id = `errors-${index}`;
+    folder.specialFolder = SpecialFolder.Normal;
+    shared.rootFolders.add(folder);
+    shared.folderMap.set(folder.id, folder);
+    return folder;
+  });
+
+  let singleRequests: string[] = [];
+  main.callOWA = async (request: any) => {
+    if (request.action == "FindFolder") {
+      return { RootFolder: { Folders: [
+        { FolderId: { Id: inbox.id }, TotalCount: 0, UnreadCount: 0 },
+      ] } };
+    }
+    if (request.action == "GetFolder") {
+      let ids = request.Body.FolderIds.map((entry: any) => entry.Id);
+      if (ids.length > 1) {
+        return { ResponseMessages: { Items: ids.slice(0, 5).map((id: string) => ({
+          ResponseClass: "Success",
+          Folders: [{ FolderId: { Id: id }, TotalCount: 1, UnreadCount: 1 }],
+        })) } };
+      }
+      singleRequests.push(ids[0]);
+      return { Folders: [{ FolderId: { Id: ids[0] }, TotalCount: 1, UnreadCount: 1 }] };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await shared.refreshAllFolderCounts();
+  expect((shared as any).supportsBatchedFolderCounts).toBe(false);
+  await shared.refreshAllFolderCounts();
+
+  expect(singleRequests).toContain(subfolders[34].id);
+});
+
+test("временная ошибка batch GetFolder не отключает проверку shared-подпапок навсегда", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+  let folders = ["errors-a", "errors-b"].map(id => {
+    let folder = shared.newFolder();
+    folder.id = id;
+    folder.specialFolder = SpecialFolder.Normal;
+    shared.rootFolders.add(folder);
+    shared.folderMap.set(id, folder);
+    return folder;
+  });
+  shared.handleBackgroundSyncError = () => {};
+  let batchRequests = 0;
+  main.callOWA = async (request: any) => {
+    if (request.action == "FindFolder") {
+      return { RootFolder: { Folders: [] } };
+    }
+    if (request.action == "GetFolder") {
+      let ids = request.Body.FolderIds.map((entry: any) => entry.Id);
+      if (ids.length > 1) {
+        batchRequests++;
+        if (batchRequests == 1) {
+          throw new Error("Временный сбой сети");
+        }
+        return { ResponseMessages: { Items: ids.map((id: string) => ({
+          ResponseClass: "Success",
+          Folders: [{ FolderId: { Id: id }, TotalCount: 1, UnreadCount: 1 }],
+        })) } };
+      }
+      return { Folders: [{ FolderId: { Id: ids[0] }, TotalCount: 1, UnreadCount: 1 }] };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await shared.refreshAllFolderCounts();
+  expect((shared as any).supportsBatchedFolderCounts).toBe(true);
+  await shared.refreshAllFolderCounts();
+
+  expect(batchRequests).toBe(2);
+  expect(folders.every(folder => folder.countUnread == 1)).toBe(true);
 });
 
 test("push shared Inbox обновляет счётчик после добавления заголовка", async () => {

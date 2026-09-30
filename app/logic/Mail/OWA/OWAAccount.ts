@@ -22,7 +22,7 @@ import { OWACreateItemRequest } from "./Request/OWACreateItemRequest";
 import { OWAUpdateItemRequest } from "./Request/OWAUpdateItemRequest";
 import { OWAGetUserConfigurationRequest } from "./Request/OWAGetUserConfigurationRequest";
 import { OWASubscribeToNotificationRequest } from "./Request/OWASubscribeToNotificationRequest";
-import { owaCreateNewTopLevelFolderRequest, owaFindFoldersRequest, owaFindFolderCountsByRootRequest, owaFolderCountsRequest, owaSharedFolderRequest } from "./Request/OWAFolderRequests";
+import { owaCreateNewTopLevelFolderRequest, owaFindFoldersRequest, owaFindFolderCountsByRootRequest, owaFolderCountsRequest, owaFolderCountsBatchRequest, owaSharedFolderRequest } from "./Request/OWAFolderRequests";
 import { OWALoginBackground } from "./Login/OWALoginBackground";
 import { deleteExchangePermissions, setExchangePermissions } from "../EWS/ExchangePermission";
 import type { PersonUID } from "../../Abstract/PersonUID";
@@ -68,6 +68,8 @@ const kOWAMaxThrottleRetries = 6;
 const kOWAMaxDirtyFoldersPerPollShared = 2;
 /** Shared mailboxes: refresh server folder counts in rotating batches. */
 const kOWAFolderCountsPerPollShared = 12;
+/** GetFolder обрабатывает набор FolderId за один запрос, без очереди Explicit Logon по папке. */
+const kOWABatchedFolderCountsPerPollShared = 32;
 /** How many shared accounts the main poller may sync at once. */
 const kSharedPollConcurrency = 2;
 /** Extra Row subscriptions per shared mailbox for folders that currently have unread. */
@@ -117,6 +119,8 @@ export class OWAAccount extends ExchangeMailAccount {
   protected sharedFoldersPollInProgress = false;
   /** Не ставить новый цикл счётчиков в очередь поверх ещё не завершённого. */
   protected folderCountsRefreshPromise: Promise<void> | null = null;
+  /** Exchange может отвергнуть многоэлементный GetFolder; тогда остаётся старый fallback. */
+  protected supportsBatchedFolderCounts = true;
   /** Один цикл восстановления для всех запросов во время одного сбоя. */
   protected networkRecoveryPromise: Promise<void> | null = null;
   protected pollFolderCountOffset = 0;
@@ -1216,6 +1220,11 @@ export class OWAAccount extends ExchangeMailAccount {
         folders.includes(this.watchedFolder) && !special.includes(this.watchedFolder)) {
       special.push(this.watchedFolder);
     }
+    for (let folder of this.notificationFoldersToSync()) {
+      if (folders.includes(folder) && !special.includes(folder)) {
+        special.push(folder);
+      }
+    }
     return special;
   }
 
@@ -1281,6 +1290,7 @@ export class OWAAccount extends ExchangeMailAccount {
     let updatedFolders: OWAFolder[] = [];
     let pendingSync = new Map<OWAFolder, { countTotal: number; countUnread: number }>();
     let pendingPrevious = new Map<OWAFolder, { countTotal: number; countUnread: number }>();
+    let deepCounts = new Map<OWAFolder, { countTotal: number; countUnread: number }>();
     let applyCountUpdate = (folder: OWAFolder, countTotal: number, countUnread: number): void => {
       let previous = pendingPrevious.get(folder) ?? {
         countTotal: folder.countTotal,
@@ -1311,6 +1321,13 @@ export class OWAAccount extends ExchangeMailAccount {
         this.syncFolderAfterServerCountUpdate(folder, counts.countTotal, counts.countUnread);
       }
     };
+    let applyDeepCounts = (verified: Set<OWAFolder>): void => {
+      for (let [folder, counts] of deepCounts) {
+        if (!verified.has(folder)) {
+          applyCountUpdate(folder, counts.countTotal, counts.countUnread);
+        }
+      }
+    };
     if (this.msgFolderRootID) {
       try {
         let countRequest = this.isDependentAccount && this.sharedFolderRoot
@@ -1334,7 +1351,11 @@ export class OWAAccount extends ExchangeMailAccount {
           matchedFolders++;
           let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
           let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
-          applyCountUpdate(folder, newTotal, newUnread);
+          if (this.isDependentAccount) {
+            deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
+          } else {
+            applyCountUpdate(folder, newTotal, newUnread);
+          }
         }
         // Parent folder counts (often Inbox/root) also arrive in ParentFolder.
         let parent = result?.RootFolder?.ParentFolder;
@@ -1345,14 +1366,24 @@ export class OWAAccount extends ExchangeMailAccount {
             matchedFolders++;
             let newUnread = sanitize.integer(parent.UnreadCount, folder.countUnread);
             let newTotal = sanitize.integer(parent.TotalCount, folder.countTotal);
-            applyCountUpdate(folder, newTotal, newUnread);
+            if (this.isDependentAccount) {
+              deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
+            } else {
+              applyCountUpdate(folder, newTotal, newUnread);
+            }
           }
         }
         // Успешный ответ OWA всё равно может не содержать пригодных папок,
         // если контекст делегата был проигнорирован. Не считаем такой ответ
         // завершённым обновлением и используем расположенный ниже fallback
         // с Explicit Logon для каждой папки.
-        if (matchedFolders > 0) {
+        // Deep FindFolder в shared OWA может вернуть валидный Inbox, но
+        // устаревшие или неполные счётчики подпапок. Для них дополнительно
+        // проверяем GetFolder по конкретным FolderId.
+        let verifySharedSubfolders = this.isDependentAccount &&
+          folders.some(folder => folder.specialFolder == SpecialFolder.Normal);
+        if (matchedFolders > 0 && !verifySharedSubfolders) {
+          applyDeepCounts(new Set());
           finishCountUpdates();
           return;
         }
@@ -1362,11 +1393,13 @@ export class OWAAccount extends ExchangeMailAccount {
         }
       }
     }
-    // Fallback: rotating GetFolder batches if FindFolder-by-root fails.
+    // Проверка shared-подпапок и fallback, если FindFolder по корню не удался.
     let priority = this.sharedCountPriorityFolders(folders);
     let rotating = folders.filter(f => !priority.includes(f));
     let batch: OWAFolder[] = [...priority];
-    let rotateSlots = Math.max(0, kOWAFolderCountsPerPollShared - priority.length);
+    let batchSize = this.isDependentAccount && this.supportsBatchedFolderCounts
+      ? kOWABatchedFolderCountsPerPollShared : kOWAFolderCountsPerPollShared;
+    let rotateSlots = Math.max(0, batchSize - priority.length);
     if (rotating.length && rotateSlots > 0) {
       let take = Math.min(rotateSlots, rotating.length);
       // The folder tree can shrink between cycles, so normalise the cursor
@@ -1382,7 +1415,75 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       this.pollFolderCountOffset = (offset + take) % rotating.length;
     }
-    for (let folder of batch) {
+    let unresolved = batch;
+    let batchSessionLimited = false;
+    let directlyVerified = new Set<OWAFolder>();
+    if (this.isDependentAccount && this.supportsBatchedFolderCounts && batch.length > 1) {
+      try {
+        let result = await this.callOWA(
+          owaFolderCountsBatchRequest(batch.map(folder => folder.id)),
+          this.username,
+        );
+        let byID = new Map(batch.map(folder => [folder.id, folder]));
+        let responses = ensureArray(result?.ResponseMessages?.Items);
+        let readCount = (raw: any, fallback: OWAFolder | undefined): void => {
+          let id = objectID(raw?.FolderId) ?? objectID(raw?.folderId);
+          let folder = id ? byID.get(id) : fallback;
+          let total = Number(raw?.TotalCount);
+          let unread = Number(raw?.UnreadCount);
+          if (!folder || raw?.TotalCount == null || raw?.UnreadCount == null ||
+              !Number.isSafeInteger(total) || !Number.isSafeInteger(unread) ||
+              total < 0 || unread < 0) {
+            return;
+          }
+          applyCountUpdate(folder, total, unread);
+          directlyVerified.add(folder);
+        };
+        if (responses.length) {
+          for (let index = 0; index < responses.length; index++) {
+            let response = responses[index];
+            if (response?.ResponseClass == "Error") {
+              continue;
+            }
+            let rawFolders = ensureArray(response?.Folders);
+            for (let raw of rawFolders) {
+              readCount(raw, responses.length == batch.length && rawFolders.length == 1
+                ? batch[index] : undefined);
+            }
+          }
+        } else {
+          let rawFolders = ensureArray(result?.Folders);
+          for (let index = 0; index < rawFolders.length; index++) {
+            readCount(rawFolders[index], rawFolders.length == batch.length
+              ? batch[index] : undefined);
+          }
+        }
+        unresolved = batch.filter(folder => !directlyVerified.has(folder));
+        if (unresolved.length > kOWAFolderCountsPerPollShared) {
+          // Неполный batch не должен снова и снова оставлять хвост подпапок
+          // без проверки; следующий цикл переходит на вращающийся fallback.
+          this.supportsBatchedFolderCounts = false;
+        }
+      } catch (ex) {
+        batchSessionLimited = ex instanceof OWAError && ex.isSessionLimit;
+        if (ex instanceof OWAError && ["ErrorInvalidRequest", "ErrorInvalidArgument",
+            "ErrorSchemaValidation"].includes(ex.type)) {
+          this.supportsBatchedFolderCounts = false;
+        } else if (!batchSessionLimited) {
+          // Временный сбой сети не означает, что Exchange не поддерживает
+          // пакетный GetFolder: повторяем его на следующем цикле опроса.
+          this.handleBackgroundSyncError(ex);
+        }
+      }
+    }
+    if (batchSessionLimited) {
+      applyDeepCounts(directlyVerified);
+      finishCountUpdates();
+      return;
+    }
+    // Старые Exchange могут не поддерживать batch: сохраняем прежний
+    // ограниченный по размеру поштучный fallback.
+    for (let folder of unresolved.slice(0, kOWAFolderCountsPerPollShared)) {
       try {
         let result = await this.callOWA(
           owaFolderCountsRequest(folder.id),
@@ -1395,12 +1496,14 @@ export class OWAAccount extends ExchangeMailAccount {
         let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
         let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
         applyCountUpdate(folder, newTotal, newUnread);
+        directlyVerified.add(folder);
       } catch (ex) {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           this.errorCallback(ex);
         }
       }
     }
+    applyDeepCounts(directlyVerified);
     finishCountUpdates();
   }
 
