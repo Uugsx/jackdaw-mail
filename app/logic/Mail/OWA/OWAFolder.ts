@@ -136,7 +136,11 @@ export class OWAFolder extends ExchangeFolder {
     // письма после отметки, последующие ответы Exchange должны добавлять их
     // к одной и той же базе, а не считать только дельту между соседними
     // ответами. Следующая локальная отметка начнёт новую операцию.
-    this.readMutationBaseTotal = this.lastServerCountTotal ?? this.countTotal;
+    // FindItem/полная сверка могут увидеть письма раньше, чем GetFolder
+    // обновит сырой счётчик. Берём актуальный эффективный TotalCount, иначе
+    // эти уже полученные письма выглядят как новые после отметки прочитанными
+    // и удерживают устаревший бейдж непрочитанных.
+    this.readMutationBaseTotal = this.countTotal;
     this.lastServerCountUnread ??= this.countUnread;
     this.lastMarkReadAt = Date.now();
     this.localUnreadAfterReadMutation = Math.max(0, expectedUnread);
@@ -214,12 +218,6 @@ export class OWAFolder extends ExchangeFolder {
       if (this.recentSyncRunOnce.running) {
         this.recentSyncPending = true;
       }
-    }
-    if (suppressingStaleUnread) {
-      // Exchange может прислать устаревший счётчик даже после завершения
-      // UpdateItem. Оставляем папку dirty, чтобы открытая папка повторила
-      // сверку и подтянула реальные новые заголовки.
-      this.dirty = true;
     }
     this.countTotal = countTotal;
     this.countUnread = effectiveUnread;
@@ -504,7 +502,7 @@ export class OWAFolder extends ExchangeFolder {
         newMsgs.addAll(recent);
         // В общем ящике быстрая страница может вернуть только одно письмо,
         // хотя серверный счётчик уже показывает несколько непрочитанных.
-        if (this.unreadBehindServer()) {
+        if (this.unreadBehindServer() && !this.shouldDeferLargeSharedUnreadCatchUp()) {
           // Не удерживаем быстрый polling на полном обходе папки с тысячами
           // писем: два первых блока дополняют AQS и recent, а несверенное
           // состояние остаётся dirty для следующих проходов.
@@ -584,6 +582,14 @@ export class OWAFolder extends ExchangeFolder {
           if (!this.recentSyncPending && !this.isBehindServer()) {
             break;
           }
+          // В большой общей папке Exchange может обновить счётчик раньше
+          // результата поиска непрочитанных. Одна короткая повторная попытка
+          // даёт серверу время выдать заголовки; дальнейшие повторы не должны
+          // задерживать открытие и опрос папки. Следующий штатный опрос
+          // продолжит синхронизацию без долгого индикатора и полного обхода.
+          if (retry >= 1 && this.shouldDeferLargeSharedUnreadCatchUp()) {
+            break;
+          }
           let delaySeconds = kServerCountSyncRetryDelaysSeconds[retry];
           if (delaySeconds == null) {
             break;
@@ -599,6 +605,12 @@ export class OWAFolder extends ExchangeFolder {
         }
       }
     });
+  }
+
+  protected shouldDeferLargeSharedUnreadCatchUp(): boolean {
+    return this.account.isDependentAccount &&
+      this.countTotal > kMaxFetchCount * 2 &&
+      this.unreadBehindServer();
   }
 
   /**
@@ -958,9 +970,20 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   /** User opened the folder — load headers when the cache is empty or badges moved. */
-  async syncOnFolderOpen(): Promise<Collection<OWAEMail>> {
+  async syncOnFolderOpen(cacheFirstForSharedMailbox = false): Promise<Collection<OWAEMail>> {
     await this.readFolder();
     this.dedupeMessagesByItemID();
+    if (cacheFirstForSharedMailbox && this.account.isDependentAccount && this.messages.hasItems) {
+      this.completeInitialSync();
+      this.refreshVisibleMessageMetadataInBackground();
+      this.backfillMessageActionFlags();
+      void this.refreshOpenFolder().catch(ex => {
+        if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+          this.account.handleBackgroundSyncError(ex);
+        }
+      });
+      return this.messages;
+    }
     let needsFetch = (this.messages.isEmpty && (this.countTotal > 0 || this.countUnread > 0))
       || this.dirty
       || this.countNewArrived > 0
@@ -1090,11 +1113,19 @@ export class OWAFolder extends ExchangeFolder {
       // иначе следующий быстрый опрос сбросит его, оставив старые строки.
       return false;
     }
+    let previousServerTotal = this.lastServerCountTotal;
+    let previousServerUnread = this.lastServerCountUnread;
+    let previousTotal = this.countTotal;
+    let previousUnread = this.countUnread;
     if (countTotal < this.countTotal) {
       this.countTotalDecreased = true;
     }
     this.applyServerCounts(countTotal, countUnread);
-    return true;
+    // Сравниваем применённые и сырые счётчики отдельно. Устаревший
+    // UnreadCount, который уже подавлен после локального чтения, не должен
+    // считаться новым изменением при каждом опросе папки.
+    return previousTotal != this.countTotal || previousUnread != this.countUnread ||
+      previousServerTotal != countTotal || previousServerUnread != countUnread;
   }
 
   /** Local message list is behind server folder counters. */

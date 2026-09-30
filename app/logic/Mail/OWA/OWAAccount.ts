@@ -1252,9 +1252,12 @@ export class OWAAccount extends ExchangeMailAccount {
       if (this.shouldSyncFolderAfterCountUpdate(folder, prevTotal, prevUnread, newTotal, newUnread)) {
         this.syncFolderAfterServerCountUpdate(folder, newTotal, newUnread);
       } else {
+        let previousTotal = folder.countTotal;
+        let previousUnread = folder.countUnread;
         folder.applyServerCounts(newTotal, newUnread);
-        folder.dirty = true;
-        this.notifyFolderUIUpdates([folder]);
+        if (folder.countTotal != previousTotal || folder.countUnread != previousUnread) {
+          this.notifyFolderUIUpdates([folder]);
+        }
       }
     }).catch(ex => {
       if (!(ex instanceof OWAError && ex.isSessionLimit)) {
@@ -1307,9 +1310,11 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       pendingPrevious.delete(folder);
       pendingSync.delete(folder);
+      let previousTotal = folder.countTotal;
+      let previousUnread = folder.countUnread;
       folder.applyServerCounts(countTotal, countUnread);
-      folder.dirty = true;
-      if (!updatedFolders.includes(folder)) {
+      if ((folder.countTotal != previousTotal || folder.countUnread != previousUnread) &&
+          !updatedFolders.includes(folder)) {
         updatedFolders.push(folder);
       }
     };

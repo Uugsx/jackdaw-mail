@@ -404,6 +404,137 @@ test("shared unread-поиск отбрасывает устаревшие не�
   expect(folderListRequests).toBe(0);
 });
 
+test("не сканирует тысячи писем синхронно при неполном unread-ответе shared-папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.countTotal = 9_743;
+  folder.countUnread = 27;
+  (folder as any).haveReadFolder = true;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  let listCalls: Array<[boolean | undefined, boolean | undefined, number | undefined]> = [];
+  folder.listMessages = async (recentOnly, force, maxItems) => {
+    listCalls.push([recentOnly, force, maxItems]);
+    return new ArrayColl();
+  };
+  main.callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    expect(request.Body.QueryString).toBe("isread:no");
+    return {
+      RootFolder: {
+        Items: [],
+        IncludesLastItemInRange: false,
+        TotalItemsInView: 250,
+      },
+    };
+  };
+
+  await folder.fetchUnreadArrivals();
+
+  expect(listCalls).toEqual([[true, true, undefined]]);
+  expect(folder.countUnread).toBe(27);
+});
+
+test("счётчик shared-папки не помечает кэш dirty при повторе устаревшего unread", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.applyServerCounts(16, 16);
+  (folder as any).haveReadFolder = true;
+  let messages = Array.from({ length: 16 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+  main.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 16, UnreadCount: 16 }] };
+    }
+    return {};
+  };
+
+  await folder.markMessagesRead(messages, true);
+  expect(folder.countUnread).toBe(0);
+  folder.dirty = false;
+
+  (shared as any).refreshFolderBadge(folder);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  expect(folder.countUnread).toBe(0);
+  expect(folder.dirty).toBe(false);
+});
+
+test("общий polling счётчиков не помечает папку dirty из-за устаревшего unread", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  (shared as any).msgFolderRootID = "shared-root";
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.specialFolder = SpecialFolder.Normal;
+  folder.applyServerCounts(16, 16);
+  (folder as any).haveReadFolder = true;
+  shared.rootFolders.add(folder);
+  shared.folderMap.set(folder.id, folder);
+  let messages = Array.from({ length: 16 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+  main.callOWA = async (request: any) => {
+    if (request.action == "FindFolder") {
+      return {
+        RootFolder: {
+          Folders: [{ FolderId: { Id: folder.id }, TotalCount: 16, UnreadCount: 16 }],
+        },
+      };
+    }
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 16, UnreadCount: 16 }] };
+    }
+    return {};
+  };
+
+  await folder.markMessagesRead(messages, true);
+  folder.dirty = false;
+
+  await shared.refreshAllFolderCounts();
+
+  expect(folder.countUnread).toBe(0);
+  expect(folder.dirty).toBe(false);
+});
+
+test("ограничивает повторы incomplete unread-ответа для большой shared-папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.countTotal = 9_743;
+  folder.countUnread = 27;
+  (folder as any).haveReadFolder = true;
+
+  let fetchCalls = 0;
+  folder.fetchUnreadArrivals = async () => {
+    fetchCalls++;
+    return new ArrayColl();
+  };
+
+  await folder.syncRecentArrivals();
+
+  expect(fetchCalls).toBe(2);
+  expect(folder.countUnread).toBe(27);
+});
+
 test("полная сверка shared-папки не принимает delegate-список за список mailbox", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = makeMainAccount();

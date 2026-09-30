@@ -199,6 +199,72 @@ test("не возвращает старый счётчик, если TotalCount
   expect(folder.dirty).toBe(true);
 });
 
+test("не удерживает badge после чтения новых писем, если GetFolder отстал от FindItem", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 9_916;
+  folder.countUnread = 16;
+  (folder as any).lastServerCountTotal = 9_900;
+  (folder as any).haveReadFolder = true;
+
+  let messages = Array.from({ length: 16 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+
+  await folder.markMessagesRead(messages, true);
+  expect(folder.countUnread).toBe(0);
+
+  // Запоздавший GetFolder считает те же 16 сообщений новыми. Их TotalCount
+  // уже был виден в FindItem до отметки писем прочитанными.
+  folder.applyServerCounts(9_916, 16);
+  expect(folder.countUnread).toBe(0);
+});
+
+test("не запускает повторную сверку из-за неизменного устаревшего unread-счётчика", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 16, UnreadCount: 16 }] };
+    }
+    return {};
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.applyServerCounts(16, 16);
+  (folder as any).haveReadFolder = true;
+  let messages = Array.from({ length: 16 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+
+  await folder.markMessagesRead(messages, true);
+  expect(folder.countUnread).toBe(0);
+
+  // Первая сверка уже завершилась; Exchange всё ещё повторяет старый счётчик.
+  folder.dirty = false;
+  expect(await folder.folderCountsChanged(true)).toBe(false);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.dirty).toBe(false);
+  expect(await folder.folderCountsChanged(true)).toBe(false);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.dirty).toBe(false);
+});
+
 test("сбрасывает stale unread-счётчик по полному локальному кешу", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

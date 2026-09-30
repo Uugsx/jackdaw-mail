@@ -242,7 +242,7 @@
       }
       if (folder.account.protocol == "owa") {
         let owaFolder = folder as OWAFolder;
-        await owaFolder.syncOnFolderOpen();
+        await owaFolder.syncOnFolderOpen(owaFolder.account.isDependentAccount);
         folder.notifyObservers();
       } else {
         let newMessages = await folder.listMessages();

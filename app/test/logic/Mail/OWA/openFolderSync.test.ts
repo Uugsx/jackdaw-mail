@@ -176,6 +176,39 @@ test("чистая shared-подпапка проверяется при отк�
   expect(refreshed).toBe(1);
 });
 
+test("открывает кэшированную shared-папку до завершения сетевой сверки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+  account.username = "integrators@example.test";
+  let folder = account.newFolder();
+  folder.id = "server-errors";
+  folder.countTotal = 1;
+  (folder as any).haveReadFolder = true;
+  let cached = folder.newEMail();
+  cached.itemID = "cached-message";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let refreshCalls = 0;
+  folder.refreshOpenFolder = async () => {
+    refreshCalls++;
+    await new Promise<void>(() => {});
+  };
+  (folder as any).refreshVisibleMessageMetadataInBackground = () => {};
+  (folder as any).backfillMessageActionFlags = () => {};
+
+  let returnedBeforeRefresh = await Promise.race([
+    folder.syncOnFolderOpen(true).then(() => true),
+    new Promise<boolean>(resolve => setTimeout(() => resolve(false), 50)),
+  ]);
+
+  expect(returnedBeforeRefresh).toBe(true);
+  expect(refreshCalls).toBe(1);
+  expect(folder.messages.contents).toEqual([cached]);
+});
+
 test("shared-подпапка добирает новый заголовок из альтернативного контекста непустой страницы", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = new OWAAccount();

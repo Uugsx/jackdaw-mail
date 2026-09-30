@@ -1,11 +1,12 @@
 // app first, to resolve the import cycle around Abstract/Account.ts
 import { appGlobal } from "../../../../logic/app";
 import { setupTestFolder, newTestEMail, addTestAttachment } from "./setup";
-import type { Folder } from "../../../../logic/Mail/Folder";
+import { Folder } from "../../../../logic/Mail/Folder";
 import type { EMail } from "../../../../logic/Mail/EMail";
 import { SQLEMail } from "../../../../logic/Mail/SQL/SQLEMail";
 import { getDatabase } from "../../../../logic/Mail/SQL/SQLDatabase";
-import { beforeAll, expect, test } from "vitest";
+import { getTagByName } from "../../../../logic/Abstract/Tag";
+import { beforeAll, expect, test, vi } from "vitest";
 import sql from "../../../../../lib/rs-sqlite";
 
 let folder: Folder;
@@ -143,4 +144,39 @@ test("Uses the MIME Sender header when From is absent", async () => {
   await email.parseMIME();
 
   expect(email.from.emailAddress).toBe("sender-header@example.com");
+});
+
+test("Reads folder tags in one query and keeps them on list rows", async () => {
+  let db = await getDatabase();
+  let taggedEmails = [
+    newTestEMail(folder, "tagged-first@example.com"),
+    newTestEMail(folder, "tagged-second@example.com"),
+  ];
+  taggedEmails[0].tags.add(getTagByName("Shared-folder-first-tag"));
+  taggedEmails[1].tags.add(getTagByName("Shared-folder-second-tag"));
+  for (let email of taggedEmails) {
+    await SQLEMail.save(email);
+  }
+
+  let loadedFolder = new Folder(folder.account);
+  loadedFolder.dbID = folder.dbID;
+  let originalAll = db.all.bind(db);
+  let tagQueries = 0;
+  let spy = vi.spyOn(db, "all").mockImplementation((query: any) => {
+    if (query.sourceParts.join("").includes("FROM emailTag")) {
+      tagQueries++;
+    }
+    return originalAll(query);
+  });
+  try {
+    await SQLEMail.readAllMainProperties(loadedFolder);
+  } finally {
+    spy.mockRestore();
+  }
+
+  expect(tagQueries).toBe(1);
+  expect(loadedFolder.messages.find(message => message.id == taggedEmails[0].id)?.tags.first?.name)
+    .toBe("Shared-folder-first-tag");
+  expect(loadedFolder.messages.find(message => message.id == taggedEmails[1].id)?.tags.first?.name)
+    .toBe("Shared-folder-second-tag");
 });

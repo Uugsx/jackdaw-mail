@@ -13,6 +13,9 @@ import { assert, fileExtensionForMIMEType } from "../../util/util";
 import { ArrayColl, Collection } from "svelte-collections";
 import sql from "../../../../lib/rs-sqlite";
 
+/** Stay below SQLite's portable bound-parameter limit when loading large folders. */
+const kReadMainPropertiesBatchSize = 500;
+
 export class SQLEMail {
   /**
    * Save complete emails and metadata updates for already persisted emails.
@@ -371,7 +374,12 @@ export class SQLEMail {
   }
 
   /** Read only the most important properties for the msg list view. */
-  static async readMainProperties(dbID: number, email: EMail, row: any): Promise<void> {
+  static async readMainProperties(
+    dbID: number,
+    email: EMail,
+    row: any,
+    tagRows?: any[],
+  ): Promise<void> {
     email.dbID = sanitize.integer(dbID);
     email.pID = typeof (row.pID) == "number"
       ? sanitize.integer(row.pID, null)
@@ -405,7 +413,7 @@ export class SQLEMail {
       }
     }
     this.applyStoredIncomingSender(email, row);
-    await this.readTags(email);
+    await this.readTags(email, tagRows);
   }
 
   /**
@@ -700,30 +708,56 @@ export class SQLEMail {
     // The denormalized contact columns can be stale for old sent messages.
     // Read only their recipient metadata here so chat can classify them without
     // downloading and parsing every MIME body in the folder.
-    let outgoingRecipientRows = isOutgoingFolder
-      ? await (await getDatabase()).all(sql`
-        SELECT
-          emailID, name, emailAddress, recipientType
-        FROM emailPersonRel
-          LEFT JOIN emailPerson ON (emailPersonRel.emailPersonID = emailPerson.id)
-        WHERE emailID IN (
-          SELECT id
-          FROM email
-          WHERE folderID = ${folder.dbID}
-        ) AND recipientType IN (2, 3, 4)
-      `) as any[]
-      : [];
-    let folderTagRows = await (await getDatabase()).all(sql`
+    let emailIDs = emailRows.map(row => row.id);
+    let emailIDBatches: any[][] = [];
+    for (let index = 0; index < emailIDs.length; index += kReadMainPropertiesBatchSize) {
+      emailIDBatches.push(emailIDs.slice(index, index + kReadMainPropertiesBatchSize));
+    }
+    let db = await getDatabase();
+    let outgoingRecipientRows: any[] = [];
+    if (isOutgoingFolder) {
+      for (let batch of emailIDBatches) {
+        let batchRows = await db.all(sql`
+          SELECT
+            emailID, name, emailAddress, recipientType
+          FROM emailPersonRel
+            LEFT JOIN emailPerson ON (emailPersonRel.emailPersonID = emailPerson.id)
+          WHERE emailID IN ${batch} AND recipientType IN (2, 3, 4)
+        `) as any[];
+        outgoingRecipientRows.push(...batchRows);
+      }
+    }
+    let folderTagRows: any[] = [];
+    for (let batch of emailIDBatches) {
+      let batchRows = await db.all(sql`
         SELECT
           emailID, tagName
         FROM emailTag
-        LEFT JOIN email ON (emailID = email.id)
-        WHERE folderID = ${folder.dbID}
-      `) as any;
+        WHERE emailID IN ${batch}
+      `) as any[];
+      folderTagRows.push(...batchRows);
+    }
+    let rowsByEmailID = (rows: any[]): Map<string, any[]> => {
+      let grouped = new Map<string, any[]>();
+      for (let row of rows) {
+        let key = String(row.emailID);
+        let groupedRows = grouped.get(key);
+        if (groupedRows) {
+          groupedRows.push(row);
+        } else {
+          grouped.set(key, [row]);
+        }
+      }
+      return grouped;
+    };
+    let recipientsByEmailID = rowsByEmailID(outgoingRecipientRows);
+    let tagsByEmailID = rowsByEmailID(folderTagRows);
     let newEmails = new ArrayColl<EMail>();
     for (let row of emailRows) {
       let email = folder.messages.find(email => email.dbID == row.id);
-      let recipients = outgoingRecipientRows.filter(recipient => recipient.emailID == row.id);
+      let emailID = String(row.id);
+      let recipients = recipientsByEmailID.get(emailID) ?? [];
+      let tagRows = tagsByEmailID.get(emailID) ?? [];
       if (email) {
         email.outgoing = sanitize.boolean(row.outgoing, email.outgoing);
         email.isReplied = sanitize.boolean(row.isReplied, email.isReplied);
@@ -747,16 +781,15 @@ export class SQLEMail {
           await this.readRecipients(email, recipients);
           email.contact = computeEMailContact(email);
         }
-        await SQLEMail.readTags(email, folderTagRows.filter(r => r.emailID == row.id));
+        await SQLEMail.readTags(email, tagRows);
         continue;
       }
       email = folder.newEMail();
-      await SQLEMail.readMainProperties(row.id, email, row);
+      await SQLEMail.readMainProperties(row.id, email, row, tagRows);
       if (isOutgoingFolder && recipients.length) {
         await this.readRecipients(email, recipients);
         email.contact = computeEMailContact(email);
       }
-      await SQLEMail.readTags(email, folderTagRows.filter(r => r.emailID == row.id));
       newEmails.add(email);
     }
     folder.messages.addAll(newEmails);
