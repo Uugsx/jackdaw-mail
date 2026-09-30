@@ -153,6 +153,78 @@ test("обновляет открытую папку без переключен
   expect(folder.countUnread).toBe(1);
 });
 
+test("полностью сверяет список после уменьшения total при обновлении открытой папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
+
+  let requests: any[] = [];
+  let deletedIDs: string[] = [];
+  account.storage.deleteMessage = async email => {
+    deletedIDs.push(String((email as OWAEMail).itemID));
+  };
+  (account as any).callOWA = async (request: any) => {
+    requests.push(request);
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 1, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem") {
+      return findItemResponse(["kept-message"]);
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 2;
+  folder.countUnread = 1;
+
+  let stale = folder.newEMail();
+  stale.itemID = "stale-message";
+  stale.isRead = false;
+  let kept = folder.newEMail();
+  kept.itemID = "kept-message";
+  kept.isRead = true;
+  folder.messages.addAll([stale, kept]);
+
+  await folder.refreshOpenFolder();
+
+  expect(requests.filter(request => request.action == "FindItem")).toHaveLength(1);
+  expect(folder.messages.contents).toEqual([kept]);
+  expect(deletedIDs).toEqual(["stale-message"]);
+  expect(folder.countTotal).toBe(1);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.isBehindServer()).toBe(false);
+});
+
+test("не сбрасывает признак уменьшения total равным повторным счётчиком", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 2;
+  folder.countUnread = 0;
+
+  let calls = 0;
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("GetFolder");
+    calls++;
+    return { Folders: [{ TotalCount: 1, UnreadCount: 0 }] };
+  };
+
+  await folder.folderCountsChanged(true);
+  expect((folder as any).countTotalDecreased).toBe(true);
+
+  await folder.folderCountsChanged(true);
+
+  expect(calls).toBe(2);
+  expect((folder as any).countTotalDecreased).toBe(true);
+});
+
 test("подтягивает письмо в фоновой синхронизации после пустого unread-запроса", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

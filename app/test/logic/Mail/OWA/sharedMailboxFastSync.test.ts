@@ -271,6 +271,69 @@ test("shared unread-поиск добирает заголовок через я
   ]));
 });
 
+test("полная сверка shared-папки не принимает delegate-список за список mailbox", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 2;
+  folder.countUnread = 1;
+
+  let requests: { action: string; mailbox?: string; delegateAnchor?: string }[] = [];
+  main.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    requests.push({ action: request.action, mailbox, delegateAnchor });
+    if (request.action == "FindItem") {
+      if (!mailbox) {
+        return {
+          RootFolder: {
+            Items: [{ ItemId: { Id: "delegate-message" }, IsRead: false }],
+            IncludesLastItemInRange: true,
+            TotalItemsInView: 1,
+          },
+        };
+      }
+      return {
+        RootFolder: {
+          Items: [
+            { ItemId: { Id: "unread-message" }, IsRead: false },
+            { ItemId: { Id: "read-message" }, IsRead: true },
+          ],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 2,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-09-30T10:00:00Z",
+          DateTimeReceived: "2026-09-30T10:00:00Z",
+          IsRead: item.Id == "read-message",
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.listMessages(false, true);
+
+  expect(requests.filter(request => request.action == "FindItem")).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ action: "FindItem", mailbox: "shared@example.test" }),
+    ]),
+  );
+  expect(requests.some(request => request.action == "FindItem" && !request.mailbox)).toBe(false);
+  expect(folder.messages.length).toBe(2);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
 test("счётчики дополнительного OWA запрашиваются через явный вход в mailbox", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let main = makeMainAccount();

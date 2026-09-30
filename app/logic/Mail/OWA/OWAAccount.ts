@@ -166,6 +166,11 @@ export class OWAAccount extends ExchangeMailAccount {
     return new OWAFolder(this);
   }
 
+  /** Признак аккаунта, работающего с отдельным shared mailbox-контекстом. */
+  get hasSharedFolderRoot(): boolean {
+    return this.sharedFolderRoot != null;
+  }
+
   /** Регистрирует папку с включёнными уведомлениями в нативном OWA polling. */
   setNotificationFolderPolling(folder: Folder, enabled: boolean): void {
     if (!(folder instanceof OWAFolder) || folder.account !== this) {
