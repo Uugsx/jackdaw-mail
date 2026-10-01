@@ -1646,7 +1646,8 @@ test("ограничивает полный FindItem, если сервер бе
 
   await folder.listMessages(false, true);
 
-  expect(findItemCalls).toBe(200);
+  // Динамический кап: размер папки (500) / 50 страниц + запас.
+  expect(findItemCalls).toBe(14);
   expect(folder.messages.length).toBe(1);
   expect(folder.getEmailByItemID("must-not-be-deleted")).toBeDefined();
   expect(folder.dirty).toBe(true);

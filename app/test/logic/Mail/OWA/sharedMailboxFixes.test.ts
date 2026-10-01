@@ -316,3 +316,58 @@ test("устаревшие счётчики Deep FindFolder не перекры�
   expect(folder.countUnread).toBe(0);
   expect(chaseRequests).toBe(0);
 });
+
+test("полная сверка папки больше 10 000 писем завершается и убирает призрак удаления", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "integrators@smartds.ru");
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.downloadMessages = async (messages: any) => messages;
+  folder.getNewMessageHeaders = async () => new ArrayColl();
+
+  // Пользователь удалил письмо в Outlook: сервер 11274, в кеше 11275 строк.
+  let totalCount = 11_274;
+  folder.countTotal = totalCount;
+  for (let index = 0; index < totalCount + 1; index++) {
+    let message = folder.newEMail();
+    message.itemID = `msg-${index}`;
+    message.sent = new Date(2024, 0, 1 + Math.floor(index / 500), index % 24);
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+
+  let pages = 0;
+  main.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: totalCount, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem") {
+      pages++;
+      // Индекс FindItem на первой странице ещё показывает устаревшие 11275,
+      // дальше — актуальные 11274.
+      let staleTotal = pages == 1 ? totalCount + 1 : totalCount;
+      return { RootFolder: {
+        Items: Array.from({ length: 50 }, (_, i) => ({
+          ItemId: { Id: `msg-${request.Body.Paging.Offset + i}` }, IsRead: true,
+        })).filter(item => Number(item.ItemId.Id.slice(4)) < totalCount),
+        IncludesLastItemInRange: request.Body.Paging.Offset + 50 >= totalCount,
+        TotalItemsInView: staleTotal,
+      } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.listMessages(false, true);
+
+  // Призрак удалённого письма убран, длина кеша совпала с сервером.
+  expect(folder.messages.length).toBe(totalCount);
+  expect(folder.getEmailByItemID(`msg-${totalCount}`)).toBeUndefined();
+  // Сверка прошла больше 200 страниц — старый кап не должен был оборвать её.
+  expect(pages).toBeGreaterThan(200);
+  expect(folder.dirty).toBe(false);
+  // Осцилляции нет: счётчик не поднят обратно устаревшим TotalItemsInView.
+  expect(folder.countTotal).toBe(totalCount);
+});

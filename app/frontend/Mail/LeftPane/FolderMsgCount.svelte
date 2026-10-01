@@ -18,7 +18,7 @@
       {#if $messages.length == 0}
         {$t`Loading...`}
       {:else}
-        {$t`${$messages.length} mails *=> number of emails in the folder`}
+        {$t`${$folder.countTotal} mails *=> number of emails in the folder`}
       {/if}
     {:else}
       {$t`Empty folder`}

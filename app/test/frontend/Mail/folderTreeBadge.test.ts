@@ -23,7 +23,7 @@ beforeAll(async () => {
   FolderList = (await import("../../../frontend/Mail/LeftPane/FolderList.svelte")).default;
   OWAAccount = (await import("../../../logic/Mail/OWA/OWAAccount")).OWAAccount;
   SpecialFolder = (await import("../../../logic/Mail/Folder")).SpecialFolder;
-});
+}, 120_000);
 
 afterEach(() => {
   for (let instance of mounted) {

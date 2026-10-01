@@ -32,8 +32,10 @@ import { gt } from "../../../l10n/l10n";
  * At `kMaxFetchCount` items per page this covers a very large backlog; what is
  * left over is picked up by the next sync. */
 const kMaxSyncPages = 200;
-/** Ограничивает полный FindItem и покрывает до 10 000 писем при размере страницы 50. */
-const kMaxFindItemPages = 200;
+/** Запас страниц сверх размера папки для полного FindItem. */
+const kMaxFindItemPagesMargin = 4;
+/** Верхний предел страниц полного FindItem (50 писем на страницу): 50 000 писем. */
+const kMaxFindItemPagesLimit = 1000;
 
 /** How long a moved or deleted ItemId stays suppressed, to outlast Exchange's
  * eventually consistent FindItem. Matches the `preserveMovedUntil` window. */
@@ -117,6 +119,15 @@ export class OWAFolder extends ExchangeFolder {
   protected openFolderRefreshPromise: Promise<void> | null = null;
   /** Время последней независимой проверки последних писем открытой папки. */
   protected lastOpenFolderRecentRefreshAt: number | null = null;
+
+  /** Предел страниц FindItem за один проход: размер папки + запас.
+   * Фиксированный кап покрывал только 10 000 писем — на больших папках
+   * полная сверка не завершалась никогда, призрак удалённого на сервере
+   * письма оставался в кеше навсегда, а обход гонялся каждым циклом. */
+  protected maxFindItemPages(): number {
+    let size = Math.max(this.countTotal, this.messages.length, kMaxFetchCount);
+    return Math.min(kMaxFindItemPagesLimit, Math.ceil(size / kMaxFetchCount) + kMaxFindItemPagesMargin);
+  }
 
   /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
   protected lastMarkReadAt = 0;
@@ -1188,7 +1199,7 @@ export class OWAFolder extends ExchangeFolder {
       let pagesRead = 0;
       let paginationComplete = false;
       let seenPageSignatures = new Set<string>();
-      while (pagesRead < kMaxFindItemPages) {
+      while (pagesRead < this.maxFindItemPages()) {
         pagesRead++;
         result = await this.callFolderSyncOWA(request);
         let resultTotal = Number(result?.RootFolder?.TotalItemsInView);
@@ -1398,8 +1409,12 @@ export class OWAFolder extends ExchangeFolder {
         // A forced/full FindItem is authoritative, including an empty result.
         // Persist the server total so a later restart cannot resurrect headers
         // that were deleted in Outlook while Jackdaw was not running.
-        if (!recentOnly && !reachedLimit) {
-          this.countTotal = serverTotal ?? this.messages.length;
+        // FindItem (поисковый индекс) может отставать от GetFolder: полной
+        // сверке нельзя позволять ПОДНИМАТЬ счётчик обратно — иначе осцилляция
+        // 11274 ↔ 11275 и бесконечные пересверки.
+        if (!recentOnly && !reachedLimit && serverTotal != null &&
+            serverTotal < this.countTotal) {
+          this.countTotal = serverTotal;
         }
         let reconciledUnread = this.localUnreadCount();
         let unreadChanged = false;
@@ -1460,7 +1475,7 @@ export class OWAFolder extends ExchangeFolder {
     let pagesRead = 0;
     let paginationComplete = pendingItemIDs.size == 0;
     let seenPageSignatures = new Set<string>();
-    while (!paginationComplete && pagesRead < kMaxFindItemPages) {
+    while (!paginationComplete && pagesRead < this.maxFindItemPages()) {
       pagesRead++;
       let result = await this.account.callOWA(request);
       let messages = ensureArray(result?.RootFolder?.Items);
