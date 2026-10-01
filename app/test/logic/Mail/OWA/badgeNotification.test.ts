@@ -162,3 +162,91 @@ test("параллельные sync-проходы не оставляют па�
   folder.countUnread = 2;
   expect(notifications).toBeGreaterThan(before);
 });
+
+test("чужое чтение в Outlook снимает бейдж, пока пользователь читает в Jackdaw", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "integrators@smartds.ru");
+
+  let folder = shared.newFolder();
+  folder.id = "shared-errors";
+  folder.name = "Ошибки серверов";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 11_228;
+  folder.countUnread = 25;
+  folder.downloadMessages = async (messages: any) => messages;
+
+  // 25 непрочитанных писем в кеше (шторм dpd-replica-api).
+  let messages = Array.from({ length: 25 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `msg-${index}`;
+    message.sent = new Date(2026, 9, 1, 13, index);
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+
+  // Сервер подтвердил 25.
+  folder.applyServerCounts(11_228, 25);
+  expect(folder.countUnread).toBe(25);
+
+  shared.callOWA = async (request: any) => {
+    if (request.action == "UpdateItem") {
+      return { ResponseMessages: { Items: request.Body.ItemChanges.map(() => ({
+        ResponseClass: "Success",
+        ResponseCode: "NoError",
+      })) } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  // Пользователь открывает одно письмо в Jackdaw: бейдж 24, окно подавления активно.
+  await folder.markMessagesRead([messages[0]], true);
+  expect(folder.countUnread).toBe(24);
+  // Сервер подтверждает прочтение этого письма (как GetItem-обновление строки).
+  messages[0].setFlags({ IsRead: true }, "list");
+
+  // Коллега прочитал остальные в Outlook: сервер уже говорит 14 непрочитанных.
+  folder.applyServerCounts(11_228, 14);
+
+  // Бейдж обязан последовать за сервером, а не зависнуть на локальных 24.
+  expect(folder.countUnread).toBe(14);
+
+  // Полностью прочитали: бейдж 0, а не «локальное ожидание».
+  folder.applyServerCounts(11_228, 0);
+  expect(folder.countUnread).toBe(0);
+});
+
+test("отметка «непрочитано» в Jackdaw всё ещё защищена от лага сервера", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  let shared = makeSharedAccount(main, "shared@example.test");
+
+  let folder = shared.newFolder();
+  folder.id = "shared-inbox";
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 10;
+  folder.countUnread = 0;
+
+  let message = folder.newEMail();
+  message.itemID = "msg-1";
+  message.isRead = true;
+  folder.messages.add(message);
+  shared.callOWA = async (request: any) => {
+    if (request.action == "UpdateItem") {
+      return { ResponseMessages: { Items: request.Body.ItemChanges.map(() => ({
+        ResponseClass: "Success",
+        ResponseCode: "NoError",
+      })) } };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  // Пользователь возвращает письмо в непрочитанные.
+  await folder.markMessagesRead([message], false);
+  expect(folder.countUnread).toBe(1);
+
+  // Сервер ещё отвечает старым «0» — бейдж не должен упасть.
+  folder.applyServerCounts(10, 0);
+  expect(folder.countUnread).toBe(1);
+});

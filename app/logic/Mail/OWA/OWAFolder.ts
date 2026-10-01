@@ -125,6 +125,12 @@ export class OWAFolder extends ExchangeFolder {
   protected lastServerCountUnread: number | null = null;
   /** Счётчик TotalCount до серии локальных отметок прочитанности. */
   protected readMutationBaseTotal: number | null = null;
+  /** Уровень непрочитанных на сервере до начала серии локальных отметок.
+   * Позволяет отличить устаревший ответ (он не ниже этого уровня) от чужого
+   * чтения в Outlook/вебе (сервер уходит ниже нашего ожидания). */
+  protected preMutationServerUnread: number | null = null;
+  /** Направление последней серии отметок: true — возвращали в непрочитанные. */
+  protected lastMutationRaised: boolean | null = null;
   /** Ожидаемый локальный счётчик после последней отметки прочитанности. */
   protected localUnreadAfterReadMutation: number | null = null;
   /** Момент последнего применения серверных счётчиков (GetFolder/FindFolder). */
@@ -158,6 +164,14 @@ export class OWAFolder extends ExchangeFolder {
     // и удерживают устаревший бейдж непрочитанных.
     this.readMutationBaseTotal = this.countTotal;
     this.lastServerCountUnread ??= this.countUnread;
+    // Новый цикл отметок или смена направления (прочитал ↔ непрочитано):
+    // фиксируем уровень сервера до операции — он отличает устаревший ответ
+    // (не ниже этого уровня) от чужого чтения (сервер уходит ниже ожидания).
+    let raised = expectedUnread > (this.localUnreadAfterReadMutation ?? expectedUnread);
+    if (raised != this.lastMutationRaised || this.preMutationServerUnread == null) {
+      this.preMutationServerUnread = this.lastServerCountUnread;
+    }
+    this.lastMutationRaised = raised;
     this.lastMarkReadAt = Date.now();
     this.localUnreadAfterReadMutation = Math.max(0, expectedUnread);
     this.dirty = true;
@@ -167,35 +181,71 @@ export class OWAFolder extends ExchangeFolder {
    * Защита от устаревшего серверного счётчика Exchange после локального прочтения.
    * Exchange пересчитывает FindFolder/GetFolder счётчик с задержкой в несколько секунд/минут.
    */
-  isSuppressingStaleServerUnread(countTotal: number, countUnread: number): boolean {
+  /**
+   * Защита от устаревшего серверного счётчика Exchange после локального прочтения.
+   * Exchange пересчитывает FindFolder/GetFolder счётчик с задержкой в несколько секунд.
+   * Возвращает итоговый unread, признак подавления и признак чужого чтения.
+   */
+  protected resolveStaleServerUnread(countTotal: number, countUnread: number): {
+    effectiveUnread: number;
+    suppressed: boolean;
+    externalRead: boolean;
+  } {
     let recentlyMarked = Date.now() - this.lastMarkReadAt < 120_000;
     let hasPendingReadMutation = this.hasPendingReadMutations();
     if (!this.haveReadFolder && !recentlyMarked && !hasPendingReadMutation) {
-      return false;
+      return { effectiveUnread: countUnread, suppressed: false, externalRead: false };
     }
     let localUnread = this.localUnreadCount();
     if (recentlyMarked || hasPendingReadMutation) {
-      let expectedUnread = this.localUnreadAfterReadMutation ?? this.countUnread;
       let previousServerTotal = this.readMutationBaseTotal ??
         this.lastServerCountTotal ?? this.countTotal;
       let newArrivals = Math.max(0, countTotal - previousServerTotal);
-      // Текущий счётчик уже мог повторно вырасти из-за устаревшего ответа
-      // GetFolder. В качестве нижней границы используем локальные флаги,
-      // а не потенциально устаревшее значение счётчика.
-      expectedUnread = Math.max(expectedUnread, localUnread,
-        (this.localUnreadAfterReadMutation ?? expectedUnread) + newArrivals);
-      return countUnread != expectedUnread;
+      let expectation = (this.localUnreadAfterReadMutation ?? this.countUnread) + newArrivals;
+      // Счётчик НИЖЕ нашего ожидания устареванием объяснить нельзя
+      // (устаревание только завышает): если наши отметки уровень понижали,
+      // это чужое чтение в Outlook/вебе — принимаем серверное значение.
+      let mutationsLowered = (this.localUnreadAfterReadMutation ?? this.countUnread) <=
+        (this.preMutationServerUnread ?? this.countUnread);
+      if (!hasPendingReadMutation && mutationsLowered && countUnread < expectation) {
+        return { effectiveUnread: countUnread, suppressed: false, externalRead: true };
+      }
+      let minimumUnread = Math.max(this.localUnreadAfterReadMutation ?? this.countUnread,
+        localUnread);
+      let expectedUnread = Math.max(minimumUnread,
+        (this.localUnreadAfterReadMutation ?? minimumUnread) + newArrivals);
+      return {
+        effectiveUnread: Math.max(minimumUnread, Math.min(countUnread, expectedUnread)),
+        suppressed: true,
+        externalRead: false,
+      };
     }
     let newArrivals = Math.max(0, countTotal - this.countTotal);
     let expectedMaxUnread = Math.max(localUnread, this.countUnread) + newArrivals;
     if (countUnread <= expectedMaxUnread) {
-      return false;
+      return { effectiveUnread: countUnread, suppressed: false, externalRead: false };
     }
     // «Всё прочитано, а сервер внезапно reports unread» — устаревший ответ,
     // но только пока TotalCount не вырос. Новый почтовый шторм на прочитанной
     // папке растит и Total: иначе бейдж навсегда оставался на нуле.
-    return hasPendingReadMutation || recentlyMarked ||
+    let suppress = hasPendingReadMutation || recentlyMarked ||
       (this.countUnread == 0 && localUnread == 0 && countTotal <= this.countTotal);
+    return {
+      effectiveUnread: suppress
+        ? Math.min(countUnread, this.countUnread + newArrivals)
+        : countUnread,
+      suppressed: suppress,
+      externalRead: false,
+    };
+  }
+
+  /** Сырой серверный unread расходится с защищённым итогом — не верить ему. */
+  isSuppressingStaleServerUnread(countTotal: number, countUnread: number): boolean {
+    let resolution = this.resolveStaleServerUnread(countTotal, countUnread);
+    if (resolution.externalRead) {
+      return false;
+    }
+    return resolution.suppressed && countUnread != resolution.effectiveUnread;
   }
 
   applyServerCounts(countTotal: number, countUnread: number): void {
@@ -204,35 +254,25 @@ export class OWAFolder extends ExchangeFolder {
     if (countTotal < this.countTotal) {
       this.countTotalDecreased = true;
     }
-    let effectiveUnread = countUnread;
-    let suppressingStaleUnread = this.isSuppressingStaleServerUnread(countTotal, countUnread);
-    if (suppressingStaleUnread) {
-      let recentlyMarked = Date.now() - this.lastMarkReadAt < 120_000;
-      let hasPendingReadMutation = this.hasPendingReadMutations();
-      if (recentlyMarked || hasPendingReadMutation) {
-        let previousServerTotal = this.readMutationBaseTotal ??
-          this.lastServerCountTotal ?? this.countTotal;
-        let newArrivals = Math.max(0, countTotal - previousServerTotal);
-        let minimumUnread = Math.max(this.localUnreadAfterReadMutation ?? this.countUnread,
-          this.localUnreadCount());
-        let expectedUnread = Math.max(minimumUnread,
-          (this.localUnreadAfterReadMutation ?? minimumUnread) + newArrivals);
-        // Exchange может вернуть любое из состояний локального перехода,
-        // пока его индекс непрочитанных догоняет изменения. Сохраняем локальную
-        // цель, но разрешаем увеличить её на действительно новые письма,
-        // выявленные по TotalCount.
-        effectiveUnread = Math.max(minimumUnread,
-          Math.min(countUnread, expectedUnread));
-      } else {
-        let newArrivals = Math.max(0, countTotal - this.countTotal);
-        effectiveUnread = Math.min(countUnread, this.countUnread + newArrivals);
-      }
+    let resolution = this.resolveStaleServerUnread(countTotal, countUnread);
+    let effectiveUnread = resolution.effectiveUnread;
+    if ((!resolution.suppressed && !resolution.externalRead) ||
+        countUnread == (this.localUnreadAfterReadMutation ?? countUnread)) {
+      // Сервер подтвердил ожидание серии (или окно вышло) — следующий цикл
+      // отметок снимает новый предоперационный уровень. Чужое чтение уровень
+      // не закрывает: сервер может уйти ещё ниже.
+      this.preMutationServerUnread = null;
     }
     if (effectiveUnread > this.countUnread) {
       this.countNewArrived += effectiveUnread - this.countUnread;
       this.lastUnreadIncreaseAt = Date.now();
     } else if (effectiveUnread < this.countUnread) {
       this.countNewArrived = Math.max(0, this.countNewArrived - (this.countUnread - effectiveUnread));
+    }
+    if (effectiveUnread < this.localUnreadCount()) {
+      // Бейдж ушёл ниже непрочитанных в кеше: чужие отметки ещё не дошли
+      // до строк — перевернём видимые страницы GetItem-обновлением.
+      this.refreshVisibleMessageMetadataInBackground();
     }
     this.lastCountRefreshAt = Date.now();
     if (this.countTotal != countTotal || this.countUnread != effectiveUnread) {
