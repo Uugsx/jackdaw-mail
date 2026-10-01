@@ -42,6 +42,14 @@ test("не возвращает письмо в непрочитанные из-
   message.setFlags({ IsRead: true }, "list");
   message.setFlags({ IsRead: false }, "list");
   expect(message.isRead).toBe(false);
+
+  // Авторитетный GetItem может сообщить о более позднем изменении в Outlook.
+  // Следующий отстающий список не должен вернуть уже подтверждённое состояние.
+  message.setFlags({ IsRead: true }, "full");
+  message.setFlags({ IsRead: false }, "full");
+  expect(message.isRead).toBe(false);
+  message.setFlags({ IsRead: true }, "list");
+  expect(message.isRead).toBe(false);
 });
 
 test("уведомляет папку после автоматического прочтения письма", async () => {

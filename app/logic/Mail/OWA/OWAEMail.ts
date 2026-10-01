@@ -25,6 +25,15 @@ export class OWAEMail extends ExchangeEMail {
   private pendingReadState: boolean | null = null;
   private readStateMutationVersion = 0;
   private readStateServerUpdateSucceeded = false;
+  /** Момент и значение последнего состояния, подтверждённого сервером.
+   * FindItem/AQS-индекс Exchange отстаёт на секунды-минуты: его странице нельзя
+   * откатывать подтверждённое чтение. GetItem транзакционен и всегда авторитетен;
+   * UpdateItem считается подтверждённым после успешного ответа. */
+  private readStateCommittedAt = 0;
+  private readStateCommittedValue: boolean | null = null;
+
+  /** Как долго подтверждённая отметка защищена от отстающих источников. */
+  static readonly kReadStateGuardMs = 5 * 60_000;
 
   hasPendingReadState(expectedState?: boolean): boolean {
     if (expectedState !== undefined) {
@@ -43,6 +52,8 @@ export class OWAEMail extends ExchangeEMail {
   commitPendingReadState(mutationVersion?: number): void {
     if (mutationVersion === undefined || mutationVersion == this.readStateMutationVersion) {
       this.readStateServerUpdateSucceeded = true;
+      this.readStateCommittedAt = Date.now();
+      this.readStateCommittedValue = this.pendingReadState;
     }
   }
 
@@ -50,6 +61,8 @@ export class OWAEMail extends ExchangeEMail {
     if (mutationVersion === undefined || (mutationVersion == this.readStateMutationVersion && !this.readStateServerUpdateSucceeded)) {
       this.pendingReadState = null;
       this.readStateServerUpdateSucceeded = false;
+      this.readStateCommittedAt = 0;
+      this.readStateCommittedValue = null;
     }
   }
 
@@ -139,12 +152,36 @@ export class OWAEMail extends ExchangeEMail {
   setFlags(json: Record<string, any>, source: "full" | "list" | "partial" = "partial"): boolean {
     let datesChanged = this.applyHeaderDates(json);
     let oldTagNames = this.tags.contents.map(tag => tag.name);
+    let previousIsRead = this.isRead;
     let serverIsRead = "IsRead" in json ? sanitize.boolean(propertyValue(json.IsRead), this.isRead) : this.isRead;
     if ("IsRead" in json && this.pendingReadState != null &&
         this.readStateServerUpdateSucceeded && serverIsRead == this.pendingReadState) {
       this.pendingReadState = null;
     }
+    // Полный GetItem авторитетен: если он действительно изменил локальный
+    // флаг, фиксируем новый результат, чтобы следующий старый FindItem не
+    // смог вернуть прежнее значение. Поисковый список, совпавший с этим
+    // результатом, закрывает окно защиты — индекс уже догнал сервер.
+    if ("IsRead" in json && this.pendingReadState == null) {
+      if (source == "full" &&
+          (this.readStateCommittedValue !== null || serverIsRead != previousIsRead)) {
+        this.readStateCommittedValue = serverIsRead;
+        this.readStateCommittedAt = Date.now();
+      } else if (source != "full" && this.readStateCommittedValue !== null &&
+          serverIsRead == this.readStateCommittedValue) {
+        this.readStateCommittedAt = 0;
+        this.readStateCommittedValue = null;
+      }
+    }
     let isRead = this.pendingReadState ?? serverIsRead;
+    // Свежеподтверждённая отметка не откатывается отстающим поисковым индексом
+    // (FindItem/AQS/Row-сниппет). Только полный GetItem транзакционен: если он
+    // говорит иначе (например, коллега вернул письмо в непрочитанные) — верим ему.
+    if (source != "full" && this.readStateCommittedValue !== null &&
+        serverIsRead != this.readStateCommittedValue && isRead != this.readStateCommittedValue &&
+        Date.now() - this.readStateCommittedAt < OWAEMail.kReadStateGuardMs) {
+      isRead = this.readStateCommittedValue;
+    }
     let isStarred = "Flag" in json ? propertyValue(json.Flag)?.FlagStatus == "Flagged" : this.isStarred;
     let isDraft = "IsDraft" in json ? sanitize.boolean(propertyValue(json.IsDraft), this.isDraft) : this.isDraft;
     let tagNames: string[];
