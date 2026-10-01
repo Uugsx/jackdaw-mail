@@ -94,9 +94,12 @@ export class OWAFolder extends ExchangeFolder {
   protected serverCountSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
   /** Не запускать несколько одинаковых повторов, пока Exchange догоняет счётчик. */
   protected serverCountSyncRetryRunOnce = new RunOnce<void>();
-  /** Не выпускать промежуточное изменение счётчика при параллельных sync-вызовах. */
-  protected serverCountSyncObserverMuteDepth = 0;
-  protected serverCountSyncPreviousMute = false;
+  /** Глубина заглушения уведомлений папки на время синхронизации.
+   * Восстановление идёт по счётчику, а не по сохранённому снимку: снимок,
+   * захваченный параллельным проходом, навсегда оставлял папку заглушённой —
+   * счётчики менялись, а sidebar не перерисовывался до смены вкладки. */
+  protected observerMuteDepth = 0;
+  protected observerMuteOuter = false;
   /** Не показывать исходную загрузку папки как новое письмо. */
   protected hasCompletedInitialSync = false;
   /** Пометить письма следующей синхронизации как пришедшие по push-событию. */
@@ -465,6 +468,24 @@ export class OWAFolder extends ExchangeFolder {
     }
   }
 
+  /** Заглушает уведомления папки на время синхронизации (парно с endObserverMute). */
+  protected beginObserverMute(): void {
+    if (this.observerMuteDepth++ === 0) {
+      this.observerMuteOuter = this._muteObservers;
+    }
+    this._muteObservers = true;
+  }
+
+  /** Снимает заглушение этого прохода; при последнем — восстанавливает внешний уровень. */
+  protected endObserverMute(): void {
+    if (this.observerMuteDepth > 0) {
+      this.observerMuteDepth--;
+    }
+    if (this.observerMuteDepth === 0) {
+      this._muteObservers = this.observerMuteOuter;
+    }
+  }
+
   /**
    * Быстрый путь после обновления счётчика или пока папка открыта.
    * Exchange может вернуть новый счётчик раньше соответствующего заголовка,
@@ -472,8 +493,7 @@ export class OWAFolder extends ExchangeFolder {
    */
   async syncRecentArrivals(): Promise<ArrayColl<OWAEMail>> {
     return this.recentSyncRunOnce.runOnce(async () => {
-      let previousMute = this._muteObservers;
-      this._muteObservers = true;
+      this.beginObserverMute();
       let completed = false;
       try {
         let messages = new ArrayColl<OWAEMail>();
@@ -481,8 +501,15 @@ export class OWAFolder extends ExchangeFolder {
         for (let retry = 0; ; retry++) {
           let synced = await this.syncRecentArrivalsOnce();
           messages.addAll(synced);
-          if (synced.hasItems && !previousMute) {
-            this.notifyObservers();
+          if (synced.hasItems && this.observerMuteDepth === 1 && !this.observerMuteOuter) {
+            // Единственный заглушающий — этот проход: публикуем строки сразу,
+            // не дожидаясь конца повторов.
+            this.endObserverMute();
+            try {
+              this.notifyObservers();
+            } finally {
+              this.beginObserverMute();
+            }
           }
           if (!this.recentSyncPending && !this.isBehindServer() && !this.unreadChaseActive() &&
               !this.needsSmallFolderUnreadReconcile()) {
@@ -502,18 +529,18 @@ export class OWAFolder extends ExchangeFolder {
           if (delaySeconds == null) {
             break;
           }
-          this._muteObservers = previousMute;
+          this.endObserverMute();
           try {
             await sleep(delaySeconds);
           } finally {
-            this._muteObservers = true;
+            this.beginObserverMute();
           }
         }
         completed = true;
         return messages;
       } finally {
-        this._muteObservers = previousMute;
-        if (completed && !previousMute) {
+        this.endObserverMute();
+        if (completed && !this._muteObservers) {
           this.notifyObservers();
         }
       }
@@ -604,10 +631,7 @@ export class OWAFolder extends ExchangeFolder {
     countTotal: number,
     countUnread: number,
   ): Promise<ArrayColl<OWAEMail>> {
-    if (this.serverCountSyncObserverMuteDepth++ == 0) {
-      this.serverCountSyncPreviousMute = this._muteObservers;
-    }
-    this._muteObservers = true;
+    this.beginObserverMute();
     try {
       this.applyServerCounts(countTotal, countUnread);
       this.dirty = true;
@@ -619,11 +643,9 @@ export class OWAFolder extends ExchangeFolder {
         return messages;
       });
     } finally {
-      if (--this.serverCountSyncObserverMuteDepth == 0) {
-        this._muteObservers = this.serverCountSyncPreviousMute;
-        if (!this._muteObservers) {
-          this.notifyObservers();
-        }
+      this.endObserverMute();
+      if (!this._muteObservers) {
+        this.notifyObservers();
       }
     }
   }

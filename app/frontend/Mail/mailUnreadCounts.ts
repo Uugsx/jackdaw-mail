@@ -62,10 +62,10 @@ function trackInbox(folder: Folder | null | undefined): void {
   if (!folder || inboxUnsubs.has(folder)) {
     return;
   }
-  inboxUnsubs.set(folder, folder.subscribe((_folder, prop) => {
-    if (prop === "countUnread" || prop === "countNewArrived") {
-      bumpMailUnreadEpoch();
-    }
+  // Любая нотификация папки может нести новый unread: часть проходов
+  // публикует итог одним уведомлением без имени свойства.
+  inboxUnsubs.set(folder, folder.subscribe(() => {
+    bumpMailUnreadEpoch();
   }));
   bumpMailUnreadEpoch();
 }

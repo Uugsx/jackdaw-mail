@@ -489,8 +489,9 @@ test("счётчики дополнительного OWA запрашивают
 
   await shared.refreshAllFolderCounts();
 
-  expect(explicitMailboxes).toEqual(["shared@example.test"]);
-  expect(delegateAnchors).toEqual([undefined]);
+  // Deep FindFolder + сверка точным GetFolder — оба через явный вход в mailbox.
+  expect(explicitMailboxes).toEqual(["shared@example.test", "shared@example.test"]);
+  expect(delegateAnchors).toEqual([undefined, undefined]);
   expect(requests[0].Body.ParentFolderIds[0].Id).toBe("msgfolderroot");
   expect(requests[0].Body.ParentFolderIds[0].Mailbox.EmailAddress).toBe("shared@example.test");
   expect(folder.countTotal).toBe(0);

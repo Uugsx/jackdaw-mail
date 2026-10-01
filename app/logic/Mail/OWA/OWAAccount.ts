@@ -1359,11 +1359,10 @@ export class OWAAccount extends ExchangeMailAccount {
           matchedFolders++;
           let newUnread = sanitize.integer(raw.UnreadCount, folder.countUnread);
           let newTotal = sanitize.integer(raw.TotalCount, folder.countTotal);
-          if (this.isDependentAccount) {
-            deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
-          } else {
-            applyCountUpdate(folder, newTotal, newUnread);
-          }
+          // Deep FindFolder на этом Exchange отдаёт устаревшие счётчики подпапок:
+          // после удаления писем бейдж «висел» на старом значении. Откладываем
+          // их применение — приоритет у точного batch GetFolder ниже.
+          deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
         }
         // Parent folder counts (often Inbox/root) also arrive in ParentFolder.
         let parent = result?.RootFolder?.ParentFolder;
@@ -1374,38 +1373,27 @@ export class OWAAccount extends ExchangeMailAccount {
             matchedFolders++;
             let newUnread = sanitize.integer(parent.UnreadCount, folder.countUnread);
             let newTotal = sanitize.integer(parent.TotalCount, folder.countTotal);
-            if (this.isDependentAccount) {
-              deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
-            } else {
-              applyCountUpdate(folder, newTotal, newUnread);
-            }
+            deepCounts.set(folder, { countTotal: newTotal, countUnread: newUnread });
           }
         }
         // Успешный ответ OWA всё равно может не содержать пригодных папок,
         // если контекст делегата был проигнорирован. Не считаем такой ответ
         // завершённым обновлением и используем расположенный ниже fallback
         // с Explicit Logon для каждой папки.
-        // Deep FindFolder в shared OWA может вернуть валидный Inbox, но
-        // устаревшие или неполные счётчики подпапок. Для них дополнительно
-        // проверяем GetFolder по конкретным FolderId.
-        let verifySharedSubfolders = this.isDependentAccount &&
-          folders.some(folder => folder.specialFolder == SpecialFolder.Normal);
-        if (matchedFolders > 0 && !verifySharedSubfolders) {
-          applyDeepCounts(new Set());
-          finishCountUpdates();
-          return;
-        }
+        // Deep FindFolder может вернуть валидный Inbox, но устаревшие или
+        // неполные счётчики подпапок — для всех ящиков сверяем их точным
+        // пакетным GetFolder по конкретным FolderId (он транзакционный).
       } catch (ex) {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           this.errorCallback(ex);
         }
       }
     }
-    // Проверка shared-подпапок и fallback, если FindFolder по корню не удался.
+    // Сверка счётчиков точным GetFolder и fallback, если FindFolder по корню не удался.
     let priority = this.sharedCountPriorityFolders(folders);
     let rotating = folders.filter(f => !priority.includes(f));
     let batch: OWAFolder[] = [...priority];
-    let batchSize = this.isDependentAccount && this.supportsBatchedFolderCounts
+    let batchSize = this.supportsBatchedFolderCounts
       ? kOWABatchedFolderCountsPerPollShared : kOWAFolderCountsPerPollShared;
     let rotateSlots = Math.max(0, batchSize - priority.length);
     if (rotating.length && rotateSlots > 0) {
@@ -1426,11 +1414,11 @@ export class OWAAccount extends ExchangeMailAccount {
     let unresolved = batch;
     let batchSessionLimited = false;
     let directlyVerified = new Set<OWAFolder>();
-    if (this.isDependentAccount && this.supportsBatchedFolderCounts && batch.length > 1) {
+    if (this.supportsBatchedFolderCounts && batch.length > 1) {
       try {
         let result = await this.callOWA(
           owaFolderCountsBatchRequest(batch.map(folder => folder.id)),
-          this.username,
+          this.isDependentAccount ? this.username : undefined,
         );
         let byID = new Map(batch.map(folder => [folder.id, folder]));
         let responses = ensureArray(result?.ResponseMessages?.Items);

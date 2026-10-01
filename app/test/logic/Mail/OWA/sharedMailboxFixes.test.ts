@@ -260,3 +260,59 @@ test("новое письмо на полностью прочитанной п�
   folder.applyServerCounts(11016, 1);
   expect(folder.countUnread).toBe(1);
 });
+
+test("устаревшие счётчики Deep FindFolder не перекрывают точный GetFolder в основном ящике", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let main = makeMainAccount();
+  (main as any).msgFolderRootID = "main-root";
+  let folder = main.newFolder();
+  folder.id = "folder-avtmc";
+  folder.name = "АВТМЦ СМ";
+  folder.specialFolder = SpecialFolder.Normal;
+  // Пользователь удалил все письма: папка пуста и локально, и на сервере.
+  folder.countTotal = 0;
+  folder.countUnread = 0;
+  main.rootFolders.add(folder);
+  main.folderMap.set(folder.id, folder);
+
+  let actions: string[] = [];
+  let chaseRequests = 0;
+  main.callOWA = async (request: any) => {
+    actions.push(request.action);
+    if (request.action == "FindFolder") {
+      // Exchange отдаёт устаревший счётчик: папка давно пуста.
+      return { RootFolder: { Folders: [
+        { FolderId: { Id: folder.id }, TotalCount: 161, UnreadCount: 161 },
+      ] } };
+    }
+    if (request.action == "GetFolder" && request.Body.FolderIds) {
+      // Одиночный GetFolder callOWA разворачивает до первого ответа.
+      if (request.Body.FolderIds.length == 1) {
+        return { Folders: [{ FolderId: { Id: request.Body.FolderIds[0].Id }, TotalCount: 0, UnreadCount: 0 }] };
+      }
+      return { ResponseMessages: { Items: request.Body.FolderIds.map((entry: any) => ({
+        ResponseClass: "Success",
+        Folders: [{ FolderId: { Id: entry.Id }, TotalCount: 0, UnreadCount: 0 }],
+      })) } };
+    }
+    if (request.action == "FindItem" || request.action == "SyncFolderItems" ||
+        request.action == "GetItem") {
+      chaseRequests++;
+      return { RootFolder: { Items: [] }, Changes: {}, IncludesLastItemInRange: true };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await main.refreshAllFolderCounts();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  // Точный GetFolder победил: бейдж не «висит» на устаревших 161.
+  expect(actions).toContain("GetFolder");
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countTotal).toBe(0);
+  // Устаревший счётчик не запускает догоняющих обходов пустой папки.
+  await main.refreshAllFolderCounts();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(folder.countUnread).toBe(0);
+  expect(chaseRequests).toBe(0);
+});
