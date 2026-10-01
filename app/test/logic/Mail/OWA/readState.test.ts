@@ -265,20 +265,14 @@ test("не запускает повторную сверку из-за неиз
   expect(folder.dirty).toBe(false);
 });
 
-test("сбрасывает stale unread-счётчик по полному локальному кешу", async () => {
+test("серверный счётчик сбрасывает stale unread-бейдж после локального чтения", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      return {
-        RootFolder: {
-          // Exchange ещё видит письмо непрочитанным, хотя локальный флаг уже read.
-          Items: [{ ItemId: { Id: "message-1" }, IsRead: false }],
-          IncludesLastItemInRange: true,
-          TotalItemsInView: 1,
-        },
-      };
+    if (request.action == "GetFolder") {
+      // Сервер давно видит письмо прочитанным.
+      return { Folders: [{ TotalCount: 1, UnreadCount: 0 }] };
     }
     throw new Error(`Неожиданный запрос OWA: ${request.action}`);
   };
@@ -294,10 +288,10 @@ test("сбрасывает stale unread-счётчик по полному ло�
   message.isRead = true;
   folder.messages.add(message);
 
-  await folder.fetchUnreadArrivals();
+  // Локально письмо прочитано, но застрявший бейдж говорит об обратном.
+  await (account as any).refreshFolderBadge(folder);
 
   expect(folder.countUnread).toBe(0);
-  expect(folder.dirty).toBe(false);
 });
 
 test("синхронизирует счётчик после внешнего прочтения письма", async () => {
@@ -305,18 +299,24 @@ test("синхронизирует счётчик после внешнего п
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
   (account as any).callOWA = async (request: any) => {
-    expect(request.action).toBe("SyncFolderItems");
-    return {
-      Changes: {
-        ReadFlagChange: [
-          { ItemId: { Id: "message-1" }, IsRead: true },
-          { ItemId: { Id: "message-2" }, IsRead: true },
-          { ItemId: { Id: "message-3" }, IsRead: true },
-        ],
-      },
-      SyncState: "state-2",
-      IncludesLastItemInRange: true,
-    };
+    if (request.action == "SyncFolderItems") {
+      return {
+        Changes: {
+          ReadFlagChange: [
+            { ItemId: { Id: "message-1" }, IsRead: true },
+            { ItemId: { Id: "message-2" }, IsRead: true },
+            { ItemId: { Id: "message-3" }, IsRead: true },
+          ],
+        },
+        SyncState: "state-2",
+        IncludesLastItemInRange: true,
+      };
+    }
+    if (request.action == "GetFolder") {
+      // После дельты счётчики папки сверяются с сервером.
+      return { Folders: [{ TotalCount: 3, UnreadCount: 0 }] };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
   };
 
   let folder = account.newFolder();

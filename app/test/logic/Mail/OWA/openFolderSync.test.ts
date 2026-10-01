@@ -452,22 +452,18 @@ test("подтягивает письмо в фоновой синхрониза
       (request) =>
         request.action == "FindItem" &&
         !request.Body.QueryString &&
-        request.Body.Paging.BasePoint == "End",
+        request.Body.Paging.BasePoint == "Beginning",
     ),
   ).toBe(true);
 });
 
-test("делает полную сверку после частичного unread-ответа", async () => {
+test("делает полную сверку маленькой папки, пока бейдж больше видимых непрочитанных", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
-  account.mainAccount = new OWAAccount();
 
   let fullReconcileCalls = 0;
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      return findItemResponse(["unread-1"]);
-    }
     if (request.action == "GetFolder") {
       return { Folders: [{ TotalCount: 4, UnreadCount: 3 }] };
     }
@@ -521,13 +517,9 @@ test("добирает заголовки после прочтения при �
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
-  account.mainAccount = new OWAAccount();
 
   let fullReconcileCalls = 0;
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      return findItemResponse(["unread-1"]);
-    }
     if (request.action == "GetFolder") {
       return { Folders: [{ TotalCount: 4, UnreadCount: 3 }] };
     }
@@ -580,21 +572,23 @@ test("добирает заголовки после прочтения при �
   expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(3);
 });
 
-test("исправляет лишние локальные непрочитанные письма по полному unread-ответу", async () => {
+test("полная сверка исправляет лишние локальные непрочитанные письма", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
 
   let unreadIDs = Array.from({ length: 10 }, (_, index) => `unread-${index}`);
-  let unreadQueryCalls = 0;
+  let readIDs = Array.from({ length: 5 }, (_, index) => `read-${index}`);
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      unreadQueryCalls++;
+    if (request.action == "FindItem") {
       return {
         RootFolder: {
-          Items: unreadIDs.map(ItemId => ({ ItemId: { Id: ItemId }, IsRead: false })),
+          Items: [...unreadIDs, ...readIDs].map(Id => ({
+            ItemId: { Id },
+            IsRead: unreadIDs.includes(Id) ? false : true,
+          })),
           IncludesLastItemInRange: true,
-          TotalItemsInView: unreadIDs.length,
+          TotalItemsInView: 15,
         },
       };
     }
@@ -606,21 +600,21 @@ test("исправляет лишние локальные непрочитан�
   folder.name = "Ошибки серверов";
   (folder as any).haveReadFolder = true;
   folder.countTotal = 15;
-  folder.countUnread = unreadIDs.length;
+  folder.countUnread = 10;
   folder.dirty = true;
   folder.downloadMessages = async (messages: any) => messages;
 
+  // Устаревший кеш: все 15 строк помечены непрочитанными, хотя на сервере 10.
   for (let index = 0; index < 15; index++) {
     let message = folder.newEMail();
-    message.itemID = `unread-${index}`;
+    message.itemID = index < 10 ? `unread-${index}` : `read-${index - 10}`;
     message.sent = new Date(2026, 8, 29, 17, index);
     message.isRead = false;
     folder.messages.add(message);
   }
 
-  await folder.syncRecentArrivals();
+  await folder.listMessages(false, true);
 
-  expect(unreadQueryCalls).toBe(1);
   expect(folder.countUnread).toBe(10);
   expect(folder.dirty).toBe(false);
   expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(10);
@@ -791,17 +785,17 @@ test("повторяет синхронизацию, если счётчик п�
   let firstSyncGate = new Promise<void>(resolve => {
     release = resolve;
   });
-  let fetchUnreadArrivalsStartedResolve!: () => void;
-  let fetchUnreadArrivalsStarted = new Promise<void>(resolve => {
-    fetchUnreadArrivalsStartedResolve = resolve;
+  let chaseStartedResolve!: () => void;
+  let chaseStarted = new Promise<void>(resolve => {
+    chaseStartedResolve = resolve;
   });
   let getNewMessagesCalls = 0;
-  let fetchUnreadArrivalsCalls = 0;
 
   let folder = account.newFolder();
   folder.id = "integrators-inbox";
   folder.name = "Входящие";
   (folder as any).haveReadFolder = true;
+  folder.dirty = true;
   (folder as any).getNewMessages = async () => {
     getNewMessagesCalls++;
     if (getNewMessagesCalls == 1) {
@@ -809,11 +803,7 @@ test("повторяет синхронизацию, если счётчик п�
       await firstSyncGate;
       return new ArrayColl<OWAEMail>();
     }
-    return new ArrayColl<OWAEMail>();
-  };
-  (folder as any).fetchUnreadArrivals = async () => {
-    fetchUnreadArrivalsCalls++;
-    fetchUnreadArrivalsStartedResolve();
+    chaseStartedResolve();
     let message = folder.newEMail();
     message.itemID = "new-message";
     message.sent = new Date("2026-09-22T10:00:00Z");
@@ -826,14 +816,13 @@ test("повторяет синхронизацию, если счётчик п�
 
   let initialSync = folder.syncRecentArrivals();
   await firstSyncStarted;
-  let countSync = folder.syncRecentArrivalsWithServerCounts(1, 1);
+  let countSync = folder.syncRecentArrivalsWithServerCounts(9_743, 1);
 
   release();
   await Promise.all([initialSync, countSync]);
-  await fetchUnreadArrivalsStarted;
+  await chaseStarted;
 
-  expect(getNewMessagesCalls).toBe(1);
-  expect(fetchUnreadArrivalsCalls).toBe(1);
+  expect(getNewMessagesCalls).toBe(2);
   expect(folder.countUnread).toBe(1);
   expect(folder.getEmailByItemID("new-message")).toBeDefined();
   expect(folder.messages.length).toBe(1);
@@ -857,17 +846,15 @@ test("не публикует счётчик во время обычной бы
   folder.id = "integrators-inbox";
   folder.name = "Входящие";
   (folder as any).haveReadFolder = true;
+  folder.dirty = true;
   (folder as any).getNewMessages = async () => {
     getNewMessagesCalls++;
     if (getNewMessagesCalls == 1) {
-      folder.applyServerCounts(1, 1);
+      folder.applyServerCounts(9_743, 1);
       firstSyncStartedResolve();
       await syncGate;
       return new ArrayColl<OWAEMail>();
     }
-    return new ArrayColl<OWAEMail>();
-  };
-  (folder as any).fetchUnreadArrivals = async () => {
     let message = folder.newEMail();
     message.itemID = "new-message";
     message.isRead = false;
@@ -899,11 +886,11 @@ test("повторяет быструю синхронизацию, если н�
   folder.id = "integrators-inbox";
   folder.name = "Входящие";
   (folder as any).haveReadFolder = true;
-  folder.countTotal = 1;
-  folder.countUnread = 1;
+  // Свежий рост unread по данным сервера — окно догона активно.
+  folder.applyServerCounts(9_743, 1);
 
   let fetchCalls = 0;
-  (folder as any).fetchUnreadArrivals = async () => {
+  (folder as any).getNewMessages = async () => {
     fetchCalls++;
     if (fetchCalls == 1) {
       return new ArrayColl<OWAEMail>();
@@ -912,6 +899,7 @@ test("повторяет быструю синхронизацию, если н�
     message.itemID = "delayed-message";
     message.isRead = false;
     folder.addMessagesIfAbsent([message]);
+    folder.dirty = false;
     return new ArrayColl([message]);
   };
 
@@ -1147,33 +1135,20 @@ test("не блокирует открытие папки на фоновом о
   await folder.refreshVisibleMessageMetadata();
 });
 
-test("сбрасывает зависший счётчик непрочитанных, когда все письма прочитаны", async () => {
+test("серверный счётчик сбрасывает зависший бейдж непрочитанных", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
 
-  let unreadQueryCalls = 0;
-  let fullReconcileCalls = 0;
+  let getFolderCalls = 0;
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      unreadQueryCalls++;
-      return {
-        RootFolder: {
-          Items: [],
-          IncludesLastItemInRange: true,
-          TotalItemsInView: 0,
-        },
-      };
+    if (request.action == "GetFolder") {
+      getFolderCalls++;
+      // Сервер говорит: все прочитаны. Локальный бейдж 9 — устаревший.
+      return { Folders: [{ TotalCount: 824, UnreadCount: 0 }] };
     }
     if (request.action == "FindItem") {
-      fullReconcileCalls++;
-      return {
-        RootFolder: {
-          Items: [],
-          IncludesLastItemInRange: true,
-          TotalItemsInView: 0,
-        },
-      };
+      return { RootFolder: { Items: [], IncludesLastItemInRange: true, TotalItemsInView: 824 } };
     }
     throw new Error(`Неожиданный запрос OWA: ${request.action}`);
   };
@@ -1198,8 +1173,7 @@ test("сбрасывает зависший счётчик непрочитан�
 
   await folder.syncRecentArrivals();
 
-  expect(unreadQueryCalls).toBe(1);
-  expect(fullReconcileCalls).toBe(0);
+  expect(getFolderCalls).toBeGreaterThan(0);
   expect(folder.countUnread).toBe(0);
   expect(folder.countNewArrived).toBe(0);
   expect(folder.dirty).toBe(false);
@@ -1212,15 +1186,6 @@ test("полная сверка синхронизирует countUnread, есл
 
   let fullReconcileCalls = 0;
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      return {
-        RootFolder: {
-          Items: [],
-          IncludesLastItemInRange: true,
-          TotalItemsInView: 0,
-        },
-      };
-    }
     if (request.action == "FindItem" && (request.Body.SortOrder || request.Body.Paging.BasePoint == "End")) {
       return {
         RootFolder: {
@@ -1253,6 +1218,8 @@ test("полная сверка синхронизирует countUnread, есл
   folder.id = "errors-servers";
   folder.name = "Ошибки серверов";
   (folder as any).haveReadFolder = true;
+  // Фоновый скан вложений не должен попадать в счётчик полных страниц.
+  (folder as any).attachmentFlagsSynced = true;
   folder.countTotal = 2;
   folder.countUnread = 2;
   folder.countNewArrived = 2;
@@ -1269,12 +1236,17 @@ test("полная сверка синхронизирует countUnread, есл
   m2.isRead = false;
   folder.messages.add(m2);
 
+  // Устаревший бейдж: сервер уже говорит «все прочитаны».
   await folder.syncRecentArrivals();
-
-  expect(fullReconcileCalls).toBe(1);
   expect(folder.countUnread).toBe(0);
   expect(folder.countNewArrived).toBe(0);
+
+  // А авторитетная полная сверка исправляет и сами строки.
+  await folder.listMessages(false, true);
+  expect(fullReconcileCalls).toBe(1);
+  expect(folder.countUnread).toBe(0);
   expect(folder.dirty).toBe(false);
+  expect([...folder.messages].every(message => message.isRead)).toBe(true);
 });
 
 test("refreshMessages уменьшает счётчик непрочитанных при смене статуса на прочитано", async () => {
@@ -1345,18 +1317,14 @@ test("пакетная пометка прочитанными отправля�
         },
       };
     }
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
-      // Имитируем отставание поискового индекса Exchange AQS:
-      // он всё ещё возвращает те же 39 ID как непрочитанные
+    if (request.action == "GetItem") {
+      // Имитируем отставание Exchange: GetItem всё ещё возвращает те же 39
+      // писем непрочитанными, хотя UpdateItem уже успешно применён.
       return {
-        RootFolder: {
-          TotalItemsInView: 39,
-          IncludesLastItemInRange: true,
-          Items: Array.from({ length: 39 }, (_, i) => ({
-            ItemId: { Id: `msg-${i}` },
-            IsRead: false,
-          })),
-        },
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          IsRead: false,
+        })),
       };
     }
     throw new Error(`Неожиданный запрос OWA: ${request.action}`);
@@ -1391,8 +1359,8 @@ test("пакетная пометка прочитанными отправля�
   expect(folder.countNewArrived).toBe(0);
   expect(messages.every(m => m.isRead)).toBe(true);
 
-  // 2. Имитируем опрос fetchUnreadArrivals при отстающем AQS сервере
-  await folder.fetchUnreadArrivals(50);
+  // 2. Имитируем опрос refreshMessages при отстающем сервере
+  await folder.refreshMessages(messages.map(message => message.itemID));
 
   // Письма не должны откатиться в непрочитанные, счётчик должен остаться 0
   expect(folder.countUnread).toBe(0);
@@ -1576,14 +1544,13 @@ test("долгое обновление флагов вложений не бл�
   }
 });
 
-test("не сканирует десять тысяч писем целиком при отстающем unread-поиске", async () => {
+test("не сканирует десять тысяч писем целиком при догоне свежих непрочитанных", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
   account.storage = new DummyMailStorage();
+  account.mainAccount = new OWAAccount();
   let folder = account.newFolder();
   folder.id = "large-errors";
-  folder.countTotal = 9_743;
-  folder.countUnread = 11;
   (folder as any).haveReadFolder = true;
   folder.downloadMessages = async messages => messages;
   folder.getNewMessageHeaders = async () => new ArrayColl();
@@ -1592,9 +1559,6 @@ test("не сканирует десять тысяч писем целиком 
   account.callOWA = async (request: any) => {
     if (request.action == "GetFolder") {
       return { Folders: [{ TotalCount: 9_743, UnreadCount: 11 }] };
-    }
-    if (request.action == "FindItem" && request.Body.QueryString) {
-      return { RootFolder: { Items: [], IncludesLastItemInRange: true, TotalItemsInView: 0 } };
     }
     if (request.action == "FindItem") {
       if (request.Body.Paging.BasePoint == "Beginning" && !request.Body.SortOrder) {
@@ -1606,11 +1570,15 @@ test("не сканирует десять тысяч писем целиком 
     }
     throw new Error(`Неожиданный запрос OWA: ${request.action}`);
   };
+  // Свежий рост unread запускает окно догона, но большой папке хватает
+  // быстрых страниц: непрочитанные могут лежать за их пределами.
+  folder.applyServerCounts(9_743, 11);
 
-  await folder.fetchUnreadArrivals();
+  await folder.syncRecentArrivals();
 
-  expect(fullPages).toBeLessThanOrEqual(2);
-  expect(folder.isBehindServer()).toBe(true);
+  expect(fullPages).toBe(0);
+  expect(folder.messages.length).toBeLessThanOrEqual(100);
+  expect(folder.countUnread).toBe(11);
 });
 
 test("заканчивает обновление флагов после обработки всех закешированных писем", async () => {

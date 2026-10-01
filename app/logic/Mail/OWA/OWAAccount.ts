@@ -1149,7 +1149,10 @@ export class OWAAccount extends ExchangeMailAccount {
     let mailArrived = countUnread > previousUnread || countTotal > previousTotal;
     let mailRemoved = countTotal < previousTotal && folder.messages.hasItems;
     let needsBodies = folder.messages.isEmpty && countTotal > 0;
-    return (mailArrived || mailRemoved || needsBodies) && folder.account.shouldBackgroundSyncBodies(folder);
+    if (mailArrived || mailRemoved) {
+      return true;
+    }
+    return needsBodies && folder.account.shouldBackgroundSyncBodies(folder);
   }
 
   /** Публикует счётчик только после первой загрузки соответствующего заголовка. */
@@ -1872,6 +1875,23 @@ export class OWAAccount extends ExchangeMailAccount {
     if (action === "GetOwaUserConfiguration") {
       return true;
     }
+    if ([
+      "DeleteItem",
+      "UpdateItem",
+      "MoveItem",
+      "CopyItem",
+      "CreateItem",
+      "MarkAllItemsAsRead",
+      "MarkAsJunk",
+      "CreateFolder",
+      "DeleteFolder",
+      "MoveFolder",
+      "UpdateFolder",
+      "SyncFolderItems",
+      "SendItem",
+    ].includes(action)) {
+      return true;
+    }
     let body = aRequest?.Body;
     if (action === "FindFolder") {
       for (let parent of body?.ParentFolderIds ?? []) {
@@ -1936,8 +1956,8 @@ export class OWAAccount extends ExchangeMailAccount {
       let lock = await this.sharedMailboxSemaphore.lock();
       try {
         let gap = Date.now() - this.lastSharedMailboxRequestAt;
-        if (gap < 800) {
-          await sleep((800 - gap) / 1000);
+        if (gap < 100) {
+          await sleep((100 - gap) / 1000);
         }
         this.lastSharedMailboxRequestAt = Date.now();
         return await this.callOWAShared(url, {
@@ -2012,7 +2032,7 @@ export class OWAAccount extends ExchangeMailAccount {
           response.json = JSON.parse(response.text);
         } catch (ex) {
           if (this.isMailboxSessionLimitError(response)) {
-            this.throttle.waitForSecond(120);
+            this.throttle.waitForSecond(10);
             throw new OWAError({ message: gt`Too many active sessions for this mailbox. Please wait a few minutes.` });
           }
           response.ok = false;
@@ -2036,7 +2056,9 @@ export class OWAAccount extends ExchangeMailAccount {
       if (mailbox) {
         this.sharedMailboxBlockedUntil.set(mailbox.toLowerCase(), Date.now() + 5 * 60_000);
       }
-      this.throttle.waitForSecond(120);
+      // Короткая пауза: конкретный ящик уже заблокирован на 5 минут выше,
+      // а длинная глобальная пауза замораживала и основной ящик пользователя.
+      this.throttle.waitForSecond(10);
       throw new OWAError({ message: gt`Too many active sessions for this mailbox. Please wait a few minutes.` });
     }
     if ([401, 440].includes(response.status)) {
@@ -2053,7 +2075,7 @@ export class OWAAccount extends ExchangeMailAccount {
     if (!response.ok) {
       this.throttle.waitForSecond(1);
       if (this.isMailboxSessionLimitError(response)) {
-        this.throttle.waitForSecond(120);
+        this.throttle.waitForSecond(10);
         throw new OWAError({ message: gt`Too many active sessions for this mailbox. Please wait a few minutes.` });
       }
       if (!response.json && response.url != url && response.contentType?.toLowerCase().split(";")[0].trim() == "text/html") {

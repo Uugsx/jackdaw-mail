@@ -255,7 +255,8 @@ export class OWAEMail extends ExchangeEMail {
       SuppressReadReceipts: true,
     });
     request.addField("Message", "IsRead", read, "message:IsRead");
-    await this.folder.account.callOWA(request);
+    let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
+    await this.folder.account.callOWA(request, mailbox);
   }
 
   async markStarred(starred = true) {
@@ -277,7 +278,8 @@ export class OWAEMail extends ExchangeEMail {
       StartDate: null,
       FlagStatus: starred ? "Flagged" : "NotFlagged",
     }, "item:Flag");
-    await this.folder.account.callOWA(request);
+    let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
+    await this.folder.account.callOWA(request, mailbox);
   }
 
   async updateTags() {
@@ -293,7 +295,8 @@ export class OWAEMail extends ExchangeEMail {
         ? this.tags.contents.map(tag => tag.name)
         : null;
       request.addField("Message", "Categories", categories, "item:Categories");
-      await this.folder.account.callOWA(request);
+      let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
+      await this.folder.account.callOWA(request, mailbox);
     });
   }
 
@@ -424,7 +427,8 @@ export class OWAEMail extends ExchangeEMail {
         SendMeetingCancellations: "SendToNone",
         SuppressReadReceipts: true,
       });
-      await this.folder.account.callOWA(request);
+      let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
+      await this.folder.account.callOWA(request, mailbox);
     } finally {
       this.folder.releaseDeletionAfterGracePeriod(this.itemID);
     }

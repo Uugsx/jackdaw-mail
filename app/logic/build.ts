@@ -1,6 +1,6 @@
 /** Quick and dirty way to change the build. */
 export const production = true;
-export const appVersion: string = '0.9.48-dev';
+export const appVersion: string = '0.9.53-dev';
 export const appName: string = 'Jackdaw Mail';
 export const siteRoot: string = 'https://jackdaw.app';
 export const isMobile = false;
