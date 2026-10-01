@@ -31,6 +31,13 @@ describe("emailDarkMode", () => {
       .toContain("background-color: transparent");
   });
 
+  test("насыщенная подсветка Outlook сохраняется в тёмной теме", () => {
+    let html = `<html><body><span style="background-color: #00ff00">Выделенный текст</span></body></html>`;
+    let out = adaptEmailHtmlForDarkMode(html);
+    expect(out).toContain("background-color: #006600");
+    expect(out).not.toContain("background-color: transparent");
+  });
+
   test("html с font color адаптирует оттенки", () => {
     let html = `<html><body><font color="#000080">Data</font><font color="#cc6600">Error</font></body></html>`;
     let out = adaptEmailHtmlForDarkMode(html);

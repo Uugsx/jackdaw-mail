@@ -5,6 +5,8 @@ type HSL = { h: number; s: number; l: number };
 
 const kTextLuminanceKeep = 0.58;
 const kBackgroundLuminanceClear = 0.34;
+const kNeutralBackgroundSaturationMax = 0.12;
+const kDarkBackgroundLightnessMax = 0.2;
 
 export function adaptEmailHtmlForDarkMode(html: string): string {
   if (!html || typeof DOMParser == "undefined") {
@@ -180,7 +182,14 @@ export function adaptBackgroundColor(input: string): string | null {
     return null;
   }
   if (relativeLuminance(rgb) >= kBackgroundLuminanceClear) {
-    return "transparent";
+    let hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+    // Убираем светлые нейтральные фоны страницы, но сохраняем смысловую
+    // подсветку письма: Outlook отображает её более тёмным оттенком в dark mode.
+    if (hsl.s < kNeutralBackgroundSaturationMax) {
+      return "transparent";
+    }
+    hsl.l = Math.min(hsl.l, kDarkBackgroundLightnessMax);
+    return hslToHex(hsl);
   }
   return null;
 }

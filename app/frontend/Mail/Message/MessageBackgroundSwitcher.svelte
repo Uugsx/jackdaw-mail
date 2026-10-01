@@ -29,9 +29,10 @@
   $: storedBackground = normalizeMessageViewerBackground($backgroundSetting.value);
   $: background = appThemeIsDark && storedBackground == "theme" ? "dark" : storedBackground;
   $: nextBackground = cycleMessageViewerBackground(background, !appThemeIsDark);
-  $: backgroundIcon = background == "white"
+  // Иконка и подсказка показывают режим, который будет включён по нажатию.
+  $: backgroundIcon = nextBackground == "white"
     ? SunIcon
-    : background == "dark" ? MoonIcon : SunMoonIcon;
+    : nextBackground == "dark" ? MoonIcon : SunMoonIcon;
 
   function backgroundLabel(mode: MessageViewerBackground): string {
     if (mode == "white") {
