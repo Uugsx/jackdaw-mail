@@ -76,6 +76,41 @@ test("уведомляет папку после автоматического 
   expect(observedUnreadCounts).toContain(0);
 });
 
+test("публикует локальный бейдж во время фоновой синхронизации", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  (account as any).callOWA = async () => ({});
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countUnread = 2;
+
+  let first = folder.newEMail();
+  first.itemID = "message-1";
+  first.isRead = false;
+  folder.messages.add(first);
+  let second = folder.newEMail();
+  second.itemID = "message-2";
+  second.isRead = false;
+  folder.messages.add(second);
+
+  let notifications = 0;
+  let unsubscribe = folder.subscribe(() => notifications++);
+  notifications = 0;
+  (folder as any).beginObserverMute();
+  try {
+    await first.markRead(true);
+    await folder.markMessagesRead([second], true);
+  } finally {
+    (folder as any).endObserverMute();
+    unsubscribe();
+  }
+
+  expect(folder.countUnread).toBe(0);
+  expect(notifications).toBeGreaterThan(0);
+});
+
 test("не возвращает устаревший счётчик после чтения в частично загруженной папке", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

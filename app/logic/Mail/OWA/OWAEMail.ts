@@ -272,7 +272,7 @@ export class OWAEMail extends ExchangeEMail {
     try {
       await super.markRead(read);
       if (this.folder && wasRead != read) {
-        this.folder.notifyObservers();
+        this.folder.notifyLocalMutationImmediately();
       }
       await this.saveWritablePropsLocally().catch(() => null);
       await this.withItemIdRetry(() => this.updateIsReadOnServer(read));

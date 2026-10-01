@@ -15,6 +15,7 @@
       </value>
       {#if !$appGlobal.isSmall}
         <MessageZoomControls />
+        <MessageBackgroundSwitcher />
         <vbox class="display-mode">
           <DisplayModeSwitcher {message} />
         </vbox>
@@ -114,6 +115,7 @@
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
   import DisplayModeSwitcher from "./DisplayModeSwitcher.svelte";
   import MessageZoomControls from "./MessageZoomControls.svelte";
+  import MessageBackgroundSwitcher from "./MessageBackgroundSwitcher.svelte";
   import TagSelector from "../../Shared/Tag/TagSelector.svelte";
   import EncryptionButtons from "./EncryptionButtons.svelte";
   import EncryptionDetails from "./EncryptionDetails.svelte";

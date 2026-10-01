@@ -537,6 +537,18 @@ export class OWAFolder extends ExchangeFolder {
     }
   }
 
+  /** Немедленно публикует локальное действие пользователя, даже если
+   * параллельная фоновая синхронизация временно приглушила уведомления. */
+  notifyLocalMutationImmediately(): void {
+    let wasMuted = this._muteObservers;
+    this._muteObservers = false;
+    try {
+      this.notifyObservers();
+    } finally {
+      this._muteObservers = wasMuted;
+    }
+  }
+
   /**
    * Быстрый путь после обновления счётчика или пока папка открыта.
    * Exchange может вернуть новый счётчик раньше соответствующего заголовка,
@@ -2674,7 +2686,7 @@ export class OWAFolder extends ExchangeFolder {
       } else {
         this.countUnread += changedUnreadCount;
       }
-      this.notifyObservers();
+      this.notifyLocalMutationImmediately();
     }
 
     let withIDs = toUpdate.filter(msg => !!msg.itemID);
@@ -2731,7 +2743,7 @@ export class OWAFolder extends ExchangeFolder {
       }
     }
     await super.markAllRead();
-    this.notifyObservers();
+    this.notifyLocalMutationImmediately();
     try {
       await this.account.callOWA(
         owaFolderMarkAllMsgsReadRequest(this.id, true),
@@ -2750,6 +2762,7 @@ export class OWAFolder extends ExchangeFolder {
 
   async markAllUnread() {
     await super.markAllUnread();
+    this.notifyLocalMutationImmediately();
     await this.account.callOWA(
       owaFolderMarkAllMsgsReadRequest(this.id, false),
       this.account.isDependentAccount ? this.account.username : undefined,

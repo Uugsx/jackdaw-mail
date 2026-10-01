@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   getMessageContentRenderingSetting,
+  cycleMessageViewerBackground,
   normalizeMessageContentRendering,
   normalizeMessageViewerBackground,
 } from "../../../frontend/Mail/Message/messageViewerAppearance";
@@ -16,6 +17,19 @@ describe("фон просмотровщика сообщений", () => {
     expect(normalizeMessageViewerBackground("white")).toBe("white");
     expect(normalizeMessageViewerBackground("theme")).toBe("theme");
     expect(normalizeMessageViewerBackground("dark")).toBe("dark");
+  });
+
+  test("переключает фон в предсказуемом порядке", () => {
+    expect(cycleMessageViewerBackground("white")).toBe("theme");
+    expect(cycleMessageViewerBackground("theme")).toBe("dark");
+    expect(cycleMessageViewerBackground("dark")).toBe("white");
+    expect(cycleMessageViewerBackground("invalid-value")).toBe("dark");
+  });
+
+  test("в тёмной теме переключает только белый и тёмный фон", () => {
+    expect(cycleMessageViewerBackground("white", false)).toBe("dark");
+    expect(cycleMessageViewerBackground("dark", false)).toBe("white");
+    expect(cycleMessageViewerBackground("theme", false)).toBe("white");
   });
 });
 

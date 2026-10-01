@@ -139,6 +139,50 @@
   .message-display.message-background-dark {
     --message-viewer-bg: #1a1a1c;
     --message-viewer-fg: #e5e7eb;
+
+    /*
+     * Тёмный фон письма должен быть самодостаточным: часть контролов
+     * использует токены темы приложения, а не цвет самого просмотрщика.
+     * Иначе при светлых/пользовательских токенах иконки становятся чёрными
+     * на тёмной панели.
+     */
+    --bg: #1a1a1c;
+    --fg: #e5e7eb;
+    --main-bg: #1a1a1c;
+    --main-fg: #e5e7eb;
+    --border: #3a3d3f;
+    --hover-bg: #2b2f33;
+    --hover-fg: #f3f4f6;
+    --icon-primary: #d79a31;
+    --button-bg: #232628;
+    --button-fg: #e5e7eb;
+    --button-border: #454847;
+    --selected-bg: #4a351d;
+    --selected-fg: #f3e8d4;
+    --selected-hover-bg: #65471f;
+    --selected-hover-fg: #fff3de;
+    --offset-bg: #27231e;
+    --offset-fg: #f0e7d8;
+    --inverted-bg: #eeeae3;
+    --inverted-fg: #151718;
+    --link-fg: #e2a842;
+    --link-hover-fg: #f0bd62;
+    --surface-subtle: #232628;
+    --leftbar-bg: #1a1c1e;
+    --leftbar-fg: #e9e5de;
+    --input-bg: #1b1d1e;
+    --input-fg: #eeeae3;
+    --input-line: #434546;
+    --input-placeholder: #9b9891;
+    --danger-fg: #e17b65;
+    --shadow-color: 0, 0, 0;
+    --glass-bg-elevated: rgba(32, 34, 36, 0.96);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-hover-bg: rgba(255, 255, 255, 0.08);
+    --glass-selected-bg: rgba(255, 255, 255, 0.16);
+    --glass-selected-border: rgba(215, 154, 49, 0.44);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
   }
   .message-display :global(.paper) {
     background-color: var(--message-viewer-bg);

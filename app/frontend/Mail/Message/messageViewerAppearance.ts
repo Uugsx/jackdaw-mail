@@ -22,6 +22,33 @@ export function normalizeMessageViewerBackground(value: unknown): MessageViewerB
 }
 
 /**
+ * Переключает фон сообщения.
+ *
+ * В светлой теме сохраняется трёхпозиционный цикл: белый → тема → тёмный.
+ * Для тёмной темы вызывающая сторона может отключить промежуточный фон темы,
+ * оставив только белый и тёмный варианты.
+ */
+export function cycleMessageViewerBackground(
+  value: unknown,
+  includeThemeBackground = true,
+): MessageViewerBackground {
+  let current = normalizeMessageViewerBackground(value);
+  if (!includeThemeBackground) {
+    if (current == "theme") {
+      current = "dark";
+    }
+    return current == "dark" ? "white" : "dark";
+  }
+  if (current == "white") {
+    return "theme";
+  }
+  if (current == "theme") {
+    return "dark";
+  }
+  return "white";
+}
+
+/**
  * Возвращает режим отображения для конкретного почтового ящика.
  * Старую общую настройку используем как начальное значение для совместимости.
  */
