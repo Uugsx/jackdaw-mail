@@ -9,6 +9,7 @@ import { assert, ensureArray, NotSupported } from "../../util/util";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { ArrayColl, type Collection } from "svelte-collections";
 import { gt } from "../../../l10n/l10n";
+import { trackMailSync } from "../mailSyncStatus";
 
 export const kMaxCount = 50;
 
@@ -237,6 +238,10 @@ export class ActiveSyncFolder extends ExchangeFolder implements ActiveSyncPingab
   }
 
   async getNewMessages(): Promise<Collection<ActiveSyncEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked());
+  }
+
+  private async getNewMessagesUntracked(): Promise<Collection<ActiveSyncEMail>> {
     let newMsgs = await this.listMessages();
     await this.downloadMessages(newMsgs);
     return newMsgs;

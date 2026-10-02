@@ -13,6 +13,7 @@ import type { PersonUID } from "../../Abstract/PersonUID";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, base64ToUint8Array, blobToBase64, ensureArray } from "../../util/util";
 import { ArrayColl, type Collection } from "svelte-collections";
+import { trackMailSync } from "../mailSyncStatus";
 
 export const kMaxCount = 50;
 
@@ -396,6 +397,10 @@ export class EWSFolder extends ExchangeFolder {
   /** Lists only the new messages, and downloads them.
    * @returns the new messages */
   async getNewMessages(): Promise<Collection<EWSEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked());
+  }
+
+  private async getNewMessagesUntracked(): Promise<Collection<EWSEMail>> {
     let newMsgs = await this.listMessages(); // uses syncState and should be fast
     await this.downloadMessages(newMsgs);
     return newMsgs;

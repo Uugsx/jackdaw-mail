@@ -27,6 +27,7 @@ import { RunOnce } from "../../util/flow/RunOnce";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { ArrayColl, Collection } from "svelte-collections";
 import { gt } from "../../../l10n/l10n";
+import { trackMailSync } from "../mailSyncStatus";
 
 /** Upper bound on `SyncFolderItems` pages in one `updateChangedMessages()`.
  * At `kMaxFetchCount` items per page this covers a very large backlog; what is
@@ -555,6 +556,10 @@ export class OWAFolder extends ExchangeFolder {
    * поэтому счётчик и строки публикуются только после завершения прохода.
    */
   async syncRecentArrivals(): Promise<ArrayColl<OWAEMail>> {
+    return trackMailSync(() => this.syncRecentArrivalsUntracked());
+  }
+
+  private async syncRecentArrivalsUntracked(): Promise<ArrayColl<OWAEMail>> {
     return this.recentSyncRunOnce.runOnce(async () => {
       this.beginObserverMute();
       let completed = false;
@@ -616,6 +621,10 @@ export class OWAFolder extends ExchangeFolder {
    * из-за чего обычная открытая папка могла оставаться на старом кеше.
    */
   async refreshOpenFolder(): Promise<void> {
+    return trackMailSync(() => this.refreshOpenFolderUntracked());
+  }
+
+  private async refreshOpenFolderUntracked(): Promise<void> {
     if (this.openFolderRefreshPromise) {
       return this.openFolderRefreshPromise;
     }
@@ -970,6 +979,10 @@ export class OWAFolder extends ExchangeFolder {
   /** Для OWA нужна полноценная сверка через FindItem: базовая реализация может
    * ограничиться первой страницей, если кешированный счётчик уже обновился. */
   override async fullResync(): Promise<void> {
+    return trackMailSync(() => this.fullResyncUntracked());
+  }
+
+  private async fullResyncUntracked(): Promise<void> {
     this.syncState = null;
     this.dirty = true;
     await this.listMessages(false, true);
@@ -2027,6 +2040,10 @@ export class OWAFolder extends ExchangeFolder {
    * @param recentOnly read the first page even when folder counts are unchanged
    * @returns the new messages */
   async getNewMessages(recentOnly = false): Promise<Collection<OWAEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked(recentOnly));
+  }
+
+  private async getNewMessagesUntracked(recentOnly = false): Promise<Collection<OWAEMail>> {
     // Always hydrate from the local DB first. SyncFolderItems alone must not
     // replace the initial FindItem populate — that left shared Inboxes empty.
     await this.readFolder();

@@ -11,6 +11,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { type URLString } from "../../util/util";
 import { ArrayColl, Collection } from "svelte-collections";
 import { gt } from "../../../l10n/l10n";
+import { trackMailSync } from "../mailSyncStatus";
 
 export class GraphFolder extends Folder {
   declare account: GraphAccount;
@@ -209,6 +210,10 @@ export class GraphFolder extends Folder {
 
   /** Lists new messages, and downloads them */
   async getNewMessages(): Promise<ArrayColl<GraphEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked());
+  }
+
+  private async getNewMessagesUntracked(): Promise<ArrayColl<GraphEMail>> {
     let newMsgs = await this.listMessages();
     await this.downloadMessages(newMsgs);
     return newMsgs;

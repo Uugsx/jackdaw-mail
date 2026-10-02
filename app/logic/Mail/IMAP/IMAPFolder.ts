@@ -13,6 +13,7 @@ import { gt } from "../../../l10n/l10n";
 import { ArrayColl, Collection } from "svelte-collections";
 import { Buffer } from "buffer";
 import type { ImapFlow, MailboxLockObject, StatusObject } from "../../../../desktop/backend/node_modules/imapflow";
+import { trackMailSync } from "../mailSyncStatus";
 
 export class IMAPFolder extends Folder {
   declare account: IMAPAccount;
@@ -180,6 +181,10 @@ export class IMAPFolder extends Folder {
 
   /** Fast refresh from the UI. Also updates counters for every IMAP folder. */
   async fetchNewMailQuick(): Promise<Collection<IMAPEMail>> {
+    return trackMailSync(() => this.fetchNewMailQuickUntracked());
+  }
+
+  private async fetchNewMailQuickUntracked(): Promise<Collection<IMAPEMail>> {
     let oldCountTotal = this.countTotal;
     await this.account.refreshFolderCounts();
     if (this.countTotal < oldCountTotal) {
@@ -413,6 +418,10 @@ export class IMAPFolder extends Folder {
 
   /** Lists new messages, and downloads them */
   async getNewMessages(_recentOnly = false, refreshStatus = true): Promise<Collection<IMAPEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked(_recentOnly, refreshStatus));
+  }
+
+  private async getNewMessagesUntracked(_recentOnly = false, refreshStatus = true): Promise<Collection<IMAPEMail>> {
     let newMsgs = await this.listNewMessages(refreshStatus);
     await this.downloadMessages(newMsgs);
     await this.checkDeletedMessages(this.getRecentMsg()?.uid);

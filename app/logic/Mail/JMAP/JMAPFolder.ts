@@ -15,6 +15,7 @@ import { NotImplemented, assert } from "../../util/util";
 import { ArrayColl, SetColl, Collection } from "svelte-collections";
 import { Buffer } from "buffer";
 import { gt } from "../../../l10n/l10n";
+import { trackMailSync } from "../mailSyncStatus";
 
 export class JMAPFolder extends Folder {
   // id: JMAP ID
@@ -305,6 +306,10 @@ export class JMAPFolder extends Folder {
 
   /** Lists new messages, and downloads them */
   async getNewMessages(): Promise<ArrayColl<JMAPEMail>> {
+    return trackMailSync(() => this.getNewMessagesUntracked());
+  }
+
+  private async getNewMessagesUntracked(): Promise<ArrayColl<JMAPEMail>> {
     let newMsgs = await this.listMessages();
     await this.downloadMessages(newMsgs);
     return newMsgs;

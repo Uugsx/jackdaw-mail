@@ -9,6 +9,7 @@ import { ArrayColl, Collection } from 'svelte-collections';
 import { Lock } from "../util/flow/Lock";
 import { assert, AbstractFunction } from "../util/util";
 import { gt } from "../../l10n/l10n";
+import { trackMailSync } from "./mailSyncStatus";
 
 export type MailTransferProgressCallback = (completed: number) => void;
 
@@ -187,7 +188,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
 
   /** Fast refresh from UI (Get mail, F5). Background sync uses the same path. */
   async fetchNewMailQuick(): Promise<Collection<EMail>> {
-    return this.getNewMessages(true);
+    return trackMailSync(() => this.getNewMessages(true));
   }
 
   async moveMessageHere(message: EMail) {
@@ -571,8 +572,10 @@ export class Folder extends Observable implements TreeItem<Folder> {
    * *every* folder (in the account), on their respective next sync.
    */
   async fullResync(): Promise<void> {
-    this.syncState = null;
-    await this.listMessages();
+    return trackMailSync(async () => {
+      this.syncState = null;
+      await this.listMessages();
+    });
   }
 
   get children(): Collection<Folder> {

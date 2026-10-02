@@ -74,6 +74,7 @@
   import { t } from "../../../l10n/l10n";
   import { folderFetchBusy, folderSyncing, selectedFolder } from "../Selected";
   import { mailTransferProgress } from "../mailTransferProgress";
+  import { mailSyncing } from "../../../logic/Mail/mailSyncStatus";
 
   export let folder: Folder | null = null; /* in */
   export let iconSize = appGlobal.isMobile ? "24px" : "12px";
@@ -91,7 +92,8 @@
 
   $: externalSync =
     (!!folder && $selectedFolder === folder && $folderSyncing) ||
-    (!!folder?.id && $folderFetchBusy.has(folder.id));
+    (!!folder?.id && $folderFetchBusy.has(folder.id)) ||
+    (showProgress && ($mailSyncing || $folderFetchBusy.size > 0));
   $: transfer = showProgress ? $mailTransferProgress : null;
   $: transferLabel = !transfer
     ? ""
