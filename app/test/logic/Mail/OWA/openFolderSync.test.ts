@@ -1,6 +1,6 @@
 import "../../../../logic/app";
 import { appGlobal } from "../../../../logic/app";
-import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
+import { kMaxFetchCount, OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
 import { OWAEMail } from "../../../../logic/Mail/OWA/OWAEMail";
 import { SpecialFolder } from "../../../../logic/Mail/Folder";
 import { DummyMailStorage } from "../../../../logic/Mail/Store/DummyMailStorage";
@@ -1422,6 +1422,78 @@ test("large folder with partial local history reconciles dirty without full-scan
 
   await folder.getNewMessages(true);
   expect(listMessagesCalls.some(call => !call.recentOnly)).toBe(false);
+});
+
+test("догружает непрочитанные письма из большой shared-папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  mainAccount.storage = new DummyMailStorage();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_345;
+  folder.countUnread = 504;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_345, 504);
+  for (let index = 0; index < 120; index++) {
+    let message = folder.newEMail();
+    message.itemID = `cached-${index}`;
+    message.isRead = true;
+    folder.messages.add(message);
+  }
+  folder.downloadMessages = async messages => messages;
+  folder.syncHasAttachmentFlags = async () => {};
+  (folder as any).refreshVisibleMessageMetadataInBackground = () => {};
+  (folder as any).backfillMessageActionFlags = () => {};
+
+  let unreadIDs = Array.from({ length: 504 }, (_, index) => `unread-${index}`);
+  let unreadFindItemCalls = 0;
+  (mainAccount as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_345, UnreadCount: 504 }] };
+    }
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      unreadFindItemCalls++;
+      let offset = request.Body.Paging.Offset;
+      let pageSize = request.Body.Paging.MaxEntriesReturned;
+      let page = unreadIDs.slice(offset, offset + pageSize);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: offset + page.length >= unreadIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: unreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-09-30T10:00:00Z",
+          DateTimeReceived: "2026-09-30T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncOnFolderOpen(true);
+  await folder.refreshOpenFolder();
+
+  expect(unreadFindItemCalls).toBe(Math.ceil(unreadIDs.length / kMaxFetchCount));
+  expect(folder.messages.length).toBe(120 + unreadIDs.length);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(504);
+  expect(folder.countUnread).toBe(504);
 });
 
 test("останавливает полный FindItem, если Exchange бесконечно повторяет одну страницу", async () => {

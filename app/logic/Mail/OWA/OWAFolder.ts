@@ -63,6 +63,8 @@ const kServerCountSyncRetryDelaysSeconds = [0.5, 1, 2, 3];
  * Расхождение «бейдж > непрочитанные в кеше» само по себе не триггер: непрочитанные
  * могут лежать за пределами загруженной страницы. Триггер — только недавний рост. */
 const kUnreadChaseWindowMs = 60_000;
+/** Не повторять дорогой постраничный поиск unread чаще этого интервала. */
+const kUnreadReconcileRetryMs = 30_000;
 /** Страниц SyncFolderItems за один проход при первичном baseline-обходе,
  * чтобы не держать блокировку папки минуты подряд на папках в десятки тысяч писем. */
 const kDeltaBaselinePagesPerPass = 8;
@@ -91,6 +93,8 @@ export class OWAFolder extends ExchangeFolder {
   protected quickFetchLock = new Lock();
   /** Coalesce the primary and shared-mailbox pollers into one recent sync. */
   protected recentSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
+  /** Объединять постраничную догрузку непрочитанных писем. */
+  protected unreadSyncRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
   /** Счётчик сервера изменился, пока быстрая синхронизация уже выполнялась. */
   protected recentSyncPending = false;
   /** Объединять синхронизации заголовков по счётчику без потери последнего значения. */
@@ -130,6 +134,12 @@ export class OWAFolder extends ExchangeFolder {
     return Math.min(kMaxFindItemPagesLimit, Math.ceil(size / kMaxFetchCount) + kMaxFindItemPagesMargin);
   }
 
+  /** Предел страниц для поиска unread учитывает и серверный unread-счётчик. */
+  protected maxUnreadFindItemPages(): number {
+    let size = Math.max(this.countTotal, this.countUnread, this.messages.length, kMaxFetchCount);
+    return Math.min(kMaxFindItemPagesLimit, Math.ceil(size / kMaxFetchCount) + kMaxFindItemPagesMargin);
+  }
+
   /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
   protected lastMarkReadAt = 0;
   /** Последний необработанный счётчик, полученный непосредственно от Exchange. */
@@ -149,6 +159,8 @@ export class OWAFolder extends ExchangeFolder {
   protected lastCountRefreshAt = 0;
   /** Момент последнего роста unread по данным сервера (окно «догона» строк). */
   protected lastUnreadIncreaseAt = 0;
+  /** Момент последней попытки постраничной догрузки непрочитанных писем. */
+  protected lastUnreadReconcileAt = 0;
 
   newEMail(): OWAEMail {
     return new OWAEMail(this);
@@ -538,6 +550,154 @@ export class OWAFolder extends ExchangeFolder {
     }
   }
 
+  /**
+   * Догружает непрочитанные письма, которые лежат за пределами локальной
+   * страницы. Полный FindItem для большой папки слишком дорогой, но серверный
+   * AQS-запрос `isread:no` позволяет получить именно нужные строки.
+   */
+  protected async syncUnreadMessagesIfNeeded(): Promise<ArrayColl<OWAEMail>> {
+    if (!this.id || this.lastServerCountUnread == null || !this.unreadBehindServer()) {
+      return new ArrayColl<OWAEMail>();
+    }
+    let now = Date.now();
+    if (!this.unreadSyncRunOnce.running && now - this.lastUnreadReconcileAt < kUnreadReconcileRetryMs) {
+      return new ArrayColl<OWAEMail>();
+    }
+    if (!this.unreadSyncRunOnce.running) {
+      this.lastUnreadReconcileAt = now;
+    }
+    try {
+      return await this.unreadSyncRunOnce.runOnce(() => this.syncUnreadMessagesOnce());
+    } catch (ex) {
+      this.account.handleBackgroundSyncError(ex);
+      return new ArrayColl<OWAEMail>();
+    }
+  }
+
+  /** Постраничная реализация догрузки unread без удаления локальной истории. */
+  protected async syncUnreadMessagesOnce(): Promise<ArrayColl<OWAEMail>> {
+    let newMsgs = new ArrayColl<OWAEMail>();
+    let request = owaFindMsgsByQueryRequest(this.id, "isread:no", kMaxFetchCount);
+    let pagesRead = 0;
+    let firstPage = true;
+    let paginationComplete = false;
+    let headersIncomplete = false;
+    let useDelegateContext = false;
+    let changed = false;
+    let seenPageSignatures = new Set<string>();
+
+    while (pagesRead < this.maxUnreadFindItemPages()) {
+      pagesRead++;
+      let result = useDelegateContext
+        ? await this.account.callOWA(request)
+        : await this.callFolderSyncOWA(request);
+      let messages = ensureArray(result?.RootFolder?.Items).slice();
+
+      if (firstPage && !messages.length && this.account.isDependentAccount && this.account.username) {
+        // Explicit Logon некоторых shared-папок отдаёт пустой AQS-результат,
+        // хотя delegate-контекст видит те же непрочитанные письма.
+        try {
+          let delegateResult = await this.account.callOWA(request);
+          let delegateMessages = ensureArray(delegateResult?.RootFolder?.Items).slice();
+          if (delegateMessages.length) {
+            result = delegateResult;
+            messages = delegateMessages;
+            useDelegateContext = true;
+          }
+        } catch (ex) {
+          if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+            this.account.handleBackgroundSyncError(ex);
+          }
+        }
+      }
+
+      if (!messages.length) {
+        paginationComplete = true;
+        break;
+      }
+
+      let pageSignature = messages
+        .map(message => sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, ""))
+        .filter(Boolean)
+        .join("\u0000");
+      if (pageSignature && seenPageSignatures.has(pageSignature)) {
+        headersIncomplete = true;
+        break;
+      }
+      if (pageSignature) {
+        seenPageSignatures.add(pageSignature);
+      }
+
+      let newMessageIDs: string[] = [];
+      for (let message of messages) {
+        let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
+        if (!id || this.deletions.has(id)) {
+          continue;
+        }
+        let email = this.getEmailByItemID(id);
+        if (email) {
+          if (email.setFlags(message, "list")) {
+            await this.persistEmailFlags(email);
+            changed = true;
+          }
+        } else {
+          newMessageIDs.push(id);
+        }
+      }
+
+      let newMsgsInPage = await this.getNewMessageHeaders(newMessageIDs);
+      let loadedHeaderIDs = new Set(newMsgsInPage.contents
+        .map(message => message.itemID)
+        .filter((itemID): itemID is string => !!itemID));
+      if (newMessageIDs.some(itemID =>
+        !loadedHeaderIDs.has(itemID) && !this.getEmailByItemID(itemID))) {
+        headersIncomplete = true;
+      }
+      if (newMsgsInPage.hasItems) {
+        newMsgs.addAll(newMsgsInPage);
+        this.addMessagesIfAbsent(newMsgsInPage);
+        changed = true;
+      }
+
+      let currentOffset = request.Body.Paging.Offset;
+      let nextOffset = result.RootFolder?.IndexedPagingOffset;
+      if (typeof nextOffset == "number" && nextOffset > currentOffset) {
+        request.Body.Paging.Offset = nextOffset;
+      } else {
+        request.Body.Paging.Offset += messages.length;
+      }
+
+      let includesLast = result?.RootFolder?.IncludesLastItemInRange;
+      if (includesLast === true || includesLast === "true") {
+        paginationComplete = true;
+        break;
+      }
+      let totalCount = Number(result?.RootFolder?.TotalItemsInView);
+      if (Number.isFinite(totalCount) && request.Body.Paging.Offset >= totalCount) {
+        paginationComplete = true;
+        break;
+      }
+      if (messages.length < kMaxFetchCount && includesLast !== false && includesLast !== "false") {
+        paginationComplete = true;
+        break;
+      }
+      firstPage = false;
+    }
+
+    if (!paginationComplete) {
+      headersIncomplete = true;
+    }
+    if (headersIncomplete || this.unreadBehindServer()) {
+      this.dirty = true;
+    }
+    if (changed) {
+      this.refreshMessageContacts();
+      this.notifyObservers();
+    }
+    await this.finishNewMessages(newMsgs, true);
+    return newMsgs;
+  }
+
   /** Немедленно публикует локальное действие пользователя, даже если
    * параллельная фоновая синхронизация временно приглушила уведомления. */
   notifyLocalMutationImmediately(): void {
@@ -630,7 +790,7 @@ export class OWAFolder extends ExchangeFolder {
     }
     let refresh = (async () => {
       let countsChanged = await this.folderCountsChanged(true);
-      if (countsChanged || this.isBehindServer()) {
+      if (countsChanged || this.isBehindServer() || this.unreadBehindServer()) {
         this.lastOpenFolderRecentRefreshAt = Date.now();
         await this.syncRecentArrivals();
       } else {
@@ -685,6 +845,10 @@ export class OWAFolder extends ExchangeFolder {
         // Маленькая папка: одна авторитетная страница дешевле и точнее догона
         // недавних страниц, и сразу закрывает расхождение бейджа со строками.
         messages.addAll(await this.listMessages(false, true) as ArrayColl<OWAEMail>);
+      } else if (this.lastServerCountUnread != null && !this.isBehindServer() && this.unreadBehindServer()) {
+        // В большой папке непрочитанные могут быть далеко за пределами
+        // недавней страницы: догружаем только их, не сканируя весь архив.
+        messages.addAll(await this.syncUnreadMessagesIfNeeded());
       } else if (this.isBehindServer() || this.unreadChaseActive()) {
         messages.addAll(await this.getNewMessages(true) as ArrayColl<OWAEMail>);
       }
@@ -1032,6 +1196,9 @@ export class OWAFolder extends ExchangeFolder {
       return this.messages;
     }
     let msgs = await this.getNewMessages(true);
+    if (this.unreadBehindServer()) {
+      msgs.addAll(await this.syncUnreadMessagesIfNeeded());
+    }
     if (!msgs.hasItems && (this.isBehindServer() || this.unreadBehindServer())) {
       // Быстрая страница может вернуть пусто на shared/on-premise OWA, хотя
       // бейдж уже обновился. Повторяем обычную страницу при открытии, а полную
