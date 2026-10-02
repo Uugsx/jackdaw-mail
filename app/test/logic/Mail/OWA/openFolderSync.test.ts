@@ -2,11 +2,14 @@ import "../../../../logic/app";
 import { appGlobal } from "../../../../logic/app";
 import { kMaxFetchCount, OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
 import { OWAEMail } from "../../../../logic/Mail/OWA/OWAEMail";
+import { OWAError } from "../../../../logic/Mail/OWA/OWAError";
 import { SpecialFolder } from "../../../../logic/Mail/Folder";
 import { DummyMailStorage } from "../../../../logic/Mail/Store/DummyMailStorage";
+import { mailSyncing } from "../../../../logic/Mail/mailSyncStatus";
 import type { EMail } from "../../../../logic/Mail/EMail";
 import { ArrayColl } from "svelte-collections";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { get } from "svelte/store";
 
 function findItemResponse(itemIDs: string[]): any {
   return {
@@ -1424,6 +1427,513 @@ test("large folder with partial local history reconciles dirty without full-scan
   expect(listMessagesCalls.some(call => !call.recentOnly)).toBe(false);
 });
 
+test("догружает все заголовки текущего дня до границы 00:00", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_407;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  (folder as any).lastCountRefreshAt = Date.now();
+  let dayKey = (folder as any).recentDayKey(new Date());
+  (folder as any).recentDaySyncOffsetKey = dayKey;
+  (folder as any).recentDaySyncQueryKey = dayKey;
+  (folder as any).recentDaySyncUseQuery = false;
+
+  let now = new Date();
+  let cached = folder.newEMail();
+  cached.itemID = "day-0";
+  cached.isRead = true;
+  cached.sent = now;
+  cached.received = now;
+  folder.messages.add(cached);
+
+  let findOffsets: number[] = [];
+  let headerCount = 0;
+  let downloadCalls = 0;
+  folder.downloadMessages = async messages => {
+    downloadCalls++;
+    return messages;
+  };
+  folder.getNewMessageHeaders = async (ids: string[]) => {
+    headerCount += ids.length;
+    let headers = new ArrayColl<OWAEMail>();
+    for (let id of ids) {
+      let message = folder.newEMail();
+      message.itemID = id;
+      message.isRead = true;
+      message.sent = now;
+      message.received = now;
+      headers.add(message);
+    }
+    return headers;
+  };
+  (folder as any).backfillMessageActionFlags = () => {};
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    let offset = request.Body.Paging.Offset;
+    findOffsets.push(offset);
+    if (offset >= 623) {
+      let yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return {
+        RootFolder: {
+          Items: [{
+            ItemId: { Id: "yesterday" },
+            DateTimeReceived: yesterday.toISOString(),
+            DateTimeSent: yesterday.toISOString(),
+            IsRead: true,
+          }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + 1,
+          TotalItemsInView: 12_407,
+        },
+      };
+    }
+    let pageLength = Math.min(kMaxFetchCount, 623 - offset);
+    let ids = Array.from({ length: pageLength }, (_, index) => `day-${offset + index}`);
+    return {
+      RootFolder: {
+        Items: ids.map(id => ({
+          ItemId: { Id: id },
+          DateTimeReceived: now.toISOString(),
+          DateTimeSent: now.toISOString(),
+          IsRead: true,
+        })),
+        IncludesLastItemInRange: true,
+        IndexedPagingOffset: offset + ids.length,
+        TotalItemsInView: 12_407,
+      },
+    };
+  };
+
+  await folder.syncRecentDayMessages();
+
+  expect(folder.messages.length).toBe(623);
+  expect(findOffsets).toEqual([
+    0, 50, 100, 150, 200, 250, 300,
+    350, 400, 450, 500, 550, 600, 623,
+  ]);
+  expect(headerCount).toBe(622);
+  expect(downloadCalls).toBe(0);
+
+  let callsAfterComplete = findOffsets.length;
+  await folder.syncRecentDayMessages();
+  expect(findOffsets).toHaveLength(callsAfterComplete);
+});
+
+test("фоновые шаги догружают текущий день без удержания глобального спиннера", async () => {
+  vi.useFakeTimers();
+  try {
+    appGlobal.remoteApp = { OWA: {} };
+    let account = new OWAAccount();
+    account.storage = new DummyMailStorage();
+    let folder = account.newFolder();
+    folder.id = "errors-servers";
+    folder.countTotal = 12_407;
+    folder.countUnread = 0;
+    (folder as any).haveReadFolder = true;
+    (folder as any).lastCountRefreshAt = Date.now();
+    let dayKey = (folder as any).recentDayKey(new Date());
+    (folder as any).recentDaySyncOffsetKey = dayKey;
+    (folder as any).recentDaySyncQueryKey = dayKey;
+    (folder as any).recentDaySyncUseQuery = false;
+
+    let now = new Date();
+    let findOffsets: number[] = [];
+    folder.getNewMessageHeaders = async (ids: string[]) => {
+      let headers = new ArrayColl<OWAEMail>();
+      for (let id of ids) {
+        let message = folder.newEMail();
+        message.itemID = id;
+        message.isRead = true;
+        message.sent = now;
+        message.received = now;
+        headers.add(message);
+      }
+      return headers;
+    };
+    (folder as any).backfillMessageActionFlags = () => {};
+    (account as any).callOWA = async (request: any) => {
+      let offset = request.Body.Paging.Offset;
+      findOffsets.push(offset);
+      if (offset >= 623) {
+        let yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        return {
+          RootFolder: {
+            Items: [{
+              ItemId: { Id: "yesterday" },
+              DateTimeReceived: yesterday.toISOString(),
+              DateTimeSent: yesterday.toISOString(),
+              IsRead: true,
+            }],
+            IncludesLastItemInRange: true,
+            IndexedPagingOffset: offset + 1,
+            TotalItemsInView: 12_407,
+          },
+        };
+      }
+      let pageLength = Math.min(kMaxFetchCount, 623 - offset);
+      let ids = Array.from({ length: pageLength }, (_, index) => `day-${offset + index}`);
+      return {
+        RootFolder: {
+          Items: ids.map(id => ({
+            ItemId: { Id: id },
+            DateTimeReceived: now.toISOString(),
+            DateTimeSent: now.toISOString(),
+            IsRead: true,
+          })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + ids.length,
+          TotalItemsInView: 12_407,
+        },
+      };
+    };
+
+    folder.syncRecentDayMessagesInBackground();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(folder.messages.length).toBe(200);
+    expect(findOffsets).toEqual([0, 50, 100, 150]);
+    expect(get(mailSyncing)).toBe(false);
+
+    for (let step = 0; step < 4 && folder.messages.length < 623; step++) {
+      await vi.advanceTimersByTimeAsync(250);
+    }
+
+    expect(folder.messages.length).toBe(623);
+    expect(get(mailSyncing)).toBe(false);
+    expect(findOffsets).toEqual([
+      0, 50, 100, 150, 200, 250, 300, 350,
+      400, 450, 500, 550, 600, 623,
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("переключается на обычный FindItem, если AQS обрывается на неполной странице", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_474;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  (folder as any).lastCountRefreshAt = Date.now();
+
+  let now = new Date();
+  let yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let todayIDs = Array.from({ length: 623 }, (_, index) => `today-${index}`);
+  let queryOffsets: number[] = [];
+  let fallbackOffsets: number[] = [];
+  folder.getNewMessageHeaders = async (ids: string[]) => {
+    let headers = new ArrayColl<OWAEMail>();
+    for (let id of ids) {
+      let message = folder.newEMail();
+      message.itemID = id;
+      message.isRead = true;
+      message.sent = now;
+      message.received = now;
+      headers.add(message);
+    }
+    return headers;
+  };
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    let offset = request.Body.Paging.Offset;
+    let isQuery = request.Body.QueryString == "received:today";
+    if (isQuery) {
+      queryOffsets.push(offset);
+      let page = todayIDs.slice(offset, Math.min(offset + kMaxFetchCount, 275));
+      return {
+        RootFolder: {
+          Items: page.length
+            ? page.map(id => ({
+              ItemId: { Id: id },
+              DateTimeReceived: now.toISOString(),
+              DateTimeSent: now.toISOString(),
+              IsRead: true,
+            }))
+            : [],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: 275,
+        },
+      };
+    }
+
+    fallbackOffsets.push(offset);
+    let page = todayIDs.slice(offset, offset + kMaxFetchCount);
+    if (!page.length) {
+      return {
+        RootFolder: {
+          Items: [{
+            ItemId: { Id: "yesterday" },
+            DateTimeReceived: yesterday.toISOString(),
+            DateTimeSent: yesterday.toISOString(),
+            IsRead: true,
+          }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + 1,
+          TotalItemsInView: 12_474,
+        },
+      };
+    }
+    return {
+      RootFolder: {
+        Items: page.map(id => ({
+          ItemId: { Id: id },
+          DateTimeReceived: now.toISOString(),
+          DateTimeSent: now.toISOString(),
+          IsRead: true,
+        })),
+        IncludesLastItemInRange: true,
+        IndexedPagingOffset: offset + page.length,
+        TotalItemsInView: 12_474,
+      },
+    };
+  };
+
+  await folder.syncRecentDayMessages();
+
+  expect(folder.messages).toHaveLength(623);
+  expect(queryOffsets).toEqual([0, 50, 100, 150, 200, 250, 275]);
+  expect(fallbackOffsets).toEqual([
+    0, 50, 100, 150, 200, 250, 300, 350,
+    400, 450, 500, 550, 600, 623,
+  ]);
+});
+
+test("переключается на обычный FindItem, если сервер не умеет десериализовать AQS", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_474;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  (folder as any).lastCountRefreshAt = Date.now();
+
+  let now = new Date();
+  let yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let todayIDs = Array.from({ length: 623 }, (_, index) => `today-${index}`);
+  let queryCalls = 0;
+  let fallbackOffsets: number[] = [];
+  folder.getNewMessageHeaders = async (ids: string[]) => {
+    let headers = new ArrayColl<OWAEMail>();
+    for (let id of ids) {
+      let message = folder.newEMail();
+      message.itemID = id;
+      message.isRead = true;
+      message.sent = now;
+      message.received = now;
+      headers.add(message);
+    }
+    return headers;
+  };
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    if (request.Body.QueryString == "received:today") {
+      queryCalls++;
+      throw new OWAError({ message: "Cannot deserialize object of type FindItemJsonRequest" });
+    }
+
+    let offset = request.Body.Paging.Offset;
+    fallbackOffsets.push(offset);
+    let page = todayIDs.slice(offset, offset + kMaxFetchCount);
+    if (!page.length) {
+      return {
+        RootFolder: {
+          Items: [{
+            ItemId: { Id: "yesterday" },
+            DateTimeReceived: yesterday.toISOString(),
+            DateTimeSent: yesterday.toISOString(),
+            IsRead: true,
+          }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + 1,
+          TotalItemsInView: 12_474,
+        },
+      };
+    }
+    return {
+      RootFolder: {
+        Items: page.map(id => ({
+          ItemId: { Id: id },
+          DateTimeReceived: now.toISOString(),
+          DateTimeSent: now.toISOString(),
+          IsRead: true,
+        })),
+        IncludesLastItemInRange: true,
+        IndexedPagingOffset: offset + page.length,
+        TotalItemsInView: 12_474,
+      },
+    };
+  };
+
+  await folder.syncRecentDayMessages();
+
+  expect(folder.messages).toHaveLength(623);
+  expect(queryCalls).toBe(1);
+  expect((folder as any).recentDaySyncUseQuery).toBe(false);
+  expect(fallbackOffsets).toEqual([
+    0, 50, 100, 150, 200, 250, 300, 350,
+    400, 450, 500, 550, 600, 623,
+  ]);
+});
+
+test("повторяет shared-поиск от начала, если BasePoint=End отдаёт старые письма", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  mainAccount.storage = new DummyMailStorage();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_474;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  (folder as any).lastCountRefreshAt = Date.now();
+  let dayKey = (folder as any).recentDayKey(new Date());
+  (folder as any).recentDaySyncOffsetKey = dayKey;
+  (folder as any).recentDaySyncQueryKey = dayKey;
+  (folder as any).recentDaySyncUseQuery = false;
+
+  let now = new Date();
+  let yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let todayIDs = Array.from({ length: 623 }, (_, index) => `today-${index}`);
+  let basePoints: string[] = [];
+  folder.getNewMessageHeaders = async (ids: string[]) => {
+    let headers = new ArrayColl<OWAEMail>();
+    for (let id of ids) {
+      let message = folder.newEMail();
+      message.itemID = id;
+      message.isRead = true;
+      message.sent = now;
+      message.received = now;
+      headers.add(message);
+    }
+    return headers;
+  };
+  (mainAccount as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("FindItem");
+    let offset = request.Body.Paging.Offset;
+    if (request.Body.QueryString == "received:today") {
+      let page = todayIDs.slice(offset, Math.min(offset + kMaxFetchCount, 275));
+      if (!page.length) {
+        page = Array.from({ length: kMaxFetchCount }, (_, index) => `old-query-${offset + index}`);
+      }
+      return {
+        RootFolder: {
+          Items: page.map(id => ({
+            ItemId: { Id: id },
+            DateTimeReceived: id.startsWith("old-query-") ? yesterday.toISOString() : now.toISOString(),
+            DateTimeSent: id.startsWith("old-query-") ? yesterday.toISOString() : now.toISOString(),
+            IsRead: true,
+          })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: 275,
+        },
+      };
+    }
+    basePoints.push(request.Body.Paging.BasePoint);
+    if (request.Body.Paging.BasePoint == "End") {
+      return {
+        RootFolder: {
+          Items: Array.from({ length: kMaxFetchCount }, (_, index) => ({
+            ItemId: { Id: `old-${offset + index}` },
+            DateTimeReceived: yesterday.toISOString(),
+            DateTimeSent: yesterday.toISOString(),
+            IsRead: true,
+          })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + kMaxFetchCount,
+          TotalItemsInView: 12_474,
+        },
+      };
+    }
+    let page = todayIDs.slice(offset, offset + kMaxFetchCount);
+    if (!page.length) {
+      return {
+        RootFolder: {
+          Items: [{
+            ItemId: { Id: "yesterday" },
+            DateTimeReceived: yesterday.toISOString(),
+            DateTimeSent: yesterday.toISOString(),
+            IsRead: true,
+          }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + 1,
+          TotalItemsInView: 12_474,
+        },
+      };
+    }
+    return {
+      RootFolder: {
+        Items: page.map(id => ({
+          ItemId: { Id: id },
+          DateTimeReceived: now.toISOString(),
+          DateTimeSent: now.toISOString(),
+          IsRead: true,
+        })),
+        IncludesLastItemInRange: true,
+        IndexedPagingOffset: offset + page.length,
+        TotalItemsInView: 12_474,
+      },
+    };
+  };
+
+  await folder.syncRecentDayMessages();
+
+  expect(folder.messages).toHaveLength(623);
+  expect(basePoints).toContain("End");
+  expect(basePoints).toContain("Beginning");
+});
+
+test("повторяет фоновую догрузку после пустого ответа OWA", async () => {
+  vi.useFakeTimers();
+  try {
+    appGlobal.remoteApp = { OWA: {} };
+    let account = new OWAAccount();
+    account.storage = new DummyMailStorage();
+    let folder = account.newFolder();
+    folder.id = "errors-servers";
+    folder.countTotal = 12_407;
+
+    let listMessagesCalls = 0;
+    (folder as any).listMessages = async () => {
+      listMessagesCalls++;
+      if (listMessagesCalls == 2) {
+        (folder as any).recentDaySyncOffset = kMaxFetchCount;
+        (folder as any).recentDaySyncCompletedKey = (folder as any).recentDayKey(new Date());
+      }
+      return new ArrayColl<OWAEMail>();
+    };
+
+    await folder.syncRecentDayMessages(true);
+    expect(listMessagesCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(listMessagesCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listMessagesCalls).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("догружает непрочитанные письма из большой shared-папки", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let mainAccount = new OWAAccount();
@@ -1494,6 +2004,89 @@ test("догружает непрочитанные письма из больш
   expect(folder.messages.length).toBe(120 + unreadIDs.length);
   expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(504);
   expect(folder.countUnread).toBe(504);
+});
+
+test("не запускает общий проход при одном только расхождении unread-кеша", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-folder";
+  folder.countTotal = 12_345;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_345, 1);
+  let cached = folder.newEMail();
+  cached.itemID = "cached-read";
+  cached.isRead = true;
+  folder.messages.add(cached);
+  folder.dirty = false;
+
+  let generalSyncCalls = 0;
+  let unreadSyncCalls = 0;
+  folder.syncRecentArrivals = async () => {
+    generalSyncCalls++;
+    return new ArrayColl<OWAEMail>();
+  };
+  (folder as any).syncUnreadMessagesIfNeeded = async () => {
+    unreadSyncCalls++;
+    return new ArrayColl<OWAEMail>();
+  };
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("GetFolder");
+    return { Folders: [{ TotalCount: 12_345, UnreadCount: 1 }] };
+  };
+
+  await folder.refreshOpenFolder();
+  folder.dirty = true;
+  await folder.refreshOpenFolder();
+
+  expect(generalSyncCalls).toBe(0);
+  expect(unreadSyncCalls).toBe(2);
+});
+
+test("останавливает unread-поиск, если OWA проигнорировал AQS-фильтр", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "large-folder";
+  folder.countTotal = 12_345;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_345, 1);
+  folder.dirty = false;
+
+  let unreadFindItemCalls = 0;
+  let downloadCalls = 0;
+  folder.downloadMessages = async messages => {
+    downloadCalls++;
+    return messages;
+  };
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+      unreadFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: Array.from({ length: kMaxFetchCount }, (_, index) => ({
+            ItemId: { Id: `read-${index}` },
+            IsRead: true,
+          })),
+          IncludesLastItemInRange: false,
+          IndexedPagingOffset: kMaxFetchCount,
+          TotalItemsInView: 12_345,
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await (folder as any).syncUnreadMessagesIfNeeded();
+
+  expect(unreadFindItemCalls).toBe(1);
+  expect(folder.messages.length).toBe(0);
+  expect(downloadCalls).toBe(0);
+  expect(folder.dirty).toBe(true);
 });
 
 test("останавливает полный FindItem, если Exchange бесконечно повторяет одну страницу", async () => {

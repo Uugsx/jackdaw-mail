@@ -34,7 +34,12 @@ function owaMessageListProperties(): object[] {
   }];
 }
 
-export function owaFindMsgsInFolderRequest(folderID: string, maxFetchCount: number, recentOnly = false, fromEnd = false): OWARequest {
+export function owaFindMsgsInFolderRequest(
+  folderID: string,
+  maxFetchCount: number,
+  recentOnly = false,
+  fromEnd = false,
+): OWARequest {
   let body: Record<string, unknown> = {
     __type: "FindItemRequest:#Exchange",
     ItemShape: {

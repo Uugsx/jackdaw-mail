@@ -47,6 +47,14 @@ const kHotmailServer = "outlook.live.com";
  * and let the caller reconnect and re-subscribe instead of waiting forever.
  */
 const kStreamIdleTimeoutMs = 90_000;
+/** Обычный OWA-запрос не должен держать синхронизацию бесконечно. */
+const kOWARequestTimeoutMs = 60_000;
+
+function isOWALongPoll(url: string, options: { headers?: Record<string, string> }): boolean {
+  const action = options?.headers?.Action ?? new URL(url).searchParams.get("action") ??
+    new URL(url).searchParams.get("ev") ?? "";
+  return action == "PendingNotificationRequest";
+}
 
 /**
  * To log in to Hotmail or Office 365 environments, we need to
@@ -502,7 +510,21 @@ export async function fetchJSON(partition: string, url: string, options: any) {
   } else if (canary) {
     url += encodeURIComponent(canary);
   }
-  let response = await session.fetch(url, requestOptions);
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  if (!isOWALongPoll(url, requestOptions)) {
+    let controller = new AbortController();
+    let signal = requestOptions.signal as AbortSignal | undefined;
+    requestOptions = {
+      ...requestOptions,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    };
+    timeout = setTimeout(() => controller.abort(), kOWARequestTimeoutMs);
+  }
+  let response = await session.fetch(url, requestOptions).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
   let requestAction = requestOptions.headers?.Action ?? new URL(url).searchParams.get("action") ??
     new URL(url).searchParams.get("ev");
   if (requestAction == "FinishNotificationRequest" || requestAction == "SubscribeToNotification" || requestAction == "PendingNotificationRequest") {

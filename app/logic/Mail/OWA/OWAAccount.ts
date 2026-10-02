@@ -64,6 +64,8 @@ const kOWANotificationFolderBatchSize = 8;
 const kOWAMaxDirtyFoldersPerPoll = 3;
 /** Throttle retries per request; each waits 5s. */
 const kOWAMaxThrottleRetries = 6;
+/** Обычный OWA-запрос не должен удерживать синхронизацию бесконечно. */
+const kOWARequestTimeoutMs = 60_000;
 /** Shared mailboxes tend to have many active subfolders. */
 const kOWAMaxDirtyFoldersPerPollShared = 2;
 /** Shared mailboxes: refresh server folder counts in rotating batches. */
@@ -78,6 +80,24 @@ const kSharedUnreadRowSubscriptionLimit = 3;
 const kOWALoginSessionRetryDelaysSeconds = [1, 2, 4, 8, 16, 30];
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
+
+function isOWALongPoll(url: string, options: RequestInit): boolean {
+  let headers = options.headers as Record<string, string> | undefined;
+  let action = headers?.Action ?? new URL(url).searchParams.get("action") ??
+    new URL(url).searchParams.get("ev") ?? "";
+  return action == "PendingNotificationRequest";
+}
+
+function withOWARequestTimeout(url: string, options: RequestInit): RequestInit {
+  if (isOWALongPoll(url, options)) {
+    return options;
+  }
+  let timeoutSignal = AbortSignal.timeout(kOWARequestTimeoutMs);
+  let signal = options.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
+  return { ...options, signal };
+}
 
 export class OWAAccount extends ExchangeMailAccount {
   readonly protocol: string = "owa";
@@ -1008,7 +1028,7 @@ export class OWAAccount extends ExchangeMailAccount {
         }
         let inbox = this.findInboxFolder();
         if (inbox) {
-          await inbox.syncRecentArrivals();
+          await inbox.syncRecentArrivals(true);
           this.notifyFolderUIUpdates([inbox]);
         }
         if (!this.isDependentAccount) {
@@ -1068,7 +1088,7 @@ export class OWAAccount extends ExchangeMailAccount {
     this.pollInProgress = true;
     try {
       // Fast path: inbox only so the next 3s tick is not skipped by heavy folders.
-      await inbox.syncRecentArrivals();
+      await inbox.syncRecentArrivals(true);
       this.notifyFolderUIUpdates([inbox]);
     } finally {
       this.pollInProgress = false;
@@ -1093,7 +1113,7 @@ export class OWAAccount extends ExchangeMailAccount {
     try {
       for (let folder of folders) {
         try {
-          await folder.syncRecentArrivals();
+          await folder.syncRecentArrivals(true);
           if (!folder.isBehindServer()) {
             folder.dirty = false;
           }
@@ -1162,7 +1182,7 @@ export class OWAAccount extends ExchangeMailAccount {
     countUnread: number,
   ): void {
     let account = folder.account;
-    let sync = folder.syncRecentArrivalsWithServerCounts(countTotal, countUnread);
+    let sync = folder.syncRecentArrivalsWithServerCounts(countTotal, countUnread, true);
     sync.then(
       () => account.notifyFolderUIUpdates([folder]),
       ex => {
@@ -1198,7 +1218,7 @@ export class OWAAccount extends ExchangeMailAccount {
         .sort((a, b) => b.countUnread - a.countUnread)
         .slice(0, syncLimit);
       for (let folder of foldersToSync) {
-        await folder.getNewMessages(true).catch(this.errorCallback);
+        await folder.getNewMessages(true, true).catch(this.errorCallback);
         if (!folder.isBehindServer()) {
           folder.dirty = false;
         }
@@ -1610,9 +1630,9 @@ export class OWAAccount extends ExchangeMailAccount {
     for (let folder of toSync) {
       try {
         if (folder === inbox || folder === watched || notificationFolders.includes(folder)) {
-          await folder.syncRecentArrivals();
+          await folder.syncRecentArrivals(true);
         } else {
-          await folder.getNewMessages(true);
+          await folder.getNewMessages(true, true);
         }
         if (!folder.isBehindServer()) {
           folder.dirty = false;
@@ -2007,7 +2027,7 @@ export class OWAAccount extends ExchangeMailAccount {
     let response: any;
     try {
       if (this.authorizationHeader) {
-        let result = await fetch(url, options);
+        let result = await fetch(url, withOWARequestTimeout(url, options));
         response = {
           ok: result.ok,
           status: result.status,
@@ -2448,7 +2468,7 @@ export class OWAAccount extends ExchangeMailAccount {
           if (folder instanceof OWAFolder && folder.account instanceof OWAAccount &&
               folder.account.shouldBackgroundSyncBodies(folder)) {
             folder.markNextSyncMessagesAsNew();
-            folder.syncRecentArrivals().catch(this.errorCallback);
+            folder.syncRecentArrivals(true).catch(this.errorCallback);
           } else if (folder instanceof OWAFolder && folder.account instanceof OWAAccount) {
             folder.account.lazyFolderBadgeOnly(folder);
           }
@@ -2562,7 +2582,7 @@ export class OWAAccount extends ExchangeMailAccount {
             if (targetFolder.account instanceof OWAAccount &&
                 targetFolder.account.shouldBackgroundSyncBodies(targetFolder)) {
               targetFolder.dirty = true;
-              targetFolder.getNewMessages(true).catch(this.errorCallback);
+              targetFolder.getNewMessages(true, true).catch(this.errorCallback);
             } else if (targetFolder.account instanceof OWAAccount) {
               targetFolder.account.lazyFolderBadgeOnly(targetFolder);
             }
@@ -2668,7 +2688,7 @@ export class OWAAccount extends ExchangeMailAccount {
             }).catch(this.errorCallback);
           } else {
             folder.markNextSyncMessagesAsNew();
-            folder.syncRecentArrivals().then(() => {
+            folder.syncRecentArrivals(true).then(() => {
               this.notifyFolderUIUpdates([folder]);
             }).catch(this.errorCallback);
           }
@@ -2686,7 +2706,7 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       for (let folder of targets) {
         folder.markNextSyncMessagesAsNew();
-        folder.syncRecentArrivals().then(() => {
+        folder.syncRecentArrivals(true).then(() => {
           this.notifyFolderUIUpdates([folder]);
         }).catch(this.errorCallback);
       }
@@ -2890,7 +2910,7 @@ export class OWAAccount extends ExchangeMailAccount {
       : this.shouldBackgroundSyncBodies(folder)
         && (folder === this.watchedFolder || countsChanged);
     if (syncMessages) {
-      folder.syncRecentArrivals().then(() => {
+      folder.syncRecentArrivals(true).then(() => {
         this.notifyFolderUIUpdates([folder]);
       }).catch(this.errorCallback);
     }

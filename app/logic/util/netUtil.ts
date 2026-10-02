@@ -67,8 +67,10 @@ export function isNetworkError(ex: any): boolean {
     // Chromium `net` module, e.g. `net::ERR_CONNECTION_RESET`
     /net::ERR_(CONNECTION_|TIMED_OUT|EMPTY_RESPONSE|NETWORK_CHANGED|INTERNET_DISCONNECTED|INCOMPLETE_CHUNKED_ENCODING|CONTENT_LENGTH_MISMATCH)/.test(ex?.message) ||
     // browser fetch
-    ex?.name == "TypeError" &&
-    /network ?error|failed to fetch|fetch failed|load failed/i.test(ex.message);
+    (ex?.name == "TypeError" &&
+      /network ?error|failed to fetch|fetch failed|load failed/i.test(ex.message)) ||
+    ex?.name == "TimeoutError" ||
+    ex?.name == "AbortError";
 }
 
 /** Errors that may go away by simply trying again:

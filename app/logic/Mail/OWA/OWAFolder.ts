@@ -77,6 +77,28 @@ const kVisibleMetadataRefreshSharedMs = 8_000;
 const kOpenFolderRecentRefreshMs = 15_000;
 /** Не считать «без категорий» окончательным для свежих писем (Exchange rules). */
 const kRecentCategoryGraceMs = 15 * 60_000;
+/** Максимум страниц для догрузки текущего дня: 24 × 50 = 1200 заголовков. */
+const kRecentDayFindItemPages = 24;
+/** Не держать блокировку папки на всём проходе: четыре страницы за один фоновой шаг. */
+const kRecentDayBackgroundPages = 4;
+/** Пауза между фоновыми шагами даёт основному опросу папки пройти первым. */
+const kRecentDayContinuationDelayMs = 250;
+/** Повторять незавершённую догрузку текущего дня не чаще раза в 15 секунд. */
+const kRecentDaySyncRetryMs = 15_000;
+/** AQS-фильтр Exchange возвращает именно письма, полученные сегодня. */
+const kRecentDayQuery = "received:today";
+
+function dateFromOWAListItem(item: any): Date | null {
+  let value = item?.DateTimeReceived ?? item?.DateTimeSent;
+  if (value && typeof value == "object" && "Value" in value) {
+    value = value.Value;
+  }
+  if (!(typeof value == "string" || typeof value == "number" || value instanceof Date)) {
+    return null;
+  }
+  let date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 export class OWAFolder extends ExchangeFolder {
   declare account: OWAAccount;
@@ -124,6 +146,42 @@ export class OWAFolder extends ExchangeFolder {
   protected openFolderRefreshPromise: Promise<void> | null = null;
   /** Время последней независимой проверки последних писем открытой папки. */
   protected lastOpenFolderRecentRefreshAt: number | null = null;
+  /** Объединять постраничную догрузку заголовков текущего дня. */
+  protected recentDaySyncRunOnce = new RunOnce<void>();
+  /** Не допускать параллельных фоновых цепочек догрузки текущего дня. */
+  protected recentDayBackgroundPumpRunOnce = new RunOnce<void>();
+  /** Ограничивает повторы незавершённого прохода текущего дня. */
+  protected recentDaySyncAttemptAt = 0;
+  protected recentDaySyncAttemptKey: string | null = null;
+  protected recentDaySyncAttemptOffset = 0;
+  /** Следующая страница фоновой догрузки текущего дня. */
+  protected recentDaySyncOffset = 0;
+  protected recentDaySyncOffsetKey: string | null = null;
+  protected recentDaySyncContinuationTimer: ReturnType<typeof setTimeout> | null = null;
+  /** День, для которого уже достигнута граница 00:00. */
+  protected recentDaySyncCompletedKey: string | null = null;
+  /** Первый проход текущего дня идёт через AQS; при игнорировании фильтра
+   * возвращаемся к проверенному FindItem от конца shared-папки. */
+  protected recentDaySyncUseQuery = true;
+  protected recentDaySyncQueryKey: string | null = null;
+  /** Последняя страница date-bound FindItem. Нужна для защиты от OWA,
+   * который повторяет одну и ту же страницу при изменении Offset. */
+  protected recentDaySyncLastPageSignature: string | null = null;
+  protected recentDaySyncPageRepeated = false;
+  protected recentDaySyncSawCurrentDay = false;
+  protected recentDaySyncSawAnyCurrentDay = false;
+  protected recentDaySyncSawMessages = false;
+  /** Для shared-папок первый обычный проход может вернуть старую страницу
+   * из-за BasePoint=End; после него один раз пробуем сортированный Beginning. */
+  protected recentDaySyncAlternateAttempted = false;
+  /** QueryString может завершиться пустой страницей раньше штатного FindItem. */
+  protected recentDaySyncQueryExhausted = false;
+
+  /** Некоторые on-prem/shared OWA не умеют десериализовать AQS FindItem. */
+  protected isRecentDayQueryUnsupportedError(ex: unknown): boolean {
+    return ex instanceof OWAError &&
+      /Cannot deserialize object of type FindItemJsonRequest/i.test(ex.message);
+  }
 
   /** Предел страниц FindItem за один проход: размер папки + запас.
    * Фиксированный кап покрывал только 10 000 писем — на больших папках
@@ -136,8 +194,22 @@ export class OWAFolder extends ExchangeFolder {
 
   /** Предел страниц для поиска unread учитывает и серверный unread-счётчик. */
   protected maxUnreadFindItemPages(): number {
-    let size = Math.max(this.countTotal, this.countUnread, this.messages.length, kMaxFetchCount);
+    // Здесь нельзя ориентироваться на TotalCount: если конкретный OWA-сервер
+    // проигнорировал AQS-фильтр, такой лимит превращает поиск unread в полный
+    // обход десятков тысяч писем и оставляет глобальный спиннер включённым.
+    let missingUnread = Math.max(0, this.countUnread - this.localUnreadCount());
+    let size = Math.max(missingUnread, kMaxFetchCount);
     return Math.min(kMaxFindItemPagesLimit, Math.ceil(size / kMaxFetchCount) + kMaxFindItemPagesMargin);
+  }
+
+  protected recentDayStart(): Date {
+    let start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  protected recentDayKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
   }
 
   /** Время последней локальной отметки прочитанности для защиты от лага Exchange. */
@@ -485,6 +557,12 @@ export class OWAFolder extends ExchangeFolder {
       this.unreadBehindServer();
   }
 
+  /** Неполный unread-кеш не должен запускать общий проход папки повторно. */
+  protected needsGeneralRefresh(): boolean {
+    return this.isBehindServer() &&
+      (!this.unreadBehindServer() || this.countTotalDecreased || this.messages.length > this.countTotal);
+  }
+
   /** Delta-sync (SyncFolderItems) доступен папке: есть токен или папка «горячая». */
   protected shouldUseDeltaSync(): boolean {
     if (this.syncFolderItemsUnsupported || !this.id) {
@@ -585,15 +663,16 @@ export class OWAFolder extends ExchangeFolder {
     let useDelegateContext = false;
     let changed = false;
     let seenPageSignatures = new Set<string>();
+    let maxPages = this.maxUnreadFindItemPages();
 
-    while (pagesRead < this.maxUnreadFindItemPages()) {
+    while (pagesRead < maxPages) {
       pagesRead++;
       let result = useDelegateContext
         ? await this.account.callOWA(request)
         : await this.callFolderSyncOWA(request);
-      let messages = ensureArray(result?.RootFolder?.Items).slice();
+      let listedMessages = ensureArray(result?.RootFolder?.Items).slice();
 
-      if (firstPage && !messages.length && this.account.isDependentAccount && this.account.username) {
+      if (firstPage && !listedMessages.length && this.account.isDependentAccount && this.account.username) {
         // Explicit Logon некоторых shared-папок отдаёт пустой AQS-результат,
         // хотя delegate-контекст видит те же непрочитанные письма.
         try {
@@ -601,7 +680,7 @@ export class OWAFolder extends ExchangeFolder {
           let delegateMessages = ensureArray(delegateResult?.RootFolder?.Items).slice();
           if (delegateMessages.length) {
             result = delegateResult;
-            messages = delegateMessages;
+            listedMessages = delegateMessages;
             useDelegateContext = true;
           }
         } catch (ex) {
@@ -611,12 +690,12 @@ export class OWAFolder extends ExchangeFolder {
         }
       }
 
-      if (!messages.length) {
+      if (!listedMessages.length) {
         paginationComplete = true;
         break;
       }
 
-      let pageSignature = messages
+      let pageSignature = listedMessages
         .map(message => sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, ""))
         .filter(Boolean)
         .join("\u0000");
@@ -628,8 +707,28 @@ export class OWAFolder extends ExchangeFolder {
         seenPageSignatures.add(pageSignature);
       }
 
+      // Некоторые локальные OWA-серверы молча игнорируют QueryString. Не
+      // добавляем прочитанные письма в сверку unread и сразу останавливаемся,
+      // если ответ доказывает, что фильтр был проигнорирован.
+      let unreadItems = listedMessages.filter(message => {
+        if (!Object.prototype.hasOwnProperty.call(message, "IsRead")) {
+          return true;
+        }
+        let value = message.IsRead;
+        if (value && typeof value == "object" && "Value" in value) {
+          value = value.Value;
+        }
+        return !sanitize.boolean(value, true);
+      });
+      if (!unreadItems.length && listedMessages.some(message =>
+        Object.prototype.hasOwnProperty.call(message, "IsRead"))) {
+        headersIncomplete = true;
+        paginationComplete = true;
+        break;
+      }
+
       let newMessageIDs: string[] = [];
-      for (let message of messages) {
+      for (let message of unreadItems) {
         let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
         if (!id || this.deletions.has(id)) {
           continue;
@@ -664,7 +763,7 @@ export class OWAFolder extends ExchangeFolder {
       if (typeof nextOffset == "number" && nextOffset > currentOffset) {
         request.Body.Paging.Offset = nextOffset;
       } else {
-        request.Body.Paging.Offset += messages.length;
+        request.Body.Paging.Offset += listedMessages.length;
       }
 
       let includesLast = result?.RootFolder?.IncludesLastItemInRange;
@@ -677,7 +776,11 @@ export class OWAFolder extends ExchangeFolder {
         paginationComplete = true;
         break;
       }
-      if (messages.length < kMaxFetchCount && includesLast !== false && includesLast !== "false") {
+      if (listedMessages.length < kMaxFetchCount && includesLast !== false && includesLast !== "false") {
+        paginationComplete = true;
+        break;
+      }
+      if (!this.unreadBehindServer()) {
         paginationComplete = true;
         break;
       }
@@ -694,7 +797,9 @@ export class OWAFolder extends ExchangeFolder {
       this.refreshMessageContacts();
       this.notifyObservers();
     }
-    await this.finishNewMessages(newMsgs, true);
+    // Это догрузка заголовков для уже существующих непрочитанных писем, а не
+    // поток новых писем. Не скачиваем MIME всех найденных сообщений: тело
+    // будет загружено штатно при открытии конкретного письма.
     return newMsgs;
   }
 
@@ -715,11 +820,12 @@ export class OWAFolder extends ExchangeFolder {
    * Exchange может вернуть новый счётчик раньше соответствующего заголовка,
    * поэтому счётчик и строки публикуются только после завершения прохода.
    */
-  async syncRecentArrivals(): Promise<ArrayColl<OWAEMail>> {
-    return trackMailSync(() => this.syncRecentArrivalsUntracked());
+  async syncRecentArrivals(background = false): Promise<ArrayColl<OWAEMail>> {
+    let sync = () => this.syncRecentArrivalsUntracked(background);
+    return background ? sync() : trackMailSync(sync);
   }
 
-  private async syncRecentArrivalsUntracked(): Promise<ArrayColl<OWAEMail>> {
+  private async syncRecentArrivalsUntracked(background = false): Promise<ArrayColl<OWAEMail>> {
     return this.recentSyncRunOnce.runOnce(async () => {
       this.beginObserverMute();
       let completed = false;
@@ -727,7 +833,7 @@ export class OWAFolder extends ExchangeFolder {
         let messages = new ArrayColl<OWAEMail>();
         let isSharedOrDependent = this.account.isDependentAccount || this.account.hasSharedFolderRoot;
         for (let retry = 0; ; retry++) {
-          let synced = await this.syncRecentArrivalsOnce();
+          let synced = await this.syncRecentArrivalsOnce(background);
           messages.addAll(synced);
           if (synced.hasItems && this.observerMuteDepth === 1 && !this.observerMuteOuter) {
             // Единственный заглушающий — этот проход: публикуем строки сразу,
@@ -775,24 +881,253 @@ export class OWAFolder extends ExchangeFolder {
     });
   }
 
+  /** Догружает заголовки текущего дня для большой открытой папки. */
+  async syncRecentDayMessages(background = false): Promise<void> {
+    if (!this.id || this.countTotal <= kMaxFetchCount) {
+      return;
+    }
+    let stopBefore = this.recentDayStart();
+    let dayKey = this.recentDayKey(stopBefore);
+    if (this.recentDaySyncOffsetKey != dayKey) {
+      this.recentDaySyncOffsetKey = dayKey;
+      this.recentDaySyncOffset = 0;
+      this.recentDaySyncAttemptAt = 0;
+      this.recentDaySyncAttemptKey = null;
+      this.recentDaySyncUseQuery = true;
+      this.recentDaySyncQueryKey = dayKey;
+      this.recentDaySyncLastPageSignature = null;
+      this.recentDaySyncPageRepeated = false;
+      this.recentDaySyncSawCurrentDay = false;
+      this.recentDaySyncSawAnyCurrentDay = false;
+      this.recentDaySyncSawMessages = false;
+      this.recentDaySyncAlternateAttempted = false;
+      this.recentDaySyncQueryExhausted = false;
+    }
+    if (this.recentDaySyncCompletedKey == dayKey) {
+      return;
+    }
+    let running = this.recentDaySyncRunOnce.running;
+    if (running) {
+      return running;
+    }
+    let now = Date.now();
+    if (this.recentDaySyncAttemptKey == dayKey &&
+        this.recentDaySyncAttemptOffset == this.recentDaySyncOffset &&
+        now - this.recentDaySyncAttemptAt < kRecentDaySyncRetryMs) {
+      return;
+    }
+    let startOffset = this.recentDaySyncOffset;
+    this.recentDaySyncAttemptKey = dayKey;
+    this.recentDaySyncAttemptOffset = startOffset;
+    this.recentDaySyncAttemptAt = now;
+    let sync = this.recentDaySyncRunOnce.runOnce(async () => {
+      if (this.recentDaySyncCompletedKey == dayKey) {
+        return;
+      }
+      if (this.recentDaySyncQueryKey != dayKey) {
+        this.recentDaySyncQueryKey = dayKey;
+        this.recentDaySyncUseQuery = true;
+        this.recentDaySyncLastPageSignature = null;
+        this.recentDaySyncSawCurrentDay = false;
+        this.recentDaySyncSawAnyCurrentDay = false;
+        this.recentDaySyncSawMessages = false;
+        this.recentDaySyncAlternateAttempted = false;
+        this.recentDaySyncQueryExhausted = false;
+      }
+      let query = this.recentDaySyncUseQuery ? kRecentDayQuery : undefined;
+      // После исчерпания AQS начинаем обычный проход с начала с явной
+      // сортировкой по DateTimeReceived: этот режим не ограничен лимитом
+      // полнотекстового поиска. Режим BasePoint=End оставляем fallback-ом
+      // только для прямого обычного прохода, если сервер не поддержал сортировку.
+      let fromEnd = this.recentDaySyncUseQuery
+        ? undefined
+        : !this.recentDaySyncQueryExhausted &&
+          !this.recentDaySyncAlternateAttempted && this.account.isDependentAccount;
+      this.recentDaySyncPageRepeated = false;
+      this.recentDaySyncSawCurrentDay = false;
+      // Загружаем только заголовки от текущего момента до 00:00. Полный
+      // 12-тысячный архив не нужен для отображения сегодняшней группы.
+      try {
+        await this.listMessages(
+          true,
+          true,
+          undefined,
+          stopBefore,
+          startOffset,
+          background ? kRecentDayBackgroundPages : kRecentDayFindItemPages,
+          query,
+          fromEnd,
+        );
+      } catch (ex) {
+        if (!query || !this.isRecentDayQueryUnsupportedError(ex)) {
+          throw ex;
+        }
+        // Этот сервер отвергает именно AQS-вариант FindItem. Не повторяем
+        // заведомо несовместимый запрос каждые 15 секунд: продолжаем тем же
+        // штатным постраничным FindItem без фильтра, сохраняя загруженные
+        // ранее строки и не показывая ошибку пользователю.
+        this.recentDaySyncUseQuery = false;
+        this.recentDaySyncQueryExhausted = true;
+        this.recentDaySyncOffset = 0;
+        this.recentDaySyncCompletedKey = null;
+        this.recentDaySyncLastPageSignature = null;
+        this.recentDaySyncPageRepeated = false;
+        this.recentDaySyncSawCurrentDay = false;
+        this.recentDaySyncSawAnyCurrentDay = false;
+        this.recentDaySyncSawMessages = false;
+        this.recentDaySyncAlternateAttempted = false;
+        await this.listMessages(
+          true,
+          true,
+          undefined,
+          stopBefore,
+          0,
+          background ? kRecentDayBackgroundPages : kRecentDayFindItemPages,
+          undefined,
+          false,
+        );
+      }
+      // На части on-prem/shared серверов QueryString молча игнорируется, а
+      // сортировка выдачи при этом остаётся старой. Если первый ответ не
+      // содержит ни одного письма текущего дня, такой ответ нельзя принимать
+      // за границу 00:00 — повторяем проход штатным shared-путём от конца.
+      // То же относится к повтору страницы: иначе Offset растёт, а UI навсегда
+      // остаётся на первом загруженном фрагменте.
+      if (this.recentDaySyncUseQuery &&
+          (this.recentDaySyncPageRepeated || this.recentDaySyncQueryExhausted ||
+           startOffset == 0 && !this.recentDaySyncSawCurrentDay &&
+             this.recentDaySyncSawMessages && this.recentDaySyncOffset > startOffset)) {
+        this.recentDaySyncUseQuery = false;
+        this.recentDaySyncOffset = 0;
+        this.recentDaySyncCompletedKey = null;
+        this.recentDaySyncLastPageSignature = null;
+        this.recentDaySyncPageRepeated = false;
+        this.recentDaySyncSawCurrentDay = false;
+        this.recentDaySyncSawAnyCurrentDay = false;
+        this.recentDaySyncSawMessages = false;
+        this.recentDaySyncAlternateAttempted = false;
+        await this.listMessages(
+          true,
+          true,
+          undefined,
+          stopBefore,
+          0,
+          background ? kRecentDayBackgroundPages : kRecentDayFindItemPages,
+          undefined,
+          false,
+        );
+      }
+      // В shared-папке сортировка по DateTimeReceived иногда не применяется.
+      // Если обычный проход от начала не нашёл текущий день, один раз пробуем
+      // совместимый BasePoint=End, не принимая старую страницу за границу дня.
+      if (!this.recentDaySyncUseQuery &&
+          !this.recentDaySyncAlternateAttempted &&
+          !this.recentDaySyncSawAnyCurrentDay &&
+          this.recentDaySyncSawMessages) {
+        this.recentDaySyncAlternateAttempted = true;
+        this.recentDaySyncOffset = 0;
+        this.recentDaySyncCompletedKey = null;
+        this.recentDaySyncLastPageSignature = null;
+        this.recentDaySyncPageRepeated = false;
+        this.recentDaySyncSawCurrentDay = false;
+        this.recentDaySyncSawMessages = false;
+        await this.listMessages(
+          true,
+          true,
+          undefined,
+          stopBefore,
+          0,
+          background ? kRecentDayBackgroundPages : kRecentDayFindItemPages,
+          undefined,
+          this.recentDaySyncQueryExhausted && this.account.isDependentAccount,
+        );
+      }
+    });
+    try {
+      await (background ? sync : trackMailSync(() => sync));
+    } catch (ex) {
+      if (background) {
+        this.scheduleRecentDaySyncContinuation(dayKey, kRecentDaySyncRetryMs);
+      }
+      throw ex;
+    }
+    if (this.recentDaySyncCompletedKey == dayKey) {
+      if (this.recentDaySyncContinuationTimer) {
+        clearTimeout(this.recentDaySyncContinuationTimer);
+        this.recentDaySyncContinuationTimer = null;
+      }
+      return;
+    }
+    if (this.recentDaySyncOffset > startOffset) {
+      // Прогресс был: не применяем пятиминутный cooldown к следующему шагу.
+      this.recentDaySyncAttemptAt = 0;
+    } else if (background) {
+      // Пустой или временно неполный ответ OWA не должен оставлять догрузку
+      // без следующей попытки до следующего ручного открытия папки.
+      this.scheduleRecentDaySyncContinuation(dayKey, kRecentDaySyncRetryMs);
+    }
+  }
+
+  protected scheduleRecentDaySyncContinuation(
+    dayKey: string,
+    delayMs = kRecentDayContinuationDelayMs,
+  ): void {
+    if (this.recentDaySyncContinuationTimer || this.recentDaySyncCompletedKey == dayKey) {
+      return;
+    }
+    this.recentDaySyncContinuationTimer = setTimeout(() => {
+      this.recentDaySyncContinuationTimer = null;
+      if (this.recentDaySyncOffsetKey != dayKey || this.recentDaySyncCompletedKey == dayKey) {
+        return;
+      }
+      this.syncRecentDayMessagesInBackground();
+    }, delayMs);
+  }
+
+  /** Запускает догрузку текущего дня без блокировки открытия папки и спиннера. */
+  syncRecentDayMessagesInBackground(): void {
+    void this.recentDayBackgroundPumpRunOnce.runOnce(async () => {
+      for (;;) {
+        let offsetBefore = this.recentDaySyncOffset;
+        await this.syncRecentDayMessages(true);
+        let stopBefore = this.recentDayStart();
+        let dayKey = this.recentDayKey(stopBefore);
+        if (this.recentDaySyncCompletedKey == dayKey ||
+            this.recentDaySyncOffset <= offsetBefore) {
+          return;
+        }
+        await sleep(kRecentDayContinuationDelayMs / 1000);
+      }
+    }).catch(ex => this.account.handleBackgroundSyncError(ex));
+  }
+
   /**
    * Обновляет серверный счётчик открытой папки и при необходимости её строки.
    * Переключение профиля раньше неявно запускало именно такой полный проход,
    * из-за чего обычная открытая папка могла оставаться на старом кеше.
    */
-  async refreshOpenFolder(): Promise<void> {
-    return trackMailSync(() => this.refreshOpenFolderUntracked());
+  async refreshOpenFolder(background = false): Promise<void> {
+    let refresh = () => this.refreshOpenFolderUntracked(background);
+    return background ? refresh() : trackMailSync(refresh);
   }
 
-  private async refreshOpenFolderUntracked(): Promise<void> {
+  private async refreshOpenFolderUntracked(background = false): Promise<void> {
     if (this.openFolderRefreshPromise) {
       return this.openFolderRefreshPromise;
     }
     let refresh = (async () => {
       let countsChanged = await this.folderCountsChanged(true);
-      if (countsChanged || this.isBehindServer() || this.unreadBehindServer()) {
+      if (countsChanged || this.needsGeneralRefresh()) {
         this.lastOpenFolderRecentRefreshAt = Date.now();
-        await this.syncRecentArrivals();
+        await this.syncRecentArrivals(background);
+        if (this.unreadBehindServer()) {
+          await this.syncUnreadMessagesIfNeeded();
+        }
+      } else if (this.unreadBehindServer()) {
+        // Неполный локальный кеш — это не повод запускать общий delta/FindItem
+        // проход каждые 2–3 секунды. Догружаем только unread и соблюдаем
+        // cooldown, чтобы открытая папка не удерживала спиннер бесконечно.
+        await this.syncUnreadMessagesIfNeeded();
       } else {
         let now = Date.now();
         if (this.lastOpenFolderRecentRefreshAt == null ||
@@ -817,7 +1152,7 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   /** Выполняет один проход быстрой синхронизации. */
-  protected async syncRecentArrivalsOnce(): Promise<ArrayColl<OWAEMail>> {
+  protected async syncRecentArrivalsOnce(background = false): Promise<ArrayColl<OWAEMail>> {
     this.recentSyncPending = false;
     await this.readFolder();
     this.dedupeMessagesByItemID();
@@ -845,12 +1180,11 @@ export class OWAFolder extends ExchangeFolder {
         // Маленькая папка: одна авторитетная страница дешевле и точнее догона
         // недавних страниц, и сразу закрывает расхождение бейджа со строками.
         messages.addAll(await this.listMessages(false, true) as ArrayColl<OWAEMail>);
-      } else if (this.lastServerCountUnread != null && !this.isBehindServer() && this.unreadBehindServer()) {
-        // В большой папке непрочитанные могут быть далеко за пределами
-        // недавней страницы: догружаем только их, не сканируя весь архив.
-        messages.addAll(await this.syncUnreadMessagesIfNeeded());
       } else if (this.isBehindServer() || this.unreadChaseActive()) {
-        messages.addAll(await this.getNewMessages(true) as ArrayColl<OWAEMail>);
+        let newMessages = background
+          ? await this.getNewMessagesUntracked(true)
+          : await this.getNewMessages(true);
+        messages.addAll(newMessages as ArrayColl<OWAEMail>);
       }
       completed = true;
       return messages;
@@ -866,15 +1200,16 @@ export class OWAFolder extends ExchangeFolder {
   async syncRecentArrivalsWithServerCounts(
     countTotal: number,
     countUnread: number,
+    background = false,
   ): Promise<ArrayColl<OWAEMail>> {
     this.beginObserverMute();
     try {
       this.applyServerCounts(countTotal, countUnread);
       this.dirty = true;
       return await this.serverCountSyncRunOnce.runOnce(async () => {
-        let messages = await this.syncRecentArrivals();
+        let messages = await this.syncRecentArrivals(background);
         void this.serverCountSyncRetryRunOnce.runOnce(
-          () => this.retryRecentArrivalsUntilCaughtUp(),
+          () => this.retryRecentArrivalsUntilCaughtUp(background),
         ).catch(ex => this.account.errorCallback(ex));
         return messages;
       });
@@ -887,13 +1222,13 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   /** Повторяет быструю синхронизацию после первой отложенной выдачи заголовка. */
-  protected async retryRecentArrivalsUntilCaughtUp(): Promise<void> {
+  protected async retryRecentArrivalsUntilCaughtUp(background = false): Promise<void> {
     for (let delaySeconds of kServerCountSyncRetryDelaysSeconds) {
       if (!this.isBehindServer()) {
         return;
       }
       await sleep(delaySeconds);
-      await this.syncRecentArrivals();
+      await this.syncRecentArrivals(background);
     }
   }
 
@@ -1161,7 +1496,7 @@ export class OWAFolder extends ExchangeFolder {
       this.completeInitialSync();
       this.refreshVisibleMessageMetadataInBackground();
       this.backfillMessageActionFlags();
-      void this.refreshOpenFolder().catch(ex => {
+      void this.refreshOpenFolder(true).catch(ex => {
         if (!(ex instanceof OWAError && ex.isSessionLimit)) {
           this.account.handleBackgroundSyncError(ex);
         }
@@ -1344,7 +1679,16 @@ export class OWAFolder extends ExchangeFolder {
    * the background poll so existing message properties stay current.
    * `force` is used to reconcile a count decrease after the quick poll.
    */
-  async listMessages(recentOnly = false, force = false, maxItems?: number): Promise<Collection<OWAEMail>> {
+  async listMessages(
+    recentOnly = false,
+    force = false,
+    maxItems?: number,
+    stopBefore?: Date,
+    startOffset?: number,
+    maxPagesOverride?: number,
+    queryString?: string,
+    fromEndOverride?: boolean,
+  ): Promise<Collection<OWAEMail>> {
     await this.readFolder();
     let lock = await this.listMessagesLock.lock();
     try {
@@ -1377,12 +1721,6 @@ export class OWAFolder extends ExchangeFolder {
       let isNewMail = this.newMessagesAreArrivals();
       let allMsgs = new ArrayColl<OWAEMail>();
       let newMsgs = new ArrayColl<OWAEMail>();
-      let request = owaFindMsgsInFolderRequest(
-        this.id,
-        kMaxFetchCount,
-        recentOnly,
-        recentOnly && this.account.isDependentAccount,
-      );
       let result: any = { RootFolder: { IncludesLastItemInRange: false } };
       let firstPage = true;
       let reachedLimit = false;
@@ -1390,8 +1728,26 @@ export class OWAFolder extends ExchangeFolder {
       let headerFetchIncomplete = false;
       let pagesRead = 0;
       let paginationComplete = false;
+      let validStopBefore = stopBefore && !Number.isNaN(stopBefore.getTime()) ? stopBefore : null;
+      let validQueryString = validStopBefore && queryString?.trim() ? queryString.trim() : null;
+      let request = validQueryString
+        ? owaFindMsgsByQueryRequest(this.id, validQueryString, kMaxFetchCount)
+        : owaFindMsgsInFolderRequest(
+          this.id,
+          kMaxFetchCount,
+          recentOnly,
+          recentOnly && (fromEndOverride ?? this.account.isDependentAccount),
+        );
+      let initialOffset = validStopBefore && startOffset != null
+        ? Math.max(0, Math.trunc(startOffset))
+        : 0;
+      let recentDayCompleted = false;
       let seenPageSignatures = new Set<string>();
-      while (pagesRead < this.maxFindItemPages()) {
+      let maxPages = validStopBefore
+        ? Math.min(this.maxFindItemPages(), maxPagesOverride ?? kRecentDayFindItemPages)
+        : this.maxFindItemPages();
+      request.Body.Paging.Offset = initialOffset;
+      while (pagesRead < maxPages) {
         pagesRead++;
         result = await this.callFolderSyncOWA(request);
         let resultTotal = Number(result?.RootFolder?.TotalItemsInView);
@@ -1399,7 +1755,7 @@ export class OWAFolder extends ExchangeFolder {
           serverTotal = Math.max(0, Math.trunc(resultTotal));
         }
         let messages = ensureArray(result?.RootFolder?.Items).slice();
-        if (recentOnly && this.account.isDependentAccount && this.account.hasSharedFolderRoot &&
+        if (recentOnly && !validStopBefore && this.account.isDependentAccount && this.account.hasSharedFolderRoot &&
             this.account.username) {
           // Explicit Logon иногда возвращает непустую, но устаревшую
           // страницу. Пустой fallback её не обнаружит. Дополнительная
@@ -1441,36 +1797,110 @@ export class OWAFolder extends ExchangeFolder {
             }
           }
         }
-        if (this.account.isDependentAccount && this.account.username &&
+        if (!validStopBefore && this.account.isDependentAccount && this.account.username &&
             messages.some(item => !Object.prototype.hasOwnProperty.call(item, "IsRead"))) {
           // Без IsRead нельзя безопасно менять локальный unread-флаг:
           // новый заголовок по умолчанию считается непрочитанным.
           headerFetchIncomplete = true;
         }
         if (!messages?.length) {
-          // This folder is empty or no more items.
+          // Папка пуста или сервер не вернул следующую страницу.
+          if (validStopBefore) {
+            // Для сканирования текущего дня пустая страница не является
+            // надёжной границей: Exchange может вернуть конец сортированной
+            // выборки раньше страницы, которая подтверждает границу 00:00.
+            // Повторяем тот же offset позже, а не молча фиксируем неполный список.
+            if (validQueryString &&
+                (initialOffset > 0 || request.Body.Paging.Offset > initialOffset)) {
+              // AQS иногда отдаёт только часть результатов, а затем пустую
+              // страницу. Такой ответ не доказывает границу 00:00: ниже
+              // переключимся на обычный FindItem из папки.
+              this.recentDaySyncQueryExhausted = true;
+            }
+            paginationComplete = false;
+            headerFetchIncomplete = true;
+          } else {
+            paginationComplete = true;
+          }
+          break;
+        }
+        if (validStopBefore) {
+          this.recentDaySyncSawMessages = true;
+        }
+        let hasOlderThanStop = validStopBefore && messages.some(message => {
+          let received = dateFromOWAListItem(message);
+          return received != null && received < validStopBefore;
+        });
+        if (validStopBefore && validQueryString && hasOlderThanStop) {
+          // AQS `received:today` должен вернуть только текущий день. Старое
+          // письмо означает, что сервер завершил/проигнорировал фильтр; не
+          // принимаем такую страницу за границу дня и переходим к обычному
+          // FindItem с контролируемой сортировкой.
+          this.recentDaySyncQueryExhausted = true;
+          paginationComplete = false;
+          headerFetchIncomplete = true;
+          break;
+        }
+        if (validStopBefore && messages.every(message => {
+          let received = dateFromOWAListItem(message);
+          return received != null && received < validStopBefore;
+        })) {
+          // FindItem отсортирован от новых писем к старым. После полной страницы
+          // до границы текущего дня более старые страницы уже не содержат писем
+          // за сегодня.
+          recentDayCompleted = true;
           paginationComplete = true;
           break;
         }
-        if (!recentOnly) {
-          let pageSignature = messages
-            .map(message => sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, ""))
-            .filter(Boolean)
-            .join("\u0000");
-          if (pageSignature && seenPageSignatures.has(pageSignature)) {
-            // Некоторые Exchange повторяют ту же страницу даже при новом
-            // Offset. Не принимаем такой ответ за полную сверку и не держим
-            // запрос открытым бесконечно.
-            headerFetchIncomplete = true;
-            break;
+        if (validStopBefore) {
+          let hasCurrentDayMessage = messages.some(message => {
+            let received = dateFromOWAListItem(message);
+            return received != null && received >= validStopBefore;
+          });
+          if (hasCurrentDayMessage) {
+            this.recentDaySyncSawCurrentDay = true;
+            this.recentDaySyncSawAnyCurrentDay = true;
           }
-          if (pageSignature) {
-            seenPageSignatures.add(pageSignature);
+        }
+        let messagesToProcess = validStopBefore
+          ? messages.filter(message => {
+            let received = dateFromOWAListItem(message);
+            return received == null || received >= validStopBefore;
+          })
+          : messages;
+        let pageSignature = messages
+          .map(message => sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, ""))
+          .filter(Boolean)
+          .join("\u0000");
+        if (validStopBefore && pageSignature &&
+            this.recentDaySyncLastPageSignature == pageSignature &&
+            request.Body.Paging.Offset > initialOffset) {
+          // Some Exchange builds return the same page for every later Offset.
+          // Do not advance an artificial cursor forever: the caller switches
+          // to the alternate paging context and retries from the beginning.
+          this.recentDaySyncPageRepeated = true;
+          headerFetchIncomplete = true;
+          break;
+        }
+        if ((validStopBefore || !recentOnly) && pageSignature && seenPageSignatures.has(pageSignature)) {
+          // Некоторые Exchange повторяют ту же страницу даже при новом
+          // Offset. Не принимаем такой ответ за полную сверку и не держим
+          // запрос открытым бесконечно.
+          headerFetchIncomplete = true;
+          if (validStopBefore) {
+            this.recentDaySyncPageRepeated = true;
           }
+          break;
+        }
+        if ((validStopBefore || !recentOnly) && pageSignature) {
+          seenPageSignatures.add(pageSignature);
+        }
+        if (validStopBefore && pageSignature) {
+          this.recentDaySyncLastPageSignature = pageSignature;
         }
         firstPage = false;
         let newMessageIDs: string[] = [];
-        for (let message of messages) {
+        for (let message of messagesToProcess) {
           let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
           if (!id || this.deletions.has(id)) {
             continue;
@@ -1497,7 +1927,7 @@ export class OWAFolder extends ExchangeFolder {
           .map(message => message.itemID)
           .filter((itemID): itemID is string => !!itemID));
         if (newMessageIDs.some(itemID =>
-          !loadedHeaderIDs.has(itemID) && !this.getEmailByItemID(itemID))) {
+            !loadedHeaderIDs.has(itemID) && !this.getEmailByItemID(itemID))) {
           // FindItem уже доказал наличие ItemId, поэтому неполный GetItem не
           // может считаться полной сверкой. Иначе replaceAll удалит строки,
           // а счётчик продолжит сообщать о письмах, которых UI не показывает.
@@ -1508,7 +1938,7 @@ export class OWAFolder extends ExchangeFolder {
         }
         newMsgs.addAll(newMsgsInIteration);
 
-        if (recentOnly) {
+        if (recentOnly && !validStopBefore) {
           break;
         }
 
@@ -1520,25 +1950,52 @@ export class OWAFolder extends ExchangeFolder {
 
         let nextOffset = result.RootFolder?.IndexedPagingOffset;
         if (typeof nextOffset === "number" && nextOffset > request.Body.Paging.Offset) {
-          request.Body.Paging.Offset = nextOffset;
+          let contiguousOffset = request.Body.Paging.Offset + messages.length;
+          // For BasePoint=End, a few on-prem builds report an absolute
+          // IndexedPagingOffset. In a current-day scan that jump would skip
+          // hundreds of valid messages. A date-bound pass may safely advance
+          // only by the page it actually received.
+          request.Body.Paging.Offset = validStopBefore
+            ? Math.min(nextOffset, contiguousOffset)
+            : nextOffset;
         } else {
           request.Body.Paging.Offset += messages.length;
         }
 
         let includesLast = result?.RootFolder?.IncludesLastItemInRange;
         let totalCount = result?.RootFolder?.TotalItemsInView;
-        if (includesLast === true) {
-          paginationComplete = true;
-          break;
+        // Для current-day scan единственный надёжный стоп-сигнал — строка
+        // старше 00:00. IncludesLast/TotalItemsInView на этом Exchange могут
+        // описывать только текущую сортированную выборку и преждевременно
+        // обрывали догрузку на 231 письме вместо реальных 623.
+        if (!validStopBefore) {
+          if (includesLast === true) {
+            paginationComplete = true;
+            break;
+          }
+          if (typeof totalCount === "number" && request.Body.Paging.Offset >= totalCount) {
+            paginationComplete = true;
+            break;
+          }
+          if (messages.length < kMaxFetchCount && includesLast !== false) {
+            paginationComplete = true;
+            break;
+          }
         }
-        if (typeof totalCount === "number" && request.Body.Paging.Offset >= totalCount) {
-          paginationComplete = true;
-          break;
+      }
+
+      if (validStopBefore) {
+        this.recentDaySyncOffset = Math.max(initialOffset, request.Body.Paging.Offset);
+        if (!recentDayCompleted) {
+          // Ограниченный фоновый проход намеренно может быть неполным. Сохраняем
+          // кеш аддитивно, а следующий проход продолжит со следующего offset.
+          headerFetchIncomplete = true;
         }
-        if (messages.length < kMaxFetchCount && includesLast !== false) {
-          paginationComplete = true;
-          break;
-        }
+      }
+
+      if (validStopBefore && recentDayCompleted && !headerFetchIncomplete &&
+          (this.recentDaySyncSawAnyCurrentDay || this.recentDaySyncAlternateAttempted)) {
+        this.recentDaySyncCompletedKey = this.recentDayKey(validStopBefore);
       }
 
       if (!recentOnly && !reachedLimit && !paginationComplete) {
@@ -2206,8 +2663,9 @@ export class OWAFolder extends ExchangeFolder {
    * so that the action can be repeated routinely every few minutes.
    * @param recentOnly read the first page even when folder counts are unchanged
    * @returns the new messages */
-  async getNewMessages(recentOnly = false): Promise<Collection<OWAEMail>> {
-    return trackMailSync(() => this.getNewMessagesUntracked(recentOnly));
+  async getNewMessages(recentOnly = false, background = false): Promise<Collection<OWAEMail>> {
+    let sync = () => this.getNewMessagesUntracked(recentOnly);
+    return background ? sync() : trackMailSync(sync);
   }
 
   private async getNewMessagesUntracked(recentOnly = false): Promise<Collection<OWAEMail>> {

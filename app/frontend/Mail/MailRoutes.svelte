@@ -168,8 +168,9 @@
       return;
     }
     let owaFolder = folder as OWAFolder;
-    await owaFolder.syncRecentArrivals();
+    await owaFolder.syncRecentArrivals(true);
     folder.notifyObservers();
+    owaFolder.syncRecentDayMessagesInBackground();
   }
 
   /** Пока папка открыта, проверяем её счётчик и список коротким интервалом. */
@@ -212,8 +213,9 @@
           return;
         }
         catchErrors(async () => {
-          await folder.refreshOpenFolder();
+          await folder.refreshOpenFolder(true);
           folder.notifyObservers();
+          folder.syncRecentDayMessagesInBackground();
         });
       };
       let metadataTick = () => {
@@ -244,6 +246,7 @@
         let owaFolder = folder as OWAFolder;
         await owaFolder.syncOnFolderOpen(owaFolder.account.isDependentAccount);
         folder.notifyObservers();
+        owaFolder.syncRecentDayMessagesInBackground();
       } else {
         let newMessages = await folder.listMessages();
         await folder.downloadMessages(newMessages);
