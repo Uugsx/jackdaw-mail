@@ -1,6 +1,7 @@
 import { ExchangeFolder } from "../EWS/ExchangeFolder";
 import { MessageFlagsPidTag } from "../EWS/ExchangeEMail";
 import { SpecialFolder, type MailTransferProgressCallback } from "../Folder";
+import { DeleteStrategy } from "../MailAccount";
 import { computeEMailContact, type EMail } from "../EMail";
 import { getSharedPersons, ExchangePermission } from "../EWS/ExchangePermission";
 import { OWAEMail, owaCategoriesConfirmedAbsent, owaCategoriesPresent } from "./OWAEMail";
@@ -43,6 +44,8 @@ const kMaxFindItemPagesLimit = 1000;
 const kDeletionGracePeriodMs = 180_000;
 /** Exchange принимает несколько ItemIds в одном запросе DeleteItem. */
 const kDeleteItemBatchSize = 50;
+/** Exchange принимает несколько ItemIds в одном запросе MoveItem. */
+const kMoveItemBatchSize = 50;
 /** Не допускать всплеска запросов флагов, покрывая при этом видимый кеш. */
 const kActionFlagsBackfillLimit = 200;
 /** Общие ящики: только видимая страница, после основной синхронизации. */
@@ -987,6 +990,13 @@ export class OWAFolder extends ExchangeFolder {
           false,
         );
       }
+      // Некоторые OWA-серверы молча возвращают пустой ответ на AQS
+      // `received:today`, хотя в Outlook письма за текущий день есть. Пустая
+      // первая страница не доказывает отсутствие писем: один раз проверяем
+      // тот же диапазон обычным сортированным FindItem.
+      let queryReturnedEmptyFirstPage = startOffset == 0 &&
+        !this.recentDaySyncSawMessages &&
+        this.recentDaySyncOffset == startOffset;
       // На части on-prem/shared серверов QueryString молча игнорируется, а
       // сортировка выдачи при этом остаётся старой. Если первый ответ не
       // содержит ни одного письма текущего дня, такой ответ нельзя принимать
@@ -995,6 +1005,7 @@ export class OWAFolder extends ExchangeFolder {
       // остаётся на первом загруженном фрагменте.
       if (this.recentDaySyncUseQuery &&
           (this.recentDaySyncPageRepeated || this.recentDaySyncQueryExhausted ||
+           queryReturnedEmptyFirstPage ||
            startOffset == 0 && !this.recentDaySyncSawCurrentDay &&
              this.recentDaySyncSawMessages && this.recentDaySyncOffset > startOffset)) {
         this.recentDaySyncUseQuery = false;
@@ -1235,7 +1246,7 @@ export class OWAFolder extends ExchangeFolder {
   async moveMessagesToArchiveMailbox(messages: Collection<EMail>): Promise<void> {
     assert(this.account.archiveMailboxRoot, "Archive mailbox is not available");
     assert(!this.isArchiveMailbox, "Message is already in the archive mailbox");
-    let sourceMessages = messages.contents as OWAEMail[];
+    let sourceMessages = [...messages.contents] as OWAEMail[];
     assert(sourceMessages.length > 0, "Need messages");
     assert(sourceMessages.every(message => message.folder === this), "All messages must be from the same folder");
     assert(sourceMessages.every(message => message.itemID), "Message has no server ID");
@@ -1269,6 +1280,216 @@ export class OWAFolder extends ExchangeFolder {
 
   async fetchNewMailQuick(): Promise<Collection<OWAEMail>> {
     return this.syncRecentArrivals();
+  }
+
+  /** Удаляет выбранные письма пакетно, не меняя fallback для одиночных или несовместимых операций. */
+  override async deleteMessages(
+    messages: Collection<EMail>,
+    strategy = this.account.deleteStrategy,
+  ): Promise<void> {
+    let sourceMessages = [...messages.contents] as OWAEMail[];
+    if (!sourceMessages.length) {
+      return;
+    }
+    if (!sourceMessages.every(message => message.folder === this && !!message.itemID)) {
+      await super.deleteMessages(messages, strategy);
+      return;
+    }
+
+    let hardDelete = strategy == DeleteStrategy.DeleteImmediately ||
+      [SpecialFolder.Trash, SpecialFolder.Spam].includes(this.specialFolder);
+    if (hardDelete) {
+      await this.deleteMessagesInBatches(sourceMessages);
+      return;
+    }
+
+    let trash = this.account.findSpecialFolder(SpecialFolder.Trash);
+    if (!(trash instanceof OWAFolder) || trash === this) {
+      await super.deleteMessages(messages, strategy);
+      return;
+    }
+    let sameServer =
+      (this.account.mainAccount ?? this.account) == (trash.account.mainAccount ?? trash.account) &&
+      sourceMessages.every(message => message.folder.account == this.account);
+    if (!sameServer) {
+      await super.deleteMessages(messages, strategy);
+      return;
+    }
+    await trash.moveMessagesHereForDelete(sourceMessages);
+  }
+
+  /** Перемещает выбранные письма в корзину одним или несколькими MoveItem. */
+  protected async moveMessagesHereForDelete(messages: readonly OWAEMail[]): Promise<void> {
+    let sourceFolder = messages[0]?.folder;
+    assert(sourceFolder, "Need source folder");
+    assert(messages.every(message => message.folder === sourceFolder), "All messages must be from the same folder");
+    assert(messages.every(message => !!message.itemID), "Message has no server ID");
+
+    let sourceOWAFolder = sourceFolder instanceof OWAFolder ? sourceFolder : null;
+    let needItemIdFix: OWAEMail[] = [];
+    for (let i = 0; i < messages.length; i += kMoveItemBatchSize) {
+      let batch = messages.slice(i, i + kMoveItemBatchSize);
+      let itemIDs = batch.map(message => message.itemID as string);
+      for (let itemID of itemIDs) {
+        sourceFolder.deletions.add(itemID);
+      }
+      let serverMoved = false;
+      let localMutationChanged = false;
+      try {
+        let newItemIDs = await this.moveOrCopyMessagesReturningIDs("move", new ArrayColl([...batch]));
+        serverMoved = true;
+        sourceOWAFolder?.beginObserverMute();
+        this.beginObserverMute();
+        try {
+          localMutationChanged = true;
+          sourceFolder.messages.removeAll(batch);
+          let unreadCount = batch.filter(message => !message.isRead).length;
+          let newArrivedCount = batch.filter(message => message.isNewArrived).length;
+          sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - batch.length);
+          sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - unreadCount);
+          sourceFolder.countNewArrived = Math.max(0, sourceFolder.countNewArrived - newArrivedCount);
+          this.countUnread += unreadCount;
+          this.countTotal += batch.length;
+          this.countNewArrived += newArrivedCount;
+
+          for (let message of batch) {
+            let oldItemID = message.itemID as string;
+            let newItemID = newItemIDs.get(oldItemID);
+            message.isDeleted = false;
+            message.folder = this;
+            if (newItemID) {
+              message.itemID = newItemID;
+            } else {
+              needItemIdFix.push(message);
+            }
+            this.markPreservedMoved(message);
+            if (message.downloadComplete && !message.dbID && !message.rawText && !message.rawHTMLDangerous) {
+              message.downloadComplete = false;
+            }
+          }
+          try {
+            for (let message of batch) {
+              await message.saveMetadataLocally();
+            }
+          } catch (ex) {
+            // The server move already succeeded. Keep the moved headers visible
+            // even if one local metadata write fails; the next sync repairs it.
+            this.addMessagesIfAbsent(batch);
+            throw ex;
+          }
+          this.addMessagesIfAbsent(batch);
+        } finally {
+          this.endObserverMute();
+          sourceOWAFolder?.endObserverMute();
+        }
+      } finally {
+        if (localMutationChanged) {
+          sourceFolder.notifyObservers();
+          this.notifyObservers();
+        }
+        for (let itemID of itemIDs) {
+          if (serverMoved && sourceFolder instanceof OWAFolder) {
+            sourceFolder.releaseDeletionAfterGracePeriod(itemID);
+          } else {
+            sourceFolder.deletions.delete(itemID);
+          }
+        }
+      }
+    }
+    if (needItemIdFix.length) {
+      this.fixMovedItemIdsInBackground(needItemIdFix);
+    }
+  }
+
+  /** Удаляет выбранные письма пакетными DeleteItem-запросами Exchange. */
+  protected async deleteMessagesInBatches(messages: readonly OWAEMail[]): Promise<void> {
+    let itemIDs = [...new Set(messages
+      .map(message => message.itemID)
+      .filter((itemID): itemID is string => !!itemID))];
+    let messagesByItemID = new Map<string, OWAEMail[]>();
+    for (let message of messages) {
+      if (message.itemID) {
+        let items = messagesByItemID.get(message.itemID) ?? [];
+        items.push(message);
+        messagesByItemID.set(message.itemID, items);
+      }
+    }
+    for (let itemID of itemIDs) {
+      this.deletions.add(itemID);
+    }
+    let serverDeleted = new Set<string>();
+    let removedMessages = new Set<OWAEMail>();
+    let removeLocally = async (message: OWAEMail): Promise<void> => {
+      if (removedMessages.has(message)) {
+        return;
+      }
+      removedMessages.add(message);
+      let wasUnread = !message.isRead;
+      let wasNew = message.isNewArrived;
+      await message.deleteMessageLocally();
+      this.countTotal = Math.max(0, this.countTotal - 1);
+      if (wasUnread) {
+        this.countUnread = Math.max(0, this.countUnread - 1);
+      }
+      if (wasNew) {
+        this.countNewArrived = Math.max(0, this.countNewArrived - 1);
+      }
+    };
+    let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
+    try {
+      for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
+        let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
+        let result = await this.account.callOWA(new OWADeleteItemRequest(batchIDs, {
+          DeleteType: "HardDelete",
+          SendMeetingCancellations: "SendToNone",
+          SuppressReadReceipts: true,
+        }), mailbox);
+        let responseItems = result?.ResponseMessages?.Items
+          ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
+        let responses = responseItems ? ensureArray(responseItems) : [];
+        if (responses.length == 1 && batchIDs.length > 1 &&
+            responses[0]?.ResponseClass == "Success" && responses[0]?.ResponseCode == "NoError") {
+          responses = batchIDs.map(() => responses[0]);
+        }
+        if (responses.length != batchIDs.length) {
+          throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
+        }
+        let failedResponse: any = null;
+        let messagesToRemove: OWAEMail[] = [];
+        for (let index = 0; index < batchIDs.length; index++) {
+          let response = responses[index];
+          let isError = response?.ResponseClass == "Error" ||
+            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
+          if (isError) {
+            failedResponse ??= response;
+            continue;
+          }
+          let itemID = batchIDs[index];
+          serverDeleted.add(itemID);
+          this.releaseDeletionAfterGracePeriod(itemID);
+          messagesToRemove.push(...(messagesByItemID.get(itemID) ?? []));
+        }
+        this.beginObserverMute();
+        try {
+          this.messages.removeAll(messagesToRemove);
+          await Promise.all(messagesToRemove.map(removeLocally));
+        } finally {
+          this.endObserverMute();
+          if (batchIDs.some(itemID => serverDeleted.has(itemID))) {
+            this.notifyObservers();
+          }
+        }
+        if (failedResponse) {
+          throw new OWAError({ json: failedResponse });
+        }
+      }
+    } finally {
+      for (let itemID of itemIDs) {
+        if (!serverDeleted.has(itemID)) {
+          this.deletions.delete(itemID);
+        }
+      }
+    }
   }
 
   /** Очищает обычную папку одним MoveItem, а не отдельным запросом на письмо. */

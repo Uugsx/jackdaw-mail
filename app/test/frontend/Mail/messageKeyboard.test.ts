@@ -10,6 +10,7 @@ vi.mock("../../../logic/Mail/MailAccount", () => ({
 }));
 vi.mock("../../../frontend/Mail/mailDeleteUndo", () => ({
   deleteMessagesFromUI: vi.fn(async () => undefined),
+  deleteMessagesPermanent: vi.fn(async () => undefined),
 }));
 vi.mock("../../../frontend/Mail/open", () => ({
   openComposer: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("../../../frontend/Mail/LeftPane/SearchSwitcher.svelte", () => ({
 
 import { onKeyOnList } from "../../../frontend/Mail/Message/MessageKeyboard";
 import { selectedMessage, selectedMessages } from "../../../frontend/Mail/Selected";
-import { deleteMessagesFromUI } from "../../../frontend/Mail/mailDeleteUndo";
+import { deleteMessagesFromUI, deleteMessagesPermanent } from "../../../frontend/Mail/mailDeleteUndo";
 import { focusMailPane } from "../../../frontend/MainWindow/paneFocus";
 
 describe("mail keyboard shortcuts", () => {
@@ -95,5 +96,21 @@ describe("mail keyboard shortcuts", () => {
 
     expect(deleteMessagesFromUI).not.toHaveBeenCalled();
     expect(dispatchedEvent?.defaultPrevented).toBe(false);
+  });
+
+  test("удаляет выбранные письма пакетным путём по Shift+Delete", async () => {
+    let message = { nextMessage: vi.fn(() => null) } as unknown as EMail;
+    selectedMessage.set(message);
+    selectedMessages.set(new ArrayColl([message]));
+    let event = new KeyboardEvent("keydown", {
+      key: "Delete",
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    await onKeyOnList(event);
+
+    expect(deleteMessagesPermanent).toHaveBeenCalledWith([message]);
+    expect(event.defaultPrevented).toBe(true);
   });
 });

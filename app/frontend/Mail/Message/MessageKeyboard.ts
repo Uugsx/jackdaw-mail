@@ -1,5 +1,4 @@
-import { DeleteStrategy } from "../../../logic/Mail/MailAccount";
-import { deleteMessagesFromUI } from "../mailDeleteUndo";
+import { deleteMessagesFromUI, deleteMessagesPermanent } from "../mailDeleteUndo";
 import { runMailActions } from "../mailBulkActions";
 import { moveMessagesToArchive } from "../mailArchiveActions";
 import type { EMail } from "../../../logic/Mail/EMail";
@@ -182,7 +181,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
     } else if (event.key == "Delete" || event.key == "Backspace") { // Thunderbird
       consume(event);
       goToNextMessage();
-      await runMailActions(messages, msg => msg.deleteMessage(DeleteStrategy.DeleteImmediately));
+      await deleteMessagesPermanent(messages);
       return;
     }
   }

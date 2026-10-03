@@ -132,6 +132,7 @@
   import { ArrayColl, Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { withMailTransferProgress } from "../mailTransferProgress";
+  import { deleteMessagesFromUI } from "../mailDeleteUndo";
   import { runMailActions } from "../mailBulkActions";
   import { moveMessagesToArchive } from "../mailArchiveActions";
   import { createEventDispatcher, onDestroy } from 'svelte';
@@ -176,7 +177,7 @@
 
   async function onDelete() {
     onClose();
-    await runMailActions(messages.contents, message => message.deleteMessage());
+    await deleteMessagesFromUI(messages.contents);
     goToNextMessage();
   }
   async function onRestore() {

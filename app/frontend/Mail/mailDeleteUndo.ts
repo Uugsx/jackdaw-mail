@@ -1,9 +1,11 @@
 import { writable } from "svelte/store";
 import type { EMail } from "../../logic/Mail/EMail";
 import { SpecialFolder, type Folder } from "../../logic/Mail/Folder";
+import { DeleteStrategy } from "../../logic/Mail/MailAccount";
 import { openEMailMessage } from "./open";
-import { runMailActions } from "./mailBulkActions";
+import { throwFirstBulkActionError, uniqueMailMessages } from "./mailBulkActions";
 import { gt } from "../../l10n/l10n";
+import { ArrayColl } from "svelte-collections";
 
 type DeletedEntry = {
   message: EMail;
@@ -21,6 +23,26 @@ export const mailUndoToast = writable<MailUndoToastState | null>(null);
 let toastCounter = 0;
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Группирует удаление по исходным папкам, чтобы протокол мог отправить batch-запрос. */
+async function deleteMailMessages(messages: readonly EMail[], strategy?: DeleteStrategy): Promise<void> {
+  let byFolder = new Map<Folder, EMail[]>();
+  for (let message of uniqueMailMessages(messages)) {
+    let folder = message.folder;
+    if (!folder) {
+      continue;
+    }
+    let folderMessages = byFolder.get(folder);
+    if (!folderMessages) {
+      folderMessages = [];
+      byFolder.set(folder, folderMessages);
+    }
+    folderMessages.push(message);
+  }
+  let results = await Promise.allSettled([...byFolder].map(([folder, folderMessages]) =>
+    folder.deleteMessages(new ArrayColl(folderMessages), strategy)));
+  throwFirstBulkActionError(results);
+}
+
 /** Soft-delete with a bottom toast offering undo (move back from Trash). */
 export async function deleteMessagesWithUndo(
   messages: readonly EMail[],
@@ -35,7 +57,7 @@ export async function deleteMessagesWithUndo(
     sourceFolder: message.folder,
   }));
   beforeDelete?.();
-  await runMailActions(list, message => message.deleteMessage());
+  await deleteMailMessages(list);
   showDeleteUndoToast(entries);
 }
 
@@ -80,7 +102,7 @@ export async function deleteMessagesPermanent(messages: readonly EMail[], before
     return;
   }
   beforeDelete?.();
-  await runMailActions(list, message => message.deleteMessage());
+  await deleteMailMessages(list, DeleteStrategy.DeleteImmediately);
 }
 
 export function deleteMessagesFromUI(messages: readonly EMail[], beforeDelete?: () => void): Promise<void> {

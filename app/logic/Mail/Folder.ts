@@ -229,6 +229,15 @@ export class Folder extends Observable implements TreeItem<Folder> {
     await this.moveOrCopyMessagesHere("copy", messages, undefined, onProgress);
   }
 
+  /** Удаляет несколько писем, сохраняя прежнюю параллельную модель для протоколов без пакетной операции. */
+  async deleteMessages(messages: Collection<EMail>, strategy?: DeleteStrategy): Promise<void> {
+    let results = await Promise.allSettled(messages.contents.map(message => message.deleteMessage(strategy)));
+    let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
+  }
+
   /**
    * Helper function for `copyMessagesHere()` and `moveMessagesHere()`.
    * Calls `moveOrCopyMessagesOnServer()` as needed.

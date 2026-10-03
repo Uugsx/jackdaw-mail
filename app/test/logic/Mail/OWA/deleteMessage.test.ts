@@ -4,6 +4,7 @@ import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
 import { DummyMailStorage } from "../../../../logic/Mail/Store/DummyMailStorage";
 import { DeleteStrategy } from "../../../../logic/Mail/MailAccount";
 import { SpecialFolder } from "../../../../logic/Mail/Folder";
+import { ArrayColl } from "svelte-collections";
 import { expect, test } from "vitest";
 
 test("очистка корзины удаляет элементы календаря без отправки отмен", async () => {
@@ -183,4 +184,115 @@ test("удаление письма через OWA сохраняет парам
 
   expect(request.Body.DeleteType).toBe("MoveToDeletedItems");
   expect(request.Body.SendMeetingCancellations).toBe("SendToNone");
+});
+
+test("массовое удаление из обычной OWA-папки отправляет MoveItem пакетами", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let source = account.newFolder();
+  source.id = "source-folder";
+  let trash = account.newFolder();
+  trash.id = "trash-folder";
+  trash.specialFolder = SpecialFolder.Trash;
+  account.rootFolders.addAll([source, trash]);
+  source.releaseDeletionAfterGracePeriod = () => {};
+
+  let requests: any[] = [];
+  (account as any).callOWA = async (request: any) => {
+    requests.push(request);
+    return {
+      ResponseMessages: {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ResponseClass: "Success",
+          ResponseCode: "NoError",
+          Items: [{ ItemId: { Id: `trash-${item.Id}` } }],
+        })),
+      },
+    };
+  };
+
+  let messages = Array.from({ length: 55 }, (_, index) => {
+    let message = source.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    message.isNewArrived = index < 7;
+    source.messages.add(message);
+    return message;
+  });
+  source.countTotal = messages.length;
+  source.countUnread = messages.length;
+  source.countNewArrived = 7;
+  let originalItemIDs = messages.map(message => message.itemID);
+  let sourceNotifications = 0;
+  let trashNotifications = 0;
+  source.subscribe(() => sourceNotifications++);
+  trash.subscribe(() => trashNotifications++);
+  let initialSourceNotifications = sourceNotifications;
+  let initialTrashNotifications = trashNotifications;
+
+  await source.deleteMessages(new ArrayColl(messages));
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0].action).toBe("MoveItem");
+  expect(requests.every(request => request.Body.ItemIds.length <= 50)).toBe(true);
+  expect(requests.flatMap(request => request.Body.ItemIds.map((item: any) => item.Id))).toEqual(
+    originalItemIDs,
+  );
+  expect(source.messages.isEmpty).toBe(true);
+  expect(source.countTotal).toBe(0);
+  expect(source.countUnread).toBe(0);
+  expect(source.countNewArrived).toBe(0);
+  expect(trash.countTotal).toBe(messages.length);
+  expect(trash.countUnread).toBe(messages.length);
+  expect(trash.countNewArrived).toBe(7);
+  expect(messages.every(message => message.folder === trash)).toBe(true);
+  expect(sourceNotifications - initialSourceNotifications).toBe(2);
+  expect(trashNotifications - initialTrashNotifications).toBe(2);
+});
+
+test("массовое удаление из корзины OWA отправляет один DeleteItem", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.specialFolder = SpecialFolder.Trash;
+  folder.releaseDeletionAfterGracePeriod = () => {};
+
+  let requests: any[] = [];
+  (account as any).callOWA = async (request: any) => {
+    requests.push(request);
+    return {
+      ResponseMessages: {
+        Items: request.Body.ItemIds.map(() => ({
+          ResponseClass: "Success",
+          ResponseCode: "NoError",
+        })),
+      },
+    };
+  };
+
+  let messages = Array.from({ length: 10 }, (_, index) => {
+    let message = folder.newEMail();
+    message.itemID = `trash-message-${index}`;
+    message.isRead = false;
+    folder.messages.add(message);
+    return message;
+  });
+  folder.countTotal = messages.length;
+  folder.countUnread = messages.length;
+  let notifications = 0;
+  folder.subscribe(() => notifications++);
+  let initialNotifications = notifications;
+
+  await folder.deleteMessages(new ArrayColl(messages), DeleteStrategy.DeleteImmediately);
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0].action).toBe("DeleteItem");
+  expect(requests[0].Body.ItemIds).toHaveLength(messages.length);
+  expect(requests[0].Body.DeleteType).toBe("HardDelete");
+  expect(folder.messages.isEmpty).toBe(true);
+  expect(folder.countTotal).toBe(0);
+  expect(folder.countUnread).toBe(0);
+  expect(notifications - initialNotifications).toBe(1);
 });
