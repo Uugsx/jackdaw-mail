@@ -293,6 +293,30 @@ export function mailListRowSelectable(row: MailListRow | null | undefined): bool
   return !!row && row.kind == "message";
 }
 
+/**
+ * Стабильный ключ выбора строки письма. Объекты MailListRow создаются заново
+ * при синхронизации папки, а объект EMail сохраняет идентичность.
+ */
+export function mailListRowSelectionKey(row: MailListRow | null | undefined): EMail | string | null {
+  if (!row) {
+    return null;
+  }
+  if (row.kind != "message") {
+    return row.id;
+  }
+  let message = row.message;
+  if (message.dbID != null) {
+    return `db:${String(message.dbID)}`;
+  }
+  if (message.pID != null) {
+    return `pid:${String(message.pID)}`;
+  }
+  if (message.id != null) {
+    return `id:${String(message.id)}`;
+  }
+  return message;
+}
+
 export function mailListSectionLabels(rows: readonly MailListRow[]): string[] {
   return rows
     .filter((row): row is MailListDayRow => row.kind == "day")
@@ -311,4 +335,13 @@ export function findMailListRowForMessage(rows: Collection<MailListRow>, message
   }
   return rows.contents.find((row): row is MailListMessageRow =>
     row.kind == "message" && messagesRepresentSameMail(row.message, message)) ?? null;
+}
+
+export function findMailListRowsForMessages(
+  messages: Collection<EMail>,
+  rows: Collection<MailListRow>,
+): MailListMessageRow[] {
+  return messages.contents
+    .map(message => findMailListRowForMessage(rows, message))
+    .filter((row): row is MailListMessageRow => !!row);
 }

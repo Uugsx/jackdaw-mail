@@ -21,6 +21,10 @@ function findItemResponse(itemIDs: string[]): any {
   };
 }
 
+function isUnreadQuery(query: unknown): boolean {
+  return query == "isread:false" || query == "isread:no";
+}
+
 test("загружает письмо при открытии shared-папки после пустого быстрого поиска", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();
@@ -35,7 +39,7 @@ test("загружает письмо при открытии shared-папки 
     }
     if (
       request.action == "FindItem" &&
-      request.Body.QueryString == "isread:no"
+      isUnreadQuery(request.Body.QueryString)
     ) {
       return findItemResponse([]);
     }
@@ -409,7 +413,7 @@ test("подтягивает письмо в фоновой синхрониза
     requests.push(request);
     if (
       request.action == "FindItem" &&
-      request.Body.QueryString == "isread:no"
+      isUnreadQuery(request.Body.QueryString)
     ) {
       return findItemResponse([]);
     }
@@ -2050,12 +2054,14 @@ test("догружает непрочитанные письма из больш
 
   let unreadIDs = Array.from({ length: 504 }, (_, index) => `unread-${index}`);
   let unreadFindItemCalls = 0;
+  let unreadQueries: string[] = [];
   (mainAccount as any).callOWA = async (request: any) => {
     if (request.action == "GetFolder") {
       return { Folders: [{ TotalCount: 12_345, UnreadCount: 504 }] };
     }
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
       unreadFindItemCalls++;
+      unreadQueries.push(request.Body.QueryString);
       let offset = request.Body.Paging.Offset;
       let pageSize = request.Body.Paging.MaxEntriesReturned;
       let page = unreadIDs.slice(offset, offset + pageSize);
@@ -2088,9 +2094,1097 @@ test("догружает непрочитанные письма из больш
   await folder.refreshOpenFolder();
 
   expect(unreadFindItemCalls).toBe(Math.ceil(unreadIDs.length / kMaxFetchCount));
+  expect(unreadQueries[0]).toBe("isread:false");
   expect(folder.messages.length).toBe(120 + unreadIDs.length);
   expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(504);
   expect(folder.countUnread).toBe(504);
+});
+
+test("читает непрочитанные shared-папки через delegate-контекст", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  mainAccount.storage = new DummyMailStorage();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+  (account as any).sharedFolderRoot = "msgfolderroot";
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_000;
+  folder.countUnread = 2;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_000, 2);
+  folder.downloadMessages = async messages => messages;
+
+  let readContexts: Array<{ action: string; mailbox?: string; delegateAnchor?: string }> = [];
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_000, UnreadCount: 2 }] };
+    }
+    if (request.action == "FindItem" || request.action == "GetItem") {
+      readContexts.push({ action: request.action, mailbox, delegateAnchor });
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      return {
+        RootFolder: {
+          Items: [
+            { ItemId: { Id: "delegate-unread-1" }, IsRead: false },
+            { ItemId: { Id: "delegate-unread-2" }, IsRead: false },
+          ],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 2,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(readContexts.length).toBeGreaterThan(0);
+  expect(readContexts.every(context =>
+    context.mailbox == null && context.delegateAnchor == account.emailAddress)).toBe(true);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(2);
+});
+
+test("догружает unread из explicit mailbox, если delegate-контекст вернул пустую страницу", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 2;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 2);
+  folder.downloadMessages = async messages => messages;
+
+  let explicitFindItemCalls = 0;
+  let delegateFindItemCalls = 0;
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 2 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      if (delegateAnchor) {
+        delegateFindItemCalls++;
+        return { RootFolder: { Items: [], IncludesLastItemInRange: true, TotalItemsInView: 0 } };
+      }
+      expect(mailbox).toBe(account.username);
+      explicitFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: [
+            { ItemId: { Id: "explicit-unread-1" }, IsRead: false },
+            { ItemId: { Id: "explicit-unread-2" }, IsRead: false },
+          ],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 2,
+          TotalItemsInView: 2,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      if (delegateAnchor) {
+        return { Items: [] };
+      }
+      expect(mailbox).toBe(account.username);
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(delegateFindItemCalls).toBeGreaterThan(0);
+  expect(explicitFindItemCalls).toBe(1);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(2);
+  expect(folder.getEmailByItemID("explicit-unread-1")).toBeDefined();
+  expect(folder.getEmailByItemID("explicit-unread-2")).toBeDefined();
+});
+
+test("переключает shared unread на explicit mailbox, если delegate вернул только прочитанные строки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 1);
+  folder.downloadMessages = async messages => messages;
+
+  let explicitFindItemCalls = 0;
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 1 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      if (delegateAnchor) {
+        return {
+          RootFolder: {
+            Items: [{ ItemId: { Id: "today-read" }, IsRead: true }],
+            IncludesLastItemInRange: true,
+            TotalItemsInView: 1,
+          },
+        };
+      }
+      expect(mailbox).toBe(account.username);
+      explicitFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "explicit-friday-unread" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      expect(mailbox).toBe(account.username);
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(explicitFindItemCalls).toBe(1);
+  expect(folder.getEmailByItemID("explicit-friday-unread")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("повторяет первую shared unread-страницу через explicit mailbox после устаревшего delegate ItemId", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 1);
+  folder.downloadMessages = async messages => messages;
+
+  let explicitFindItemCalls = 0;
+  let delegateFindItemCalls = 0;
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 1 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      if (delegateAnchor) {
+        delegateFindItemCalls++;
+        return {
+          RootFolder: {
+            Items: [{ ItemId: { Id: "stale-delegate-unread" }, IsRead: false }],
+            IncludesLastItemInRange: true,
+            TotalItemsInView: 1,
+          },
+        };
+      }
+      expect(mailbox).toBe(account.username);
+      explicitFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "explicit-current-unread" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      if (delegateAnchor || request.Body.ItemIds.some((item: any) => item.Id == "stale-delegate-unread")) {
+        return { Items: [] };
+      }
+      expect(mailbox).toBe(account.username);
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    if (request.action == "FindItem") {
+      return {
+        RootFolder: {
+          Items: [],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 12_867,
+        },
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(delegateFindItemCalls).toBeGreaterThan(0);
+  expect(explicitFindItemCalls).toBe(1);
+  expect(folder.getEmailByItemID("explicit-current-unread")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("переключает shared unread на explicit mailbox, если delegate вернул только удалённые строки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 2;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 2);
+  folder.downloadMessages = async messages => messages;
+  folder.deletions.add("deleted-unread");
+
+  let explicitFindItemCalls = 0;
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 2 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      if (delegateAnchor) {
+        return {
+          RootFolder: {
+            Items: [{ ItemId: { Id: "deleted-unread" }, IsRead: false }],
+            IncludesLastItemInRange: true,
+            TotalItemsInView: 1,
+          },
+        };
+      }
+      expect(mailbox).toBe(account.username);
+      explicitFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: [
+            { ItemId: { Id: "remaining-unread-1" }, IsRead: false },
+            { ItemId: { Id: "remaining-unread-2" }, IsRead: false },
+          ],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 2,
+          TotalItemsInView: 2,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      expect(mailbox).toBe(account.username);
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(explicitFindItemCalls).toBe(1);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(2);
+  expect(folder.getEmailByItemID("remaining-unread-1")).toBeDefined();
+  expect(folder.getEmailByItemID("remaining-unread-2")).toBeDefined();
+});
+
+test("принудительно догружает unread для умного представления после фоновой попытки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_726;
+  folder.countUnread = 110;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_726, 110);
+
+  let cachedUnreadIDs = Array.from({ length: 7 }, (_, index) => `unread-${index}`);
+  for (let id of cachedUnreadIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+  folder.downloadMessages = async messages => messages;
+
+  let unreadIDs = Array.from({ length: 110 }, (_, index) => `unread-${index}`);
+  let unreadFindItemCalls = 0;
+  (folder as any).lastUnreadReconcileAt = Date.now();
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      unreadFindItemCalls++;
+      let offset = request.Body.Paging.Offset;
+      let pageSize = request.Body.Paging.MaxEntriesReturned;
+      let page = unreadIDs.slice(offset, offset + pageSize);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: offset + page.length >= unreadIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: unreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-03T10:00:00Z",
+          DateTimeReceived: "2026-10-03T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(unreadFindItemCalls).toBe(Math.ceil(unreadIDs.length / kMaxFetchCount));
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(110);
+  expect(get(mailSyncing)).toBe(false);
+});
+
+test("обновляет серверный unread-счётчик перед фильтром", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 103;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 103);
+  folder.downloadMessages = async messages => messages;
+
+  let unreadIDs = Array.from({ length: 147 }, (_, index) => `server-unread-${index}`);
+  let getFolderCalls = 0;
+  let unreadFindItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      getFolderCalls++;
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 147 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      unreadFindItemCalls++;
+      let offset = request.Body.Paging.Offset;
+      let pageSize = request.Body.Paging.MaxEntriesReturned;
+      let page = unreadIDs.slice(offset, offset + pageSize);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: offset + page.length >= unreadIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: unreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(getFolderCalls).toBe(1);
+  expect(unreadFindItemCalls).toBe(Math.ceil(unreadIDs.length / kMaxFetchCount));
+  expect(folder.countUnread).toBe(147);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(147);
+});
+
+test("ручной unread-фильтр сверяет сервер даже при нулевом локальном unread-кеше", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_867;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 0);
+
+  let cached = folder.newEMail();
+  cached.itemID = "cached-read";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let unreadFindItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 0 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      unreadFindItemCalls++;
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "server-unread" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "server-unread" },
+          InternetMessageId: "<server-unread@example.test>",
+          Subject: "Непрочитанное письмо с сервера",
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(unreadFindItemCalls).toBe(1);
+  expect(folder.getEmailByItemID("server-unread")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("переключается на legacy AQS, если сервер отклоняет isread:false", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_867;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 1);
+  folder.downloadMessages = async messages => messages;
+
+  let queries: string[] = [];
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 1 }] };
+    }
+    if (request.action == "FindItem" && request.Body.QueryString) {
+      queries.push(request.Body.QueryString);
+      if (request.Body.QueryString == "isread:false") {
+        throw new OWAError({ type: "ErrorInvalidRequest", message: "Unsupported QueryString isread:false" });
+      }
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "legacy-unread" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "legacy-unread" },
+          InternetMessageId: "<legacy-unread@example.test>",
+          Subject: "Непрочитанное письмо через legacy AQS",
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(queries).toEqual(["isread:false", "isread:no"]);
+  expect(folder.getEmailByItemID("legacy-unread")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("принимает unread-заголовок, если shared OWA не возвращает IsRead в GetItem", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 12_867;
+  folder.countUnread = 103;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 103);
+
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 103 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "shared-unread-without-flag" } }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "shared-unread-without-flag" },
+          InternetMessageId: "<shared-unread-without-flag@example.test>",
+          Subject: "Непрочитанное письмо без IsRead",
+          DateTimeSent: "2026-10-04T10:00:00Z",
+          DateTimeReceived: "2026-10-04T10:00:00Z",
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  let message = folder.getEmailByItemID("shared-unread-without-flag");
+  expect(message).toBeDefined();
+  expect(message?.isRead).toBe(false);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("переходит на обычные страницы, если AQS unread преждевременно обрывается", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_992;
+  folder.countUnread = 228;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_992, 228);
+
+  let currentUnreadIDs = Array.from({ length: 125 }, (_, index) => `current-${index}`);
+  for (let id of currentUnreadIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+  folder.downloadMessages = async messages => messages;
+
+  let olderUnreadIDs = Array.from({ length: 103 }, (_, index) => `older-${index}`);
+  let folderIDs = [...currentUnreadIDs, ...olderUnreadIDs, ...Array.from({ length: 22 }, (_, index) => `read-${index}`)];
+  let unreadFindItemCalls = 0;
+  let folderFindItemCalls = 0;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      unreadFindItemCalls++;
+      let offset = request.Body.Paging.Offset;
+      let pageSize = request.Body.Paging.MaxEntriesReturned;
+      let page = currentUnreadIDs.slice(offset, offset + pageSize);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: offset + page.length >= currentUnreadIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: currentUnreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      folderFindItemCalls++;
+      let offset = request.Body.Paging.Offset;
+      let pageSize = request.Body.Paging.MaxEntriesReturned;
+      let page = folderIDs.slice(offset, offset + pageSize);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({
+            ItemId: { Id: id },
+            IsRead: !olderUnreadIDs.includes(id) && !currentUnreadIDs.includes(id),
+          })),
+          IncludesLastItemInRange: offset + page.length >= folderIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: folderIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T22:00:00Z",
+          DateTimeReceived: "2026-10-02T22:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  // The canonical AQS boolean is tried first; a legacy spelling is kept for
+  // older OWA builds before the opposite end and ordinary-folder fallback.
+  expect(unreadFindItemCalls).toBe(Math.ceil(currentUnreadIDs.length / kMaxFetchCount) * 3);
+  expect(folderFindItemCalls).toBe(Math.ceil(folderIDs.length / kMaxFetchCount));
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(228);
+  expect(get(mailSyncing)).toBe(false);
+});
+
+test("продолжает fallback unread после ложного IncludesLastItemInRange", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_474;
+  folder.countUnread = 225;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_474, 225);
+
+  let currentUnreadIDs = Array.from({ length: 122 }, (_, index) => `current-${index}`);
+  for (let id of currentUnreadIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+  folder.downloadMessages = async messages => messages;
+
+  let olderUnreadIDs = Array.from({ length: 103 }, (_, index) => `older-${index}`);
+  let folderIDs = [...currentUnreadIDs, ...olderUnreadIDs, ...Array.from({ length: 22 }, (_, index) => `read-${index}`)];
+  let unreadFindItemCalls = 0;
+  let fallbackOffsets: number[] = [];
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      unreadFindItemCalls++;
+      // Реальный проблемный сервер возвращает больше MaxEntriesReturned и
+      // одновременно помечает только текущую страницу последней.
+      return {
+        RootFolder: {
+          Items: currentUnreadIDs.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: currentUnreadIDs.length,
+          TotalItemsInView: currentUnreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      let offset = request.Body.Paging.Offset;
+      fallbackOffsets.push(offset);
+      let page = folderIDs.slice(offset, offset + (offset == 0 ? currentUnreadIDs.length : kMaxFetchCount));
+      return {
+        RootFolder: {
+          Items: page.map(id => ({
+            ItemId: { Id: id },
+            IsRead: !olderUnreadIDs.includes(id) && !currentUnreadIDs.includes(id),
+          })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: folderIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-03T10:00:00Z",
+          DateTimeReceived: "2026-10-03T10:00:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  // The malformed first AQS page is checked with both boolean spellings and
+  // from both ends before the ordinary-folder fallback is started.
+  expect(unreadFindItemCalls).toBe(3);
+  expect(fallbackOffsets).toEqual([0, 122, 172, 222]);
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(225);
+  expect(get(mailSyncing)).toBe(false);
+});
+
+test("начинает shared fallback unread с последних писем", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 1;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 1);
+  let cached = folder.newEMail();
+  cached.itemID = "cached-read";
+  cached.isRead = true;
+  folder.messages.add(cached);
+
+  let fallbackBasePoints: string[] = [];
+  mainAccount.callOWA = async (request: any) => {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "today-read" }, IsRead: true }],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      fallbackBasePoints.push(request.Body.Paging.BasePoint);
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "friday-unread" }, IsRead: false }],
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: 1,
+          TotalItemsInView: 12_867,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: [{
+          ItemId: { Id: "friday-unread" },
+          InternetMessageId: "<friday-unread@example.test>",
+          Subject: "Непрочитанное письмо за пятницу",
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        }],
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(fallbackBasePoints).toEqual(["End"]);
+  expect(folder.getEmailByItemID("friday-unread")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(1);
+});
+
+test("продолжает shared fallback через прочитанную первую страницу до старых unread", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 103;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 103);
+  folder.downloadMessages = async messages => messages;
+
+  let olderUnreadIDs = Array.from({ length: 103 }, (_, index) => `friday-unread-${index}`);
+  let folderIDs = [
+    ...Array.from({ length: kMaxFetchCount }, (_, index) => `today-read-${index}`),
+    ...olderUnreadIDs,
+  ];
+  let fallbackOffsets: number[] = [];
+  mainAccount.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 103 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      return {
+        RootFolder: {
+          Items: [{ ItemId: { Id: "today-read" }, IsRead: true }],
+          IncludesLastItemInRange: true,
+          TotalItemsInView: 1,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      let offset = request.Body.Paging.Offset;
+      let page = folderIDs.slice(offset, offset + kMaxFetchCount);
+      fallbackOffsets.push(offset);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({
+            ItemId: { Id: id },
+            IsRead: !olderUnreadIDs.includes(id),
+          })),
+          IncludesLastItemInRange: offset + page.length >= folderIDs.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: folderIDs.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(fallbackOffsets).toContain(0);
+  expect(fallbackOffsets).toContain(kMaxFetchCount);
+  expect(folder.getEmailByItemID("friday-unread-0")).toBeDefined();
+  expect(folder.getEmailByItemID("friday-unread-102")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(103);
+});
+
+test("перепроверяет shared fallback от начала, если BasePoint=End отдаёт только текущие unread", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 103;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 103);
+  folder.downloadMessages = async messages => messages;
+
+  let currentUnreadIDs = Array.from({ length: 39 }, (_, index) => `today-unread-${index}`);
+  for (let id of currentUnreadIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+  let olderUnreadIDs = Array.from({ length: 64 }, (_, index) => `friday-unread-${index}`);
+  let fallbackBasePoints: string[] = [];
+  mainAccount.callOWA = async (request: any) => {
+    if (request.action == "GetFolder") {
+      return { Folders: [{ TotalCount: 12_867, UnreadCount: 103 }] };
+    }
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      return {
+        RootFolder: {
+          Items: currentUnreadIDs.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: currentUnreadIDs.length,
+          TotalItemsInView: currentUnreadIDs.length,
+        },
+      };
+    }
+    if (request.action == "FindItem") {
+      let fromEnd = request.Body.Paging.BasePoint == "End";
+      fallbackBasePoints.push(request.Body.Paging.BasePoint);
+      let ids = fromEnd ? currentUnreadIDs : [...currentUnreadIDs, ...olderUnreadIDs];
+      let offset = request.Body.Paging.Offset;
+      let page = ids.slice(offset, offset + kMaxFetchCount);
+      return {
+        RootFolder: {
+          Items: page.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: offset + page.length >= ids.length,
+          IndexedPagingOffset: offset + page.length,
+          TotalItemsInView: ids.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(fallbackBasePoints[0]).toBe("End");
+  expect(fallbackBasePoints.slice(1).every(basePoint => basePoint == "Beginning")).toBe(true);
+  expect(folder.getEmailByItemID("friday-unread-0")).toBeDefined();
+  expect(folder.getEmailByItemID("friday-unread-63")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(103);
+});
+
+test("получает старые unread из конца AQS-выборки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.name = "Ошибки серверов";
+  folder.countTotal = 12_867;
+  folder.countUnread = 3;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(12_867, 3);
+
+  let currentUnreadIDs = ["today-unread"];
+  let olderUnreadIDs = ["friday-unread-1", "friday-unread-2"];
+  let unreadQueryBasePoints: string[] = [];
+  for (let id of currentUnreadIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+  folder.downloadMessages = async messages => messages;
+  (account as any).callOWA = async (request: any) => {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
+      let fromEnd = request.Body.Paging.BasePoint == "End";
+      unreadQueryBasePoints.push(request.Body.Paging.BasePoint);
+      let ids = fromEnd ? olderUnreadIDs : currentUnreadIDs;
+      return {
+        RootFolder: {
+          Items: ids.map(id => ({ ItemId: { Id: id }, IsRead: false })),
+          IncludesLastItemInRange: true,
+          IndexedPagingOffset: ids.length,
+          TotalItemsInView: ids.length,
+        },
+      };
+    }
+    if (request.action == "GetItem") {
+      return {
+        Items: request.Body.ItemIds.map((item: any) => ({
+          ItemId: { Id: item.Id },
+          InternetMessageId: `<${item.Id}@example.test>`,
+          Subject: item.Id,
+          DateTimeSent: "2026-10-02T21:09:00Z",
+          DateTimeReceived: "2026-10-02T21:09:00Z",
+          IsRead: false,
+          ItemClass: "IPM.Note",
+        })),
+      };
+    }
+    throw new Error(`Неожиданный запрос OWA: ${request.action}`);
+  };
+
+  await folder.syncUnreadMessages();
+
+  expect(unreadQueryBasePoints).toEqual(["Beginning", "Beginning", "End"]);
+  expect(folder.getEmailByItemID("friday-unread-1")).toBeDefined();
+  expect(folder.getEmailByItemID("friday-unread-2")).toBeDefined();
+  expect([...folder.messages].filter(message => !message.isRead)).toHaveLength(3);
+  expect(get(mailSyncing)).toBe(false);
 });
 
 test("не запускает общий проход при одном только расхождении unread-кеша", async () => {
@@ -2151,7 +3245,7 @@ test("останавливает unread-поиск, если OWA проигно�
     return messages;
   };
   (account as any).callOWA = async (request: any) => {
-    if (request.action == "FindItem" && request.Body.QueryString == "isread:no") {
+    if (request.action == "FindItem" && isUnreadQuery(request.Body.QueryString)) {
       unreadFindItemCalls++;
       return {
         RootFolder: {

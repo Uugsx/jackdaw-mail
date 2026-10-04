@@ -215,6 +215,11 @@ export class OWAAccount extends ExchangeMailAccount {
     }
   }
 
+  /** Возвращает состояние polling-подписки без раскрытия внутреннего Set. */
+  isNotificationFolder(folder: OWAFolder): boolean {
+    return this.notificationFolders.has(folder);
+  }
+
   protected notificationFoldersToSync(): OWAFolder[] {
     let folders: OWAFolder[] = [];
     for (let folder of this.notificationFolders) {
@@ -295,6 +300,19 @@ export class OWAAccount extends ExchangeMailAccount {
     await this.loginCommon(true);
   }
 
+  /** Проверяет сессию перед входом, не превращая сетевой сбой в отказ авторизации. */
+  protected async testLoggedInForLogin(interactive: boolean): Promise<boolean> {
+    try {
+      return await this.testLoggedIn();
+    } catch (ex) {
+      if (!isNetworkError(ex) || !interactive) {
+        throw ex;
+      }
+      this.markNetworkErrorAsTemporary(ex);
+      return false;
+    }
+  }
+
   /**
    * OWA full page login resembles OAuth2, so we label it as such,
    * although it's actually Office 365 itself doing its own OAuth2.
@@ -306,7 +324,7 @@ export class OWAAccount extends ExchangeMailAccount {
       // The on-premise OWA session is stored in the account's persistent
       // browser partition. Reuse it first; when the server has expired that
       // session, a saved password can restore it without opening a login tab.
-      if (await this.testLoggedIn()) {
+      if (await this.testLoggedInForLogin(interactive)) {
         owaAuth.isLoggedIn = true;
         return;
       }
@@ -321,8 +339,8 @@ export class OWAAccount extends ExchangeMailAccount {
           }
         }
       }
-      await owaAuth.login(interactive);
-    } else if (!await this.testLoggedIn()) {
+      await owaAuth.login(interactive, true);
+    } else if (!await this.testLoggedInForLogin(interactive)) {
       await this.loginWithPasswordForm();
     }
   }

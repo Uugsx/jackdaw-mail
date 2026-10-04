@@ -69,6 +69,9 @@ export function isNetworkError(ex: any): boolean {
     // browser fetch
     (ex?.name == "TypeError" &&
       /network ?error|failed to fetch|fetch failed|load failed/i.test(ex.message)) ||
+    // Electron передаёт AbortError через JPC как обычный Error с этим
+    // сообщением, поэтому исходное свойство `name` теряется.
+    /(?:this )?operation was aborted|request was aborted/i.test(ex?.message ?? "") ||
     ex?.name == "TimeoutError" ||
     ex?.name == "AbortError";
 }

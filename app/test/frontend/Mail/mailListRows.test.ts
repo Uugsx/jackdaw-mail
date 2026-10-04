@@ -3,6 +3,7 @@ import { ArrayColl } from "svelte-collections";
 import type { EMail } from "../../../logic/Mail/EMail";
 import {
   findMailListRowForMessage,
+  findMailListRowsForMessages,
   MailListRows,
   mailListSectionLabels,
   mailListTopicLabels,
@@ -266,6 +267,32 @@ describe("MailListRows", () => {
     rehydrated.dbID = loaded.dbID;
 
     expect(findMailListRowForMessage(rows, rehydrated)).toBe(row);
+  });
+
+  test("maps external selection to the visible message rows in the same order", () => {
+    let first = fakeMail("first", jan2);
+    let second = fakeMail("second", jan1);
+    let missing = fakeMail("missing", jan3);
+    let firstRow = {
+      kind: "message",
+      id: "msg:first",
+      message: first,
+    } as MailListMessageRow;
+    let secondRow = {
+      kind: "message",
+      id: "msg:second",
+      message: second,
+    } as MailListMessageRow;
+    let rows = new ArrayColl([
+      { kind: "day", id: "day:today", label: "Today", count: 1, collapsed: false },
+      firstRow,
+      secondRow,
+    ]);
+
+    expect(findMailListRowsForMessages(new ArrayColl([second, missing, first]), rows)).toEqual([
+      secondRow,
+      firstRow,
+    ]);
   });
 
   test("stops updating after dispose", () => {

@@ -1,5 +1,6 @@
 import "../../../../logic/app";
 import { appGlobal } from "../../../../logic/app";
+import { AuthMethod } from "../../../../logic/Abstract/Account";
 import { OWAAuth } from "../../../../logic/Auth/OWAAuth";
 import { SpecialFolder } from "../../../../logic/Mail/Folder";
 import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
@@ -140,6 +141,43 @@ test("проверка OWA-сессии не показывает timeout как
   await expect(account.testLoggedIn()).rejects.toBe(timeout);
   expect(timeout.doNotShow).toBe(true);
   expect(recoveryCount).toBe(1);
+});
+
+test("интерактивный OWA-вход продолжает авторизацию после отменённого сетевого запроса", async () => {
+  let aborted = new Error("This operation was aborted");
+  appGlobal.remoteApp = {
+    OWA: {
+      getAnyScrapedAuth: vi.fn().mockResolvedValue(""),
+      fetchJSON: vi.fn().mockRejectedValue(aborted),
+    },
+  };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let auth = new OWAAuth(account);
+  let loginWithUI = vi.spyOn(auth, "loginWithUI").mockResolvedValue("");
+
+  await auth.login(true);
+
+  expect(loginWithUI).toHaveBeenCalledOnce();
+  loginWithUI.mockRestore();
+});
+
+test("OWAAccount не считает отменённую проверку сессии неверной авторизацией", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.authMethod = AuthMethod.OAuth2;
+  let auth = new OWAAuth(account);
+  account.oAuth2 = auth;
+  let aborted = new Error("This operation was aborted");
+  vi.spyOn(account, "testLoggedIn").mockRejectedValue(aborted);
+  let login = vi.spyOn(auth, "login").mockResolvedValue("");
+
+  await (account as any).loginCommon(true);
+
+  expect(login).toHaveBeenCalledWith(true, true);
+  expect(aborted.doNotShow).toBe(true);
+  login.mockRestore();
 });
 
 test("refreshMessages не показывает ошибку при timeout GetItem", async () => {

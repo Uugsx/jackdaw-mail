@@ -77,8 +77,13 @@ export function owaFindMsgsInFolderRequest(
 }
 
 /** AQS / QueryString search within a folder (server-side). */
-export function owaFindMsgsByQueryRequest(folderID: string, queryString: string, maxFetchCount: number): OWARequest {
-  return new OWARequest("FindItem", {
+export function owaFindMsgsByQueryRequest(
+  folderID: string,
+  queryString: string,
+  maxFetchCount: number,
+  fromEnd = false,
+): OWARequest {
+  let body: Record<string, unknown> = {
     __type: "FindItemRequest:#Exchange",
     ItemShape: {
       __type: "ItemResponseShape:#Exchange",
@@ -93,19 +98,22 @@ export function owaFindMsgsByQueryRequest(folderID: string, queryString: string,
     QueryString: queryString,
     Paging: {
       __type: "IndexedPageView:#Exchange",
-      BasePoint: "Beginning",
+      BasePoint: fromEnd ? "End" : "Beginning",
       Offset: 0,
       MaxEntriesReturned: maxFetchCount,
     },
-    SortOrder: [{
+  };
+  if (!fromEnd) {
+    body.SortOrder = [{
       __type: "SortResults:#Exchange",
       Order: "Descending",
       Path: {
         __type: "PropertyUri:#Exchange",
         FieldURI: "item:DateTimeReceived",
       },
-    }],
-  });
+    }];
+  }
+  return new OWARequest("FindItem", body);
 }
 
 /** EWS-style delta sync over the OWA JSON bridge. */

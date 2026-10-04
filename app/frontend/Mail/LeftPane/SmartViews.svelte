@@ -110,6 +110,10 @@
     icon: typeof MailIcon;
   };
 
+  type UnreadSyncFolder = Folder & {
+    syncUnreadMessages?: () => Promise<boolean | void>;
+  };
+
   export let folder: Folder;
   export let searchMessages: ArrayColl<EMail> | null;
   export let expanded = true;
@@ -122,6 +126,17 @@
 
   let contextMenu: ContextMenu;
   let contextViewId: SmartViewId | null = null;
+  let searchGeneration = 0;
+  let lastFolder: Folder | null = null;
+
+  // Smart view and toolbar write into one parent-owned search result. Invalidating
+  // an older activation prevents a slow server sync from putting an empty/stale
+  // result over the newer toolbar filter result.
+  $: if (folder !== lastFolder) {
+    lastFolder = folder;
+    searchGeneration++;
+  }
+
   $: $smartViewPreferencesEpoch;
   $: orderedViews = getVisibleSmartViewIds()
     .map(id => views.find(view => view.id == id))
@@ -188,15 +203,17 @@
     if (!folder) {
       return;
     }
+    let generation = ++searchGeneration;
+    let currentFolder = folder;
     if (isActive(id, $quickSearch)) {
       quickSearch.reset();
-      quickSearch.folder = folder;
+      quickSearch.folder = currentFolder;
       $selectedMessage = null;
       searchMessages = null;
       return;
     }
     quickSearch.reset();
-    quickSearch.folder = folder;
+    quickSearch.folder = currentFolder;
     if (id == "unread") {
       quickSearch.isRead = false;
     } else if (id == "starred") {
@@ -206,9 +223,25 @@
     }
     $selectedMessage = null;
     searchMessages = new ArrayColl<EMail>();
+    if (id == "unread") {
+      let syncUnreadMessages = (folder as UnreadSyncFolder).syncUnreadMessages;
+      if (typeof syncUnreadMessages == "function") {
+        await syncUnreadMessages.call(currentFolder);
+      }
+    }
+    if (generation != searchGeneration || currentFolder !== folder) {
+      return;
+    }
     let result = await quickSearch.startSearch();
-    searchMessages = result;
-    $selectedMessage = result?.first;
+    if (generation == searchGeneration && currentFolder === folder) {
+      // Не затираем непустой unread-список пустым снимком, если второй
+      // параллельный проход ещё не успел опубликовать добавленные заголовки.
+      if (quickSearch.isRead !== false || result?.hasItems ||
+          !currentFolder.messages.contents.some(message => !message.isRead)) {
+        searchMessages = result;
+        $selectedMessage = result?.first;
+      }
+    }
   }
 </script>
 

@@ -251,6 +251,59 @@ test("массовое удаление из обычной OWA-папки от�
   expect(trashNotifications - initialTrashNotifications).toBe(2);
 });
 
+test("не возвращает устаревший unread-счётчик после пакетного удаления", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let source = account.newFolder();
+  source.id = "source-folder";
+  let trash = account.newFolder();
+  trash.id = "trash-folder";
+  trash.specialFolder = SpecialFolder.Trash;
+  account.rootFolders.addAll([source, trash]);
+  source.releaseDeletionAfterGracePeriod = () => {};
+  (source as any).haveReadFolder = true;
+
+  (account as any).callOWA = async (request: any) => ({
+    ResponseMessages: {
+      Items: request.Body.ItemIds.map((item: any) => ({
+        ResponseClass: "Success",
+        ResponseCode: "NoError",
+        Items: [{ ItemId: { Id: `trash-${item.Id}` } }],
+      })),
+    },
+  });
+
+  let messages = Array.from({ length: 3 }, (_, index) => {
+    let message = source.newEMail();
+    message.itemID = `message-${index}`;
+    message.isRead = false;
+    source.messages.add(message);
+    return message;
+  });
+  // В кеше только выбранные строки, а серверный TotalCount включает архив.
+  source.countTotal = 20;
+  source.countUnread = messages.length;
+
+  await source.deleteMessages(new ArrayColl(messages));
+
+  expect(source.countTotal).toBe(17);
+  expect(source.countUnread).toBe(0);
+
+  // Exchange ещё возвращает снимок до MoveItem. Он не должен воскресить
+  // удалённые непрочитанные письма и старый TotalCount.
+  source.applyServerCounts(20, messages.length);
+  expect(source.countTotal).toBe(17);
+  expect(source.countUnread).toBe(0);
+
+  // Даже если между ответами пришёл уже уменьшенный TotalCount, последующий
+  // запоздалый старый ответ не должен снова поднять бейдж.
+  source.applyServerCounts(17, 0);
+  source.applyServerCounts(20, messages.length);
+  expect(source.countTotal).toBe(17);
+  expect(source.countUnread).toBe(0);
+});
+
 test("массовое удаление из корзины OWA отправляет один DeleteItem", async () => {
   appGlobal.remoteApp = { OWA: {} };
   let account = new OWAAccount();

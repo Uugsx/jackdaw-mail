@@ -22,6 +22,8 @@
     bind:selectedItem={selectedRow}
     bind:selectedItems={selectedRows}
     isSelectable={mailListRowSelectable}
+    selectionKey={mailListRowSelectionKey}
+    focusOnSelect={true}
     bind:isAtTop
     on:selected={onRowSelected}
     on:init={onListInit}
@@ -55,19 +57,20 @@
   import VerticalMessageListItem from "./VerticalMessageListItem.svelte";
   import MailListTopicSeparator from "./MailListTopicSeparator.svelte";
   import {
-    MailListRows, findMailListRowForMessage, mailListRowSelectable,
+    MailListRows, findMailListRowForMessage, findMailListRowsForMessages, mailListRowSelectable,
+    mailListRowSelectionKey,
     type MailListMessageRow, type MailListRow,
   } from "../mailListRows";
   import { listVisibleMessages, folderSyncing } from "../Selected";
   import Spinner from "../../Shared/Spinner.svelte";
   import { catchErrors } from "../../Util/error";
-  import { ArrayColl, type Collection } from "svelte-collections";
+  import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
   import { onDestroy, tick } from "svelte";
   import { t } from "../../../l10n/l10n";
 
   export let messages: Collection<EMail>;
   export let folder: Folder | null = null;
-  export let selectedMessage: EMail;
+  export let selectedMessage: EMail | null;
   export let selectedMessages: ArrayColl<EMail>;
   /** From FastList. out only */
   export let isAtTop: boolean = false;
@@ -82,14 +85,31 @@
 
   const rowsModel = new MailListRows();
   const listRows = rowsModel.rows;
-  onDestroy(() => rowsModel.dispose());
+  let observedSelectedMessages: ArrayColl<EMail> | null = null;
+
+  class SelectedMessagesObserver extends CollectionObserver<EMail> {
+    added() {
+      syncRowsFromMessages(selectedMessages, listRows);
+    }
+    removed() {
+      syncRowsFromMessages(selectedMessages, listRows);
+    }
+  }
+
+  const selectedMessagesObserver = new SelectedMessagesObserver();
+
+  onDestroy(() => {
+    observedSelectedMessages?.unregisterObserver(selectedMessagesObserver);
+    rowsModel.dispose();
+  });
 
   $: activateMailListSort(folder);
   $: rowsModel.setSource(messages, $mailListSort);
   $: listVisibleMessages.set(messages);
   $: syncSelectedRow(selectedMessage, $listRows);
-  $: syncSelectedMessages($selectedRows);
+  $: syncSelectedMessages($selectedRows, $listRows);
   $: syncRowsFromMessages(selectedMessages, $listRows);
+  $: observeSelectedMessages(selectedMessages);
   $: scrollSelectedMessageIntoView($listRows, selectedMessage, $mailListSort);
 
   function selectedMessageRows(rows: ArrayColl<MailListRow>): EMail[] {
@@ -103,13 +123,20 @@
     if (arraysEqual(msgs.contents, current)) {
       return;
     }
-    let emailRows = msgs.contents
-      .map(message => findMailListRowForMessage(rows, message))
-      .filter((row): row is MailListMessageRow => !!row && row.kind == "message");
+    let emailRows = findMailListRowsForMessages(msgs, rows);
     selectedRows.replaceAll(emailRows);
     selectedRow = emailRows[0] ?? null;
   }
-  function syncSelectedRow(message: EMail, rows: Collection<MailListRow>) {
+
+  function observeSelectedMessages(messages: ArrayColl<EMail>) {
+    if (messages === observedSelectedMessages) {
+      return;
+    }
+    observedSelectedMessages?.unregisterObserver(selectedMessagesObserver);
+    observedSelectedMessages = messages;
+    messages?.registerObserver(selectedMessagesObserver);
+  }
+  function syncSelectedRow(message: EMail | null, rows: Collection<MailListRow>) {
     let row = findMailListRowForMessage(rows, message);
     if (row && row !== selectedRow) {
       selectedRow = row;
@@ -119,13 +146,19 @@
     }
   }
 
-  function syncSelectedMessages(rows: ArrayColl<MailListRow>) {
+  function syncSelectedMessages(rows: ArrayColl<MailListRow>, visibleRows: Collection<MailListRow>) {
     let emails = selectedMessageRows(rows);
     if (!arraysEqual(emails, selectedMessages.contents)) {
       selectedMessages.replaceAll(emails);
     }
     if (emails[0] && emails[0] !== selectedMessage) {
       selectedMessage = emails[0];
+    } else if (!emails.length && selectedMessage && !findMailListRowForMessage(visibleRows, selectedMessage)) {
+      // После удаления или смены фильтра выбранное письмо уже не входит в
+      // список. Не оставляем его в нижней панели как будто оно всё ещё
+      // существует в текущей папке.
+      selectedMessage = null;
+      selectedRow = null;
     }
   }
 

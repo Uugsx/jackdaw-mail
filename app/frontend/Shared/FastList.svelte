@@ -115,6 +115,15 @@
   /** Return false to ignore clicks/keyboard on section headers etc. */
   export let isSelectable: (item: T) => boolean = () => true;
 
+  /** Передавать фокус списку после выбора строки кликом. */
+  export let focusOnSelect = false;
+
+  /**
+   * Логический ключ строки для сохранения выделения после перестроения items.
+   * По умолчанию сохраняется прежнее сравнение по ссылке на объект.
+   */
+  export let selectionKey: (item: T) => unknown = item => item;
+
   /** Whether the list is scrolled all the way to the top
    * out only */
   export let isAtTop = false;
@@ -479,6 +488,9 @@
     if (!isSelectable(clickedItem)) {
       return;
     }
+    if (focusOnSelect) {
+      listE.focus({ preventScroll: true });
+    }
     if (event.shiftKey) { // select whole range
       let anchorItem = selectedItems.first ?? selectedItem;
       if (!anchorItem || !isSelectable(anchorItem)) {
@@ -533,7 +545,35 @@
     if (selectedItems.isEmpty) {
       return;
     }
-    selectedItems.removeAll(selectedItems.filterOnce(a => !items.includes(a) || !isSelectable(a)));
+
+    // MailListRows пересоздаёт объекты строк при каждом обновлении папки.
+    // Сама EMail при этом остаётся той же, поэтому сравнение только по ссылке
+    // на MailListRow ошибочно воспринимало обновление данных как удаление
+    // выделения. Переносим выделение на актуальные объекты по логическому
+    // ключу, сохраняя прежнее поведение для списков без selectionKey.
+    let currentItemsByKey = new Map<unknown, T>();
+    for (let item of items.contents) {
+      if (isSelectable(item)) {
+        let key = selectionKey(item);
+        if (!currentItemsByKey.has(key)) {
+          currentItemsByKey.set(key, item);
+        }
+      }
+    }
+    let reconciled: T[] = [];
+    for (let selected of selectedItems.contents) {
+      if (!isSelectable(selected)) {
+        continue;
+      }
+      let replacement = currentItemsByKey.get(selectionKey(selected));
+      if (replacement && !reconciled.includes(replacement)) {
+        reconciled.push(replacement);
+      }
+    }
+    if (reconciled.length != selectedItems.length ||
+        reconciled.some((item, index) => item !== selectedItems.getIndex(index))) {
+      selectedItems.replaceAll(reconciled);
+    }
     if (selectedItems.isEmpty) {
       let newItem = nearestSelectableItem(lastSelectedIndex);
       if (!newItem) {

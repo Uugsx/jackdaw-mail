@@ -5,6 +5,7 @@ import { OWALoginBackground } from "../Mail/OWA/Login/OWALoginBackground";
 import type { OWAAccount } from "../Mail/OWA/OWAAccount";
 import { appGlobal } from "../app";
 import { assert, NotReached, type URLString } from "../util/util";
+import { isNetworkError } from "../util/netUtil";
 
 /** Log into OWA web interface via browser. Mimics the `OAuth2` API. */
 export class OWAAuth extends WebBasedAuth {
@@ -26,7 +27,7 @@ export class OWAAuth extends WebBasedAuth {
   }
 
   // Called from `OWAAccount.loginCommon()`
-  async login(interactive: boolean): Promise<string> {
+  async login(interactive: boolean, skipSessionCheck = false): Promise<string> {
     assert(this.account, "Need to set account first");
     if (this.isLoggedIn) {
       return "";
@@ -35,9 +36,19 @@ export class OWAAuth extends WebBasedAuth {
     // than by an OAuth refresh token. Reuse that session on application
     // startup, so a saved account does not require opening the login tab on
     // every launch.
-    if (await this.account.testLoggedIn()) {
-      this.isLoggedIn = true;
-      return "";
+    if (!skipSessionCheck) {
+      try {
+        if (await this.account.testLoggedIn()) {
+          this.isLoggedIn = true;
+          return "";
+        }
+      } catch (ex) {
+        // Отмена сетевого запроса не означает неверные учётные данные. При
+        // интерактивном входе всё равно открываем штатную форму авторизации.
+        if (!isNetworkError(ex) || !interactive) {
+          throw ex;
+        }
+      }
     }
     if (!interactive) {
       throw new OAuth2LoginNeeded();

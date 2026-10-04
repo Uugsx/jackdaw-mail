@@ -65,8 +65,13 @@
   }
 
   $: quickSearch.folder = folder;
-  $: folder && ($folder.countUnread, $folder.countTotal, $folder.countNewArrived) &&
-    $quickSearch && catchErrors(startSearch, showError);
+  $: if (folder && $quickSearch) {
+    // Нулевой countNewArrived не должен блокировать локальный поиск папки.
+    $folder.countUnread;
+    $folder.countTotal;
+    $folder.countNewArrived;
+    catchErrors(startSearch, showError);
+  }
 
   /** Filters the folder.messages array */
   async function startSearch() {

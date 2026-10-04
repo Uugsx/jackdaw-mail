@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { tick, mount, unmount } from "svelte";
 import { ArrayColl } from "svelte-collections";
 
@@ -123,6 +123,58 @@ describe("QuickFilterBar", () => {
     let filterButton = target.querySelector("button.filter-menu-trigger") as HTMLButtonElement;
     expect(filterButton.classList.contains("active")).toBe(true);
     expect(filterButton.textContent?.trim()).toBe("1");
+    expect(filterButton.querySelector(".active-count")?.textContent).toBe("1");
+    let clearButton = target.querySelector("button.pill.clear") as HTMLButtonElement;
+    expect(clearButton.querySelector(".clear-icon")).toBeTruthy();
+    expect(clearButton.getAttribute("aria-label")).toContain("Clear filters");
+  });
+
+  test("syncs server unread headers before applying the toolbar filter", async () => {
+    let folder = fakeFolder("INBOX");
+    let syncUnreadMessages = vi.fn(async () => undefined);
+    folder.syncUnreadMessages = syncUnreadMessages;
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted.push(
+      mount(QuickFilterBar, {
+        target,
+        props: { folder, searchMessages: null },
+      }),
+    );
+
+    let filterMenuButton = target.querySelector("button.filter-menu-trigger") as HTMLButtonElement;
+    filterMenuButton.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await tick();
+    let unreadButton = [...document.querySelectorAll("button.menuitem")]
+      .find(button => button.textContent?.trim() == "Unread") as HTMLButtonElement;
+
+    unreadButton.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await tick();
+
+    expect(syncUnreadMessages).toHaveBeenCalledOnce();
+  });
+
+  test("starts unread synchronization when the local folder cache is empty", async () => {
+    let folder = fakeFolder("INBOX");
+    folder.countUnread = 103;
+    let syncUnreadMessages = vi.fn(async () => true);
+    folder.syncUnreadMessages = syncUnreadMessages;
+    quickSearch.isRead = false;
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted.push(
+      mount(QuickFilterBar, {
+        target,
+        props: { folder, searchMessages: null },
+      }),
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await tick();
+
+    expect(syncUnreadMessages).toHaveBeenCalled();
   });
 
   test("keeps the sort menu anchored to its trigger", async () => {

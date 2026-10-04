@@ -442,6 +442,16 @@
     min-height: 34px;
     padding: 0;
   }
+  .mail-toolbar :global(.quick-filters .pill.clear) {
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    max-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    justify-content: center;
+  }
   .mail-toolbar :global(.quick-filters .pill.active) {
     background-color: var(--selected-bg);
     border-color: transparent;
@@ -544,6 +554,14 @@
     min-height: 28px;
     padding: 0;
   }
+  .mail-toolbar.toolbar-compact :global(.quick-filters .pill.clear) {
+    flex-basis: 28px;
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    height: 28px;
+    min-height: 28px;
+  }
   .mail-toolbar.toolbar-compact :global(.mail-create-item-menu .menu.button) {
     flex-basis: 28px;
     width: 28px;
@@ -594,6 +612,14 @@
     height: 44px;
     min-height: 44px;
     padding: 0;
+  }
+  .mail-toolbar.toolbar-large :global(.quick-filters .pill.clear) {
+    flex-basis: 44px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   .mail-toolbar.toolbar-stacked {

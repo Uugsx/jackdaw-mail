@@ -31,8 +31,10 @@
 
     {#if anyActive}
       <button type="button" class="pill clear" title={$t`Clear filters`}
+        aria-label={$t`Clear filters`}
         on:click={() => catchErrors(clearFilters)}>
-        {$t`Clear`}
+        <XIcon class="clear-icon" size="15px" strokeWidth={2} aria-hidden="true" />
+        <span class="clear-label">{$t`Clear`}</span>
       </button>
     {/if}
 
@@ -83,7 +85,12 @@
   import { t } from "../../../l10n/l10n";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import ListFilterIcon from "lucide-svelte/icons/list-filter";
+  import XIcon from "lucide-svelte/icons/x";
   import { hideTooltips } from "../../Shared/tooltip";
+
+  type UnreadSyncFolder = Folder & {
+    syncUnreadMessages?: () => Promise<boolean | void>;
+  };
 
   export let folder: Folder;
   export let searchMessages: ArrayColl<EMail> | null; /** out */
@@ -92,6 +99,10 @@
   let sortAnchor: HTMLElement;
   let filterMenuOpen = false;
   let filterAnchor: HTMLElement;
+  let searchGeneration = 0;
+  let lastUnreadSyncFolder: Folder | null = null;
+  let lastUnreadSyncCount = -1;
+  let lastUnreadSyncLocalCount = -1;
 
   $: filterDefs = allQuickFilters.filter(f => f.kind == "filter");
   $: sortDefs = allQuickFilters.filter(f => f.kind == "sort");
@@ -114,8 +125,16 @@
 
   $: localMsgCount = folder?.messages ? $folder.messages.length : 0;
   $: quickSearch.folder = folder;
-  $: folder && ($folder.countUnread, $folder.countTotal, $folder.countNewArrived, localMsgCount) &&
-    $quickSearch && catchErrors(runSearch);
+  $: if (folder && $quickSearch) {
+    // Важно запускать поиск и при пустом локальном кеше: именно тогда
+    // серверный unread-бейдж может быть ненулевым, а заголовки ещё не
+    // загружены. Проверка truthy у localMsgCount оставляла такой экран пустым.
+    $folder.countUnread;
+    $folder.countTotal;
+    $folder.countNewArrived;
+    localMsgCount;
+    catchErrors(runSearch);
+  }
 
   function isActive(id: QuickFilterId, search = quickSearch): boolean {
     switch (id) {
@@ -127,6 +146,7 @@
       case "toMe": return search.isOutgoing === false;
       case "replied": return search.isReplied === true;
     }
+    return false;
   }
 
   function toggleFilter(id: QuickFilterId) {
@@ -198,7 +218,49 @@
   }
 
   async function runSearch() {
-    searchMessages = await quickSearch.startSearch();
+    let generation = ++searchGeneration;
+    let currentFolder = folder;
+    // Даже неполная серверная сверка не должна скрывать уже загруженные
+    // непрочитанные строки: локальный результат всё равно нужно опубликовать.
+    // Иначе устаревший счётчик оставляет экран пустым до следующей попытки.
+    await syncUnreadForSearch(currentFolder);
+    if (generation != searchGeneration || currentFolder !== folder || quickSearch.folder !== currentFolder) {
+      return;
+    }
+    let result = await quickSearch.startSearch();
+    if (generation == searchGeneration && currentFolder === folder && quickSearch.folder === currentFolder) {
+      // Синхронизация заголовков и локальный поиск завершаются независимо.
+      // Пустой результат старого прохода не должен затирать уже загруженные
+      // unread-строки, пока папка ещё содержит их в локальном кеше.
+      if (quickSearch.isRead !== false || result?.hasItems ||
+          !currentFolder.messages.contents.some(message => !message.isRead)) {
+        searchMessages = result;
+      }
+    }
+  }
+
+  async function syncUnreadForSearch(currentFolder: Folder, force = false): Promise<void> {
+    if (quickSearch.isRead !== false) {
+      return;
+    }
+    let shouldSyncUnread = force || lastUnreadSyncFolder !== currentFolder ||
+      lastUnreadSyncCount !== currentFolder.countUnread ||
+      lastUnreadSyncLocalCount !== currentFolder.messages.length;
+    if (!shouldSyncUnread) {
+      return;
+    }
+    let syncUnreadMessages = (currentFolder as UnreadSyncFolder).syncUnreadMessages;
+    let syncComplete = true;
+    if (typeof syncUnreadMessages == "function") {
+      syncComplete = (await syncUnreadMessages.call(currentFolder)) !== false;
+    }
+    // Не запоминаем неудачную попытку до её завершения: после сетевой ошибки
+    // повторное открытие фильтра должно снова запросить заголовки.
+    if (syncComplete) {
+      lastUnreadSyncFolder = currentFolder;
+      lastUnreadSyncCount = currentFolder.countUnread;
+      lastUnreadSyncLocalCount = currentFolder.messages.length;
+    }
   }
 
 </script>
@@ -257,6 +319,10 @@
     justify-content: center;
     box-sizing: border-box;
   }
+  .pill.filter-menu-trigger {
+    position: relative;
+    overflow: visible;
+  }
   .sort-menu-trigger,
   .filter-menu-trigger {
     cursor: pointer;
@@ -266,14 +332,48 @@
     display: block;
   }
   .active-count {
-    min-width: 1.15em;
+    position: absolute;
+    inset-block-start: -5px;
+    inset-inline-end: -5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    box-sizing: border-box;
+    border: 1px solid var(--main-bg);
+    border-radius: 999px;
+    background-color: var(--selected-fg);
+    color: var(--selected-bg);
     font-size: 10px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
+    pointer-events: none;
   }
   .pill.clear {
+    width: 34px;
+    min-width: 34px;
+    max-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    justify-content: center;
     border-style: dashed;
     opacity: 0.75;
+  }
+  :global(.clear-icon) {
+    flex: 0 0 auto;
+    display: block;
+  }
+  .clear-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .pill:focus-visible {
     outline: 2px solid var(--input-focus);
