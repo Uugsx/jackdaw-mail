@@ -22,7 +22,9 @@
   import {
     applyQuoteCommand,
     captureQuoteSelection,
+    readQuoteEditorStyle,
     type QuoteEditorCommand,
+    type QuoteEditorStyle,
   } from "./quoteEditorCommands";
   import { applyQuoteTextInput } from "./quoteEditorInput";
 
@@ -49,6 +51,11 @@
   /** Return the native selection when it belongs to the quoted message. */
   export function captureSelection(): Range | null {
     return rootEl ? captureQuoteSelection(rootEl) : null;
+  }
+
+  /** Возвращает фактический стиль под текущим caret/выделением цитаты. */
+  export function getCurrentStyle(range?: Range | null): QuoteEditorStyle | null {
+    return rootEl ? readQuoteEditorStyle(rootEl, range) : null;
   }
 
   /** Apply formatting in the quote without moving the caret to the reply area. */

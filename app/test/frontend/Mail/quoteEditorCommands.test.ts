@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyQuoteCommand,
   captureQuoteSelection,
+  readQuoteEditorStyle,
 } from "../../../frontend/Mail/Composer/quoteEditorCommands";
 
 const originalExecCommand = document.execCommand;
@@ -30,6 +31,39 @@ function selectText(root: HTMLElement, start: number, end: number): Range {
 }
 
 describe("native quote editor commands", () => {
+  it("читает фактическое оформление под caret из Outlook-подобного HTML", () => {
+    let root = document.createElement("div");
+    root.className = "compose-quote-html";
+    root.innerHTML = `<p style="line-height: 1.5; text-align: center">
+      <span style="font-family: Arial; font-size: 14pt; color: #C00000; background-color: #FFFF00">
+        <strong><em><u><a href="https://example.com">Текст клиента</a></u></em></strong>
+      </span>
+    </p>`;
+    document.body.append(root);
+    let range = document.createRange();
+    let text = root.querySelector("a")?.firstChild;
+    expect(text).toBeTruthy();
+    range.setStart(text!, 2);
+    range.collapse(true);
+
+    let style = readQuoteEditorStyle(root, range);
+
+    expect(style).toMatchObject({
+      fontFamily: "Arial",
+      fontSize: "14",
+      lineHeight: "1.5",
+      color: "#C00000",
+      highlight: "#FFFF00",
+      bold: true,
+      italic: true,
+      underline: true,
+      blockquote: false,
+      textAlign: "center",
+      link: "https://example.com",
+    });
+    expect(style?.strike).toBe(false);
+  });
+
   it("restores a quote selection before applying highlight", () => {
     let root = document.createElement("div");
     root.tabIndex = 0;

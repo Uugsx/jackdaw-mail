@@ -79,6 +79,9 @@
               value={displayFontFamily}
               on:mousedown={rememberEditorSelection}
               on:change={onFontFamilyChange}>
+              {#if selectedFontFamily && !composeFontFamilies.some(font => font.value === selectedFontFamily)}
+                <option value={selectedFontFamily}>{formatFontFamilyLabel(selectedFontFamily)}</option>
+              {/if}
               {#each composeFontFamilies as font}
                 <option value={font.value}>{font.label()}</option>
               {/each}
@@ -108,25 +111,25 @@
           </hbox>
           <hbox class="group-row">
             <button type="button" class="ribbon-btn" title={$t`Bold`}
-              class:on={editor.isActive("bold")}
+              class:on={activeBold}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("bold", () => editor.chain().focus().toggleBold().run())}>
               <BoldIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Italic`}
-              class:on={editor.isActive("italic")}
+              class:on={activeItalic}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("italic", () => editor.chain().focus().toggleItalic().run())}>
               <ItalicIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Underline`}
-              class:on={editor.isActive("underline")}
+              class:on={activeUnderline}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("underline", () => editor.chain().focus().toggleUnderline().run())}>
               <UnderlineIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Strike-through`}
-              class:on={editor.isActive("strike")}
+              class:on={activeStrike}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("strikeThrough", () => editor.chain().focus().toggleStrike().run())}>
               <StrikethroughIcon size="18px" />
@@ -154,7 +157,7 @@
             </hbox>
             <hbox class="split-color-tool">
               <button type="button" class="ribbon-btn color-tool color-tool-main"
-                class:on={editor.isActive("highlight")}
+                class:on={activeHighlight}
                 title={$t`Text highlight color`}
                 aria-label={$t`Text highlight color`}
                 on:mousedown={rememberEditorSelection}
@@ -182,43 +185,43 @@
         <vbox class="group">
           <hbox class="group-row">
             <button type="button" class="ribbon-btn" title={$t`Bulleted list`}
-              class:on={editor.isActive("bulletList")}
+              class:on={activeBulletList}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("insertUnorderedList", () => editor.chain().focus().toggleBulletList().run())}>
               <ListIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Ordered list`}
-              class:on={editor.isActive("orderedList")}
+              class:on={activeOrderedList}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("insertOrderedList", () => editor.chain().focus().toggleOrderedList().run())}>
               <ListOrderedIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Quote of the original email`}
-              class:on={editor.isActive("blockquote")}
+              class:on={activeBlockquote}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("formatBlock", () => editor.chain().focus().toggleBlockquote().run(), "blockquote")}>
               <QuoteIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Align left`}
-              class:on={editor.isActive({ textAlign: "left" })}
+              class:on={activeAlignLeft}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("justifyLeft", () => editor.chain().focus().setTextAlign("left").run())}>
               <AlignLeftIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Align center`}
-              class:on={editor.isActive({ textAlign: "center" })}
+              class:on={activeAlignCenter}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("justifyCenter", () => editor.chain().focus().setTextAlign("center").run())}>
               <AlignCenterIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Align right`}
-              class:on={editor.isActive({ textAlign: "right" })}
+              class:on={activeAlignRight}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("justifyRight", () => editor.chain().focus().setTextAlign("right").run())}>
               <AlignRightIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Justify`}
-              class:on={editor.isActive({ textAlign: "justify" })}
+              class:on={activeAlignJustify}
               on:mousedown={rememberEditorSelection}
               on:click={() => runFormattingCommand("justifyFull", () => editor.chain().focus().setTextAlign("justify").run())}>
               <AlignJustifyIcon size="18px" />
@@ -247,7 +250,7 @@
         <vbox class="group">
           <hbox class="group-row">
             <button type="button" class="ribbon-btn" title={$t`Link to webpage`}
-              class:on={editor.isActive("link")}
+              class:on={activeLink}
               on:mousedown={rememberEditorSelection}
               on:click={onLinkOpen}>
               <LinkIcon size="18px" />
@@ -443,7 +446,7 @@
         <div class="color-grid">
           {#each visibleHighlightColors as color}
             <button type="button" class="color-cell" style:background={color}
-              class:selected={editor?.isActive("highlight", { color })}
+              class:selected={selectedHighlightColor.toUpperCase() === color.toUpperCase()}
               title={color}
               on:click={() => applyHighlight(color)} />
           {/each}
@@ -488,7 +491,7 @@
     captureFormatPainterFromRange,
     type FormatPainterSnapshot,
   } from "../../Shared/Editor/formatPainter";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { t } from "../../../l10n/l10n";
   import SendIcon from "lucide-svelte/icons/send";
   import ClipboardPasteIcon from "lucide-svelte/icons/clipboard-paste";
@@ -533,7 +536,12 @@
   import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import type { MailImportanceLevel } from "../../../logic/Mail/EMail";
-  import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
+  import type {
+    QuoteEditorCommand,
+    QuoteEditorHandle,
+    QuoteEditorStyle,
+    QuoteTextAlign,
+  } from "./quoteEditorCommands";
 
   export let editor: Editor;
   export let sendDisabledTooltip: string | null = null;
@@ -596,13 +604,20 @@
   let imageFileEl: HTMLInputElement;
   let styleTick = 0;
   let styleListenerCleanup: (() => void) | null = null;
+  let nativeStyleListenerCleanup: (() => void) | null = null;
   let subscribedEditor: Editor | null = null;
+  let activeEditorSource: "editor" | "quote" = "editor";
+  let quoteStyle: QuoteEditorStyle | null = null;
 
   $: if (editor && editor !== subscribedEditor) {
     styleListenerCleanup?.();
     clearFormatPainter();
     subscribedEditor = editor;
-    let bump = () => styleTick++;
+    let bump = () => {
+      activeEditorSource = "editor";
+      quoteStyle = null;
+      styleTick++;
+    };
     editor.on("selectionUpdate", bump);
     editor.on("transaction", bump);
     styleListenerCleanup = () => {
@@ -615,10 +630,50 @@
     subscribedEditor = null;
   }
 
+  onMount(() => {
+    let refreshFromNativeSelection = () => {
+      if (!editor) {
+        return;
+      }
+      let selection = document.getSelection();
+      let quoteRange = quoteEditor?.captureSelection();
+      if (quoteRange) {
+        activeEditorSource = "quote";
+        quoteStyle = quoteEditor?.getCurrentStyle?.(quoteRange) ?? null;
+        styleTick++;
+        return;
+      }
+      if (selection?.rangeCount && selectionBelongsToElement(editor.view.dom, selection)) {
+        activeEditorSource = "editor";
+        quoteStyle = null;
+        styleTick++;
+      }
+    };
+    let refreshForEditorEvent = (event: Event) => {
+      if (event.target instanceof Element
+        && event.target.closest(".compose-quote-html, .ProseMirror")) {
+        refreshFromNativeSelection();
+      }
+    };
+    document.addEventListener("selectionchange", refreshFromNativeSelection);
+    document.addEventListener("mouseup", refreshFromNativeSelection, true);
+    document.addEventListener("keyup", refreshFromNativeSelection, true);
+    document.addEventListener("input", refreshForEditorEvent, true);
+    nativeStyleListenerCleanup = () => {
+      document.removeEventListener("selectionchange", refreshFromNativeSelection);
+      document.removeEventListener("mouseup", refreshFromNativeSelection, true);
+      document.removeEventListener("keyup", refreshFromNativeSelection, true);
+      document.removeEventListener("input", refreshForEditorEvent, true);
+    };
+    return nativeStyleListenerCleanup;
+  });
+
   onDestroy(() => {
     styleListenerCleanup?.();
+    nativeStyleListenerCleanup?.();
     clearFormatPainter();
     styleListenerCleanup = null;
+    nativeStyleListenerCleanup = null;
     subscribedEditor = null;
   });
 
@@ -627,21 +682,89 @@
     return read();
   }
 
-  $: selectedFontFamily = editor ? readEditorStyle(() => currentFontFamily(editor), styleTick) : "";
+  function selectionBelongsToElement(root: Element, selection: Selection): boolean {
+    return !!selection.anchorNode
+      && !!selection.focusNode
+      && root.contains(selection.anchorNode)
+      && root.contains(selection.focusNode);
+  }
+
+  function currentTextAlign(alignment: QuoteTextAlign): boolean {
+    if (quoteSelectionActive) {
+      return quoteStyle?.textAlign === alignment;
+    }
+    if (!editor) {
+      return false;
+    }
+    return editor.isActive({ textAlign: alignment });
+  }
+
+  function formatFontFamilyLabel(value: string): string {
+    let firstFamily = value.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "");
+    return firstFamily || value;
+  }
+
+  $: quoteSelectionActive = activeEditorSource === "quote" && !!quoteStyle;
+  $: selectedFontFamily = editor
+    ? readEditorStyle(() => quoteSelectionActive ? quoteStyle?.fontFamily ?? "" : currentFontFamily(editor), styleTick)
+    : "";
   $: displayFontFamily = selectedFontFamily || $defaultFontFamilySetting.value;
-  $: selectedFontSize = editor ? readEditorStyle(() => currentFontSize(editor), styleTick) : "";
+  $: selectedFontSize = editor
+    ? readEditorStyle(() => quoteSelectionActive ? quoteStyle?.fontSize ?? "" : currentFontSize(editor), styleTick)
+    : "";
   $: displayFontSize = selectedFontSize || normalizeFontSizeValue($defaultFontSizeSetting.value || composeDefaultFontSize);
-  $: selectedLineHeight = editor ? readEditorStyle(() => currentLineHeight(editor), styleTick) : "";
+  $: selectedLineHeight = editor
+    ? readEditorStyle(() => quoteSelectionActive ? quoteStyle?.lineHeight ?? "" : currentLineHeight(editor), styleTick)
+    : "";
   $: displayLineHeight = selectedLineHeight;
   $: lineHeightLabel = formatLineHeightLabel(displayLineHeight);
   $: selectedTextColor = editor
-    ? readEditorStyle(() => editor.getAttributes("textStyle").color ?? "", styleTick)
+    ? readEditorStyle(() => quoteSelectionActive
+      ? quoteStyle?.color ?? ""
+      : editor.getAttributes("textStyle").color ?? "", styleTick)
     : "";
   $: textColorBar = selectedTextColor || $defaultTextColorSetting.value || lastTextColor;
-  $: highlightBarColor = lastHighlightColor;
+  $: selectedHighlightColor = editor
+    ? readEditorStyle(() => quoteSelectionActive
+      ? quoteStyle?.highlight ?? ""
+      : editor.getAttributes("highlight").color ?? "", styleTick)
+    : "";
+  $: highlightBarColor = selectedHighlightColor || lastHighlightColor;
   $: visibleHighlightColors = highlightHighContrastOnly
     ? composeHighlightColorsHighContrast
     : composeHighlightColors;
+
+  $: activeBold = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.bold ?? false
+    : !!editor?.isActive("bold"), styleTick);
+  $: activeItalic = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.italic ?? false
+    : !!editor?.isActive("italic"), styleTick);
+  $: activeUnderline = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.underline ?? false
+    : !!editor?.isActive("underline"), styleTick);
+  $: activeStrike = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.strike ?? false
+    : !!editor?.isActive("strike"), styleTick);
+  $: activeHighlight = readEditorStyle(() => quoteSelectionActive
+    ? !!quoteStyle?.highlight
+    : !!editor?.isActive("highlight"), styleTick);
+  $: activeBulletList = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.bulletList ?? false
+    : !!editor?.isActive("bulletList"), styleTick);
+  $: activeOrderedList = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.orderedList ?? false
+    : !!editor?.isActive("orderedList"), styleTick);
+  $: activeBlockquote = readEditorStyle(() => quoteSelectionActive
+    ? quoteStyle?.blockquote ?? false
+    : !!editor?.isActive("blockquote"), styleTick);
+  $: activeAlignLeft = readEditorStyle(() => currentTextAlign("left"), styleTick);
+  $: activeAlignCenter = readEditorStyle(() => currentTextAlign("center"), styleTick);
+  $: activeAlignRight = readEditorStyle(() => currentTextAlign("right"), styleTick);
+  $: activeAlignJustify = readEditorStyle(() => currentTextAlign("justify"), styleTick);
+  $: activeLink = readEditorStyle(() => quoteSelectionActive
+    ? !!quoteStyle?.link
+    : !!editor?.isActive("link"), styleTick);
   $: if (openLinkDialog && editor) {
     openLinkDialog = false;
     onLinkOpen();
@@ -739,6 +862,9 @@
     let quoteRange = quoteEditor?.captureSelection();
     if (quoteRange) {
       savedSelection = { source: "quote", range: quoteRange };
+      activeEditorSource = "quote";
+      quoteStyle = quoteEditor?.getCurrentStyle?.(quoteRange) ?? quoteStyle;
+      styleTick++;
       return;
     }
     if (!editor) {
@@ -746,6 +872,9 @@
     }
     let { from, to } = editor.state.selection;
     savedSelection = { source: "editor", from, to };
+    activeEditorSource = "editor";
+    quoteStyle = null;
+    styleTick++;
   }
 
   function chainWithSavedSelection() {
@@ -972,7 +1101,7 @@
   function onLinkOpen() {
     isEditingLink = true;
     if (savedSelection?.source === "quote") {
-      linkTargetURL = "";
+      linkTargetURL = quoteStyle?.link ?? "";
       return;
     }
     linkTargetURL = editor.getAttributes("link").href ?? "";
