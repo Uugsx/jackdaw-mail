@@ -1041,6 +1041,99 @@ test("refreshMessages подтягивает изменённые категор
   expect(message.tags.contents.map(tag => tag.name)).toEqual(["Новая метка"]);
 });
 
+test("после загрузки кеша сверяет все локальные unread с серверным IsRead", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 1_000;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(1_000, 0);
+
+  let cachedIDs = Array.from({ length: 209 }, (_, index) => `cached-unread-${index}`);
+  for (let id of cachedIDs) {
+    let message = folder.newEMail();
+    message.itemID = id;
+    message.isRead = false;
+    folder.messages.add(message);
+  }
+
+  let requestedBatches: string[][] = [];
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("GetItem");
+    let ids = request.Body.ItemIds.map((item: any) => item.Id);
+    requestedBatches.push(ids);
+    return {
+      Items: ids.map((id: string) => ({
+        ItemId: { Id: id },
+        IsRead: true,
+        Subject: id,
+        DateTimeSent: "2026-10-05T08:00:00Z",
+        DateTimeReceived: "2026-10-05T08:00:00Z",
+        ItemClass: "IPM.Note",
+      })),
+    };
+  };
+  (folder as any).refreshVisibleMessageMetadataInBackground = () => {};
+  (folder as any).backfillMessageActionFlags = () => {};
+
+  await folder.syncOnFolderOpen();
+
+  expect(requestedBatches).toHaveLength(Math.ceil(cachedIDs.length / kMaxFetchCount));
+  expect(requestedBatches.flat()).toEqual(cachedIDs);
+  expect([...folder.messages].every(message => message.isRead)).toBe(true);
+  expect(folder.countUnread).toBe(0);
+});
+
+test("сверяет read state shared-папки через альтернативный mailbox-контекст", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let mainAccount = new OWAAccount();
+  mainAccount.storage = new DummyMailStorage();
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+  account.mainAccount = mainAccount;
+  account.username = "integrators@example.test";
+  account.emailAddress = account.username;
+  (account as any).sharedFolderRoot = "msgfolderroot";
+
+  let folder = account.newFolder();
+  folder.id = "errors-servers";
+  folder.countTotal = 100;
+  folder.countUnread = 0;
+  (folder as any).haveReadFolder = true;
+  folder.applyServerCounts(100, 0);
+  let message = folder.newEMail();
+  message.itemID = "shared-cached-unread";
+  message.isRead = false;
+  folder.messages.add(message);
+
+  let contexts: Array<{ mailbox?: string; delegateAnchor?: string }> = [];
+  mainAccount.callOWA = async (request: any, mailbox?: string, delegateAnchor?: string) => {
+    expect(request.action).toBe("GetItem");
+    contexts.push({ mailbox, delegateAnchor });
+    let item = { ItemId: { Id: message.itemID }, Subject: "Ошибка", ItemClass: "IPM.Note" } as any;
+    if (delegateAnchor) {
+      return { Items: [item] };
+    }
+    expect(mailbox).toBe(account.username);
+    return { Items: [{ ...item, IsRead: true }] };
+  };
+  folder.refreshOpenFolder = async () => {};
+  (folder as any).refreshVisibleMessageMetadataInBackground = () => {};
+  (folder as any).backfillMessageActionFlags = () => {};
+
+  await folder.syncOnFolderOpen();
+
+  expect(contexts).toEqual([
+    { mailbox: undefined, delegateAnchor: account.emailAddress },
+    { mailbox: account.username, delegateAnchor: undefined },
+  ]);
+  expect(message.isRead).toBe(true);
+  expect(folder.countUnread).toBe(0);
+});
+
 /** Как SQLMailStorage: saveTags требует dbID, а saveMessage мог ещё не выставить его. */
 class TagAssertStorage extends DummyMailStorage {
   async saveMessageTags(email: EMail): Promise<void> {

@@ -76,6 +76,8 @@ const kRecentCountRefreshSkipMs = 5_000;
 /** GetItem-обновление видимой страницы, пока папка открыта (Outlook rules/push). */
 const kVisibleMetadataRefreshMs = 12_000;
 const kVisibleMetadataRefreshSharedMs = 8_000;
+/** Не повторять полную сверку локальных unread чаще этого интервала. */
+const kCachedReadStateReconcileRetryMs = 30_000;
 /** Проверять последние письма, даже если счётчики Exchange не изменились. */
 const kOpenFolderRecentRefreshMs = 15_000;
 /** Не считать «без категорий» окончательным для свежих писем (Exchange rules). */
@@ -148,6 +150,10 @@ export class OWAFolder extends ExchangeFolder {
   protected actionFlagsBackfillRunning = false;
   /** Не допускать параллельных GetItem для видимой папки. */
   protected visibleMetadataRefreshPromise: Promise<void> | null = null;
+  /** Не допускать параллельных сверок локальных непрочитанных писем. */
+  protected cachedReadStateReconcilePromise: Promise<void> | null = null;
+  /** Время последней сверки локальных непрочитанных писем. */
+  protected lastCachedReadStateReconcileAt = 0;
   /** Долгий проход по флагам вложений не должен удерживать очередь новых писем. */
   protected attachmentFlagsSyncRunOnce = new RunOnce<void>();
   protected nextAttachmentFlagsSyncAt = 0;
@@ -1523,6 +1529,7 @@ export class OWAFolder extends ExchangeFolder {
     }
     let refresh = (async () => {
       let countsChanged = await this.folderCountsChanged(true);
+      await this.reconcileCachedUnreadReadStates();
       if (countsChanged || this.needsGeneralRefresh()) {
         this.lastOpenFolderRecentRefreshAt = Date.now();
         await this.syncRecentArrivals(background);
@@ -2129,6 +2136,12 @@ export class OWAFolder extends ExchangeFolder {
   async syncOnFolderOpen(cacheFirstForSharedMailbox = false): Promise<Collection<OWAEMail>> {
     await this.readFolder();
     this.dedupeMessagesByItemID();
+    let readStateReconcile = this.reconcileCachedUnreadReadStates(true);
+    if (cacheFirstForSharedMailbox && this.account.isDependentAccount && this.messages.hasItems) {
+      void readStateReconcile.catch(ex => this.account.handleBackgroundSyncError(ex));
+    } else {
+      await readStateReconcile;
+    }
     if (cacheFirstForSharedMailbox && this.account.isDependentAccount && this.messages.hasItems) {
       this.completeInitialSync();
       this.refreshVisibleMessageMetadataInBackground();
@@ -2168,6 +2181,7 @@ export class OWAFolder extends ExchangeFolder {
       return this.messages;
     }
     let msgs = await this.getNewMessages(true);
+    await this.reconcileCachedUnreadReadStates(true);
     if (this.unreadBehindServer()) {
       msgs.addAll(await this.syncUnreadMessagesIfNeeded());
     }
@@ -2189,6 +2203,68 @@ export class OWAFolder extends ExchangeFolder {
     this.backfillMessageActionFlags();
     this.notifyObservers();
     return msgs;
+  }
+
+  /** Возвращает ItemId локальных строк, которые всё ещё выглядят непрочитанными. */
+  protected cachedUnreadItemIDs(): string[] {
+    let ids = new Set<string>();
+    for (let message of this.messages) {
+      let id = message.itemID;
+      if (id && !message.isRead && !this.deletions.has(id)) {
+        ids.add(id);
+      }
+    }
+    return [...ids];
+  }
+
+  /**
+   * Сверяет локальные unread-строки с авторитетным IsRead из GetItem.
+   * GetFolder сообщает только число и не содержит ItemId, поэтому после
+   * загрузки старого кеша невозможно определить, какие именно строки были
+   * прочитаны в Outlook. Проверяем все локальные unread, но только когда
+   * серверный снимок уже ниже локального бейджа.
+   */
+  protected async reconcileCachedUnreadReadStates(force = false): Promise<void> {
+    if (!this.haveReadFolder || this.lastServerCountUnread == null) {
+      return;
+    }
+    if (this.cachedReadStateReconcilePromise) {
+      return this.cachedReadStateReconcilePromise;
+    }
+    let unreadIDs = this.cachedUnreadItemIDs();
+    if (!unreadIDs.length || unreadIDs.length <= this.countUnread) {
+      return;
+    }
+    let now = Date.now();
+    if (!force && now - this.lastCachedReadStateReconcileAt < kCachedReadStateReconcileRetryMs) {
+      return;
+    }
+    this.lastCachedReadStateReconcileAt = now;
+    let reconcile = (async () => {
+      let lock = await this.listMessagesLock.lock();
+      try {
+        let currentUnreadIDs = this.cachedUnreadItemIDs();
+        if (!currentUnreadIDs.length || currentUnreadIDs.length <= this.countUnread) {
+          return;
+        }
+        for (let i = 0; i < currentUnreadIDs.length; i += kMaxFetchCount) {
+          await this.refreshMessages(currentUnreadIDs.slice(i, i + kMaxFetchCount), true);
+        }
+        if (this.dbID) {
+          await this.storage.saveFolderProperties(this);
+        }
+      } finally {
+        lock.release();
+      }
+    })();
+    this.cachedReadStateReconcilePromise = reconcile;
+    try {
+      await reconcile;
+    } finally {
+      if (this.cachedReadStateReconcilePromise === reconcile) {
+        this.cachedReadStateReconcilePromise = null;
+      }
+    }
   }
 
   /**
@@ -2958,7 +3034,7 @@ export class OWAFolder extends ExchangeFolder {
    * Переключение профиля раньше неявно запускало именно такой полный проход,
    * из-за чего обычная открытая папка могла оставаться на старом кеше.
    */
-  async refreshMessages(itemIDs: string[]): Promise<void> {
+  async refreshMessages(itemIDs: string[], requireReadState = false): Promise<void> {
     let ids = [...new Set(itemIDs.filter(Boolean))];
     if (!ids.length) {
       return;
@@ -2970,16 +3046,38 @@ export class OWAFolder extends ExchangeFolder {
     try {
       let results = await this.account.callOWA(owaGetNewMsgHeadersRequest(ids));
       items = results.ResponseMessages
-        ? this.account.itemsFromResponses(results.ResponseMessages.Items)
-        : results.Items;
+        ? this.account.itemsFromResponses(results.ResponseMessages.Items ?? [])
+        : ensureArray(results?.Items);
     } catch (ex) {
       this.account.handleBackgroundSyncError(ex);
       return;
     }
+    if (requireReadState && this.account.isDependentAccount && this.account.username) {
+      let hasReadState = (item: any): boolean =>
+        !!item && Object.prototype.hasOwnProperty.call(item, "IsRead");
+      let loadedIDs = new Set(items.filter(hasReadState).map(item =>
+        sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "")));
+      let missingIDs = ids.filter(id => !loadedIDs.has(id));
+      if (missingIDs.length) {
+        try {
+          let fallbackResults = this.account.hasSharedFolderRoot
+            ? await this.callFolderExplicitOWA(owaGetNewMsgHeadersRequest(missingIDs))
+            : await this.callFolderDelegateOWA(owaGetNewMsgHeadersRequest(missingIDs));
+          let fallbackItems = fallbackResults?.ResponseMessages
+            ? this.account.itemsFromResponses(fallbackResults.ResponseMessages.Items ?? [])
+            : ensureArray(fallbackResults?.Items);
+          items = items.concat(fallbackItems);
+        } catch (ex) {
+          if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+            this.account.handleBackgroundSyncError(ex);
+          }
+        }
+      }
+    }
     let missingMessages: OWAEMail[] = [];
     let changed = false;
     for (let item of items ?? []) {
-      let id = sanitize.nonemptystring(item?.ItemId?.Id, null);
+      let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, null);
       let email = id ? (this.getEmailByItemID(id) ?? this.account.getEmailByItemID(id)) : undefined;
       if (email) {
         try {
