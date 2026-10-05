@@ -10,6 +10,7 @@ import { appGlobal } from "../../logic/app";
 import GlobalAppearance from "./Global/Appearance.svelte";
 import GlobalWorkspaces from "./Global/Workspaces.svelte";
 import GlobalSystemIntegration from "./Global/SystemIntegration.svelte";
+import GlobalKeyboardShortcuts from "./Global/KeyboardShortcuts.svelte";
 import MailAppearance from "./Mail/Appearance.svelte";
 import MailNotifications from "./Mail/Notifications.svelte";
 import MailRead from "./Mail/Read.svelte";
@@ -66,7 +67,8 @@ const globalSettings = new SettingsCategory("global", gt`General`, null, true);
 globalSettings.subCategories.addAll([
   new SettingsCategory("global-appearance", gt`Appearance`, GlobalAppearance),
   new SettingsCategory("global-workspaces", gt`Workspaces`, GlobalWorkspaces),
-  new SettingsCategory("global-system-integration", gt`System integration`, GlobalSystemIntegration)
+  new SettingsCategory("global-system-integration", gt`System integration`, GlobalSystemIntegration),
+  new SettingsCategory("global-keyboard-shortcuts", gt`Keyboard shortcuts`, GlobalKeyboardShortcuts),
 ]);
 settingsCategories.add(globalSettings);
 

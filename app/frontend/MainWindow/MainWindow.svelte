@@ -8,8 +8,8 @@
   on:visibilitychange={onMainWindowVisibilityChange}
   on:beforeunload={() => catchErrors(saveWindowSettings)}
   on:click|capture={(event) => catchErrors(() => onClickTopLevel(event))}
-  on:keydown|capture={(event) => catchErrors(() => onCategoryShortcutKeydown(event))}
-  on:keyup|capture={onCategoryShortcutKeyup}
+  on:keydown|capture={(event) => catchErrors(() => onGlobalShortcutKeydown(event))}
+  on:keyup|capture={onGlobalShortcutKeyup}
   on:mousedown|capture={(event) => catchErrors(() => onCategoryShortcutMouseDown(event))} />
 
 <vbox flex class="main-window"
@@ -97,6 +97,18 @@
     KeyboardCategoryShortcutPressGuard,
     mouseCategoryShortcutFromEvent,
   } from "../Mail/CategoryShortcuts";
+  import {
+    KeyboardShortcutPressGuard,
+    findKeyboardShortcut,
+    isReservedKeyboardShortcut,
+    isModifierOnlyKeyboardShortcut,
+    keyboardShortcutFromEvent,
+  } from "../Keyboard/KeyboardShortcuts";
+  import {
+    canExecuteConfigurableMailAction,
+    executeConfigurableMailAction,
+  } from "../Mail/Message/MessageKeyboard";
+  import { isConfigurableKeyboardActionId } from "../Keyboard/KeyboardActions";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { loadApps, disableAppsBasedOnFeaturesXML } from "../AppsBar/loadApps";
   import { handleNativeComposeWindowClosed, mailApp, sendNativeComposeWindow } from "../Mail/MailJackdawApp";
@@ -290,10 +302,13 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   }
   const saveWindowSettingsDebounced = debounce(() => catchErrors(saveWindowSettings), 1000);
   const pressedCategoryShortcutCodes = new KeyboardCategoryShortcutPressGuard();
+  const pressedConfiguredShortcutCodes = new KeyboardShortcutPressGuard();
   let categoryShortcutApplicationInProgress = false;
+  let configuredShortcutExecutionInProgress = false;
 
   function clearPressedCategoryShortcutCodes(): void {
     pressedCategoryShortcutCodes.clear();
+    pressedConfiguredShortcutCodes.clear();
   }
 
   function onMainWindowBlur(): void {
@@ -316,6 +331,54 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
 
   function onContentPointerDown(event: PointerEvent) {
     updatePaneFocusFromPointer(event);
+  }
+
+  function onGlobalShortcutKeydown(event: KeyboardEvent): void {
+    if (onConfiguredShortcutKeydown(event)) {
+      return;
+    }
+    void catchErrors(() => onCategoryShortcutKeydown(event));
+  }
+
+  function onConfiguredShortcutKeydown(event: KeyboardEvent): boolean {
+    if (!canHandleCategoryShortcut(event) || event.repeat || event.isComposing) {
+      return false;
+    }
+    let shortcut = keyboardShortcutFromEvent(event);
+    if (!shortcut || isModifierOnlyKeyboardShortcut(shortcut) || isReservedKeyboardShortcut(shortcut)) {
+      return false;
+    }
+    // Категории были добавлены раньше универсальных назначений, поэтому
+    // совпадающая комбинация всегда сохраняет приоритет уже существующей функции.
+    if (findCategoryShortcut(shortcut)) {
+      return false;
+    }
+    let actionId = findKeyboardShortcut(shortcut);
+    if (!actionId || !isConfigurableKeyboardActionId(actionId) ||
+        !canExecuteConfigurableMailAction(actionId)) {
+      return false;
+    }
+    if (!pressedConfiguredShortcutCodes.claim(shortcut.code)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return true;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    if (configuredShortcutExecutionInProgress) {
+      return true;
+    }
+    configuredShortcutExecutionInProgress = true;
+    void catchErrors(async () => {
+      try {
+        await executeConfigurableMailAction(actionId);
+      } finally {
+        configuredShortcutExecutionInProgress = false;
+      }
+    });
+    return true;
   }
 
   async function onCategoryShortcutKeydown(event: KeyboardEvent): Promise<void> {
@@ -354,9 +417,10 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     }
   }
 
-  function onCategoryShortcutKeyup(event: KeyboardEvent): void {
+  function onGlobalShortcutKeyup(event: KeyboardEvent): void {
     let code = event.code || event.key;
     if (code) {
+      pressedConfiguredShortcutCodes.release(code);
       pressedCategoryShortcutCodes.release(code);
     }
   }

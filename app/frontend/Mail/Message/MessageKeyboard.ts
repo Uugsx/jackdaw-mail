@@ -2,11 +2,21 @@ import { deleteMessagesFromUI, deleteMessagesPermanent } from "../mailDeleteUndo
 import { runMailActions } from "../mailBulkActions";
 import { moveMessagesToArchive } from "../mailArchiveActions";
 import type { EMail } from "../../../logic/Mail/EMail";
-import { selectedMessage, selectedMessages, listVisibleMessages } from "../Selected";
-import { openComposer } from "../open";
+import {
+  selectedAccount,
+  selectedFolder,
+  selectedMessage,
+  selectedMessages,
+  listVisibleMessages,
+} from "../Selected";
+import { openComposer, openEMailMessage } from "../open";
 import { markMessagesRead } from "../mailReadActions";
 import { get } from "svelte/store";
 import { isMailPaneFocused } from "../../MainWindow/paneFocus";
+import {
+  isConfigurableKeyboardActionId,
+  type ConfigurableKeyboardActionId,
+} from "../../Keyboard/KeyboardActions";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) {
@@ -41,6 +51,168 @@ function selectAllVisibleMessages(event: KeyboardEvent): boolean {
     selectedMessage.set(visible.first);
   }
   return true;
+}
+
+function selectAllVisibleMessagesFromCommand(): boolean {
+  let visible = get(listVisibleMessages);
+  if (!visible?.hasItems) {
+    return false;
+  }
+  let coll = get(selectedMessages);
+  coll.replaceAll(visible.contents);
+  if (visible.first) {
+    selectedMessage.set(visible.first);
+  }
+  return true;
+}
+
+function getSelectedMailMessages(): EMail[] {
+  let messages = get(selectedMessages).contents.slice();
+  if (!messages.length) {
+    let message = get(selectedMessage);
+    if (message) {
+      messages = [message];
+    }
+  }
+  return messages;
+}
+
+function getSelectedMailMessage(): EMail | null {
+  return get(selectedMessage) ?? getSelectedMailMessages()[0] ?? null;
+}
+
+/** Проверяет контекст до перехвата события, чтобы пустое действие не ломало обычные клавиши. */
+export function canExecuteConfigurableMailAction(actionId: string): boolean {
+  if (!isConfigurableKeyboardActionId(actionId) || !isMailPaneFocused()) {
+    return false;
+  }
+  let messages = getSelectedMailMessages();
+  switch (actionId) {
+    case "mail.newEmail":
+      return !!get(selectedAccount) || !!getSelectedMailMessage()?.folder?.account;
+    case "mail.refresh":
+      return !!get(selectedFolder) || !!get(selectedAccount)?.inbox;
+    case "mail.selectAll":
+      return !!get(listVisibleMessages)?.hasItems;
+    case "mail.nextMessage":
+    case "mail.previousMessage":
+    case "mail.openSelected":
+      return !!getSelectedMailMessage();
+    default:
+      return messages.length > 0;
+  }
+}
+
+function moveSelectedMessage(previous: boolean): boolean {
+  let message = getSelectedMailMessage();
+  if (!message) {
+    return false;
+  }
+  let selectedMessagesColl = get(selectedMessages);
+  let next = message.nextMessage(previous);
+  selectedMessagesColl.clear();
+  if (next) {
+    selectedMessagesColl.add(next);
+  }
+  selectedMessage.set(next);
+  return true;
+}
+
+/** Выполняет пользовательское назначение, не меняя существующие штатные сочетания. */
+export async function executeConfigurableMailAction(
+  actionId: ConfigurableKeyboardActionId,
+): Promise<boolean> {
+  if (!canExecuteConfigurableMailAction(actionId)) {
+    return false;
+  }
+  let messages = getSelectedMailMessages();
+  let message = getSelectedMailMessage();
+  switch (actionId) {
+    case "mail.toggleRead":
+      await markMessagesRead(messages, majority(messages, current => current.isRead) ? false : true);
+      return true;
+    case "mail.markRead":
+      await markMessagesRead(messages, true);
+      return true;
+    case "mail.markUnread":
+      await markMessagesRead(messages, false);
+      return true;
+    case "mail.toggleStar":
+      await runMailActions(messages, current => current.markStarred(!majority(messages, mail => mail.isStarred)));
+      return true;
+    case "mail.toggleImportant":
+      await runMailActions(messages, current => current.markImportant(!majority(messages, mail => mail.isImportant)));
+      return true;
+    case "mail.markSpam":
+      moveSelectedMessage(false);
+      await runMailActions(messages, current => current.treatSpam(true));
+      return true;
+    case "mail.markNotSpam":
+      await runMailActions(messages, current => current.treatSpam(false));
+      return true;
+    case "mail.archive":
+      moveSelectedMessage(false);
+      await moveMessagesToArchive(messages);
+      return true;
+    case "mail.delete":
+      moveSelectedMessage(false);
+      await deleteMessagesFromUI(messages);
+      return true;
+    case "mail.permanentDelete":
+      moveSelectedMessage(false);
+      await deleteMessagesPermanent(messages);
+      return true;
+    case "mail.nextMessage":
+      return moveSelectedMessage(false);
+    case "mail.previousMessage":
+      return moveSelectedMessage(true);
+    case "mail.refresh": {
+      let folder = get(selectedFolder) ?? get(selectedAccount)?.inbox;
+      if (!folder) {
+        return false;
+      }
+      await folder.fetchNewMailQuick();
+      return true;
+    }
+    case "mail.reply":
+      if (!message) return false;
+      openComposer(message.compose.replyToAuthor());
+      return true;
+    case "mail.replyAll":
+      if (!message) return false;
+      openComposer(message.compose.replyAll());
+      return true;
+    case "mail.forward":
+      if (!message) return false;
+      openComposer(await message.compose.forward());
+      return true;
+    case "mail.forwardAsAttachment":
+      if (!message) return false;
+      openComposer(await message.compose.forwardAsAttachment());
+      return true;
+    case "mail.newEmail": {
+      let account = get(selectedAccount) ?? message?.folder?.account;
+      if (!account) {
+        return false;
+      }
+      openComposer(account.newEMailFrom());
+      return true;
+    }
+    case "mail.editAsNew":
+      if (!message) return false;
+      openComposer(await message.compose.editAsNew());
+      return true;
+    case "mail.newToAll":
+      if (!message) return false;
+      openComposer(message.compose.newToAll());
+      return true;
+    case "mail.selectAll":
+      return selectAllVisibleMessagesFromCommand();
+    case "mail.openSelected":
+      if (!message) return false;
+      await openEMailMessage(message);
+      return true;
+  }
 }
 
 export async function onKeyOnList(event: KeyboardEvent) {

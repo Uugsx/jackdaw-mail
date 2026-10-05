@@ -15,7 +15,7 @@ export async function svelteExtract(code: string, filename: string) {
     let ast = parse(pre, { filename: filename });
     walk(ast, {
       enter(node, _parent, _prop, _index) {
-        extractTags(['$t', 'msg'], node, filename, onMessageExtracted);
+        extractTags(['$t', 'gt', 'msg'], node, filename, onMessageExtracted);
         extractPlurals(['$plural'], node, filename, onMessageExtracted);
         extractPluralMessages(['msgPlural'], node, filename, onMessageExtracted);
       },

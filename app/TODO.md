@@ -367,5 +367,4 @@
   * Use Svelte router with objects stack?
 
 ## Power users
-* Configurable hotkeys
 * Scripts for Automation (Simple Addons?)
