@@ -16,6 +16,7 @@ import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
 import { addSenderToCC } from "./composeRecipients";
 import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
+import { normalizeSignatureHTML } from "../../frontend/Shared/Editor/composeEditorExtensions";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -99,6 +100,7 @@ export class ComposeActions {
     let from = MailIdentity.findIdentity(findFrom, account);
     reply.identity = from.identity;
     reply.from = from.personUID;
+    reply.compose.applySignature();
 
     reply.folder = original.folder?.specialFolder == SpecialFolder.Normal
       ? original.folder
@@ -420,7 +422,7 @@ export class ComposeActions {
     let { reply, quote } = this.splitReplyAndQuote(html ?? "");
     reply = this.stripSignatureFooters(reply);
 
-    let sig = signatureHTML?.trim();
+    let sig = normalizeSignatureHTML(signatureHTML)?.trim();
     if (!sig || this.isEmptySignatureHTML(sig)) {
       return reply + quote;
     }

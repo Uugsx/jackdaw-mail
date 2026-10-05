@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { Footer } from "../../../frontend/Shared/Editor/Footer";
 import {
   currentFontSize,
   fontSizeToCSS,
@@ -101,6 +102,12 @@ describe("signature font size", () => {
     expect(normalized).toContain("10pt");
   });
 
+  it("preserves the font face from legacy signature tags", () => {
+    let normalized = normalizeSignatureHTML('<p><font face="Arial" size="2">Company</font></p>');
+    expect(normalized).toMatch(/font-family:\s*Arial/i);
+    expect(normalized).toMatch(/font-size:\s*10pt/i);
+  });
+
   it("normalizes Outlook block spacing to single lines", () => {
     let normalized = normalizeSignatureHTML(
       '<p style="margin: 0cm 0cm 8pt; line-height: 115%;">Company</p><div>Address</div>',
@@ -151,6 +158,39 @@ describe("signature font size", () => {
     expect(paragraphs.every(paragraph => paragraph.style.textAlign == "center")).toBe(true);
     expect(paragraphs.every(paragraph => paragraph.style.marginBottom == "8pt")).toBe(true);
     expect(paragraphs.every(paragraph => paragraph.style.textIndent == "12pt")).toBe(true);
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("does not apply compose defaults to the signature footer", () => {
+    let element = document.createElement("div");
+    document.body.appendChild(element);
+    let editor = new Editor({
+      element,
+      extensions: [
+        StarterKit.configure({ bold: false, italic: false, strike: false }),
+        Footer,
+        ...signatureEditorExtensions,
+      ],
+      content: `<p>Reply</p><p></p><footer class="signature"><p><span style="font-family: Arial, Helvetica, sans-serif; font-size: 10pt">Signature</span></p></footer>`,
+    });
+
+    let bodyEnd = 1;
+    editor.state.doc.forEach((node, position) => {
+      if (node.type.name !== "footer") {
+        bodyEnd = Math.max(bodyEnd, position + node.nodeSize - 1);
+      }
+    });
+    editor.chain().focus()
+      .setTextSelection({ from: 1, to: bodyEnd })
+      .setFontFamily("Calibri, Arial, sans-serif")
+      .setFontSize("12pt")
+      .run();
+
+    let signature = element.querySelector("footer.signature span");
+    expect(signature?.getAttribute("style")).toMatch(/font-family:\s*Arial/i);
+    expect(signature?.getAttribute("style")).toMatch(/font-size:\s*10pt/i);
 
     editor.destroy();
     element.remove();

@@ -1,5 +1,5 @@
 <vbox flex class="page">
-  <PageHeader title={$t`Identity`} subtitle={$t`This is how you appear to others when you send mail`}>
+  <PageHeader title={$t`Sender and signature`} subtitle={$t`This is how you appear to others when you send mail`}>
     <RoundButton
       label={$t`Add`}
       onClick={onAdd}

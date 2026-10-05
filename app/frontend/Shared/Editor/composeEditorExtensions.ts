@@ -148,11 +148,15 @@ export function normalizeSignatureHTML(html: string | null | undefined): string 
   if (!root) {
     return html;
   }
-  for (let font of root.querySelectorAll("font[size]")) {
+  for (let font of root.querySelectorAll("font[size], font[face]")) {
     let span = doc.createElement("span");
     let pt = HTML_FONT_SIZE_TO_PT[font.getAttribute("size") ?? ""];
     if (pt) {
       span.style.fontSize = `${pt}pt`;
+    }
+    let face = font.getAttribute("face")?.trim();
+    if (face) {
+      span.style.fontFamily = face;
     }
     while (font.firstChild) {
       span.appendChild(font.firstChild);

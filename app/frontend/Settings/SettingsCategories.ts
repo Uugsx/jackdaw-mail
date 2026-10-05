@@ -94,7 +94,7 @@ accountSettings.add(new AccSetting(MailAccount, "mail-notifications", gt`Notific
 accountSettings.add(new AccSetting(MailAccount, "mail-server", gt`Server`, AccountMailServer));
 // #endif
 accountSettings.add(new AccSetting(MailAccount, "mail-folders", gt`Folders`, AccountFolders));
-accountSettings.add(new AccSetting(MailAccount, "mail-identity", gt`Identity`, AccountIdentity));
+accountSettings.add(new AccSetting(MailAccount, "mail-identity", gt`Sender and signature`, AccountIdentity));
 accountSettings.add(new AccSetting(MailAccount, "mail-rules", gt`Rules *=> Criteria after which emails should be sorted`, MailRules));
 accountSettings.add(new AccSetting(MailAccount, "mail-sharing", gt`Sharing *=> Accessing mail account of team mates`, MailSharing));
 
