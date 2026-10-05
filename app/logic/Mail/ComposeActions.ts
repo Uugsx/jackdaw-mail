@@ -16,7 +16,7 @@ import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
 import { addSenderToCC } from "./composeRecipients";
 import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
-import { normalizeSignatureHTML } from "../../frontend/Shared/Editor/composeEditorExtensions";
+import { normalizeSignatureHTML } from "./SignatureHTML";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
