@@ -131,12 +131,16 @@
   label={$t`Show source`}
   tooltip={$t`Show the on-the-wire format of this message`}
   icon={SourceIcon} />
+<!-- #if [!PRODUCTION] -->
 <MenuItem
   onClick={showDOMInspector}
   label={$t`Show DOM`}
   tooltip={$t`Show HTML email in the DOM Inspector of the Developer Tools`}
   icon={SourceIcon} />
+<!-- #endif -->
+<!-- #if [!PRODUCTION] -->
 <hbox bind:this={domE} />
+<!-- #endif -->
 
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
@@ -186,6 +190,10 @@
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+  // #if [!PRODUCTION]
+  import { tick } from "svelte";
+  import { openMessageDOMInspector } from "./messageDOMInspector";
+  // #endif
 
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
 
@@ -366,14 +374,15 @@
     let setting = getMessageContentRenderingSetting(message.folder?.account);
     setting.value = setting.value == "source" ? "html" : "source";
   }
+  // #if [!PRODUCTION]
   let domE: HTMLDivElement;
-  function showDOMInspector() {
+  async function showDOMInspector() {
     let setting = getMessageContentRenderingSetting(message.folder?.account);
     setting.value = "html";
-    let messageE = domE.ownerDocument.querySelector(".message-body");
-    let webviewE = messageE.querySelector("webview") as HTMLIFrameElement as any;
-    webviewE.openDevTools();
+    await tick();
+    openMessageDOMInspector(domE?.ownerDocument);
   }
+  // #endif
 </script>
 
 <style>
