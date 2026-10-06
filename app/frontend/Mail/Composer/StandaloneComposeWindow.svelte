@@ -1,3 +1,5 @@
+<svelte:window on:click|capture={onClickTopLevel} />
+
 <vbox flex class="standalone-compose">
   <NotificationBar notifications={$notifications} />
   {#if loading}
@@ -25,9 +27,12 @@
   import { appGlobal } from "../../../logic/app";
   import { getStartObjects } from "../../../logic/startup";
   import { assert } from "../../../logic/util/util";
+  import { openExternalURL } from "../../../logic/util/os-integration";
   import { deserializeComposeMail, serializeComposeMail } from "./composeWindow";
+  import { getComposeLinkURL } from "./composeLink";
   import MailComposer from "./MailComposer.svelte";
   import NotificationBar from "../../MainWindow/NotificationBar.svelte";
+  import { backgroundError } from "../../Util/error";
   import { notifications } from "../../MainWindow/Notification";
   import Spinner from "../../Shared/Spinner.svelte";
   import { t } from "../../../l10n/l10n";
@@ -96,6 +101,19 @@
 
   function closeWindow(): void {
     (window as any).api.closeComposeWindow(composeWindowID);
+  }
+
+  function onClickTopLevel(event: MouseEvent): void {
+    if (event.button != 0 || event.defaultPrevented) {
+      return;
+    }
+    let url = getComposeLinkURL(event.target);
+    if (!url) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    void openExternalURL(url).catch(backgroundError);
   }
 
   onMount(() => {

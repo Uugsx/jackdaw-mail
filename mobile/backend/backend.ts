@@ -45,6 +45,8 @@ async function createSharedAppObject() {
     newOSNotification,
     isOSNotificationSupported,
     setTrayIcon,
+    setStatusBarIcon,
+    clearStatusBarIcon,
     setBadgeCount,
     minimizeMainWindow,
     unminimizeMainWindow,
@@ -267,6 +269,14 @@ async function newHTTPConnection(url: string, options?: any) {
 
 function setTrayIcon(imgDataURL: string, tooltip: string, onClick: () => void) {
   // Mobile OSes have no system tray
+}
+
+function setStatusBarIcon(imgDataURL: string, tooltip: string, onClick: () => void) {
+  // Mobile OSes have no desktop status bar widget
+}
+
+function clearStatusBarIcon() {
+  // Mobile OSes have no desktop status bar widget
 }
 
 function newOSNotification(options: any): Notification {

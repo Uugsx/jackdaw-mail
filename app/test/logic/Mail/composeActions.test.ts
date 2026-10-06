@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { appGlobal } from "../../../logic/app";
 import { PersonUID } from "../../../logic/Abstract/PersonUID";
 import { ComposeActions } from "../../../logic/Mail/ComposeActions";
@@ -58,6 +58,33 @@ describe("адресат ответа", () => {
       expect(reply.from.emailAddress).toBe("team@smartds.test");
     } finally {
       appGlobal.emailAccounts.remove(otherAccount);
+    }
+  });
+
+  test("вставляет подпись выбранной личности после формирования цитаты", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => undefined,
+    });
+    let account = createAccount("team@smartds.test");
+    let sent = new Folder(account);
+    sent.specialFolder = SpecialFolder.Sent;
+    account.rootFolders.add(sent);
+    let identity = account.identities.first!;
+    identity.signatureHTML = `<p><span style="font-family: Arial; font-size: 10pt">Подпись</span></p>`;
+    let original = new EMail(new Folder(account));
+    original.from = new PersonUID("customer@example.test", "Customer");
+    original.to.add(identity.asPersonUID());
+    original.html = "<p>Original message</p>";
+
+    try {
+      let reply = new ComposeActions(original).replyToAuthor();
+
+      expect(reply.rawHTMLDangerous).toContain(`<footer class="signature">`);
+      expect(reply.rawHTMLDangerous).toMatch(/font-family:\s*Arial/i);
+      expect(reply.rawHTMLDangerous).toMatch(/font-size:\s*10pt/i);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

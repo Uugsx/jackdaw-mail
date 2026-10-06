@@ -15,6 +15,41 @@ const COMPOSE_FONT_SIZES = [
   "14", "16", "18", "20", "22", "24", "26", "28", "36", "48", "72",
 ];
 
+const INLINE_TEXT_STYLE_PROPERTIES = [
+  "font-family",
+  "font-size",
+  "color",
+  "background-color",
+  "font-weight",
+  "font-style",
+  "text-decoration",
+] as const;
+
+type InlineTextStyleProperty = typeof INLINE_TEXT_STYLE_PROPERTIES[number];
+
+/** Добавляет ожидаемый протокол, если пользователь указал домен без протокола. */
+export function normalizeMailLinkURL(value: string | null | undefined): string {
+  let trimmed = value?.trim() ?? "";
+  if (!trimmed || /^(?:https?|mailto|tel):/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed) || /^[#/?]/.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    let candidate = new URL(`https://${trimmed}`);
+    if (candidate.hostname.includes(".")) {
+      return candidate.href;
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
 function trimFontSizeNumber(value: string): string {
   let n = parseFloat(value);
   if (Number.isNaN(n)) {
@@ -87,7 +122,25 @@ export function parseFontSizeFromHTMLElement(element: HTMLElement): string {
   return parseFontSizeFromHTML(fromStyle);
 }
 
-function applyFontSizeToTextNodes(block: HTMLElement, doc: Document, cssPt: string) {
+function readInlineTextStyles(element: HTMLElement): Partial<Record<InlineTextStyleProperty, string>> {
+  let styles: Partial<Record<InlineTextStyleProperty, string>> = {};
+  for (let property of INLINE_TEXT_STYLE_PROPERTIES) {
+    let value = element.style.getPropertyValue(property).trim();
+    if (value) {
+      styles[property] = value;
+    }
+  }
+  return styles;
+}
+
+function applyInlineTextStylesToTextNodes(
+  block: HTMLElement,
+  doc: Document,
+  styles: Partial<Record<InlineTextStyleProperty, string>>,
+) {
+  if (!Object.keys(styles).length) {
+    return;
+  }
   let walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
   let textNodes: Text[] = [];
   let node: Node | null;
@@ -103,14 +156,41 @@ function applyFontSizeToTextNodes(block: HTMLElement, doc: Document, cssPt: stri
     if (!parent) {
       continue;
     }
-    if (parent.tagName === "SPAN" && parent.childNodes.length === 1 && parent.style.fontSize) {
-      parent.style.fontSize = cssPt;
+    if (parent.tagName === "SPAN" && parent.childNodes.length === 1) {
+      for (let [property, value] of Object.entries(styles)) {
+        if (!parent.style.getPropertyValue(property).trim()) {
+          parent.style.setProperty(property, value);
+        }
+      }
       continue;
     }
     let span = doc.createElement("span");
-    span.style.fontSize = cssPt;
+    for (let [property, value] of Object.entries(styles)) {
+      span.style.setProperty(property, value);
+    }
     parent.insertBefore(span, text);
     span.appendChild(text);
+  }
+}
+
+function moveInlineStylesFromLink(anchor: HTMLAnchorElement, doc: Document) {
+  let styles = readInlineTextStyles(anchor);
+  if (!Object.keys(styles).length) {
+    return;
+  }
+  let span = doc.createElement("span");
+  for (let [property, value] of Object.entries(styles)) {
+    span.style.setProperty(property, value);
+  }
+  while (anchor.firstChild) {
+    span.appendChild(anchor.firstChild);
+  }
+  anchor.appendChild(span);
+  for (let property of INLINE_TEXT_STYLE_PROPERTIES) {
+    anchor.style.removeProperty(property);
+  }
+  if (!anchor.getAttribute("style")) {
+    anchor.removeAttribute("style");
   }
 }
 
@@ -144,34 +224,59 @@ export function normalizeSignatureHTML(html: string | null | undefined): string 
   if (!root) {
     return html;
   }
-  for (let font of root.querySelectorAll("font[size], font[face]")) {
+  for (let font of root.querySelectorAll<HTMLElement>("font[size], font[face], font[color]")) {
     let span = doc.createElement("span");
+    let styles = readInlineTextStyles(font);
     let pt = HTML_FONT_SIZE_TO_PT[font.getAttribute("size") ?? ""];
     if (pt) {
-      span.style.fontSize = `${pt}pt`;
+      styles["font-size"] = `${pt}pt`;
     }
     let face = font.getAttribute("face")?.trim();
     if (face) {
-      span.style.fontFamily = face;
+      styles["font-family"] = face;
+    }
+    let color = font.getAttribute("color")?.trim();
+    if (color) {
+      styles.color = color;
+    }
+    for (let [property, value] of Object.entries(styles)) {
+      span.style.setProperty(property, value);
     }
     while (font.firstChild) {
       span.appendChild(font.firstChild);
     }
     font.replaceWith(span);
   }
-  for (let block of root.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, h6, blockquote, td, th")) {
-    let blockEl = block as HTMLElement;
-    let blockSize = blockEl.style.fontSize?.trim();
-    if (blockSize) {
-      let pt = parseFontSizeFromHTML(blockSize);
-      if (pt) {
-        applyFontSizeToTextNodes(blockEl, doc, `${pt}pt`);
-      }
-      blockEl.style.removeProperty("font-size");
+  for (let anchor of root.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    let href = anchor.getAttribute("href");
+    let normalizedURL = normalizeMailLinkURL(href);
+    if (normalizedURL && normalizedURL != href) {
+      anchor.setAttribute("href", normalizedURL);
     }
-    blockEl.style.marginTop = "0";
-    blockEl.style.marginBottom = "0";
-    blockEl.style.lineHeight = normalizeLineHeightValue(blockEl.style.lineHeight) || "1";
+    moveInlineStylesFromLink(anchor, doc);
+  }
+  let styleBlocks = [...root.querySelectorAll<HTMLElement>(
+    "p, div, li, h1, h2, h3, h4, h5, h6, blockquote, table, thead, tbody, tfoot, tr, td, th, footer",
+  )].reverse();
+  for (let blockEl of styleBlocks) {
+    let blockStyles = readInlineTextStyles(blockEl);
+    if (blockStyles["font-size"]) {
+      let pt = parseFontSizeFromHTML(blockStyles["font-size"]);
+      if (pt) {
+        blockStyles["font-size"] = `${pt}pt`;
+      }
+    }
+    if (Object.keys(blockStyles).length) {
+      applyInlineTextStylesToTextNodes(blockEl, doc, blockStyles);
+      for (let property of INLINE_TEXT_STYLE_PROPERTIES) {
+        blockEl.style.removeProperty(property);
+      }
+    }
+    if (/^(P|DIV|LI|H[1-6]|BLOCKQUOTE|TD|TH)$/.test(blockEl.tagName)) {
+      blockEl.style.marginTop = "0";
+      blockEl.style.marginBottom = "0";
+      blockEl.style.lineHeight = normalizeLineHeightValue(blockEl.style.lineHeight) || "1";
+    }
   }
   return root.innerHTML;
 }

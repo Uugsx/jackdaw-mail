@@ -5,6 +5,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Footer } from "../../../frontend/Shared/Editor/Footer";
 import {
+  currentFontFamily,
   currentFontSize,
   fontSizeToCSS,
   parseFontSizeFromHTML,
@@ -13,6 +14,8 @@ import {
   textColorForHighlight,
   currentLineHeight,
   applyComposeDefaultBlockFormatting,
+  readSignatureFontDefaults,
+  setStoredComposeTextStyle,
 } from "../../../frontend/Shared/Editor/composeEditorExtensions";
 
 function createEditor(content: string) {
@@ -22,6 +25,7 @@ function createEditor(content: string) {
     element,
     extensions: [
       StarterKit.configure({ bold: false, italic: false, strike: false }),
+      Footer,
       ...signatureEditorExtensions,
     ],
     content,
@@ -93,6 +97,26 @@ describe("signature font size", () => {
     editor.commands.setTextSelection({ from, to });
     expect(editor.commands.setFontSize("14")).toBe(true);
     expect(editor.getHTML()).toMatch(/14pt/i);
+    editor.destroy();
+    element.remove();
+  });
+
+  it("materializes font styles inherited from an Outlook signature table", () => {
+    let normalized = normalizeSignatureHTML(
+      `<table style="font-family: Arial, Helvetica, sans-serif; font-size: 10pt"><tbody><tr><td><p>Signature</p></td></tr></tbody></table>`,
+    )!;
+    let { editor, element } = createEditor(normalized);
+    let textPos = editor.state.doc.textContent.indexOf("Signature");
+    expect(textPos).toBeGreaterThanOrEqual(0);
+    let from = textPos + 1;
+    let to = from + "Signature".length;
+    editor.commands.setTextSelection({ from, to });
+
+    expect(currentFontFamily(editor)).toMatch(/Arial/i);
+    expect(currentFontSize(editor)).toBe("10");
+    expect(editor.getHTML()).toMatch(/font-family:[^;]*Arial/i);
+    expect(editor.getHTML()).toMatch(/font-size:\s*10pt/i);
+
     editor.destroy();
     element.remove();
   });
@@ -191,6 +215,68 @@ describe("signature font size", () => {
     let signature = element.querySelector("footer.signature span");
     expect(signature?.getAttribute("style")).toMatch(/font-family:\s*Arial/i);
     expect(signature?.getAttribute("style")).toMatch(/font-size:\s*10pt/i);
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("keeps the reply signature style after applying compose defaults to the reply area", () => {
+    let normalized = normalizeSignatureHTML(
+      `<p><span style="font-family: Arial, Helvetica, sans-serif; font-size: 10pt">Signature</span></p>`,
+    )!;
+    let { editor, element } = createEditor(
+      `<p></p><p></p><footer class="signature">${normalized}</footer>`,
+    );
+    let signatureDefaults = readSignatureFontDefaults(element);
+    expect(signatureDefaults).toEqual({
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontSize: "10",
+    });
+    let bodyEnd = 1;
+    editor.state.doc.forEach((node, position) => {
+      if (node.type.name !== "footer") {
+        bodyEnd = Math.max(bodyEnd, position + node.nodeSize - 1);
+      }
+    });
+    editor.chain().focus()
+      .setTextSelection({ from: 1, to: bodyEnd })
+      .setFontFamily(signatureDefaults.fontFamily)
+      .setFontSize(`${signatureDefaults.fontSize}pt`)
+      .run();
+    editor.chain().focus()
+      .setTextSelection(1)
+      .setFontFamily(signatureDefaults.fontFamily)
+      .setFontSize(`${signatureDefaults.fontSize}pt`)
+      .run();
+    editor.commands.setTextSelection(1);
+    setStoredComposeTextStyle(editor, signatureDefaults.fontFamily, `${signatureDefaults.fontSize}pt`);
+    expect(currentFontFamily(editor)).toMatch(/Arial/i);
+    expect(currentFontSize(editor)).toBe("10");
+
+    let textPos = editor.state.doc.textContent.indexOf("Signature");
+    editor.commands.setTextSelection({
+      from: textPos + 1,
+      to: textPos + 1 + "Signature".length,
+    });
+    expect(currentFontFamily(editor)).toMatch(/Arial/i);
+    expect(currentFontSize(editor)).toBe("10");
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("keeps signature formatting when font styles are attached to a link", () => {
+    let normalized = normalizeSignatureHTML(
+      `<footer class="signature"><p><a href="smartds.ru" style="font-family: Arial; font-size: 10pt; color: #C00000">Company</a></p></footer>`,
+    )!;
+    expect(normalized).toMatch(/href="https:\/\/smartds\.ru\//i);
+    let { editor, element } = createEditor(normalized);
+
+    let styledText = element.querySelector("footer.signature a span");
+    expect(styledText?.getAttribute("style")).toMatch(/font-family:\s*Arial/i);
+    expect(styledText?.getAttribute("style")).toMatch(/font-size:\s*10pt/i);
+    expect(styledText?.getAttribute("style")).toMatch(/color:\s*#C00000/i);
+    expect(element.querySelector("footer.signature a")?.getAttribute("style")).toBeNull();
 
     editor.destroy();
     element.remove();

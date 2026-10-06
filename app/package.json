@@ -2,7 +2,7 @@
   "name": "jackdaw-frontend",
   "description": "Jackdaw Mail UI",
   "private": true,
-  "version": "0.9.89-dev",
+  "version": "0.9.96-dev",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

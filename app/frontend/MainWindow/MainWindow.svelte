@@ -149,6 +149,7 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   import { getUILocale, locale, t } from "../../l10n/l10n";
   import { rtlLocales } from "../../l10n/list";
   import { appName } from "../../logic/build";
+  import { openExternalURL } from "../../logic/util/os-integration";
   import { onDestroy, onMount } from "svelte";
   import debounce from "lodash/debounce";
   import { Router } from "svelte-navigator";
@@ -462,21 +463,36 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     if (!url) {
       return;
     }
-    // _blank should open in external browser
-    if (linkE.getAttribute("target") == "_blank") {
-      // Let default handler open in external browser
+    let urlObj: URL;
+    try {
+      urlObj = new URL(url);
+    } catch {
       return;
-      /* // ... unless it's a link in an email that we can handle internally
-      if (linkE.getAttribute("source") == "convert-html" &&
-          appGlobal.meetAccounts.some(acc => acc.isMeetingURL(new URL(url)))) {
-        // open internally, continue below
-      } else {
-        // Let default handler open in external browser
-        return;
-      }*/
+    }
+    let opensInNewWindow = linkE.getAttribute("target") == "_blank";
+    let isMeetingURL = (urlObj.protocol == "http:" || urlObj.protocol == "https:")
+      && appGlobal.meetAccounts.some(acc => {
+        try {
+          return acc.isMeetingURL(urlObj);
+        } catch {
+          return false;
+        }
+      });
+    // Сохраняем прежний внешний сценарий для target=_blank у ссылок на встречи.
+    if (opensInNewWindow && isMeetingURL) {
+      return;
+    }
+    if ((urlObj.protocol == "http:" || urlObj.protocol == "https:")
+      && !isMeetingURL) {
+      event.stopPropagation();
+      event.preventDefault();
+      void openExternalURL(url).catch(backgroundError);
+      return;
+    }
+    if (opensInNewWindow) {
+      return;
     }
     // open internally
-    let urlObj = new URL(url); // throws, if invalid
     let protocol = urlObj.protocol.replace(":", "");
     let urlEvent = new Event("url-" + protocol); // e.g. "url-mailto"
     (urlEvent as any).url = url;

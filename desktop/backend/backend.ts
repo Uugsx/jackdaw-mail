@@ -143,6 +143,8 @@ async function createSharedAppObject() {
     newOSNotification,
     isOSNotificationSupported,
     setTrayIcon,
+    setStatusBarIcon,
+    clearStatusBarIcon,
     setBadgeCount,
     minimizeMainWindow,
     unminimizeMainWindow,
@@ -437,6 +439,7 @@ function getCACertificates(type: string) {
 }
 
 let trayIcon: Tray | null = null;
+let statusBarIcon: Tray | null = null;
 
 /** Shows our icon in the system tray, and replaces the icon that is
  * already there, if any.
@@ -461,6 +464,99 @@ function setTrayIcon(imgDataURL: string, tooltip: string, onClick: () => void) {
     remove();
     onClick?.();
   });
+}
+
+type StatusBarMenuAction = () => void | Promise<void>;
+
+interface StatusBarMenuActions {
+  newMessage?: StatusBarMenuAction;
+  fetchMail?: StatusBarMenuAction;
+  openSettings?: StatusBarMenuAction;
+  disableWidget?: StatusBarMenuAction;
+  unreadCount?: number;
+}
+
+function runStatusBarMenuAction(action: StatusBarMenuAction | undefined): void {
+  if (!action) {
+    return;
+  }
+  void Promise.resolve()
+    .then(() => action())
+    .catch(ex => console.error("Status bar menu action failed", ex));
+}
+
+/** Поддерживает постоянный значок приложения в системной строке меню. */
+function setStatusBarIcon(
+  imgDataURL: string,
+  tooltip: string,
+  onClick: () => void,
+  menuActions: StatusBarMenuActions = {},
+) {
+  let image = nativeImage.createFromDataURL(imgDataURL);
+  if (os.platform() == "darwin") { // macOS не масштабирует значок до высоты строки меню
+    image = image.resize({ width: 16, height: 16 });
+  }
+  if (statusBarIcon) {
+    statusBarIcon.setImage(image);
+    statusBarIcon.removeAllListeners("click");
+  } else {
+    statusBarIcon = new Tray(image);
+  }
+  statusBarIcon.setToolTip(tooltip);
+  statusBarIcon.on("click", () => onClick?.());
+  let menuItems: MenuItemConstructorOptions[] = [
+    {
+      label: `Открыть ${appName}`,
+      click: () => onClick?.(),
+    },
+  ];
+  let hasAdditionalActions = menuActions.newMessage || menuActions.fetchMail ||
+    menuActions.openSettings || menuActions.disableWidget || menuActions.unreadCount !== undefined;
+  if (hasAdditionalActions) {
+    menuItems.push(
+      { type: "separator" },
+      {
+        label: "Новое письмо",
+        enabled: !!menuActions.newMessage,
+        click: () => runStatusBarMenuAction(menuActions.newMessage),
+      },
+      {
+        label: "Проверить почту",
+        enabled: !!menuActions.fetchMail,
+        click: () => runStatusBarMenuAction(menuActions.fetchMail),
+      },
+      {
+        label: `Непрочитанные: ${Math.max(0, Math.trunc(menuActions.unreadCount ?? 0))}`,
+        enabled: (menuActions.unreadCount ?? 0) > 0,
+        click: () => onClick?.(),
+      },
+      { type: "separator" },
+      {
+        label: "Настройки уведомлений",
+        enabled: !!menuActions.openSettings,
+        click: () => runStatusBarMenuAction(menuActions.openSettings),
+      },
+      {
+        label: "Убрать виджет из строки меню",
+        enabled: !!menuActions.disableWidget,
+        click: () => runStatusBarMenuAction(menuActions.disableWidget),
+      },
+    );
+  }
+  menuItems.push(
+    { type: "separator" },
+    {
+      label: `Выйти из ${appName}`,
+      click: () => app.quit(),
+    },
+  );
+  statusBarIcon.setContextMenu(Menu.buildFromTemplate(menuItems));
+}
+
+/** Удаляет постоянный значок приложения из системной строки меню. */
+function clearStatusBarIcon() {
+  statusBarIcon?.destroy();
+  statusBarIcon = null;
 }
 
 /** <https://www.electronjs.org/docs/latest/api/notification>

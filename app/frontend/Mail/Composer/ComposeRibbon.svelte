@@ -482,6 +482,7 @@
     formatFontSizeLabel,
     formatLineHeightLabel,
     fontSizeToCSS,
+    normalizeMailLinkURL,
     normalizeFontSizeValue,
     composeLineHeights,
   } from "../../Shared/Editor/composeEditorExtensions";
@@ -1108,13 +1109,14 @@
   }
 
   function onLinkOK() {
-    if (linkTargetURL) {
-      if (savedSelection?.source === "quote" && !isSafeQuoteLink(linkTargetURL)) {
+    let href = normalizeMailLinkURL(linkTargetURL);
+    if (href) {
+      if (savedSelection?.source === "quote" && !isSafeQuoteLink(href)) {
         clearSavedSelection();
         isEditingLink = false;
         return;
       }
-      runFormattingCommand("createLink", () => editor.chain().focus().setLink({ href: linkTargetURL }).run(), linkTargetURL);
+      runFormattingCommand("createLink", () => editor.chain().focus().setLink({ href }).run(), href);
     }
     clearSavedSelection();
     isEditingLink = false;

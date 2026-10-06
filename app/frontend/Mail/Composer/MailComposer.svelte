@@ -224,6 +224,8 @@
     composeParagraphSpacingValues,
     composeFirstLineIndentValues,
     fontSizeToCSS,
+    readSignatureFontDefaults,
+    setStoredComposeTextStyle,
     normalizeComposeTextColor,
   } from "../../Shared/Editor/composeEditorExtensions";
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
@@ -515,6 +517,12 @@
     let defaultFontSize = composeFontSizes.includes(defaultFontSizeSetting.value)
       ? defaultFontSizeSetting.value
       : composeDefaultFontSize;
+    let defaultFontFamily = defaultFontFamilySetting.value;
+    if (isReplyQuote && editor) {
+      let signatureDefaults = readSignatureFontDefaults(editor.view.dom);
+      defaultFontFamily = signatureDefaults.fontFamily || defaultFontFamily;
+      defaultFontSize = signatureDefaults.fontSize || defaultFontSize;
+    }
     let defaultLineHeight = composeLineHeights.some(lineHeight => lineHeight.value == defaultLineHeightSetting.value)
       ? defaultLineHeightSetting.value
       : composeDefaultLineHeight;
@@ -529,8 +537,8 @@
       : composeDefaultFirstLineIndent;
 
     let chain = editor.chain().focus().setTextSelection({ from: 1, to: bodyEnd });
-    if (defaultFontFamilySetting.value) {
-      chain.setFontFamily(defaultFontFamilySetting.value);
+    if (defaultFontFamily) {
+      chain.setFontFamily(defaultFontFamily);
     } else {
       chain.unsetFontFamily();
     }
@@ -538,7 +546,8 @@
     if (defaultTextColor) {
       chain.setColor(defaultTextColor);
     }
-    if (chain.setFontSize(fontSizeToCSS(defaultFontSize)).run()) {
+    let defaultFontSizeCSS = fontSizeToCSS(defaultFontSize);
+    if (chain.setFontSize(defaultFontSizeCSS).run()) {
       applyComposeDefaultBlockFormatting(editor, 1, bodyEnd, {
         lineHeight: defaultLineHeight,
         textAlign: defaultTextAlign,
@@ -657,9 +666,25 @@
     }
     if (mail.to.isEmpty) {
       editor.commands.focus("start");
+      setReplyTypingFont();
       return;
     }
     focusComposeTypingArea(editor);
+    setReplyTypingFont();
+  }
+
+  function setReplyTypingFont() {
+    if (!editor || !isReplyQuote) {
+      return;
+    }
+    let signatureDefaults = readSignatureFontDefaults(editor.view.dom);
+    if (signatureDefaults.fontFamily || signatureDefaults.fontSize) {
+      setStoredComposeTextStyle(
+        editor,
+        signatureDefaults.fontFamily,
+        fontSizeToCSS(signatureDefaults.fontSize),
+      );
+    }
   }
 
   $: fromIdentity && setAuthor()

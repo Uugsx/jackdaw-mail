@@ -3,7 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { appGlobal } from "../../../logic/app";
 import { getLocalStorage } from "../../../frontend/Util/LocalStorage";
-import { syncMailTaskbarBadge } from "../../../frontend/Mail/mailUnreadCounts";
+import { syncMailStatusBarWidget, syncMailTaskbarBadge } from "../../../frontend/Mail/mailUnreadCounts";
 import { totalUnreadFromAccounts } from "../../../logic/Mail/MailUnreadBadge";
 import { NotificationKinds, SystemNotification } from "../../../frontend/Shared/SystemNotification";
 import { playNotificationSound } from "../../../frontend/Shared/NotificationSound";
@@ -121,6 +121,53 @@ test("clears the native badge when taskbar notifications have no unread mail", a
     await vi.waitFor(() => expect(setBadgeCount).toHaveBeenLastCalledWith(0));
   } finally {
     notificationsSetting.value = previousSetting;
+    appGlobal.remoteApp = previousRemoteApp;
+  }
+});
+
+test("keeps the persistent Mail status bar widget synchronized", async () => {
+  let context = { drawImage: vi.fn() };
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as any);
+  vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,status-bar");
+  vi.stubGlobal("Image", class {
+    src = "";
+    async decode() {}
+  });
+
+  let storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+  });
+  let previousRemoteApp = appGlobal.remoteApp;
+  let statusBarSetting = getLocalStorage<boolean>("notifications.mail.statusbar", true);
+  let previousSetting = statusBarSetting.value;
+  let setStatusBarIcon = vi.fn(async () => {});
+  let clearStatusBarIcon = vi.fn(async () => {});
+  statusBarSetting.value = true;
+  appGlobal.remoteApp = { setStatusBarIcon, clearStatusBarIcon };
+
+  try {
+    syncMailStatusBarWidget();
+
+    await vi.waitFor(() => expect(setStatusBarIcon).toHaveBeenCalledWith(
+      "data:image/png;base64,status-bar",
+      "Jackdaw Mail",
+      expect.any(Function),
+      expect.objectContaining({
+        newMessage: expect.any(Function),
+        fetchMail: expect.any(Function),
+        openSettings: expect.any(Function),
+        disableWidget: expect.any(Function),
+        unreadCount: expect.any(Number),
+      }),
+    ));
+
+    statusBarSetting.value = false;
+    await vi.waitFor(() => expect(clearStatusBarIcon).toHaveBeenCalledOnce());
+  } finally {
+    statusBarSetting.value = previousSetting;
     appGlobal.remoteApp = previousRemoteApp;
   }
 });

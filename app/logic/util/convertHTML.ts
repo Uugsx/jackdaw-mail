@@ -5,6 +5,7 @@ import { compile as makeHTMLToText } from "html-to-text";
 import markdownit from "markdown-it";
 import { gt } from "../../l10n/l10n";
 import { kMailImageSourceAttribute } from "../Mail/mailImage";
+import { normalizeMailLinkURL } from "../Mail/SignatureHTML";
 
 let htmlToText: (html: string) => string;
 
@@ -257,6 +258,11 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
           let url = node.getAttribute(attribute);
           if (!url) {
             continue;
+          }
+          let normalizedURL = normalizeMailLinkURL(url);
+          if (normalizedURL && normalizedURL != url) {
+            node.setAttribute(attribute, normalizedURL);
+            url = normalizedURL;
           }
           if (/^tel:\+?[\d().\s-]+(?:;ext=\d+)?$/i.test(url)) {
             node.setAttribute("title", url);

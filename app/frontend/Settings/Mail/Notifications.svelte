@@ -18,6 +18,18 @@
     </label>
   </HeaderGroupBox>
 
+  {#if !appGlobal.isMobile && !webMail}
+    <HeaderGroupBox>
+      <hbox slot="header">
+        {$t`System menu bar`}
+      </hbox>
+      <label class="checkbox-row">
+        <input type="checkbox" bind:checked={showStatusBarWidget} />
+        {$t`Show unread mail in the system menu bar`}
+      </label>
+    </HeaderGroupBox>
+  {/if}
+
   <HeaderGroupBox>
     <hbox slot="header">
       {$t`Notification sounds`}
@@ -33,18 +45,23 @@
   import NotificationSounds from "./NotificationSounds.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import { t } from "../../../l10n/l10n";
+  import { appGlobal } from "../../../logic/app";
+  import { webMail } from "../../../logic/build";
 
   let notificationsSetting = getLocalStorage<string[]>("notifications.mail", ["popup", "sound"]);
   let onlyABSetting = getLocalStorage("notifications.mail.only.addressbook", false);
+  let statusBarSetting = getLocalStorage<boolean>("notifications.mail.statusbar", true);
 
   // Local copies so checkbox toggles assign a new value and hit LocalStorage setters
   let kindsList: string[] = Array.isArray(notificationsSetting.value)
     ? [...notificationsSetting.value]
     : ["popup", "sound"];
   let onlyFromAddressBook = !!onlyABSetting.value;
+  let showStatusBarWidget = statusBarSetting.value !== false;
 
   $: notificationsSetting.value = kindsList;
   $: onlyABSetting.value = onlyFromAddressBook;
+  $: statusBarSetting.value = showStatusBarWidget;
 </script>
 
 <style>
@@ -59,5 +76,9 @@
   }
   .subtitle {
     margin-block-end: 16px;
+  }
+  .checkbox-row {
+    align-items: center;
+    gap: 8px;
   }
 </style>

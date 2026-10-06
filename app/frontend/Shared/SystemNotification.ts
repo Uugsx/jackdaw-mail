@@ -224,7 +224,7 @@ const kTrayIconSize = 64;
  * @param icon Raw SVG
  * @returns data: URL of a PNG.
  *   The OS tray takes only raster images, not SVG. */
-async function bubbleImageURL(count: number, icon: string): Promise<string> {
+export async function bubbleImageURL(count: number, icon: string): Promise<string> {
   let canvas = document.createElement("canvas");
   canvas.width = kTrayIconSize;
   canvas.height = kTrayIconSize;

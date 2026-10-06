@@ -9,12 +9,14 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { gt } from "../../../l10n/l10n";
 import {
+  normalizeMailLinkURL,
   normalizeSignatureHTML,
   parseFontSizeFromHTML,
   parseFontSizeFromHTMLElement,
 } from "../../../logic/Mail/SignatureHTML";
 
 export {
+  normalizeMailLinkURL,
   normalizeSignatureHTML,
   parseFontSizeFromHTML,
   parseFontSizeFromHTMLElement,
@@ -47,6 +49,38 @@ export function fontSizeToCSS(stored: string): string {
 /** @deprecated alias — returns pt number for UI, like Outlook */
 export function normalizeFontSizeValue(size: string): string {
   return parseFontSizeFromHTML(size);
+}
+
+export interface SignatureFontDefaults {
+  fontFamily: string;
+  fontSize: string;
+}
+
+/** Читает первый явно заданный шрифт подписи для форматирования текста ответа. */
+export function readSignatureFontDefaults(root: ParentNode | null | undefined): SignatureFontDefaults {
+  let signature = root?.querySelector("footer.signature");
+  if (!signature) {
+    return { fontFamily: "", fontSize: "" };
+  }
+
+  let fontFamily = "";
+  let fontSize = "";
+  let elements: HTMLElement[] = [signature as HTMLElement, ...Array.from(signature.querySelectorAll<HTMLElement>("*"))];
+  for (let element of elements) {
+    if (!element.textContent?.trim()) {
+      continue;
+    }
+    if (!fontFamily) {
+      fontFamily = element.style.fontFamily.trim();
+    }
+    if (!fontSize) {
+      fontSize = normalizeFontSizeValue(element.style.fontSize);
+    }
+    if (fontFamily && fontSize) {
+      break;
+    }
+  }
+  return { fontFamily, fontSize };
 }
 
 function renderFontSizeStyle(attributes: { fontSize?: string | null }) {
@@ -654,7 +688,45 @@ export const composeHighlightColorsHighContrast = [
 ];
 
 export function currentTextStyle(editor: import("@tiptap/core").Editor) {
-  return editor.getAttributes("textStyle") ?? {};
+  let attributes = editor.getAttributes("textStyle") ?? {};
+  if (editor.state.selection.empty) {
+    let storedMark = editor.state.storedMarks?.find(mark => mark.type.name == "textStyle");
+    if (storedMark) {
+      return { ...attributes, ...storedMark.attrs };
+    }
+  }
+  return attributes;
+}
+
+/** Устанавливает шрифт и размер для следующего ввода в пустой области редактора. */
+export function setStoredComposeTextStyle(
+  editor: import("@tiptap/core").Editor,
+  fontFamily: string,
+  fontSize: string,
+): void {
+  let textStyleType = editor.schema.marks.textStyle;
+  if (!textStyleType || !editor.state.selection.empty) {
+    return;
+  }
+
+  let attributes = { ...(editor.getAttributes("textStyle") ?? {}) } as Record<string, unknown>;
+  if (fontFamily) {
+    attributes.fontFamily = fontFamily;
+  } else {
+    delete attributes.fontFamily;
+  }
+  if (fontSize) {
+    attributes.fontSize = fontSize;
+  } else {
+    delete attributes.fontSize;
+  }
+
+  let marks = (editor.state.storedMarks ?? editor.state.selection.$from.marks())
+    .filter(mark => mark.type !== textStyleType);
+  if (Object.keys(attributes).length) {
+    marks = [...marks, textStyleType.create(attributes)];
+  }
+  editor.view.dispatch(editor.state.tr.setStoredMarks(marks));
 }
 
 export function currentFontFamily(editor: import("@tiptap/core").Editor): string {

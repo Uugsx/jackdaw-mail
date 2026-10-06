@@ -38,6 +38,10 @@ export class WebMailBackend {
   }
   async setTrayIcon() {
   }
+  async setStatusBarIcon() {
+  }
+  async clearStatusBarIcon() {
+  }
   async setBadgeCount() {
   }
   async minimizeMainWindow() {

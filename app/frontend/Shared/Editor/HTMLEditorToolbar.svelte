@@ -281,6 +281,7 @@ block
     currentLineHeight,
     formatFontSizeLabel,
     formatLineHeightLabel,
+    normalizeMailLinkURL,
     normalizeFontSizeValue,
   } from './composeEditorExtensions';
 
@@ -377,7 +378,10 @@ block
     linkTargetURL = editor.getAttributes('link').href
   }
   function onLinkOK() {
-    editor.chain().focus().setLink({ href: linkTargetURL }).run();
+    let href = normalizeMailLinkURL(linkTargetURL);
+    if (href) {
+      editor.chain().focus().setLink({ href }).run();
+    }
     isEditingLink = false;
   }
 

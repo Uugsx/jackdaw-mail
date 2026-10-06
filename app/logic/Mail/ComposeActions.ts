@@ -131,6 +131,10 @@ export class ComposeActions {
         : `${quote}
     <p></p>
     <p></p>`;
+    // reply.html заменяет тело, которое было создано в newMailFromSameIdentity.
+    // Вставляем подпись после формирования цитаты, чтобы она не терялась до
+    // открытия редактора и сохраняла стили выбранной личности.
+    reply.compose.applySignature();
     return reply;
   }
 
