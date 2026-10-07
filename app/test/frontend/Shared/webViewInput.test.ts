@@ -8,6 +8,9 @@ import {
   getMailWebViewPointerReleasePosition,
   isMailPaneFocused,
   isMailWebViewPointerButtonDown,
+  isMailWebViewPointerSelectionGuardActive,
+  markMailWebViewPointerMoved,
+  markMailWebViewPointerMovedAfterRelease,
   markMailWebViewPointerReleased,
   paneFocus,
   clearMailWebViewPointerReleasePosition,
@@ -67,6 +70,27 @@ describe("фокус почтовой панели из input-event WebView", ()
     setMailWebViewPointerActive(true);
 
     expect(document.activeElement).not.toBe(button);
+  });
+
+  it("сохраняет защиту от ложного hover и click после drag-select", () => {
+    setMailWebViewPointerButtonDown(true);
+    markMailWebViewPointerMoved();
+    markMailWebViewPointerReleased();
+
+    expect(isMailWebViewPointerSelectionGuardActive()).toBe(true);
+    expect(consumeMailWebViewPointerReleasePending()).toBe(true);
+    expect(isMailWebViewPointerSelectionGuardActive()).toBe(true);
+    expect(consumeMailWebViewPointerReleaseClick()).toBe(true);
+    expect(isMailWebViewPointerSelectionGuardActive()).toBe(false);
+  });
+
+  it("не теряет защиту после ухода указателя с координатным mouseup", () => {
+    setMailWebViewPointerButtonDown(true);
+    markMailWebViewPointerMoved();
+    markMailWebViewPointerReleased(120, 240);
+
+    expect(markMailWebViewPointerMovedAfterRelease()).toBe(true);
+    expect(consumeMailWebViewPointerReleaseClick()).toBe(true);
   });
 
   it("сохраняет точку отпускания до следующего движения или нового нажатия", () => {

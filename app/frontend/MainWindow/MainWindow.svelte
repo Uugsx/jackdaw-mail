@@ -148,11 +148,13 @@
   } from "../Widgets/widgetState";
   import { catchErrors, backgroundError } from "../Util/error";
   import {
-    clearMailWebViewPointerReleasePosition,
     consumeMailWebViewPointerReleasePending,
     consumeMailWebViewPointerReleaseClick,
     getMailWebViewPointerReleasePosition,
     isMailWebViewPointerButtonDown,
+    isMailWebViewPointerSelectionGuardActive,
+    markMailWebViewPointerMoved,
+    markMailWebViewPointerMovedAfterRelease,
     markMailWebViewPointerReleased,
     setMailWebViewPointerButtonDown,
     setMailWebViewPointerActive,
@@ -381,16 +383,17 @@
       if (!hasMoved) {
         return;
       }
-      clearMailWebViewPointerReleasePosition();
+      markMailWebViewPointerMovedAfterRelease();
     } else if (consumeMailWebViewPointerReleasePending()) {
       // Если отпускание пришло только из native input-event WebView, у него
-      // нет координат окна. Игнорируем первый внешний mousemove и снимаем
-      // защиту уже на следующем реальном движении указателя.
+      // нет координат окна. Игнорируем первый внешний mousemove, но сохраняем
+      // защиту от запоздалого click.
       return;
     }
     if (isMailWebViewPointerButtonDown() || event.buttons != 0) {
       // Пока кнопка нажата, указатель всё ещё завершает выделение текста,
       // даже если native WebView уже перестал быть event.target оболочки.
+      markMailWebViewPointerMoved();
       return;
     }
     /*
@@ -398,7 +401,7 @@
      * оболочки. Снимаем защиту только когда координаты действительно ушли
      * из тела письма; mouseup внутри WebView больше не возвращает stale-hover.
     */
-    if (!isMailWebViewPointerPosition(event)) {
+    if (!isMailWebViewPointerPosition(event) && !isMailWebViewPointerSelectionGuardActive()) {
       setMailWebViewPointerActive(false);
     }
   }

@@ -28,6 +28,7 @@
   import { newElectronKeyboardEvent, onKeyOnMessage } from "../Mail/Message/MessageKeyboard";
   import {
     isMailPaneFocused,
+    markMailWebViewPointerMoved,
     markMailWebViewPointerReleased,
     setMailWebViewPointerButtonDown,
     setMailWebViewPointerActive,
@@ -204,6 +205,7 @@
 
   function onWebViewPointerMove(): void {
     if (forwardKeysToMail) {
+      markMailWebViewPointerMoved();
       setMailWebViewPointerActive(true);
     }
   }
@@ -279,6 +281,7 @@
       } else if (event.type == "mouseMove") {
         // Native WebView может не передать pointer-событие оболочке. Держим
         // защиту, пока указатель находится в теле письма, включая mouseup.
+        markMailWebViewPointerMoved();
         setMailWebViewPointerActive(true);
       } else if (event.type == "mouseUp") {
         markMailWebViewPointerReleased();
