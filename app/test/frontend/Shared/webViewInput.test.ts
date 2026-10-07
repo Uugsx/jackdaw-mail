@@ -58,6 +58,17 @@ describe("фокус почтовой панели из input-event WebView", ()
     expect(document.body.classList.contains("mail-webview-pointer-active")).toBe(false);
   });
 
+  it("снимает фокус со случайной кнопки оболочки при начале выделения", () => {
+    let button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    setMailWebViewPointerActive(true);
+
+    expect(document.activeElement).not.toBe(button);
+  });
+
   it("сохраняет точку отпускания до следующего движения или нового нажатия", () => {
     markMailWebViewPointerReleased(120, 240);
     expect(isMailWebViewPointerButtonDown()).toBe(false);

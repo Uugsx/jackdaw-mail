@@ -46,6 +46,14 @@ export function setMailWebViewPointerActive(active: boolean): void {
   }
   if (active && !document.body?.classList.contains("mail-webview-pointer-active")) {
     hideTooltips();
+    let activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement &&
+        !activeElement.closest(".message-display .body")) {
+      // Выделение текста в native WebView не должно оставлять фокус на
+      // случайной кнопке оболочки: иначе она выглядит выбранной рядом с
+      // выделенным письмом, хотя пользователь её не нажимал.
+      activeElement.blur();
+    }
   }
   document.body?.classList.toggle("mail-webview-pointer-active", active);
 }

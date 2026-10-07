@@ -591,6 +591,9 @@
       || !consumeMailWebViewPointerReleaseClick()) {
       return false;
     }
+    // Защита активна только для запоздалого click после выделения: обычные
+    // клики по панели после ухода указателя из письма должны работать как
+    // раньше.
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -686,5 +689,67 @@
   }
   :global(body.mail-webview-pointer-active) :global(#jackdaw-tooltip) {
     visibility: hidden !important;
+  }
+
+  /*
+   * Состояние :hover/:focus-visible может остаться на кнопке верхней панели
+   * после drag-select в native WebView. Это не действие пользователя, поэтому
+   * на время выделения возвращаем панели её нейтральный вид, не меняя реальные
+   * активные/выбранные состояния (например, активный фильтр).
+   */
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:hover:not(:disabled)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:focus-visible:not(:disabled)) {
+    background-color: transparent !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:hover:not(:disabled):not(.on)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:focus-visible:not(:disabled):not(.on)) {
+    color: var(--main-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn.danger:hover:not(:disabled)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn.danger:focus-visible:not(:disabled)) {
+    color: var(--danger-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn.primary:hover:not(:disabled)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn.primary:focus-visible:not(:disabled)) {
+    color: var(--toolbar-control-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:hover:not(:disabled) .ribbon-icon-default),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:focus-visible:not(:disabled) .ribbon-icon-default) {
+    display: inline-flex !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:hover:not(:disabled) .ribbon-icon-hover),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:focus-visible:not(:disabled) .ribbon-icon-hover) {
+    display: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:hover:not(:disabled) svg),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .ribbon-btn:focus-visible:not(:disabled) svg) {
+    filter: none !important;
+    transform: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .folder-pane-toggle:hover),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .search-filters-btn:hover:not(.active)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .create:hover:not(.disabled)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .mail-create-item-menu .menu-button:hover:not(:disabled)),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .quick-filters .pill:hover:not(.active)) {
+    background-color: var(--toolbar-control-bg) !important;
+    border-color: var(--toolbar-control-border) !important;
+    color: var(--toolbar-control-fg) !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .mail-toolbar .toolbar-customize .menu-button:hover:not(.disabled)) {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    color: var(--main-fg) !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .message-list .mail-list-topic-separator:hover),
+  :global(body.mail-webview-pointer-active) :global(.main-window.mail-mode .message-list .mail-list-topic-separator:focus-visible) {
+    background-color: color-mix(in srgb, var(--main-fg) 6%, var(--main-bg)) !important;
+    color: color-mix(in srgb, var(--main-fg) 68%, transparent) !important;
+    outline: none !important;
   }
 </style>
