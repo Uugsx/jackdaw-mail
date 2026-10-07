@@ -10,6 +10,12 @@
   on:click|capture={(event) => catchErrors(() => onClickTopLevel(event))}
   on:keydown|capture={(event) => catchErrors(() => onGlobalShortcutKeydown(event))}
   on:keyup|capture={onGlobalShortcutKeyup}
+  on:mousemove|capture={onGlobalPointerBoundaryChange}
+  on:mouseup|capture={onGlobalPointerBoundaryChange}
+  on:pointerdown|capture={onGlobalPointerBoundaryChange}
+  on:pointermove|capture={onGlobalPointerBoundaryChange}
+  on:pointerup|capture={onGlobalPointerBoundaryChange}
+  on:pointercancel|capture={onGlobalPointerBoundaryChange}
   on:mousedown|capture={(event) => catchErrors(() => onCategoryShortcutMouseDown(event))} />
 
 <vbox flex class="main-window"
@@ -141,7 +147,17 @@
     widgetSplitterResetKey,
   } from "../Widgets/widgetState";
   import { catchErrors, backgroundError } from "../Util/error";
-import { updatePaneFocusFromPointer } from "./paneFocus";
+  import {
+    clearMailWebViewPointerReleasePosition,
+    consumeMailWebViewPointerReleasePending,
+    consumeMailWebViewPointerReleaseClick,
+    getMailWebViewPointerReleasePosition,
+    isMailWebViewPointerButtonDown,
+    markMailWebViewPointerReleased,
+    setMailWebViewPointerButtonDown,
+    setMailWebViewPointerActive,
+    updatePaneFocusFromPointer,
+  } from "./paneFocus";
   import { startUpdateNotificationWatcher } from "./UpdateNotification";
   import { assert } from "../../logic/util/util";
   import { searchContacts } from "../../logic/Contacts/Search";
@@ -314,12 +330,77 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
 
   function onMainWindowBlur(): void {
     clearPressedCategoryShortcutCodes();
+    setMailWebViewPointerActive(false);
     catchErrors(saveWindowSettings);
   }
 
   function onMainWindowVisibilityChange(): void {
     clearPressedCategoryShortcutCodes();
+    setMailWebViewPointerActive(false);
     catchErrors(saveWindowSettings);
+  }
+
+  function isMailWebViewPointerTarget(target: EventTarget | null): boolean {
+    return target instanceof Element && !!target.closest(".message-display .body");
+  }
+
+  function isMailWebViewPointerPosition(event: MouseEvent | PointerEvent): boolean {
+    if (isMailWebViewPointerTarget(event.target)) {
+      return true;
+    }
+    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
+      return false;
+    }
+    return isMailWebViewPointerTarget(document.elementFromPoint(event.clientX, event.clientY));
+  }
+
+  function onGlobalPointerBoundaryChange(event: MouseEvent | PointerEvent): void {
+    if (!document.body?.classList.contains("mail-webview-pointer-active")) {
+      return;
+    }
+    if (event.type == "pointerdown" || event.type == "mousedown") {
+      if (!isMailWebViewPointerPosition(event)) {
+        setMailWebViewPointerActive(false);
+      } else {
+        setMailWebViewPointerButtonDown(true);
+      }
+      return;
+    }
+    if (event.type == "mouseup" || event.type == "pointerup" || event.type == "pointercancel") {
+      // Во время выделения Chromium может отправить mouseup уже над левой
+      // панелью. Сохраняем точку отпускания и не возвращаем hover на первом
+      // mousemove, который часто приходит с теми же координатами.
+      markMailWebViewPointerReleased(event.clientX, event.clientY);
+      return;
+    }
+    let releasePosition = getMailWebViewPointerReleasePosition();
+    if (releasePosition) {
+      let hasMoved = Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+        && (Math.abs(event.clientX - releasePosition.clientX) > 2
+          || Math.abs(event.clientY - releasePosition.clientY) > 2);
+      if (!hasMoved) {
+        return;
+      }
+      clearMailWebViewPointerReleasePosition();
+    } else if (consumeMailWebViewPointerReleasePending()) {
+      // Если отпускание пришло только из native input-event WebView, у него
+      // нет координат окна. Игнорируем первый внешний mousemove и снимаем
+      // защиту уже на следующем реальном движении указателя.
+      return;
+    }
+    if (isMailWebViewPointerButtonDown() || event.buttons != 0) {
+      // Пока кнопка нажата, указатель всё ещё завершает выделение текста,
+      // даже если native WebView уже перестал быть event.target оболочки.
+      return;
+    }
+    /*
+     * Нативный WebView может оставить :hover на последнем DOM-элементе
+     * оболочки. Снимаем защиту только когда координаты действительно ушли
+     * из тела письма; mouseup внутри WebView больше не возвращает stale-hover.
+    */
+    if (!isMailWebViewPointerPosition(event)) {
+      setMailWebViewPointerActive(false);
+    }
   }
 
   function onMainWindowPointerDown() {
@@ -457,6 +538,9 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   }
 
   async function onClickTopLevel(event: MouseEvent) {
+    if (isMailWebViewReleaseClick(event)) {
+      return;
+    }
     let targetE = event.target as HTMLElement;
     let linkE = targetE.closest && targetE.closest("a[href]");
     let url = linkE?.getAttribute("href");
@@ -500,6 +584,19 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     event.stopPropagation();
     event.preventDefault();
   }
+
+  function isMailWebViewReleaseClick(event: MouseEvent): boolean {
+    if (!document.body?.classList.contains("mail-webview-pointer-active")
+      || isMailWebViewPointerTarget(event.target)
+      || !consumeMailWebViewPointerReleaseClick()) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    setMailWebViewPointerActive(false);
+    return true;
+  }
 </script>
 
 <style>
@@ -527,5 +624,67 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   .sidebar {
     box-shadow: inset 1px 0px 5px 0px rgba(0, 0, 0, 10%);
     z-index: 2;
+  }
+
+  /*
+   * Chromium может сохранить :hover у строки на границе native WebView и
+   * DOM-оболочки. Возвращаем строкам их обычный фон, пока указатель ещё
+   * принадлежит телу письма, чтобы hover не выглядел как выбор письма.
+   */
+  :global(body.mail-webview-pointer-active) :global(.fast-list .row:not(.selected):hover > *) {
+    background-color: var(--main-bg) !important;
+    color: var(--main-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.fast-list .row.selected:hover > *) {
+    background-color: var(--selected-bg) !important;
+    color: var(--selected-fg) !important;
+  }
+  /*
+   * В списке писем hover меняет не только фон строки: он также раскрывает
+   * кнопки «переместить», «звезда» и «прочитано». Native WebView может
+   * оставить такой hover на строке после drag-select, поэтому возвращаем
+   * именно состояние списка писем, не скрывая постоянные метки и статусы.
+   */
+  :global(body.mail-webview-pointer-active) :global(.message-list .fast-list .row:not(.selected):hover > .message) {
+    background-color: var(--main-bg) !important;
+    color: var(--main-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.message-list .fast-list .row.selected:hover > .message) {
+    background-color: var(--selected-bg) !important;
+    color: var(--selected-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.message-list .fast-list .row:hover .move.button),
+  :global(body.mail-webview-pointer-active) :global(.message-list .fast-list .row:hover .star:not(.starred)),
+  :global(body.mail-webview-pointer-active) :global(.message-list .fast-list .row:hover .unread-dot:not(.unread)) {
+    display: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.smart-view:hover:not(:disabled):not(.active)),
+  :global(body.mail-webview-pointer-active) :global(.quick-folder:hover:not(.selected)),
+  :global(body.mail-webview-pointer-active) :global(.account-row:hover:not(.selected)),
+  :global(body.mail-webview-pointer-active) :global(.folder:hover:not(.selected)),
+  :global(body.mail-webview-pointer-active) :global(.hidden-folder-row:hover) {
+    background-color: transparent !important;
+    color: inherit !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.folder-pane .fast-list .row:not(.selected):hover > *) {
+    background-color: transparent !important;
+    color: inherit !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.smart-view.active:hover:not(:disabled)),
+  :global(body.mail-webview-pointer-active) :global(.quick-folder.selected:hover),
+  :global(body.mail-webview-pointer-active) :global(.folder.selected:hover) {
+    background: var(--selected-bg) !important;
+    color: var(--selected-fg) !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.workspace:hover) {
+    background-color: var(--leftbar-bg) !important;
+    color: inherit !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(.folder:hover .buttons),
+  :global(body.mail-webview-pointer-active) :global(.account-row:hover .buttons) {
+    display: none !important;
+  }
+  :global(body.mail-webview-pointer-active) :global(#jackdaw-tooltip) {
+    visibility: hidden !important;
   }
 </style>

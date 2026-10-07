@@ -279,6 +279,9 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function onPointerOver(event: PointerEvent): void {
+    if (isMailWebViewPointerDown()) {
+      return;
+    }
     const target = findTooltipTarget(event.target);
     if (!target) {
       return;
@@ -294,6 +297,9 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function onPointerMove(event: PointerEvent): void {
+    if (isMailWebViewPointerDown()) {
+      return;
+    }
     const target = findTooltipTarget(event.target);
     if (target == hoveredTarget) {
       return;
@@ -307,6 +313,9 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function onPointerOut(event: PointerEvent): void {
+    if (isMailWebViewPointerDown()) {
+      return;
+    }
     const eventTarget = event.target instanceof Element ? event.target : null;
     const target = findTooltipTarget(event.target) ?? hoveredTarget;
     if (!target || target != hoveredTarget || !eventTarget || !target.contains(eventTarget)) {
@@ -327,6 +336,9 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function onFocusIn(event: FocusEvent): void {
+    if (isMailWebViewPointerDown()) {
+      return;
+    }
     const target = findTooltipTarget(event.target);
     if (!target) {
       return;
@@ -358,6 +370,16 @@ export function installTooltips(doc: Document = document): () => void {
     hoveredTarget = null;
     focusedTarget = null;
     hideTooltip();
+  }
+
+  function isMailWebViewPointerDown(): boolean {
+    if (!body.classList.contains("mail-webview-pointer-active")) {
+      return false;
+    }
+    hoveredTarget = null;
+    focusedTarget = null;
+    hideTooltip();
+    return true;
   }
 
   installedTooltipHiders.add(hideTooltip);

@@ -1,8 +1,10 @@
 // #if [!WEBMAIL && !MOBILE]
-<webview bind:this={webviewE} src={url ?? blobURL} {title} class:hidden class:autosize={autoSize} {partition} useragent={userAgent || undefined} allowpopups={!containNavigation} />
+<webview bind:this={webviewE} src={url ?? blobURL} {title} class:hidden class:autosize={autoSize} {partition} useragent={userAgent || undefined} allowpopups={!containNavigation}
+  on:pointerdown={onWebViewPointerDown} on:pointermove={onWebViewPointerMove} on:pointerup={onWebViewPointerUp} on:pointercancel={onWebViewPointerUp} />
 // #else
 <!-- TODO Security: Test that this <webview> is untrusted and jailed -->
-<iframe bind:this={webviewE} src={url ?? blobURL} {title} class:hidden class:autosize={autoSize} />
+<iframe bind:this={webviewE} src={url ?? blobURL} {title} class:hidden class:autosize={autoSize}
+  on:pointerdown={onWebViewPointerDown} on:pointermove={onWebViewPointerMove} on:pointerup={onWebViewPointerUp} on:pointercancel={onWebViewPointerUp} />
 // #endif
 
 <!--
@@ -24,7 +26,13 @@
   // #if [!WEBMAIL]
   import { buildContextMenu, MenuItem, type ContextInfo } from "./ContextMenu";
   import { newElectronKeyboardEvent, onKeyOnMessage } from "../Mail/Message/MessageKeyboard";
-  import { isMailPaneFocused } from "../MainWindow/paneFocus";
+  import {
+    isMailPaneFocused,
+    markMailWebViewPointerReleased,
+    setMailWebViewPointerButtonDown,
+    setMailWebViewPointerActive,
+    updatePaneFocusFromWebViewInput,
+  } from "../MainWindow/paneFocus";
   import { appGlobal } from "../../logic/app";
   // import { Menu } from "@svelteuidev/core";
   // #endif
@@ -156,6 +164,9 @@
   }
 
   onDestroy(() => {
+    if (forwardKeysToMail) {
+      setMailWebViewPointerActive(false);
+    }
     if (blobURL) {
       URL.revokeObjectURL(blobURL);
     }
@@ -182,6 +193,28 @@
     el.addEventListener("load", () => {
       guestDomReady = true;
     });
+  }
+
+  function onWebViewPointerDown(event: PointerEvent): void {
+    if (forwardKeysToMail && (event.button == 0 || event.button == -1)) {
+      setMailWebViewPointerButtonDown(true);
+      setMailWebViewPointerActive(true);
+    }
+  }
+
+  function onWebViewPointerMove(): void {
+    if (forwardKeysToMail) {
+      setMailWebViewPointerActive(true);
+    }
+  }
+
+  function onWebViewPointerUp(): void {
+    if (forwardKeysToMail) {
+      markMailWebViewPointerReleased();
+      // Оставляем защиту до фактического ухода указателя из тела письма.
+      // Иначе native WebView возвращает stale :hover на случайную панель.
+      setMailWebViewPointerActive(true);
+    }
   }
 
   let listenersAttachedTo: HTMLIFrameElement = null;
@@ -232,8 +265,28 @@
     }
     let id = (webviewE as any).getWebContentsId();
     await appGlobal.remoteApp.addEventListenerWebContents(id, "input-event", (event) => {
-      if (event.type == "mouseDown" && event.clickCount == 1) {
-        webviewE.click();
+      if (event.type == "mouseDown") {
+        if (event.button == "left" || event.button == null) {
+          setMailWebViewPointerButtonDown(true);
+          setMailWebViewPointerActive(true);
+        }
+        if (event.clickCount == 1) {
+          // Не генерируем синтетический клик по контейнеру webview: при
+          // выделении текста он может всплыть в оболочку и активировать
+          // случайный элемент интерфейса под курсором.
+          updatePaneFocusFromWebViewInput(event);
+        }
+      } else if (event.type == "mouseMove") {
+        // Native WebView может не передать pointer-событие оболочке. Держим
+        // защиту, пока указатель находится в теле письма, включая mouseup.
+        setMailWebViewPointerActive(true);
+      } else if (event.type == "mouseUp") {
+        markMailWebViewPointerReleased();
+        setMailWebViewPointerActive(true);
+      } else if (event.type == "pointerUp" || event.type == "pointerCancel" ||
+                 event.type == "touchEnd" || event.type == "touchCancel") {
+        markMailWebViewPointerReleased();
+        setMailWebViewPointerActive(true);
       } else if (event.type == "rawKeyDown") {
         if (!isMailPaneFocused()) {
           return;

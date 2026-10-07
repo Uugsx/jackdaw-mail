@@ -141,6 +141,23 @@ describe("renderer tooltips", () => {
     expect(tooltip?.hidden).toBe(true);
   });
 
+  test("не показывает подсказку во время выделения текста в почтовом WebView", () => {
+    const button = document.createElement("button");
+    button.title = "Архив";
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("true");
+
+    document.body.classList.add("mail-webview-pointer-active");
+    button.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.dataset.visible).toBe("false");
+    expect(button.getAttribute("title")).toBe("Архив");
+  });
+
   test("ignores titles on non-interactive mail content", () => {
     const sender = document.createElement("span");
     sender.title = "Galkin Nikita SDS\nnikita.galkin@smartds.ru";
