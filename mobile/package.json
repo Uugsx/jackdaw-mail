@@ -1,6 +1,6 @@
 {
   "name": "jackdaw-mail",
-  "version": "0.9.102-dev",
+  "version": "0.9.104-dev",
   "description": "Jackdaw Mail — Mail, Calendar & Contacts",
   "type": "module",
   "scripts": {

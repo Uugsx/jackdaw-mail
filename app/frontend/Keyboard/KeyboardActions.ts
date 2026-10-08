@@ -66,7 +66,7 @@ export const configurableKeyboardActions: readonly ConfigurableKeyboardAction[] 
   { id: "mail.refresh", group: mailGroup, label: gt`Get new mail`, defaultShortcut: shortcut("F5", "F5") },
   { id: "mail.reply", group: mailGroup, label: gt`Reply`, defaultShortcut: shortcut("KeyR", "r", { ctrl: true }) },
   { id: "mail.replyAll", group: mailGroup, label: gt`Reply all`, defaultShortcut: shortcut("KeyR", "R", { ctrl: true, shift: true }) },
-  { id: "mail.forward", group: mailGroup, label: gt`Forward`, defaultShortcut: shortcut("KeyL", "l", { ctrl: true }) },
+  { id: "mail.forward", group: mailGroup, label: gt`Forward *=> Send this message to somebody else`, defaultShortcut: shortcut("KeyL", "l", { ctrl: true }) },
   { id: "mail.forwardAsAttachment", group: mailGroup, label: gt`Forward as attachment`, defaultShortcut: shortcut("KeyL", "L", { ctrl: true, shift: true }) },
   { id: "mail.newEmail", group: mailGroup, label: gt`New email`, defaultShortcut: shortcut("KeyN", "n", { ctrl: true }) },
   { id: "mail.editAsNew", group: mailGroup, label: gt`Edit as new`, defaultShortcut: shortcut("KeyE", "e", { ctrl: true }) },

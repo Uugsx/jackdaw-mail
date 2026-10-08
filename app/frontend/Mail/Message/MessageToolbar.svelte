@@ -38,7 +38,7 @@
       icon={ForwardIcon}
       iconSize="22px"
       iconOnly
-      label={$t`Forward`}
+      label={$t`Forward *=> Send this message to somebody else`}
       onClick={forward}
       plain
       />

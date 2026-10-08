@@ -376,9 +376,13 @@ export function installTooltips(doc: Document = document): () => void {
     if (!body.classList.contains("mail-webview-pointer-active")) {
       return false;
     }
+    let hasTooltipState = hoveredTarget != null || focusedTarget != null || currentTarget != null
+      || showTimer != null || hideTimer != null;
     hoveredTarget = null;
     focusedTarget = null;
-    hideTooltip();
+    if (hasTooltipState) {
+      hideTooltip();
+    }
     return true;
   }
 

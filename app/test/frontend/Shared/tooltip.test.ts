@@ -156,6 +156,10 @@ describe("renderer tooltips", () => {
     const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
     expect(tooltip?.dataset.visible).toBe("false");
     expect(button.getAttribute("title")).toBe("Архив");
+
+    let pendingTimers = vi.getTimerCount();
+    button.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+    expect(vi.getTimerCount()).toBe(pendingTimers);
   });
 
   test("ignores titles on non-interactive mail content", () => {

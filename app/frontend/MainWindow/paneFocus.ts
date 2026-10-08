@@ -50,7 +50,15 @@ export function setMailWebViewPointerActive(active: boolean): void {
   if (typeof document == "undefined") {
     return;
   }
-  if (active && !document.body?.classList.contains("mail-webview-pointer-active")) {
+  let body = document.body;
+  if (!body) {
+    return;
+  }
+  let wasActive = body.classList.contains("mail-webview-pointer-active");
+  if (wasActive == active) {
+    return;
+  }
+  if (active) {
     hideTooltips();
     let activeElement = document.activeElement;
     if (activeElement instanceof HTMLElement &&
@@ -61,7 +69,15 @@ export function setMailWebViewPointerActive(active: boolean): void {
       activeElement.blur();
     }
   }
-  document.body?.classList.toggle("mail-webview-pointer-active", active);
+  body.classList.toggle("mail-webview-pointer-active", active);
+}
+
+/** Снимает только визуальную защиту, сохраняя pending-click после drag-select. */
+export function clearMailWebViewPointerActiveVisual(): void {
+  if (typeof document == "undefined") {
+    return;
+  }
+  document.body?.classList.remove("mail-webview-pointer-active");
 }
 
 /** Фиксирует нажатую кнопку до mouseup, даже если указатель покинул WebView. */

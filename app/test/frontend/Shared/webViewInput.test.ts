@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { get } from "svelte/store";
 import {
   focusMailPane,
@@ -14,6 +14,7 @@ import {
   markMailWebViewPointerReleased,
   paneFocus,
   clearMailWebViewPointerReleasePosition,
+  clearMailWebViewPointerActiveVisual,
   consumeMailWebViewPointerReleaseClick,
   consumeMailWebViewPointerReleasePending,
   setMailWebViewPointerButtonDown,
@@ -122,5 +123,27 @@ describe("фокус почтовой панели из input-event WebView", ()
     expect(consumeMailWebViewPointerReleaseClick()).toBe(true);
     expect(getMailWebViewPointerReleasePosition()).toBeNull();
     expect(consumeMailWebViewPointerReleaseClick()).toBe(false);
+  });
+
+  it("снимает визуальную защиту после ухода указателя и сохраняет pending-click", () => {
+    setMailWebViewPointerButtonDown(true);
+    markMailWebViewPointerMoved();
+    markMailWebViewPointerReleased();
+    setMailWebViewPointerActive(true);
+
+    clearMailWebViewPointerActiveVisual();
+
+    expect(document.body.classList.contains("mail-webview-pointer-active")).toBe(false);
+    expect(consumeMailWebViewPointerReleaseClick()).toBe(true);
+  });
+
+  it("не меняет DOM повторными вызовами активации", () => {
+    let toggle = vi.spyOn(document.body.classList, "toggle");
+
+    setMailWebViewPointerActive(true);
+    setMailWebViewPointerActive(true);
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+    toggle.mockRestore();
   });
 });

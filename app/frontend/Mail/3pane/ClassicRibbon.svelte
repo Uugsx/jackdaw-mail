@@ -7,6 +7,7 @@
     <vbox class="group new-group" class:hidden={ribbonHidden.new} style:order={ribbonOrders.new}>
       <button type="button" class="ribbon-btn primary new-action" disabled={!account}
         title={$t`Write new email`}
+        data-tooltip={ribbonSize == "large" ? undefined : $t`Write new email`}
         on:click={() => catchErrors(newMail)}>
         <MailPlusIcon size="22px" />
         <span>{$t`New email`}</span>
@@ -20,6 +21,7 @@
     {#if folder?.specialFolder == SpecialFolder.Trash || folder?.specialFolder == SpecialFolder.Spam}
       <button type="button" class="ribbon-btn primary" disabled={!hasSelection}
         title={$t`Restore`}
+        data-tooltip={ribbonSize == "large" ? undefined : $t`Restore`}
         on:click={() => catchErrors(restoreSelected)}>
         <UndoIcon size="20px" />
         <span>{$t`Restore`}</span>
@@ -27,6 +29,7 @@
     {/if}
     <button type="button" class="ribbon-btn danger delete-action" disabled={!hasSelection}
       title={$t`Delete`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Delete`}
       on:click={() => catchErrors(deleteSelected)}>
       <TrashIcon size="20px" />
       <span>{$t`Delete`}</span>
@@ -38,21 +41,24 @@
   <vbox class="group row separated" class:hidden={ribbonHidden.reply} style:order={ribbonOrders.reply}>
     <button type="button" class="ribbon-btn reply-action" disabled={!message}
       title={$t`Reply to author`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Reply to author`}
       on:click={() => catchErrors(reply)}>
       <ReplyIcon size="20px" />
       <span>{$t`Reply`}</span>
     </button>
     <button type="button" class="ribbon-btn reply-all-action" disabled={!canReplyAll}
       title={$t`Reply to all`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Reply to all`}
       on:click={() => catchErrors(replyAll)}>
       <ReplyAllIcon size="20px" />
       <span>{$t`Reply all`}</span>
     </button>
     <button type="button" class="ribbon-btn forward-action" disabled={!message}
-      title={$t`Forward`}
+      title={$t`Forward *=> Send this message to somebody else`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Forward *=> Send this message to somebody else`}
       on:click={() => catchErrors(forward)}>
       <ForwardIcon size="20px" />
-      <span>{$t`Forward`}</span>
+      <span>{$t`Forward *=> Send this message to somebody else`}</span>
     </button>
   </vbox>
 
@@ -62,6 +68,7 @@
     <button type="button" class="ribbon-btn move-action" disabled={!hasSelection}
       bind:this={moveAnchor}
       title={$t`Move`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Move`}
       on:click|stopPropagation={() => catchErrors(toggleMove)}>
       <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
         <FolderInputIcon size="20px" />
@@ -73,12 +80,14 @@
     </button>
     <button type="button" class="ribbon-btn archive-action" disabled={!hasSelection}
       title={$t`Archive`}
+      data-tooltip={ribbonSize == "large" ? undefined : $t`Archive`}
       on:click={() => catchErrors(archiveSelected)}>
       <ArchiveIcon size="20px" />
       <span>{$t`Archive`}</span>
     </button>
     <button type="button" class="ribbon-btn spam-action" disabled={!hasSelection}
       title={messageSpam ? $t`Mark as not spam` : $t`Mark as spam`}
+      data-tooltip={ribbonSize == "large" ? undefined : messageSpam ? $t`Mark as not spam` : $t`Mark as spam`}
       on:click={() => catchErrors(toggleSpam)}>
       <svelte:component this={messageSpam ? NotSpamIcon : SpamIcon} size="20px" />
       <span>{messageSpam ? $t`Not spam` : $t`Junk`}</span>
@@ -91,6 +100,7 @@
     <button type="button" class="ribbon-btn read-action" disabled={!hasSelection}
       aria-pressed={!!messageRead}
       title={messageRead ? $t`Mark as unread` : $t`Mark as read`}
+      data-tooltip={ribbonSize == "large" ? undefined : messageRead ? $t`Mark as unread` : $t`Mark as read`}
       on:click={() => catchErrors(toggleRead)}>
       {#if messageRead}
         <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
@@ -112,6 +122,7 @@
     <button type="button" class="ribbon-btn flag-action" class:on={messageStarred}
       aria-pressed={!!messageStarred} disabled={!hasSelection}
       title={messageStarred ? $t`Flagged` : $t`Flag`}
+      data-tooltip={ribbonSize == "large" ? undefined : messageStarred ? $t`Flagged` : $t`Flag`}
       on:click={() => catchErrors(toggleStar)}>
       <FlagIcon size="20px" />
       <span>{$t`Flag`}</span>
@@ -119,6 +130,7 @@
     <button type="button" class="ribbon-btn important-action" class:on={messageImportant}
       aria-pressed={!!messageImportant} disabled={!hasSelection}
       title={messageImportant ? $t`Mark as not important` : $t`Mark as important`}
+      data-tooltip={ribbonSize == "large" ? undefined : messageImportant ? $t`Mark as not important` : $t`Mark as important`}
       on:click={() => catchErrors(toggleImportant)}>
       <ImportantIcon size="20px" />
       <span>{$t`Important`}</span>
@@ -128,6 +140,7 @@
         aria-haspopup="menu" aria-expanded={catMenuOpen} disabled={!hasSelection}
         bind:this={catAnchor}
         title={$t`Set categories`}
+        data-tooltip={ribbonSize == "large" ? undefined : $t`Set categories`}
         on:click|stopPropagation={onCategoriesClick}>
         <TagsIcon size="20px" />
         <span>{$t`Categories`}</span>

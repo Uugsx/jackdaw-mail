@@ -150,6 +150,7 @@
   import {
     consumeMailWebViewPointerReleasePending,
     consumeMailWebViewPointerReleaseClick,
+    clearMailWebViewPointerActiveVisual,
     getMailWebViewPointerReleasePosition,
     isMailWebViewPointerButtonDown,
     isMailWebViewPointerSelectionGuardActive,
@@ -401,8 +402,15 @@
      * оболочки. Снимаем защиту только когда координаты действительно ушли
      * из тела письма; mouseup внутри WebView больше не возвращает stale-hover.
     */
-    if (!isMailWebViewPointerPosition(event) && !isMailWebViewPointerSelectionGuardActive()) {
-      setMailWebViewPointerActive(false);
+    if (!isMailWebViewPointerPosition(event)) {
+      if (isMailWebViewPointerSelectionGuardActive()) {
+        // После ухода указателя больше нет смысла держать тяжёлые глобальные
+        // CSS-правила активными, но pending-click ещё должен поглотить
+        // запоздалый click на панели.
+        clearMailWebViewPointerActiveVisual();
+      } else {
+        setMailWebViewPointerActive(false);
+      }
     }
   }
 
@@ -589,8 +597,7 @@
   }
 
   function isMailWebViewReleaseClick(event: MouseEvent): boolean {
-    if (!document.body?.classList.contains("mail-webview-pointer-active")
-      || isMailWebViewPointerTarget(event.target)
+    if (isMailWebViewPointerTarget(event.target)
       || !consumeMailWebViewPointerReleaseClick()) {
       return false;
     }

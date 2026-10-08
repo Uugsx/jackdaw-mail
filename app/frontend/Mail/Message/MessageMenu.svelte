@@ -11,7 +11,7 @@
   icon={ReplyAllIcon} />
 <MenuItem
   onClick={forward}
-  label={$t`Forward`}
+  label={$t`Forward *=> Send this message to somebody else`}
   tooltip={$t`Send this message to somebody else`}
   icon={ForwardIcon} />
 {#if onMove}

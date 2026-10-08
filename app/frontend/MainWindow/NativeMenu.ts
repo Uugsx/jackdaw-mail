@@ -96,7 +96,7 @@ export function syncNativeMenuLabels(): void {
     message: gt`Message`,
     reply: gt`Reply`,
     replyAll: gt`Reply all`,
-    forward: gt`Forward`,
+    forward: gt`Forward *=> Send this message to somebody else`,
     markReadUnread: gt`Mark as read/unread`,
     archive: gt`Archive`,
     delete: gt`Delete`,

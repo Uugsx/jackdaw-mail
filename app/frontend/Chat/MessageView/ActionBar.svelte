@@ -54,7 +54,7 @@
     padding="4px"
     />
   <RoundButton
-    label={$t`Forward`}
+    label={$t`Forward *=> Send this message to somebody else`}
     icon={ForwardIcon}
     onClick={onForward}
     border={false} classes="plain"
