@@ -71,6 +71,23 @@ export class OAuth2 extends WebBasedAuth {
     this.doPKCE = doPKCE;
   }
 
+  /**
+   * Можно ли принять настроенный redirect через внешний браузер.
+   * Чистый http://localhost обрабатывается OAuth-окном приложения, поскольку
+   * callback-сервер десктопного приложения не может безопасно занять порт 80.
+   */
+  get supportsSystemBrowser(): boolean {
+    try {
+      let redirect = new URL(this.authDoneURL);
+      return !(redirect.protocol == "http:" &&
+        redirect.hostname == "localhost" &&
+        !redirect.port &&
+        (redirect.pathname == "" || redirect.pathname == "/"));
+    } catch {
+      return true;
+    }
+  }
+
   setTokenURLPasswordAuth(url: string | null | undefined) {
     assert(!url || url?.startsWith("https://") || url?.startsWith("http://"), "Malformed OAuth2 server token URL for password: " + url);
     this.tokenURLPasswordAuth = url || null;

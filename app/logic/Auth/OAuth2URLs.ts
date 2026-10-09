@@ -9,6 +9,17 @@
  * It contains only data, no code.
  */
 
+/**
+ * Компания, которая обслуживает сервер учетной записи.
+ * Указываем только наиболее распространенных провайдеров,
+ * для которых приложения используют специальные настройки.
+ */
+export enum Provider {
+  Office365 = "office365",
+  Google = "google",
+  MailRu = "mail.ru",
+}
+
 export const OAuth2URLs = [
   {
     provider: Provider.Office365,
@@ -50,6 +61,18 @@ export const OAuth2URLs = [
     doPKCE: true,
   },
   {
+    provider: Provider.MailRu,
+    domains: ["mail.ru", "inbox.ru", "list.ru", "bk.ru", "internet.ru"],
+    hostnames: ["imap.mail.ru", "pop.mail.ru", "smtp.mail.ru"],
+    authURL: "https://o2.mail.ru/login",
+    authDoneURL: "http://localhost",
+    tokenURL: "https://o2.mail.ru/token",
+    scope: "mail.imap",
+    clientID: "thunderbird",
+    clientSecret: "I0dCAXrcaNFujaaY",
+    doPKCE: false,
+  },
+  {
     provider: null,
     domains: ["yahoo.com"],
     hostnames: ["imap.mail.yahoo.com", "pop.mail.yahoo.com", "smtp.mail.yahoo.com" ],
@@ -86,13 +109,3 @@ export const OAuth2URLs = [
     doPKCE: true,
   },
 ];
-
-/**
- * The company that runs the server for an account.
- * Only for the few providers that are so widespread that
- * apps and services are made specifically for them.
- */
-export enum Provider {
-  Office365 = "office365",
-  Google = "google",
-}

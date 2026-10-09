@@ -14,10 +14,12 @@
           onClick={() => run(loginBrowser)}
           errorCallback={showError}
           />
-        <Button label={showConfirmCopied ? $t`URL copied` : $t`Copy URL`}
-          onClick={() => run(loginCopyURL)}
-          errorCallback={showError}
-          />
+        {#if canCopyURL()}
+          <Button label={showConfirmCopied ? $t`URL copied` : $t`Copy URL`}
+            onClick={() => run(loginCopyURL)}
+            errorCallback={showError}
+            />
+        {/if}
       </hbox>
     {/if}
   </hbox>
@@ -50,10 +52,9 @@
   import { OAuth2 } from "../../../logic/Auth/OAuth2";
   import { Provider } from "../../../logic/Auth/OAuth2URLs";
   import { getProvider } from "../../../logic/Auth/OAuth2Util";
-  import { OAuth2UIMethod } from "../../../logic/Auth/UI/OAuth2UIMethod";
+  import { newOAuth2UI, OAuth2UIMethod } from "../../../logic/Auth/UI/OAuth2UIMethod";
   import type { OAuth2UI } from "../../../logic/Auth/UI/OAuth2UI";
   import { OAuth2Embed } from "../../../logic/Auth/UI/OAuth2Embed";
-  import { OAuth2SystemBrowser } from "../../../logic/Auth/UI/OAuth2SystemBrowser";
   import { OAuth2Localhost } from "../../../logic/Auth/UI/OAuth2Localhost";
   import { UserCancelled, sleep, assert, type URLString } from "../../../logic/util/util";
   import OAuth2EmbeddedBrowser from "../../Shared/Auth/OAuth2EmbeddedBrowser.svelte";
@@ -101,6 +102,10 @@
     func().catch(showError);
   }
 
+  function canCopyURL(): boolean {
+    return account.oAuth2 instanceof OAuth2 && account.oAuth2.supportsSystemBrowser;
+  }
+
   async function prepareLogin(method: OAuth2UIMethod) {
     activeUI?.abort();
     activeUI = null;
@@ -109,12 +114,14 @@
   }
 
   async function startLogin(ui: OAuth2UI, dailyUI: OAuth2UIMethod) {
+    assert(account.oAuth2 instanceof OAuth2, "Need OAuth2 config");
+    let oAuth2 = account.oAuth2;
     activeUI = ui;
     try {
       let authCode = await ui.login();
       oAuth2Running = null;
-      await account.oAuth2.getAccessTokenFromAuthCode(authCode);
-      account.oAuth2.uiMethod = dailyUI;
+      await oAuth2.getAccessTokenFromAuthCode(authCode);
+      oAuth2.uiMethod = dailyUI;
       onContinue();
     } finally {
       if (activeUI === ui) {
@@ -126,7 +133,8 @@
 
   async function loginBrowser() {
     await prepareLogin(OAuth2UIMethod.SystemBrowser);
-    let ui = new OAuth2SystemBrowser(account.oAuth2);
+    assert(account.oAuth2 instanceof OAuth2, "Need OAuth2 config");
+    let ui = newOAuth2UI(OAuth2UIMethod.SystemBrowser, account.oAuth2);
     await startLogin(ui, OAuth2UIMethod.SystemBrowser);
   }
 
@@ -142,6 +150,10 @@
   }
 
   async function loginCopyURL() {
+    if (!(account.oAuth2 instanceof OAuth2) || !account.oAuth2.supportsSystemBrowser) {
+      await loginBrowser();
+      return;
+    }
     if (oAuth2Running == OAuth2UIMethod.Localhost && url) {
       await showCopyURL(url);
       return;

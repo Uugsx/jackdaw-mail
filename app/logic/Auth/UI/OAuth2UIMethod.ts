@@ -28,8 +28,14 @@ export const mapBackOAuth2UIMethod = {
 
 export function newOAuth2UI(method: OAuth2UIMethod, oAuth2: OAuth2): OAuth2UI {
   if (method == OAuth2UIMethod.Localhost) {
+    if (!oAuth2.supportsSystemBrowser) {
+      return new OAuth2Window(oAuth2);
+    }
     return new OAuth2Localhost(oAuth2);
   } else if (method == OAuth2UIMethod.SystemBrowser) {
+    if (!oAuth2.supportsSystemBrowser) {
+      return new OAuth2Window(oAuth2);
+    }
     return new OAuth2SystemBrowser(oAuth2);
   } else if (method == OAuth2UIMethod.Embed) {
     return new OAuth2Embed(oAuth2);
