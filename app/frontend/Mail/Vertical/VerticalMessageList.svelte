@@ -236,6 +236,9 @@
     background-color: var(--main-bg);
     color: var(--main-fg);
   }
+  .message-list :global(.row:not(.selected):not(:hover) .message.starred) {
+    background-color: color-mix(in srgb, var(--icon-primary) 12%, var(--main-bg));
+  }
   .message-list :global(.row:has(.mail-list-day-separator)) {
     cursor: default;
   }

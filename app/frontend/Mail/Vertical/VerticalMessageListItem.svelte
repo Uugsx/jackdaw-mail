@@ -1,6 +1,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <vbox class="message"
+  class:starred={$message.isStarred}
   class:unread={!$message.isRead}
   draggable="true" on:dragstart={(event) => catchErrors(() => onDragStartMail(event, message))}
   style="--account-color: {$message.folder.account.color};"
