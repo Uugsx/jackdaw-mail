@@ -285,7 +285,14 @@ export class MailListRows {
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
     let byTopic = this.sort == "subject";
     let bySender = this.sort == "sender";
-    this.rows.replaceAll(buildMailListRows(messages, byDate, byTopic, this.collapsedGroupIds, bySender));
+    let nextRows = buildMailListRows(messages, byDate, byTopic, this.collapsedGroupIds, bySender);
+    // При полной пересборке строки всегда создаются заново. `ArrayColl.replaceAll`
+    // в таком случае сравнивает каждый новый объект со всеми старыми (O(n²)),
+    // что заметно на папках с десятками тысяч писем. Сохраняем идентичность
+    // коллекции и прежнюю последовательность уведомлений, но заменяем данные
+    // линейно: сначала удаляем старый снимок, затем добавляем новый.
+    this.rows.clear();
+    this.rows.addAll(nextRows);
   }
 }
 
