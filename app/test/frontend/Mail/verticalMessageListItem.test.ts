@@ -112,7 +112,7 @@ describe("открытие письма", () => {
     expect(openEMailMessageFullscreenMock).not.toHaveBeenCalled();
   });
 
-  test("при ошибке нативного окна сохраняет открытие письма во встроенном просмотре", async () => {
+  test("при ошибке нативного окна не переключается в другой режим просмотра", async () => {
     nativeMessageWindowMocks.supportsNativeMessageWindow.mockReturnValue(true);
     nativeMessageWindowMocks.openNativeMessageWindow.mockRejectedValueOnce(new Error("window failed"));
     let message = createMessage();
@@ -126,7 +126,8 @@ describe("открытие письма", () => {
     await tick();
     await tick();
 
-    expect(openEMailMessageFullscreenMock).toHaveBeenCalledTimes(1);
-    expect(openEMailMessageFullscreenMock).toHaveBeenCalledWith(message);
+    expect(nativeMessageWindowMocks.openNativeMessageWindow).toHaveBeenCalledTimes(1);
+    expect(nativeMessageWindowMocks.openNativeMessageWindow).toHaveBeenCalledWith(message);
+    expect(openEMailMessageFullscreenMock).not.toHaveBeenCalled();
   });
 });

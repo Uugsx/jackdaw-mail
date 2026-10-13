@@ -148,14 +148,10 @@
       await openEMailMessageFullscreen(message);
       return;
     }
-    try {
-      await openNativeMessageWindow(message);
-    } catch (_ex) {
-      // Если системное окно не создалось (например, renderer ещё не готов),
-      // двойной клик всё равно должен открыть письмо, а не завершиться
-      // без видимого результата.
-      await openEMailMessageFullscreen(message);
-    }
+    // На десктопе двойной клик всегда открывает один и тот же нативный
+    // просмотрщик. Сложные/ещё не загруженные тела сериализуются с отложенной
+    // загрузкой внутри этого же окна, а не переключают UI на fullscreen-маршрут.
+    await openNativeMessageWindow(message);
   }
 
   function onDoubleClick(event: MouseEvent) {

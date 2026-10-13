@@ -77,7 +77,7 @@ export function handleNativeComposeWindowClosed(windowID: string): void {
   }
 }
 
-/** Sends detached-composer edits through the already logged-in main renderer. */
+/** Передаёт изменения отдельного редактора уже авторизованному главному renderer. */
 export async function sendNativeComposeWindow(windowID: string, payload: ComposeWindowMail): Promise<void> {
   let composer = mailApp.subApps.find(app =>
     app instanceof WriteMailJackdawApp && app.windowParams?.nativeComposeWindowID === windowID) as WriteMailJackdawApp | undefined;
@@ -90,14 +90,19 @@ export async function sendNativeComposeWindow(windowID: string, payload: Compose
 }
 
 /** Открывает штатную форму ответа в текущем окне просмотра, если оно передано. */
-export function handleNativeMessageWindowReply(
+export async function handleNativeMessageWindowReply(
   mode: MessageWindowReplyMode,
   payload: MessageWindowPayload,
   messageWindowID?: string,
-): void {
+): Promise<void> {
   let account = appGlobal.emailAccounts.find(candidate => candidate.id === payload.mail.accountID);
   assert(account, "Message window account is no longer available");
   let message = deserializeMessageWindowMail(payload, account);
+  if (payload.bodyDeferred) {
+    // Для цитаты нужен тот же исходный текст, но ошибка snapshot не должна
+    // блокировать открытие ответа и применение настроенной подписи.
+    await message.loadBody().catch(() => undefined);
+  }
   let reply = mode == "replyAll"
     ? message.compose.replyAll()
     : message.compose.replyToAuthor();

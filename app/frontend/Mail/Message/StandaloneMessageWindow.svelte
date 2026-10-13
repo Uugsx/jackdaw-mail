@@ -65,6 +65,10 @@
         ...[...appGlobal.addressbooks].map(addressbook => addressbook.readFromDB()),
       ]);
       message = deserializeMessageWindowMail(payload, account);
+      if (payload.bodyDeferred) {
+        // Сложное тело догружается уже внутри того же окна просмотра.
+        void message.loadBody().catch(() => undefined);
+      }
     } catch (ex) {
       errorMessage = ex instanceof Error ? ex.message : $t`Could not load the message window`;
       backgroundError(ex);

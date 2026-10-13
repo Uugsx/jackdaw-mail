@@ -85,10 +85,18 @@ function serializeSource(source: EMail): ComposeWindowSource {
 export async function serializeComposeMail(
   mail: EMail,
   windowID: string,
-  options: { includeAttachmentContent?: boolean } = {},
+  options: {
+    includeAttachmentContent?: boolean;
+    /** Не загружать тело, если вызывающий код уже обработал загрузку сам. */
+    loadBody?: boolean;
+    /** Для read-only окна допускается последующая нормализация payload. */
+    validate?: boolean;
+  } = {},
 ): Promise<ComposeWindowMail> {
-  await mail.loadBody();
-  if (mail.composeSource) {
+  if (options.loadBody ?? true) {
+    await mail.loadBody();
+  }
+  if (mail.composeSource && (options.loadBody ?? true)) {
     await mail.composeSource.loadBody();
   }
   let account = mail.folder?.account ?? mail.identity?.account;
@@ -142,7 +150,9 @@ export async function serializeComposeMail(
     attachments,
     composeSource: mail.composeSource ? serializeSource(mail.composeSource) : null,
   };
-  assert(isComposeWindowPayload(payload), "Compose window: payload is too large or malformed");
+  if (options.validate ?? true) {
+    assert(isComposeWindowPayload(payload), "Compose window: payload is too large or malformed");
+  }
   return payload;
 }
 

@@ -26,6 +26,8 @@ export interface MessageWindowPayload {
   isForwarded: boolean;
   /** JSON-представление SML-блока письма, если он есть. */
   smlJSON: string | null;
+  /** Тело не вошло в IPC snapshot и должно быть загружено в окне просмотра. */
+  bodyDeferred?: boolean;
 }
 
 const kMaxSMLJSONLength = 4_000_000;
@@ -62,6 +64,7 @@ export function isMessageWindowPayload(
     typeof payload.isSpam === "boolean" &&
     typeof payload.isReplied === "boolean" &&
     typeof payload.isForwarded === "boolean" &&
-    isSerializedSML(payload.smlJSON)
+    isSerializedSML(payload.smlJSON) &&
+    (payload.bodyDeferred === undefined || typeof payload.bodyDeferred === "boolean")
   );
 }
