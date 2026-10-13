@@ -125,8 +125,19 @@
   .standalone-compose {
     min-width: 0;
     min-height: 100vh;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
     background: var(--main-bg, var(--bg));
     color: var(--main-fg, var(--fg));
+  }
+  .standalone-compose :global(.container),
+  .standalone-compose :global(.content) {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
   }
   .compose-state {
     align-items: center;

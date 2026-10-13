@@ -37,14 +37,14 @@ function deserializePerson(person: ComposeWindowPerson): PersonUID {
   return new PersonUID(person.emailAddress, person.name ?? undefined);
 }
 
-async function serializeAttachment(attachment: Attachment): Promise<ComposeWindowAttachment> {
+async function serializeAttachment(attachment: Attachment, includeContent = true): Promise<ComposeWindowAttachment> {
   let contentBase64: string | null = null;
-  if (attachment.content) {
+  if (includeContent && attachment.content) {
     if (attachment.content.size > composeWindowMaxAttachmentBytes) {
       throw new Error(`Attachment is too large for a separate compose window: ${attachment.filename}`);
     }
     contentBase64 = await blobToBase64(attachment.content);
-  } else if (!attachment.filepathLocal) {
+  } else if (includeContent && !attachment.filepathLocal) {
     // У пересланных и загруженных вложений обычно есть данные в памяти
     // или локальный путь. Для остальных даём хранилищу одну попытку загрузки.
     attachment = await attachment.load();
@@ -82,7 +82,11 @@ function serializeSource(source: EMail): ComposeWindowSource {
 }
 
 /** Преобразует объект письма в данные для передачи через Electron IPC. */
-export async function serializeComposeMail(mail: EMail, windowID: string): Promise<ComposeWindowMail> {
+export async function serializeComposeMail(
+  mail: EMail,
+  windowID: string,
+  options: { includeAttachmentContent?: boolean } = {},
+): Promise<ComposeWindowMail> {
   await mail.loadBody();
   if (mail.composeSource) {
     await mail.composeSource.loadBody();
@@ -93,7 +97,7 @@ export async function serializeComposeMail(mail: EMail, windowID: string): Promi
 
   let attachments: ComposeWindowAttachment[] = [];
   for (let attachment of mail.attachments) {
-    attachments.push(await serializeAttachment(attachment));
+    attachments.push(await serializeAttachment(attachment, options.includeAttachmentContent ?? true));
   }
   let headers: [string, string][] = [];
   for (let name of mail.headers.keys()) {

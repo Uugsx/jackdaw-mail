@@ -2,7 +2,7 @@
   on:add-files={(event) => catchErrors(() => onFilesDrop(event))}
   on:inline-files={(event) => catchErrors(() => onFileInlineDrop(event))}
   allowInline={true}>
-  <vbox flex class="mail-composer-window" class:floating on:keydown|capture={onComposerKeydown}>
+  <vbox flex class="mail-composer-window" class:floating class:standalone on:keydown|capture={onComposerKeydown}>
     <vbox class="compose-header">
       <hbox class="compose-top-row">
         <IdentitySelector bind:selectedIdentity={fromIdentity}
@@ -144,7 +144,7 @@
       {/if}
       <vbox flex class="editor-wrapper">
         <Paper>
-          <Scroll visibleScrollbars={floating}>
+            <Scroll visibleScrollbars={floating} hideHorizontalScrollbar={standalone && !floating}>
             <SMLComposer {mail} />
             <vbox class="editor" class:loading={loading} spellcheck={$spellcheckEnabled.value}
               style:zoom={editorZoom / 100}>
@@ -225,6 +225,7 @@
     composeFirstLineIndentValues,
     fontSizeToCSS,
     setStoredComposeTextStyle,
+    ensureStoredComposeTextStyleForEmptyParagraph,
     normalizeComposeTextColor,
   } from "../../Shared/Editor/composeEditorExtensions";
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
@@ -252,7 +253,7 @@
   import Scroll from "../../Shared/Scroll.svelte";
   import SaveIcon from "lucide-svelte/icons/save";
   import { t, gt } from "../../../l10n/l10n";
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { selectedWorkspace } from "../../MainWindow/Selected";
   import type { Editor } from '@tiptap/core';
   import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
@@ -270,6 +271,8 @@
   const dispatchEvent = createEventDispatcher<{ close: void }>();
 
   let editor: Editor;
+  let observedEditor: Editor | null = null;
+  let removeEditorSelectionListener: (() => void) | null = null;
   let editableHtml = "";
   /** Quoted message kept out of TipTap so its original HTML wrapper stays intact. */
   let composeQuoteHtml = "";
@@ -492,6 +495,25 @@
     void ensureEditorContent();
   }
 
+  $: if (editor && editor !== observedEditor) {
+    removeEditorSelectionListener?.();
+    let currentEditor = editor;
+    observedEditor = currentEditor;
+    let onSelectionUpdate = () => ensureReplyTypingFormatting();
+    currentEditor.on("selectionUpdate", onSelectionUpdate);
+    currentEditor.on("focus", onSelectionUpdate);
+    removeEditorSelectionListener = () => {
+      currentEditor.off("selectionUpdate", onSelectionUpdate);
+      currentEditor.off("focus", onSelectionUpdate);
+    };
+  }
+
+  onDestroy(() => {
+    removeEditorSelectionListener?.();
+    removeEditorSelectionListener = null;
+    observedEditor = null;
+  });
+
   function applyDefaultComposeFormatting() {
     if (!editor || mail.isDraft || defaultComposeFormattingApplied) {
       return;
@@ -674,7 +696,28 @@
     let defaultFontSize = composeFontSizes.includes(defaultFontSizeSetting.value)
       ? defaultFontSizeSetting.value
       : composeDefaultFontSize;
-    setStoredComposeTextStyle(editor, defaultFontFamilySetting.value, fontSizeToCSS(defaultFontSize));
+    let defaultTextColor = normalizeComposeTextColor(defaultTextColorSetting.value);
+    setStoredComposeTextStyle(
+      editor,
+      defaultFontFamilySetting.value,
+      fontSizeToCSS(defaultFontSize),
+      defaultTextColor,
+    );
+  }
+
+  function ensureReplyTypingFormatting() {
+    if (!editor || !composeContentReady || !isReplyQuote) {
+      return;
+    }
+    let defaultFontSize = composeFontSizes.includes(defaultFontSizeSetting.value)
+      ? defaultFontSizeSetting.value
+      : composeDefaultFontSize;
+    ensureStoredComposeTextStyleForEmptyParagraph(
+      editor,
+      defaultFontFamilySetting.value,
+      fontSizeToCSS(defaultFontSize),
+      normalizeComposeTextColor(defaultTextColorSetting.value),
+    );
   }
 
   $: fromIdentity && setAuthor()
@@ -883,8 +926,14 @@
     padding: 0 16px 12px;
     background-color: var(--main-bg, var(--bg));
     color: var(--main-fg, var(--fg));
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
-  .mail-composer-window.floating {
+  .mail-composer-window.floating,
+  .mail-composer-window.standalone {
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -894,32 +943,37 @@
     height: 100%;
     box-sizing: border-box;
   }
-  .mail-composer-window.floating .ribbon-anchor {
+  .mail-composer-window.floating .ribbon-anchor,
+  .mail-composer-window.standalone .ribbon-anchor {
     flex-shrink: 0;
     min-width: 0;
     overflow: visible;
   }
-  .mail-composer-window.floating .editor-and-attachments {
+  .mail-composer-window.floating .editor-and-attachments,
+  .mail-composer-window.standalone .editor-and-attachments {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
-  .mail-composer-window.floating .editor-wrapper {
+  .mail-composer-window.floating .editor-wrapper,
+  .mail-composer-window.standalone .editor-wrapper {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .mail-composer-window.floating .editor-wrapper :global(.paper) {
+  .mail-composer-window.floating .editor-wrapper :global(.paper),
+  .mail-composer-window.standalone .editor-wrapper :global(.paper) {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .mail-composer-window.floating .editor-wrapper :global(.scroll) {
+  .mail-composer-window.floating .editor-wrapper :global(.scroll),
+  .mail-composer-window.standalone .editor-wrapper :global(.scroll) {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
@@ -928,6 +982,12 @@
     max-width: none;
     width: auto;
     min-width: 0;
+    box-sizing: border-box;
+  }
+  .mail-composer-window.standalone .editor {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     box-sizing: border-box;
   }
   .compose-header {
@@ -1093,6 +1153,9 @@
     padding-block-start: 8px;
     border-block-start: 1px solid var(--border);
     flex-shrink: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
   .compose-quote .quote-header {
     margin: 0 0 8px;
@@ -1102,6 +1165,8 @@
   .editor-wrapper {
     flex: 3 0 0;
     margin-block-start: 4px;
+    min-width: 0;
+    min-height: 0;
   }
   .composer-subject {
     max-width: 900px;
@@ -1121,6 +1186,8 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: none;
+    min-width: 0;
+    min-height: 0;
   }
   .attachments-row {
     flex: 0 0 auto;

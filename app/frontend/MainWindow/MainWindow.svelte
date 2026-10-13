@@ -117,7 +117,12 @@
   import { isConfigurableKeyboardActionId } from "../Keyboard/KeyboardActions";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { loadApps, disableAppsBasedOnFeaturesXML } from "../AppsBar/loadApps";
-  import { handleNativeComposeWindowClosed, mailApp, sendNativeComposeWindow } from "../Mail/MailJackdawApp";
+  import {
+    handleNativeComposeWindowClosed,
+    handleNativeMessageWindowReply,
+    mailApp,
+    sendNativeComposeWindow,
+  } from "../Mail/MailJackdawApp";
   import { meetApp } from "../Meet/MeetJackdawApp";
   import { categoriesLoaded } from "../Settings/SettingsCategories";
   import { applyColors } from "../Settings/Global/AppThemeColors";
@@ -165,6 +170,7 @@
   import { assert } from "../../logic/util/util";
   import { searchContacts } from "../../logic/Contacts/Search";
   import type { ComposeWindowPerson } from "../../logic/Mail/Composer/ComposeWindowProtocol";
+  import type { MessageWindowPayload, MessageWindowReplyMode } from "../../logic/Mail/MessageWindowProtocol";
   import { getUILocale, locale, t } from "../../l10n/l10n";
   import { rtlLocales } from "../../l10n/list";
   import { appName } from "../../logic/build";
@@ -244,12 +250,18 @@
           })();
         })
       : () => {};
+    const unsubscribeMessageWindowReply = typeof nativeAPI?.onMessageWindowReplyRequest === "function"
+      ? nativeAPI.onMessageWindowReplyRequest((windowID: string, mode: MessageWindowReplyMode, payload: MessageWindowPayload) => {
+          void catchErrors(() => handleNativeMessageWindowReply(mode, payload, windowID));
+        })
+      : () => {};
     return () => {
       unsubscribeLocale();
       unsubscribeNativeMenu();
       unsubscribeComposeWindow();
       unsubscribeComposeWindowSend();
       unsubscribeComposeWindowSearch();
+      unsubscribeMessageWindowReply();
     };
   });
 

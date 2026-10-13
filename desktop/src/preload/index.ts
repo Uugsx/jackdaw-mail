@@ -24,6 +24,19 @@ import {
   type ComposeWindowPerson,
   type ComposeWindowSendResult,
 } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
+import {
+  messageWindowCloseChannel,
+  messageWindowClosedChannel,
+  messageWindowDataChannel,
+  messageWindowFocusChannel,
+  messageWindowOpenChannel,
+  messageWindowReplyChannel,
+  messageWindowReplyRequestChannel,
+  isMessageWindowReplyMode,
+  isMessageWindowPayload,
+  type MessageWindowReplyMode,
+  type MessageWindowPayload,
+} from '../../../app/logic/Mail/MessageWindowProtocol'
 
 // Custom APIs for renderer
 const api = {
@@ -104,6 +117,54 @@ const api = {
     }
     ipcRenderer.on(composeWindowClosedChannel, listener)
     return () => ipcRenderer.removeListener(composeWindowClosedChannel, listener)
+  },
+  openMessageWindow: (windowID: string, payload: MessageWindowPayload): void => {
+    ipcRenderer.send(messageWindowOpenChannel, windowID, payload)
+  },
+  focusMessageWindow: (windowID: string): void => {
+    ipcRenderer.send(messageWindowFocusChannel, windowID)
+  },
+  closeMessageWindow: (windowID: string): void => {
+    ipcRenderer.send(messageWindowCloseChannel, windowID)
+  },
+  getMessageWindowData: (windowID: string): Promise<MessageWindowPayload | null> => {
+    return ipcRenderer.invoke(messageWindowDataChannel, windowID)
+  },
+  requestMessageWindowReply: (windowID: string, replyAll = false): void => {
+    ipcRenderer.send(messageWindowReplyChannel, windowID, replyAll ? 'replyAll' : 'reply')
+  },
+  onMessageWindowReplyRequest: (
+    callback: (
+      windowID: string,
+      mode: MessageWindowReplyMode,
+      payload: MessageWindowPayload,
+    ) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      windowID: unknown,
+      mode: unknown,
+      payload: unknown,
+    ): void => {
+      if (
+        typeof windowID === 'string' &&
+        isMessageWindowReplyMode(mode) &&
+        isMessageWindowPayload(payload)
+      ) {
+        callback(windowID, mode, payload)
+      }
+    }
+    ipcRenderer.on(messageWindowReplyRequestChannel, listener)
+    return () => ipcRenderer.removeListener(messageWindowReplyRequestChannel, listener)
+  },
+  onMessageWindowClosed: (callback: (windowID: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, windowID: unknown): void => {
+      if (typeof windowID === 'string') {
+        callback(windowID)
+      }
+    }
+    ipcRenderer.on(messageWindowClosedChannel, listener)
+    return () => ipcRenderer.removeListener(messageWindowClosedChannel, listener)
   }
 }
 

@@ -33,10 +33,24 @@ import {
   type ComposeWindowPerson,
   type ComposeWindowSendResult,
 } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
+import {
+  messageWindowCloseChannel,
+  messageWindowClosedChannel,
+  messageWindowDataChannel,
+  messageWindowFocusChannel,
+  messageWindowOpenChannel,
+  messageWindowReplyChannel,
+  messageWindowReplyRequestChannel,
+  isMessageWindowReplyMode,
+  isMessageWindowPayload,
+  type MessageWindowReplyMode,
+  type MessageWindowPayload,
+} from '../../../app/logic/Mail/MessageWindowProtocol'
 
 let primaryWindow: BrowserWindow | null = null;
 let currentJPCSecret: string | null = null;
 const composeWindows = new Map<string, { window: BrowserWindow; payload: ComposeWindowMail }>();
+const messageWindows = new Map<string, { window: BrowserWindow; payload: MessageWindowPayload }>();
 const kComposeWindowRequestTimeoutMS = 60_000;
 const kComposeWindowSearchTextMaxLength = 512;
 const pendingComposeWindowSends = new Map<string, {
@@ -121,6 +135,15 @@ function isComposeWindowID(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 128;
 }
 
+function isMessageWindowID(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
+function messageWindowTitle(payload: MessageWindowPayload): string {
+  const subject = payload.mail.subject.trim().slice(0, 160);
+  return subject ? `Jackdaw Mail — ${subject}` : "Jackdaw Mail — Message";
+}
+
 function isPrimaryRenderer(sender: WebContents): boolean {
   return !!primaryWindow && !primaryWindow.isDestroyed() && primaryWindow.webContents === sender;
 }
@@ -134,6 +157,18 @@ function notifyComposeWindowClosed(windowID: string): void {
     window.webContents.send(composeWindowClosedChannel, windowID);
   } catch (ex) {
     console.error("Could not notify the main window about a closed compose window", ex);
+  }
+}
+
+function notifyMessageWindowClosed(windowID: string): void {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  try {
+    window.webContents.send(messageWindowClosedChannel, windowID);
+  } catch (ex) {
+    console.error("Could not notify the main window about a closed message window", ex);
   }
 }
 
@@ -208,17 +243,85 @@ function closeComposeWindows(): void {
   composeWindows.clear();
 }
 
-function loadRendererWindow(window: BrowserWindow, hash: string): void {
-  if (is.dev) {
-    window.loadURL('http://localhost:5454/#' + hash)
-      .catch(console.error);
-  } else if (process.env['ELECTRON_RENDERER_URL']) {
-    window.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#' + hash)
-      .catch(console.error);
-  } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'), { hash })
-      .catch(console.error);
+function closeMessageWindows(): void {
+  for (const entry of messageWindows.values()) {
+    if (!entry.window.isDestroyed()) {
+      entry.window.close();
+    }
   }
+  messageWindows.clear();
+}
+
+function loadRendererWindow(window: BrowserWindow, hash: string): Promise<void> {
+  if (is.dev) {
+    return window.loadURL('http://localhost:5454/#' + hash);
+  }
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    return window.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#' + hash);
+  }
+  return window.loadFile(join(__dirname, '../renderer/index.html'), { hash });
+}
+
+function registerComposeWindow(windowID: string, payload: ComposeWindowMail, composeWindow: BrowserWindow): void {
+  composeWindows.set(windowID, { window: composeWindow, payload });
+  composeWindow.on("closed", () => {
+    if (composeWindows.get(windowID)?.window === composeWindow) {
+      composeWindows.delete(windowID);
+      notifyComposeWindowClosed(windowID);
+    }
+  });
+}
+
+function replaceMessageWindowWithComposeWindow(windowID: string, payload: ComposeWindowMail): boolean {
+  if (!currentJPCSecret) {
+    return false;
+  }
+  const entry = messageWindows.get(windowID);
+  if (!entry) {
+    return false;
+  }
+  if (entry.window.isDestroyed()) {
+    messageWindows.delete(windowID);
+    return false;
+  }
+  messageWindows.delete(windowID);
+  notifyMessageWindowClosed(windowID);
+  registerComposeWindow(windowID, payload, entry.window);
+  entry.window.setTitle("Jackdaw Mail — Compose");
+  // Пока renderer перезагружается, в BrowserWindow оставался старый
+  // просмотр письма. Из-за этого пользователь видел заголовок Compose,
+  // но продолжал видеть письмо и воспринимал ответ как не сработавший.
+  // Скрываем окно до полной загрузки нового renderer и возвращаем его
+  // только после did-finish-load, чтобы переход был атомарным визуально.
+  entry.window.hide();
+  const hash = new URLSearchParams({
+    jpcSecret: currentJPCSecret,
+    composeWindow: windowID,
+  }).toString();
+  void (async () => {
+    try {
+      // Одной перезагрузки недостаточно: при ошибке навигации Electron мог
+      // оставить старый DOM окна просмотра. Сначала уничтожаем старую
+      // страницу невидимым переходом на about:blank, затем загружаем форму
+      // ответа и только после этого возвращаем окно пользователю.
+      await entry.window.loadURL("about:blank");
+      await loadRendererWindow(entry.window, hash);
+      if (!entry.window.isDestroyed()) {
+        entry.window.show();
+        entry.window.focus();
+      }
+    } catch (ex) {
+      console.error("Compose window failed to replace message window", ex);
+      // Нельзя показывать старый просмотрщик под заголовком Compose. Если
+      // новая страница не загрузилась, закрываем только это повреждённое
+      // переходом окно; владелец удалит соответствующий compose-app через
+      // обычное событие закрытия окна.
+      if (!entry.window.isDestroyed()) {
+        entry.window.close();
+      }
+    }
+  })();
+  return true;
 }
 
 function createComposeWindow(windowID: string, payload: ComposeWindowMail): void {
@@ -240,14 +343,7 @@ function createComposeWindow(windowID: string, payload: ComposeWindowMail): void
     },
   });
   setupSpellcheckContextMenu(composeWindow);
-  const entry = { window: composeWindow, payload };
-  composeWindows.set(windowID, entry);
-  composeWindow.on("closed", () => {
-    if (composeWindows.get(windowID)?.window === composeWindow) {
-      composeWindows.delete(windowID);
-      notifyComposeWindowClosed(windowID);
-    }
-  });
+  registerComposeWindow(windowID, payload, composeWindow);
   composeWindow.once("ready-to-show", () => {
     if (!composeWindow.isDestroyed()) {
       composeWindow.show();
@@ -263,12 +359,62 @@ function createComposeWindow(windowID: string, payload: ComposeWindowMail): void
     jpcSecret: currentJPCSecret,
     composeWindow: windowID,
   }).toString();
-  loadRendererWindow(composeWindow, hash);
+  void loadRendererWindow(composeWindow, hash).catch(console.error);
+}
+
+function createMessageWindow(windowID: string, payload: MessageWindowPayload): void {
+  if (!currentJPCSecret) {
+    return;
+  }
+  const messageWindow = new BrowserWindow({
+    width: 1_100,
+    height: 760,
+    minWidth: 560,
+    minHeight: 400,
+    show: false,
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
+    title: messageWindowTitle(payload),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(import.meta.dirname, '../preload/index.mjs'),
+      sandbox: false,
+      webviewTag: true,
+    },
+  });
+  setupSpellcheckContextMenu(messageWindow);
+  messageWindows.set(windowID, { window: messageWindow, payload });
+  messageWindow.on("closed", () => {
+    if (messageWindows.get(windowID)?.window === messageWindow) {
+      messageWindows.delete(windowID);
+      notifyMessageWindowClosed(windowID);
+    }
+  });
+  messageWindow.once("ready-to-show", () => {
+    if (!messageWindow.isDestroyed()) {
+      messageWindow.show();
+      messageWindow.focus();
+    }
+  });
+  messageWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (isMainFrame) {
+      console.error("Message window failed to load", errorCode, errorDescription);
+    }
+  });
+  const hash = new URLSearchParams({
+    jpcSecret: currentJPCSecret,
+    messageWindow: windowID,
+  }).toString();
+  void loadRendererWindow(messageWindow, hash).catch(console.error);
 }
 
 ipcMain.on(composeWindowOpenChannel, (event, windowID: unknown, payload: unknown) => {
   if (!isPrimaryRenderer(event.sender) || !isComposeWindowID(windowID) ||
       !isComposeWindowPayload(payload) || payload.windowID !== windowID) {
+    return;
+  }
+  if (replaceMessageWindowWithComposeWindow(windowID, payload)) {
     return;
   }
   const existing = composeWindows.get(windowID);
@@ -280,6 +426,24 @@ ipcMain.on(composeWindowOpenChannel, (event, windowID: unknown, payload: unknown
   }
   composeWindows.delete(windowID);
   createComposeWindow(windowID, payload);
+});
+
+ipcMain.on(messageWindowOpenChannel, (event, windowID: unknown, payload: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || !isMessageWindowID(windowID) ||
+      !isMessageWindowPayload(payload) ||
+      payload.windowID !== windowID) {
+    return;
+  }
+  const existing = messageWindows.get(windowID);
+  if (existing && !existing.window.isDestroyed()) {
+    existing.payload = payload;
+    existing.window.setTitle(messageWindowTitle(payload));
+    existing.window.show();
+    existing.window.focus();
+    return;
+  }
+  messageWindows.delete(windowID);
+  createMessageWindow(windowID, payload);
 });
 
 ipcMain.on(composeWindowFocusChannel, (event, windowID: unknown) => {
@@ -297,6 +461,21 @@ ipcMain.on(composeWindowFocusChannel, (event, windowID: unknown) => {
   composeWindow.focus();
 });
 
+ipcMain.on(messageWindowFocusChannel, (event, windowID: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || !isMessageWindowID(windowID)) {
+    return;
+  }
+  const messageWindow = messageWindows.get(windowID)?.window;
+  if (!messageWindow || messageWindow.isDestroyed()) {
+    return;
+  }
+  if (messageWindow.isMinimized()) {
+    messageWindow.restore();
+  }
+  messageWindow.show();
+  messageWindow.focus();
+});
+
 ipcMain.on(composeWindowCloseChannel, (event, windowID: unknown) => {
   if (!isComposeWindowID(windowID)) {
     return;
@@ -309,6 +488,36 @@ ipcMain.on(composeWindowCloseChannel, (event, windowID: unknown) => {
   entry.window.close();
 });
 
+ipcMain.on(messageWindowCloseChannel, (event, windowID: unknown) => {
+  if (!isMessageWindowID(windowID)) {
+    return;
+  }
+  const entry = messageWindows.get(windowID);
+  if (!entry || entry.window.isDestroyed() ||
+      (event.sender !== entry.window.webContents && !isPrimaryRenderer(event.sender))) {
+    return;
+  }
+  entry.window.close();
+});
+
+ipcMain.on(messageWindowReplyChannel, (event, windowID: unknown, mode: unknown) => {
+  if (!isMessageWindowID(windowID) || !isMessageWindowReplyMode(mode)) {
+    return;
+  }
+  const entry = messageWindows.get(windowID);
+  const window = primaryWindow;
+  if (!entry || entry.window.isDestroyed() || entry.window.webContents !== event.sender ||
+      !window || window.isDestroyed()) {
+    return;
+  }
+  window.webContents.send(
+    messageWindowReplyRequestChannel,
+    windowID,
+    mode as MessageWindowReplyMode,
+    entry.payload,
+  );
+});
+
 ipcMain.handle(composeWindowDataChannel, (event, windowID: unknown): ComposeWindowMail | null => {
   if (!isComposeWindowID(windowID)) {
     return null;
@@ -319,6 +528,20 @@ ipcMain.handle(composeWindowDataChannel, (event, windowID: unknown): ComposeWind
   }
   return entry.payload;
 });
+
+ipcMain.handle(
+  messageWindowDataChannel,
+  (event, windowID: unknown): MessageWindowPayload | null => {
+    if (!isMessageWindowID(windowID)) {
+      return null;
+    }
+    const entry = messageWindows.get(windowID);
+    if (!entry || entry.window.isDestroyed() || entry.window.webContents !== event.sender) {
+      return null;
+    }
+    return entry.payload;
+  },
+);
 
 ipcMain.handle(composeWindowSendChannel, (event, windowID: unknown, payload: unknown): Promise<ComposeWindowSendResult> => {
   if (!isComposeWindowID(windowID) || !isComposeWindowPayload(payload) || payload.windowID !== windowID) {
@@ -429,6 +652,7 @@ async function createWindow(): Promise<void> {
       failPendingComposeWindowSends("Main window is unavailable");
       failPendingComposeWindowSearches();
       closeComposeWindows();
+      closeMessageWindows();
       currentJPCSecret = null;
       shutdownBackend().catch(console.error);
     });
@@ -478,7 +702,7 @@ async function createWindow(): Promise<void> {
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     // The `try` above cannot catch these, because they fail asynchronously
-    loadRendererWindow(mainWindow, 'jpcSecret=' + jpcSecret);
+    void loadRendererWindow(mainWindow, 'jpcSecret=' + jpcSecret).catch(console.error);
   } catch (ex) {
     console.error(ex);
   }

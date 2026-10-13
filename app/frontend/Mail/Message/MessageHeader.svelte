@@ -44,8 +44,10 @@
         </hbox>
         <hbox flex class="identity-spacer" />
         <hbox class="message-actions">
-          <MessageToolbar {message} />
-          {#if $tags.hasItems}
+          {#if !readOnly}
+            <MessageToolbar {message} {onReply} {onReplyAll} />
+          {/if}
+          {#if !readOnly && $tags.hasItems}
             <hbox class="tags">
               <TagSelector tags={$tags} object={message} canAdd={false}>
                 <RoundButton
@@ -131,6 +133,9 @@
   import { onDestroy } from "svelte";
 
   export let message: EMail;
+  export let readOnly = false;
+  export let onReply: (() => void | Promise<void>) | null = null;
+  export let onReplyAll: (() => void | Promise<void>) | null = null;
 
   $: tags = message.tags;
   $: density = normalizeUIDensity($uiDensitySetting.value);

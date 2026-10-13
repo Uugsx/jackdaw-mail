@@ -188,6 +188,8 @@
     margin: 0;
     padding: 16px;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     box-sizing: border-box;
     outline: none;
     overflow-x: hidden;
@@ -216,10 +218,24 @@
   }
   .compose-quote-html :global(table) {
     border-collapse: collapse;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
   }
   .compose-quote-html :global(td),
   .compose-quote-html :global(th) {
     vertical-align: top;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal !important;
+  }
+  .compose-quote-html :global(pre),
+  .compose-quote-html :global(code) {
+    max-width: 100%;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .compose-quote-html :global(hr) {
     border: none;

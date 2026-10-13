@@ -40,7 +40,7 @@
   $: subApps = $mainApp.subApps;
 
   function isComposeMinimized(app: JackdawApp, entries: FloatingComposeEntry[]): boolean {
-    if (!(app instanceof WriteMailJackdawApp) || !shouldOpenComposeInWindow()) {
+    if (!(app instanceof WriteMailJackdawApp) || !shouldOpenComposeInWindow() || app.windowParams?.forceMainCompose) {
       return false;
     }
     if (supportsNativeComposeWindow()) {
@@ -54,7 +54,7 @@
   }
 
   function onSelectApp(app: JackdawApp) {
-    if (app instanceof WriteMailJackdawApp && shouldOpenComposeInWindow()) {
+    if (app instanceof WriteMailJackdawApp && shouldOpenComposeInWindow() && !app.windowParams?.forceMainCompose) {
       if (supportsNativeComposeWindow()) {
         void focusNativeComposeWindow(app, app.windowParams.mail)
           .catch(() => {

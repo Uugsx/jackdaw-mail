@@ -86,7 +86,8 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { personDisplayName } from "../../../logic/Abstract/PersonUID";
   import { onDragStartMail } from "../Message/drag";
-  import { openEMailMessage } from "../open";
+  import { openEMailMessageFullscreen } from "../open";
+  import { openNativeMessageWindow, supportsNativeMessageWindow } from "../Message/messageNative";
   import { selectedMessage, selectedMessages } from "../Selected";
   import MessageTags from "../../Shared/Tag/MessageTags.svelte";
   import MessageMenu from "../Message/MessageMenu.svelte";
@@ -142,12 +143,27 @@
     await deleteMessagesFromUI(list);
   }
 
+  async function openMessageFromDoubleClick(): Promise<void> {
+    if (!supportsNativeMessageWindow()) {
+      await openEMailMessageFullscreen(message);
+      return;
+    }
+    try {
+      await openNativeMessageWindow(message);
+    } catch (_ex) {
+      // Если системное окно не создалось (например, renderer ещё не готов),
+      // двойной клик всё равно должен открыть письмо, а не завершиться
+      // без видимого результата.
+      await openEMailMessageFullscreen(message);
+    }
+  }
+
   function onDoubleClick(event: MouseEvent) {
     if (event.target instanceof Element
       && event.target.closest("button, a, input, select, textarea")) {
       return;
     }
-    void catchErrors(() => openEMailMessage(message));
+    void catchErrors(openMessageFromDoubleClick);
   }
 
   let contextMenu: ContextMenu;

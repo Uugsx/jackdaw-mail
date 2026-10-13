@@ -7,7 +7,7 @@
   on:wheel|capture={onZoomWheel}
   tabindex={0}
   >
-  <MessageHeader bind:message />
+  <MessageHeader bind:message {readOnly} {onReply} {onReplyAll} />
   <MessageAttachments attachments={message.attachments} />
   <SMLDisplayKinds {message} sml={message.sml} />
   <vbox class="body" flex>
@@ -45,6 +45,9 @@
   } from "./messageZoom";
 
   export let message: EMail;
+  export let readOnly = false;
+  export let onReply: (() => void | Promise<void>) | null = null;
+  export let onReplyAll: (() => void | Promise<void>) | null = null;
 
   let messageBackgroundSetting = getMessageViewerBackgroundSetting();
   $: messageBackground = normalizeMessageViewerBackground($messageBackgroundSetting.value);
@@ -84,6 +87,10 @@
   .message-display {
     --message-viewer-bg: var(--main-bg);
     --message-viewer-fg: var(--main-fg);
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    overflow: hidden;
     background-color: var(--message-viewer-bg);
     color: var(--message-viewer-fg);
   }
@@ -194,6 +201,9 @@
   .body {
     margin-inline: 8px 16px;
     margin-block-end: 2px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
   @media (max-width: 600px)  {
     .body {

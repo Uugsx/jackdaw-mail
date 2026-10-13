@@ -5,6 +5,10 @@ import type {
   ComposeWindowPerson,
   ComposeWindowSendResult,
 } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
+import type {
+  MessageWindowPayload,
+  MessageWindowReplyMode,
+} from '../../../app/logic/Mail/MessageWindowProtocol'
 
 declare global {
   interface Window {
@@ -23,6 +27,19 @@ declare global {
       onComposeWindowSearchContactsRequest(callback: (requestID: string, windowID: string, searchText: string) => void): () => void
       respondToComposeWindowSearchContacts(requestID: string, result: ComposeWindowPerson[]): void
       onComposeWindowClosed(callback: (windowID: string) => void): () => void
+      openMessageWindow(windowID: string, payload: MessageWindowPayload): void
+      focusMessageWindow(windowID: string): void
+      closeMessageWindow(windowID: string): void
+      getMessageWindowData(windowID: string): Promise<MessageWindowPayload | null>
+      requestMessageWindowReply(windowID: string, replyAll?: boolean): void
+      onMessageWindowReplyRequest(
+        callback: (
+          windowID: string,
+          mode: MessageWindowReplyMode,
+          payload: MessageWindowPayload
+        ) => void
+      ): () => void
+      onMessageWindowClosed(callback: (windowID: string) => void): () => void
     }
   }
 }

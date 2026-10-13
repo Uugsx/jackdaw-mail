@@ -36,11 +36,22 @@
   let displayReady = false;
   const cssScrollableMessage = `
     html {
-      overflow-x: auto !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: hidden !important;
     }
     body {
-      width: auto;
-      overflow-x: auto !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
+    }
+    pre,
+    code {
+      white-space: pre-wrap !important;
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
     }
   `;
 
@@ -119,12 +130,17 @@
   .html-display {
     flex: 1 1 0;
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
     background-color: var(--message-viewer-bg, var(--main-bg));
     color: var(--message-viewer-fg, var(--main-fg));
   }
   .html-display :global(webview),
   .html-display :global(iframe) {
     background-color: var(--message-viewer-bg, var(--main-bg));
-    overflow-x: auto;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 </style>

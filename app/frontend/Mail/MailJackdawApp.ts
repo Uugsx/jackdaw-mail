@@ -12,7 +12,9 @@ import { openFloatingCompose, shouldOpenComposeInWindow } from "./Composer/compo
 import { openNativeComposeWindow, supportsNativeComposeWindow } from "./Composer/composeNative";
 import { applyComposeMailPayload } from "./Composer/composeWindow";
 import type { ComposeWindowMail } from "../../logic/Mail/Composer/ComposeWindowProtocol";
+import type { MessageWindowPayload, MessageWindowReplyMode } from "../../logic/Mail/MessageWindowProtocol";
 import { resolveComposeRecipients } from "../../logic/Mail/composeResolveRecipients";
+import { deserializeMessageWindowMail } from "./Message/messageWindow";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
 import { assert } from "../../logic/util/util";
@@ -23,15 +25,26 @@ export class MailJackdawApp extends JackdawApp {
   icon = mailIcon;
   appURL = "/mail";
 
-  writeMail(mail: EMail) {
+  writeMail(mail: EMail, options: { nativeWindowID?: string; forceMainWindow?: boolean } = {}) {
     let composerApp = new WriteMailJackdawApp();
     composerApp.title = derived(mail, () => mail.subject ?? composerApp.name);
-    composerApp.windowParams = { mail: mail };
+    composerApp.windowParams = {
+      mail: mail,
+      ...(options.nativeWindowID ? { nativeComposeWindowID: options.nativeWindowID } : {}),
+    };
     mailApp.subApps.add(composerApp);
-    if (shouldOpenComposeInWindow()) {
+    if (options.forceMainWindow) {
+      openComposeInMainWindow(composerApp, mail);
+      return;
+    }
+    if (shouldOpenComposeInWindow() || options.nativeWindowID) {
       if (supportsNativeComposeWindow()) {
         void openNativeComposeWindow(composerApp, mail)
-          .catch(() => openFloatingCompose(composerApp, mail));
+          .catch(() => options.nativeWindowID
+            ? openComposeInMainWindow(composerApp, mail)
+            : openFloatingCompose(composerApp, mail));
+      } else if (options.nativeWindowID) {
+        openComposeInMainWindow(composerApp, mail);
       } else {
         openFloatingCompose(composerApp, mail);
       }
@@ -76,11 +89,36 @@ export async function sendNativeComposeWindow(windowID: string, payload: Compose
   await mail.compose.send();
 }
 
+/** Открывает штатную форму ответа в текущем окне просмотра, если оно передано. */
+export function handleNativeMessageWindowReply(
+  mode: MessageWindowReplyMode,
+  payload: MessageWindowPayload,
+  messageWindowID?: string,
+): void {
+  let account = appGlobal.emailAccounts.find(candidate => candidate.id === payload.mail.accountID);
+  assert(account, "Message window account is no longer available");
+  let message = deserializeMessageWindowMail(payload, account);
+  let reply = mode == "replyAll"
+    ? message.compose.replyAll()
+    : message.compose.replyToAuthor();
+  mailApp.writeMail(reply, messageWindowID ? { nativeWindowID: messageWindowID } : {});
+}
+
 export class WriteMailJackdawApp extends JackdawApp {
   id = "mail-write";
   name = gt`Compose`;
   icon = EditIcon;
   appURL = "/mail/compose";
+}
+
+/** Открывает тот же редактор в основном окне, если системное окно не удалось создать. */
+export function openComposeInMainWindow(composerApp: WriteMailJackdawApp, mail: EMail): void {
+  composerApp.windowParams = {
+    ...(composerApp.windowParams ?? {}),
+    mail,
+    forceMainCompose: true,
+  };
+  openApp(composerApp, composerApp.windowParams);
 }
 
 export class LoginDialogJackdawApp extends JackdawApp {

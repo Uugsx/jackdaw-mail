@@ -1,5 +1,5 @@
 <Route path="compose">
-  {#if !appGlobal.isMobile && shouldOpenComposeInWindow()}
+  {#if !appGlobal.isMobile && shouldOpenComposeInWindow() && !params?.forceMainCompose}
     <FloatingComposeRedirect mail={params?.mail ?? $selectedFolder.newEMail()} />
   {:else}
     <MailComposer mail={params?.mail ?? $selectedFolder.newEMail()} />
@@ -31,6 +31,9 @@
       bind:selectedFolder={$selectedFolder} />
   </Route>
 {:else}
+  <Route path="message/:accountID/:folderID/:messageID/display">
+    <MessageDisplayFullscreen message={params?.message ?? $selectedMessage ?? requiredParam()} />
+  </Route>
   <Route path="/">
     <MailApp />
   </Route>
@@ -52,6 +55,7 @@
   import SearchM from "./Search/SearchM.svelte";
   import SearchResultsM from "./Search/SearchResultsM.svelte";
   import MessageDisplay from "./Message/MessageDisplay.svelte";
+  import MessageDisplayFullscreen from "./Message/MessageDisplayFullscreen.svelte";
   import AccountsM from "./LeftPane/AccountsM.svelte";
   import { ArrayColl } from "svelte-collections";
   import { getParams } from "../AppsBar/selectedApp";

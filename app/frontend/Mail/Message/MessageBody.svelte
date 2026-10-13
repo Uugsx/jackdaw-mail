@@ -87,7 +87,7 @@
   .message-body {
     min-width: 0;
     box-sizing: border-box;
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-wrap: anywhere;
     background-color: var(--message-viewer-bg, var(--main-bg));
     color: var(--message-viewer-fg, var(--main-fg));

@@ -168,6 +168,8 @@
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
 
   export let message: EMail;
+  export let onReply: (() => void | Promise<void>) | null = null;
+  export let onReplyAll: (() => void | Promise<void>) | null = null;
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
@@ -183,6 +185,10 @@
 
   function reply() {
     catchErrors(async () => {
+      if (onReply) {
+        await onReply();
+        return;
+      }
       await message.loadForDisplay();
       let reply = message.compose.replyToAuthor();
       mailApp.writeMail(reply);
@@ -190,6 +196,10 @@
   }
   function replyAll() {
     catchErrors(async () => {
+      if (onReplyAll) {
+        await onReplyAll();
+        return;
+      }
       await message.loadForDisplay();
       let reply = message.compose.replyAll();
       mailApp.writeMail(reply);

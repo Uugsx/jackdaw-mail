@@ -3,8 +3,13 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import type { EMail as EMailType } from "../../../logic/Mail/EMail";
 
-const openEMailMessageMock = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("../../../frontend/Mail/open", () => ({ openEMailMessage: openEMailMessageMock }));
+const openEMailMessageFullscreenMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../../frontend/Mail/open", () => ({ openEMailMessageFullscreen: openEMailMessageFullscreenMock }));
+const nativeMessageWindowMocks = vi.hoisted(() => ({
+  supportsNativeMessageWindow: vi.fn(() => false),
+  openNativeMessageWindow: vi.fn(async () => {}),
+}));
+vi.mock("../../../frontend/Mail/Message/messageNative", () => nativeMessageWindowMocks);
 
 let VerticalMessageListItem: any;
 let EMailClass: any;
@@ -39,7 +44,9 @@ afterEach(() => {
   mounted = [];
   document.body.replaceChildren();
   localStorageValues.clear();
-  openEMailMessageMock.mockClear();
+  openEMailMessageFullscreenMock.mockClear();
+  nativeMessageWindowMocks.supportsNativeMessageWindow.mockReturnValue(false);
+  nativeMessageWindowMocks.openNativeMessageWindow.mockClear();
 });
 
 function createMessage(): EMailType {
@@ -71,7 +78,7 @@ describe("выделение писем со звёздочкой", () => {
 });
 
 describe("открытие письма", () => {
-  test("открывает письмо двойным кликом по строке", async () => {
+  test("в веб-режиме открывает письмо двойным кликом во встроенном просмотре", async () => {
     let message = createMessage();
     let target = document.createElement("div");
     document.body.append(target);
@@ -84,7 +91,42 @@ describe("открытие письма", () => {
     messageElement?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await tick();
 
-    expect(openEMailMessageMock).toHaveBeenCalledTimes(1);
-    expect(openEMailMessageMock).toHaveBeenCalledWith(message);
+    expect(openEMailMessageFullscreenMock).toHaveBeenCalledTimes(1);
+    expect(openEMailMessageFullscreenMock).toHaveBeenCalledWith(message);
+  });
+
+  test("в десктопном режиме открывает письмо двойным кликом в нативном окне", async () => {
+    nativeMessageWindowMocks.supportsNativeMessageWindow.mockReturnValue(true);
+    let message = createMessage();
+    let target = document.createElement("div");
+    document.body.append(target);
+
+    mounted.push(mount(VerticalMessageListItem, { target, props: { message } }));
+    await tick();
+
+    target.querySelector(".message")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await tick();
+
+    expect(nativeMessageWindowMocks.openNativeMessageWindow).toHaveBeenCalledTimes(1);
+    expect(nativeMessageWindowMocks.openNativeMessageWindow).toHaveBeenCalledWith(message);
+    expect(openEMailMessageFullscreenMock).not.toHaveBeenCalled();
+  });
+
+  test("при ошибке нативного окна сохраняет открытие письма во встроенном просмотре", async () => {
+    nativeMessageWindowMocks.supportsNativeMessageWindow.mockReturnValue(true);
+    nativeMessageWindowMocks.openNativeMessageWindow.mockRejectedValueOnce(new Error("window failed"));
+    let message = createMessage();
+    let target = document.createElement("div");
+    document.body.append(target);
+
+    mounted.push(mount(VerticalMessageListItem, { target, props: { message } }));
+    await tick();
+
+    target.querySelector(".message")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await tick();
+    await tick();
+
+    expect(openEMailMessageFullscreenMock).toHaveBeenCalledTimes(1);
+    expect(openEMailMessageFullscreenMock).toHaveBeenCalledWith(message);
   });
 });

@@ -703,6 +703,7 @@ export function setStoredComposeTextStyle(
   editor: import("@tiptap/core").Editor,
   fontFamily: string,
   fontSize: string,
+  textColor?: string,
 ): void {
   let textStyleType = editor.schema.marks.textStyle;
   if (!textStyleType || !editor.state.selection.empty) {
@@ -720,6 +721,13 @@ export function setStoredComposeTextStyle(
   } else {
     delete attributes.fontSize;
   }
+  if (textColor !== undefined) {
+    if (textColor) {
+      attributes.color = textColor;
+    } else {
+      delete attributes.color;
+    }
+  }
 
   let marks = (editor.state.storedMarks ?? editor.state.selection.$from.marks())
     .filter(mark => mark.type !== textStyleType);
@@ -727,6 +735,60 @@ export function setStoredComposeTextStyle(
     marks = [...marks, textStyleType.create(attributes)];
   }
   editor.view.dispatch(editor.state.tr.setStoredMarks(marks));
+}
+
+/**
+ * Добавляет настройки текста в пустой абзац ответа перед первым вводом.
+ *
+ * В ProseMirror inline-марка не может быть сохранена на пустом абзаце:
+ * выделение не содержит текстовых узлов. Поэтому такой абзац после клика
+ * терял шрифт и размер, а панель форматирования показывала только fallback
+ * из настроек. Устаревшую inline-настройку пустого абзаца ответа заменяем настройкой по умолчанию.
+ */
+export function ensureStoredComposeTextStyleForEmptyParagraph(
+  editor: import("@tiptap/core").Editor,
+  fontFamily: string,
+  fontSize: string,
+  textColor = "",
+): boolean {
+  let { selection } = editor.state;
+  if (!selection.empty || selection.$from.parent.type.name !== "paragraph") {
+    return false;
+  }
+
+  let paragraph = selection.$from.parent;
+  let isEmptyParagraph = paragraph.content.size == 0
+    || (paragraph.content.childCount == 1 && paragraph.firstChild?.type.name == "hardBreak");
+  if (!isEmptyParagraph) {
+    return false;
+  }
+
+  for (let depth = selection.$from.depth; depth > 0; depth--) {
+    let ancestor = selection.$from.node(depth);
+    if (ancestor.type.name == "footer" || ancestor.type.name == "blockquote") {
+      return false;
+    }
+  }
+
+  let textStyleType = editor.schema.marks.textStyle;
+  if (!textStyleType) {
+    return false;
+  }
+  let existing = (editor.state.storedMarks ?? selection.$from.marks())
+    .find(mark => mark.type == textStyleType);
+  let expected = {
+    fontFamily: fontFamily || undefined,
+    fontSize: fontSize || undefined,
+    color: textColor || undefined,
+  };
+  let hasExpectedStyle = ["fontFamily", "fontSize", "color"].every(attribute =>
+    (existing?.attrs[attribute] ?? undefined) === expected[attribute as keyof typeof expected]);
+  if (hasExpectedStyle) {
+    return false;
+  }
+
+  setStoredComposeTextStyle(editor, fontFamily, fontSize, textColor);
+  return true;
 }
 
 export function currentFontFamily(editor: import("@tiptap/core").Editor): string {

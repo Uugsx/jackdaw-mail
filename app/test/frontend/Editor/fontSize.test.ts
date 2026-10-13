@@ -16,6 +16,7 @@ import {
   applyComposeDefaultBlockFormatting,
   readSignatureFontDefaults,
   setStoredComposeTextStyle,
+  ensureStoredComposeTextStyleForEmptyParagraph,
 } from "../../../frontend/Shared/Editor/composeEditorExtensions";
 
 function createEditor(content: string) {
@@ -277,6 +278,66 @@ describe("signature font size", () => {
     });
     expect(currentFontFamily(editor)).toMatch(/Arial/i);
     expect(currentFontSize(editor)).toBe("10");
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("applies the reply defaults after clicking another empty paragraph", () => {
+    let { editor, element } = createEditor(
+      `<p></p><p></p><footer class="signature"><p><span style="font-family: Arial; font-size: 10pt">Signature</span></p></footer>`,
+    );
+    let secondParagraphPosition = 0;
+    editor.state.doc.forEach((node, position) => {
+      if (node.type.name == "paragraph" && node != editor.state.doc.firstChild) {
+        secondParagraphPosition = position + 1;
+      }
+    });
+    editor.commands.setTextSelection(secondParagraphPosition);
+
+    expect(ensureStoredComposeTextStyleForEmptyParagraph(
+      editor,
+      "Calibri, Arial, sans-serif",
+      "12pt",
+    )).toBe(true);
+    expect(currentFontFamily(editor)).toMatch(/Calibri/i);
+    expect(currentFontSize(editor)).toBe("12");
+    editor.commands.insertContent("Вторая строка");
+
+    let paragraphs = [...element.querySelectorAll("p")]
+      .filter(paragraph => !paragraph.closest("footer.signature"));
+    expect(paragraphs[1]?.querySelector("span")?.getAttribute("style")).toMatch(/font-family:\s*Calibri/i);
+    expect(paragraphs[1]?.querySelector("span")?.getAttribute("style")).toMatch(/font-size:\s*12pt/i);
+
+    editor.destroy();
+    element.remove();
+  });
+
+  it("replaces stale inline reply style in an empty paragraph", () => {
+    let { editor, element } = createEditor(
+      `<p>Первый абзац</p><p></p>`,
+    );
+    let secondParagraphPosition = 0;
+    editor.state.doc.forEach((node, position) => {
+      if (node.type.name == "paragraph" && node != editor.state.doc.firstChild) {
+        secondParagraphPosition = position + 1;
+      }
+    });
+    editor.commands.setTextSelection(secondParagraphPosition);
+    setStoredComposeTextStyle(editor, "Arial, Helvetica, sans-serif", "10pt");
+
+    expect(ensureStoredComposeTextStyleForEmptyParagraph(
+      editor,
+      "Calibri, Arial, sans-serif",
+      "12pt",
+    )).toBe(true);
+    expect(currentFontFamily(editor)).toMatch(/Calibri/i);
+    expect(currentFontSize(editor)).toBe("12");
+    editor.commands.insertContent("Новый ответ");
+
+    let paragraph = element.querySelectorAll("p")[1];
+    expect(paragraph?.querySelector("span")?.getAttribute("style")).toMatch(/font-family:\s*Calibri/i);
+    expect(paragraph?.querySelector("span")?.getAttribute("style")).toMatch(/font-size:\s*12pt/i);
 
     editor.destroy();
     element.remove();
