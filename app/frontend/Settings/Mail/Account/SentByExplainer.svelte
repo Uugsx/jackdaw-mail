@@ -4,7 +4,7 @@
   </hbox>
   <vbox class="sub-box font-small">
     <hbox>{$t`To use ${appName} professionally and remove this note, you can subscribe to one of our plans.`}</hbox>
-    <a href={kSubscribeURL} target="_blank">
+    <a href={kSubscribeURL} target="_blank" rel="noopener noreferrer">
       <Button
         label={$t`See plans`}
         />
@@ -14,10 +14,11 @@
 
 <script lang="ts">
   import Button from "../../../Shared/Button.svelte";
-  import { appName, siteRoot } from "../../../../logic/build";
+  import { appName } from "../../../../logic/build";
+  import { BILLING_PLANS_URL } from "../../../../logic/Billing/Billing";
   import { t } from "../../../../l10n/l10n";
 
-  const kSubscribeURL = `${siteRoot}#plans`;
+  const kSubscribeURL = BILLING_PLANS_URL;
   /*async function onSubscribeClick() {
     await openExternalURL(kSubscribeURL);
   }*/

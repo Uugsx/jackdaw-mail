@@ -18,7 +18,7 @@
     </FastTree>
   {:else}
     <FastTree items={foldersSorted} bind:selectedItem={selectedFolder} bind:selectedItems={selectedFolders}
-      columns="auto">
+      columns="auto" on:selected={onFolderSelect}>
       <svelte:fragment slot="header">
         <slot name="header">
           <hbox class="header font-smallest">{$t`Folders`}</hbox>
@@ -59,6 +59,10 @@
   }
 
   function onEmbeddedSelect(event: CustomEvent<Folder>) {
+    dispatch("selectFolder", event.detail);
+  }
+
+  function onFolderSelect(event: CustomEvent<Folder>) {
     dispatch("selectFolder", event.detail);
   }
 </script>

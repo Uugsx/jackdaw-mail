@@ -1,4 +1,4 @@
-<vbox flex class="search-criteria">
+<vbox flex class="search-criteria" class:compact>
   {#if showSearchTerm}
     <hbox class="term font-normal">
       <SearchField bind:searchTerm={search.bodyText}
@@ -29,7 +29,8 @@
   </Checkbox>
   {#if search.hasAttachment}
     <vbox flex class="listbox">
-      <GenericFileTypesList bind:selectedMIMETypes={search.hasAttachmentMIMETypes} />
+      <GenericFileTypesList bind:selectedMIMETypes={search.hasAttachmentMIMETypes}
+        on:change={notifyCriteriaChanged} />
     </vbox>
     <!-- TODO use Slider --
     <grid class="size">
@@ -63,7 +64,9 @@
        5. `hasPerson = false` ->
        6. PersonsList disappears ->
        7. User cannot correct search -->
-      <PersonsList persons={availablePersons} bind:selected={search.includesPerson} showSearch={false} />
+      <PersonsList persons={availablePersons} bind:selected={search.includesPerson} bind:selectedPersons
+        showSearch={false}
+        on:selected={notifyCriteriaChanged} />
     </vbox>
   {/if}
   <Checkbox bind:checked={hasTag} allowFalse={false} allowIndetermined={true}
@@ -73,30 +76,33 @@
   </Checkbox>
   {#if hasTag}
     <vbox class="tags">
-      <TagSelector tags={availableTags} selectedTags={search.tags} canAdd={false} />
+      <TagSelector tags={availableTags} selectedTags={search.tags} canAdd={false}
+        on:select={onTagSelectionChanged} on:unselect={onTagSelectionChanged} />
     </vbox>
   {/if}
   {#if showAccount && appGlobal.emailAccounts.length > 1}
     <Checkbox bind:checked={hasAccount} allowFalse={false} allowIndetermined={true}
       on:change={updateAccount}
-      label={$t`${search.account?.name} account only`}>
+      label={search.account ? $t`${search.account.name} account only` : $t`All accounts`}>
       <AccountIcon size="16px" slot="icon" />
     </Checkbox>
     {#if search.account || search.folder}
       <vbox class="listbox">
-        <AccountList accounts={appGlobal.emailAccounts} bind:selectedAccount={search.account} />
+        <AccountList accounts={appGlobal.emailAccounts} bind:selectedAccount={search.account}
+          on:select={onAccountSelected} />
       </vbox>
     {/if}
   {/if}
   {#if search.account}
     <Checkbox bind:checked={hasFolder} allowFalse={false} allowIndetermined={true}
       on:change={updateFolder}
-      label={$t`${search.folder?.name} folder only`}>
+      label={search.folder ? $t`${search.folder.name} folder only` : $t`Folder`}>
       <FolderIcon size="16px" slot="icon" />
     </Checkbox>
     {#if hasFolder}
       <vbox flex class="listbox">
-        <FolderList folders={search.account.rootFolders} bind:selectedFolder={search.folder} bind:selectedFolders />
+        <FolderList folders={search.account.rootFolders} bind:selectedFolder={search.folder} bind:selectedFolders
+          on:selectFolder={notifyCriteriaChanged} />
       </vbox>
     {/if}
   {/if}
@@ -113,6 +119,7 @@
   import SearchField from "../../Shared/SearchField.svelte";
   import GenericFileTypesList from "../../Files/GenericFileTypesList.svelte";
   import PersonsList from "../../Contacts/Person/PersonsList.svelte";
+  import type { PersonOrGroup } from "../../Contacts/Person/PersonOrGroup";
   import AccountList from "../LeftPane/AccountList.svelte";
   import FolderList from "../LeftPane/FolderList.svelte";
   import TagSelector from "../../Shared/Tag/TagSelector.svelte";
@@ -128,6 +135,7 @@
   import { ArrayColl, Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { createEventDispatcher } from "svelte";
+  import type { MailAccount } from "../../../logic/Mail/MailAccount";
 
   const dispatchEvent = createEventDispatcher<{ change: void }>();
   type CheckboxChangeEvent = CustomEvent<boolean | null | undefined>;
@@ -139,6 +147,8 @@
   export let showSearchTerm = true;
   export let showAccount = true;
   export let searchMessages: Collection<EMail> = null;
+  /** Компактная раскладка для popup-фильтра на панели писем. */
+  export let compact = false;
 
   // enable/disable fine-grained controls
   let hasAccount: boolean | null = null;
@@ -188,9 +198,14 @@
 
   // Enable/disable: From UI controls to `SearchEMail`
   let selectedFolders: ArrayColl<Folder>;
+  let selectedPersons = new ArrayColl<PersonOrGroup>();
   function updateAccount(event: CheckboxChangeEvent) {
     hasAccount = event.detail === true;
-    search.account = hasAccount ? $selectedAccount : null;
+    let account = $selectedFolder?.account ?? $selectedAccount;
+    if (account?.protocol == "all") {
+      account = appGlobal.emailAccounts.first ?? null;
+    }
+    search.account = hasAccount ? account : null;
     if (!search.account) {
       search.folder = null;
     }
@@ -198,7 +213,23 @@
   }
   function updateFolder(event: CheckboxChangeEvent) {
     hasFolder = event.detail === true;
-    search.folder = hasFolder ? $selectedFolder : null;
+    let folder = $selectedFolder;
+    if (folder?.account?.protocol == "all") {
+      folder = null;
+    }
+    search.folder = hasFolder ? folder : null;
+    notifyCriteriaChanged();
+  }
+  function onAccountSelected(event: CustomEvent<MailAccount>) {
+    let account = event.detail;
+    if (account) {
+      search.account = account;
+      hasAccount = true;
+    }
+    if (search.folder && search.folder.account != search.account) {
+      search.folder = null;
+      hasFolder = null;
+    }
     notifyCriteriaChanged();
   }
   $: availablePersons = hasPerson && searchMessages ? personsInEMails(searchMessages) : appGlobal.personalAddressbook?.persons;
@@ -216,9 +247,22 @@
     }
     notifyCriteriaChanged();
   }
+  function onTagSelectionChanged() {
+    // В компактном фильтре выбранные теги означают «любой из них».
+    // Полный поиск и правила сохраняют прежнюю семантику «все теги».
+    search.tagsMatchAny = compact && search.tags.hasItems;
+    notifyCriteriaChanged();
+  }
   function updateAttachment(event: CheckboxChangeEvent) {
-    search.hasAttachment = event.detail === true;
-    if (!search.hasAttachment) {
+    // Checkbox отдаёт `undefined`, когда возвращается из отрицательного
+    // состояния в «не учитывать фильтр». Не превращаем это состояние в
+    // `false`, иначе минус на вложениях невозможно снять.
+    search.hasAttachment = event.detail === true
+      ? true
+      : event.detail === false
+        ? false
+        : null;
+    if (search.hasAttachment !== true) {
       search.hasAttachmentMIMETypes.clear();
     }
     notifyCriteriaChanged();
@@ -255,6 +299,93 @@
     margin-block-start: 8px;
     margin-block-end: 16px;
     margin-inline-start: 8px;
+  }
+  .search-criteria.compact {
+    gap: 2px;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+  .search-criteria.compact :global(.checkbox) {
+    min-height: 30px;
+    padding: 3px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .search-criteria.compact :global(.checkbox:hover) {
+    background: var(--hover-bg);
+    color: var(--hover-fg);
+  }
+  .search-criteria.compact :global(.checkbox.on) {
+    background: color-mix(in srgb, var(--selected-bg) 14%, transparent);
+  }
+  .search-criteria.compact :global(.checkbox label) {
+    min-width: 0;
+    line-height: 1.25;
+    font-size: 13px;
+  }
+  .search-criteria.compact :global(.checkbox input) {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border-radius: 5px;
+  }
+  .search-criteria.compact :global(.checkbox input:focus-visible) {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 2px;
+  }
+  .search-criteria.compact :global(.checkbox input.indetermined) {
+    background: var(--button-bg);
+    border: 1px solid var(--button-border);
+  }
+  .search-criteria.compact :global(.checkbox .state-icon-wrapper) {
+    color: var(--button-fg);
+  }
+  .search-criteria.compact .listbox {
+    flex: 0 1 auto;
+    height: min(176px, 24vh);
+    min-height: 0;
+    max-height: 176px;
+    margin: 2px 0 6px 28px;
+    overflow: hidden;
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: 10px;
+    background: var(--glass-bg-subtle);
+  }
+  .search-criteria.compact .listbox :global(.fast-list) {
+    min-height: 0;
+  }
+  .search-criteria.compact .tags {
+    max-height: min(184px, 26vh);
+    margin: 2px 0 6px 28px;
+    padding: 4px;
+    overflow-y: auto;
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: 10px;
+    background: var(--glass-bg-subtle);
+  }
+  .search-criteria.compact .tags :global(.tag) {
+    min-height: 26px;
+    margin: 2px;
+    padding-inline: 8px;
+    border-radius: 999px;
+    color: var(--main-fg);
+    font-size: 12px;
+  }
+  .search-criteria.compact .tags :global(.tag.unselected) {
+    color: var(--main-fg);
+  }
+  .search-criteria.compact .tags :global(.tag.selected) {
+    border: 2px solid var(--input-focus);
+    padding-inline: 7px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .search-criteria.compact :global(.checkbox) {
+      transition: none;
+    }
   }
   /*
   grid.size {

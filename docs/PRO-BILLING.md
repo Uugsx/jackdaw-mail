@@ -1,10 +1,10 @@
-# Jackdaw Mail Pro: оплата и лицензирование
+# Jackdaw Mail Pro: Lemon Squeezy и лицензирование
 
-## Решение для первого запуска
+## Решение для международного запуска
 
-Для продаж в России выбран **ЮKassa**. Она предоставляет API для приёма платежей, возвратов, чеков и сохранённых способов оплаты/автоплатежей. Подписка оформляется на стороне сервера, а не внутри Electron-приложения.
+Для международных продаж выбран **Lemon Squeezy** как внешний hosted checkout и Merchant of Record. Он принимает карты Visa и Mastercard, а также доступные для конкретной страны PayPal, Apple Pay и Google Pay. Платёжная форма открывается во внешнем браузере; данные карты не проходят через Jackdaw Mail.
 
-Запасной вариант — CloudPayments. Paddle удобен как merchant of record для международных продаж, но в его официальном списке неподдерживаемых стран есть Россия, поэтому для российского запуска он не подходит.
+Российская Федерация не входит в список поддерживаемых стран покупателей Lemon Squeezy. До публикации магазина отдельно проверяются активация продавца, KYC/KYB и возможность получать выплаты на поддерживаемый банковский счёт или PayPal.
 
 ## Что входит в Pro
 
@@ -17,32 +17,66 @@
 |  | Правила категорий, архив контроля и восстановление |
 |  | Подробный просмотр внутри приложения и HTML-экспорт |
 
-Цены, пробный период и валюту пока не фиксируем в клиенте. Они должны настраиваться в платёжной панели и приходить в checkout-сеанс от сервера, чтобы изменение цены не требовало выпуска новой версии приложения.
+Цены, валюта, пробный период, налоги и условия продления настраиваются в Lemon Squeezy. Они не зашиваются в Electron-клиент и могут изменяться без выпуска новой версии приложения.
+
+## Настройка магазина
+
+1. Создать продукт `Jackdaw Mail Pro`.
+2. Создать варианты `Monthly` и `Yearly` с подпиской.
+3. Включить генерацию license keys для обоих вариантов и выбрать допустимое число активаций.
+4. Настроить письмо с ключом, receipt и страницу после покупки.
+5. Активировать магазин и проверить payout account до публикации ссылок checkout.
+
+Для размещения на сайте и в приложении используются только shareable-ссылки вида:
+
+```text
+https://<store>.lemonsqueezy.com/checkout/buy/<variant-id>
+```
+
+Ссылки с `/checkout/?cart=` являются одноразовыми ссылками конкретной корзины и не должны публиковаться в коде или рекламе.
 
 ## Поток покупки
 
 ```text
-Jackdaw Mail → сервер лицензий → checkout ЮKassa
-                     ↓
-        webhook об оплате/возврате
-                     ↓
-           подписанное entitlement
-                     ↓
-        Jackdaw Mail проверяет подпись
+Jackdaw Mail / сайт → checkout Lemon Squeezy
+                              ↓
+                 подписка и license key
+                              ↓
+                  подписанный webhook
+                              ↓
+                 сервер лицензий и entitlement
+                              ↓
+                    Jackdaw проверяет доступ
 ```
 
-1. Приложение запрашивает у сервера лицензий checkout-сеанс с выбранным планом.
-2. Сервер создаёт платёж в ЮKassa и возвращает одноразовый URL подтверждения.
-3. Jackdaw Mail открывает URL во внешнем браузере. Карточные данные не проходят через приложение.
-4. ЮKassa уведомляет сервер о статусе платежа. Webhook обрабатывается идемпотентно.
-5. Сервер связывает подписку с отдельным продуктовым аккаунтом Jackdaw Mail и выпускает подписанное entitlement.
-6. Приложение получает entitlement, проверяет подпись встроенным публичным ключом и открывает Pro-функции.
+1. Пользователь выбирает месячный или годовой вариант на сайте.
+2. Lemon Squeezy показывает hosted checkout во внешнем браузере.
+3. После оплаты Lemon Squeezy создаёт заказ, подписку и license key.
+4. Сервер лицензий принимает webhook, проверяет `X-Signature` по исходному телу запроса и идемпотентно обновляет подписку.
+5. Сервер выпускает подписанное entitlement только для нужного продуктового аккаунта.
+6. Jackdaw проверяет подпись встроенным публичным ключом и открывает Pro-функции.
 
-Почтовые пароли, содержимое писем, локальный кэш и категории в платёжную систему не отправляются.
+Почтовые пароли, содержимое писем, локальный кэш и категории не отправляются в Lemon Squeezy или сервер лицензий.
+
+## Публичная конфигурация клиента
+
+В клиент можно передавать только публичные URL:
+
+```text
+VITE_LEMON_SQUEEZY_MONTHLY_CHECKOUT_URL=https://<store>.lemonsqueezy.com/checkout/buy/<monthly-variant-id>
+VITE_LEMON_SQUEEZY_YEARLY_CHECKOUT_URL=https://<store>.lemonsqueezy.com/checkout/buy/<yearly-variant-id>
+VITE_BILLING_LICENSE_API_URL=https://<license-api-host>
+```
+
+Для статического сайта те же публичные checkout-ссылки задаются в `site/billing-config.js`. Сейчас там намеренно стоят `null`: до активации собственного магазина сайт не может открыть оплату и не ведёт покупателя в чужой checkout.
+
+Клиент проверяет HTTPS, домен Lemon Squeezy и формат `/checkout/buy/{variant}`. Секрет магазина, API-токен Lemon Squeezy, webhook secret и приватный ключ подписи entitlement никогда не попадают в Vite-переменные или Electron-бандл.
+
+До заполнения этих переменных приложение и сайт остаются в безопасном режиме: ссылки покупки не активируются, а бесплатная почта продолжает работать.
 
 ## Контракт сервера лицензий
 
-Провайдер скрыт за серверным адаптером. Клиенту не нужен SDK ЮKassa и никогда не выдаётся секретный ключ магазина.
+Провайдер скрыт за серверным адаптером. В клиенте нет SDK Lemon Squeezy и платёжных секретов.
 
 ### `POST /v1/checkout-session`
 
@@ -59,16 +93,42 @@ Jackdaw Mail → сервер лицензий → checkout ЮKassa
 
 ```json
 {
-  "checkoutUrl": "<ссылка-на-страницу-оплаты-от-провайдера>",
+  "checkoutUrl": "https://<store>.lemonsqueezy.com/checkout/buy/<variant-id>",
   "sessionId": "checkout-session-id"
 }
 ```
 
-`checkoutUrl` должен быть одноразовым или короткоживущим. В URL нельзя передавать почтовые данные.
+Сервер принимает только allowlist-планы, не принимает произвольный `variantId` от клиента и не помещает в URL почтовые данные.
 
-### `POST /v1/webhooks/yookassa`
+### `POST /v1/webhooks/lemon-squeezy`
 
-Сервер принимает события платежей, проверяет их по правилам ЮKassa/сетевому allowlist, сохраняет `eventId` с уникальным ограничением и обрабатывает повторную доставку без повторной выдачи доступа. Минимальные состояния: `pending`, `active`, `past_due`, `paused`, `canceled`, `refunded`.
+Сервер обязан:
+
+- сохранить исходное тело запроса до JSON-парсинга;
+- проверить HMAC-SHA256 из `X-Signature` с constant-time сравнением;
+- проверить `X-Event-Name` и принадлежность события своему `store_id`;
+- сохранить уникальный ключ события до бизнес-обработки;
+- повторную доставку обработать без повторной выдачи доступа;
+- быстро вернуть HTTP 200 после надёжной фиксации события.
+
+Минимальные события для подписок:
+
+```text
+order_created
+order_refunded
+subscription_created
+subscription_updated
+subscription_cancelled
+subscription_resumed
+subscription_expired
+subscription_paused
+subscription_unpaused
+subscription_payment_failed
+subscription_payment_success
+subscription_payment_recovered
+license_key_created
+license_key_updated
+```
 
 ### `GET /v1/entitlement`
 
@@ -87,36 +147,42 @@ Jackdaw Mail → сервер лицензий → checkout ЮKassa
 }
 ```
 
-Публичный ключ встраивается в приложение; приватный ключ хранится только на сервере. Клиентский флаг `pro = true` сам по себе не является защитой и не должен быть единственным механизмом entitlement.
+Приватный ключ подписи хранится только на сервере. Клиентский флаг `pro = true` сам по себе не является защитой.
+
+## Лицензии и активации
+
+Lemon Squeezy License API вызывается только сервером лицензий. Сервер может выполнять `activate`, `validate` и `deactivate`, контролируя лимит устройств и связывая license key с продуктовым аккаунтом. Секрет API не хранится в приложении.
 
 ## Состояния в приложении
 
-Клиент должен явно различать:
-
 - `active` — подписка действует;
-- `trial` — действует пробный период, если его включим;
-- `past_due` — платёж не прошёл, доступ ещё не отключён до grace period;
-- `expired` — срок закончился;
+- `trial` — действует пробный период, если он включён;
+- `past_due` — платёж не прошёл, но действует grace period;
+- `expired` — срок доступа закончился;
+- `refunded` — заказ возвращён, доступ отозван после обработки webhook;
 - `offline` — сервер временно недоступен, используется последний проверенный entitlement в ограниченном grace period;
-- `not-configured` — сервер лицензий ещё не подключён к конкретной сборке.
+- `not-configured` — магазин или сервер лицензий ещё не подключены к конкретной сборке.
 
-Сейчас в репозитории реализован экран Pro и провайдерная конфигурация, но `BILLING_LICENSE_API_URL` намеренно пустой. Это безопасный режим подготовки: текущая тестовая сборка не блокирует отчёты и не выдаёт ложный статус оплаченной подписки.
+Бесплатная почта, календарь и контакты не должны блокироваться из-за отсутствия Pro-entitlement или временного отсутствия сети.
 
-## Что нужно перед включением оплаты
+## Перед включением production-оплаты
 
-- зарегистрировать магазин ЮKassa на юридическое лицо/ИП;
-- выбрать месячный и годовой планы, цену, НДС/режим чеков и правила возврата;
-- опубликовать оферту, политику конфиденциальности и условия подписки;
-- развернуть сервер лицензий с базой пользователей, подписок и идемпотентных webhook-событий;
-- сгенерировать пару ключей подписи entitlement;
-- передать в production только публичный ключ и URL API, секреты оставить в переменных окружения сервера;
-- прогнать тестовые платежи, возврат, повторный webhook, просрочку, отмену и работу приложения без сети;
+- подтвердить, что магазин Lemon Squeezy активирован и принимает выплаты;
+- создать и опубликовать месячный и годовой варианты;
+- включить license keys и определить лимит активаций;
+- настроить webhook с секретом на сервере лицензий;
+- развернуть базу подписок и идемпотентных событий;
+- сгенерировать пару Ed25519 для entitlement;
+- настроить публичные URL checkout и API лицензий;
+- опубликовать оферту, privacy, условия подписки и возврата;
+- прогнать test mode: Visa, Mastercard, успешный платёж, отказ, возврат, повтор webhook, отмену, продление и работу без сети;
 - только после этого включить Pro-gate для Reports и Live SLA.
 
 ## Официальные материалы
 
-- [ЮKassa: приём платежей](https://yookassa.ru/developers/payment-acceptance/overview)
-- [ЮKassa: рекуррентные платежи](https://yookassa.ru/developers/payment-acceptance/scenario-extensions/recurring-payments/basics)
-- [CloudPayments: документация для разработчиков](https://developers.cloudpayments.ru/)
-- [Paddle: subscription webhooks](https://developer.paddle.com/build/subscriptions/provision-access-webhooks/)
-- [Paddle: поддерживаемые страны](https://developer.paddle.com/concepts/sell/supported-countries-locales/)
+- [Lemon Squeezy: payment methods](https://docs.lemonsqueezy.com/help/checkout/payment-methods)
+- [Lemon Squeezy: supported countries](https://docs.lemonsqueezy.com/help/getting-started/supported-countries)
+- [Lemon Squeezy: hosted checkout и URL](https://docs.lemonsqueezy.com/guides/developer-guide/taking-payments)
+- [Lemon Squeezy: license API](https://docs.lemonsqueezy.com/api/license-api)
+- [Lemon Squeezy: webhook requests](https://docs.lemonsqueezy.com/help/webhooks/webhook-requests)
+- [Lemon Squeezy: signing requests](https://docs.lemonsqueezy.com/help/webhooks/signing-requests)

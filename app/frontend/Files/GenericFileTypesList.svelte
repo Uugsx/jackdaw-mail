@@ -1,6 +1,6 @@
 <vbox flex class="filetypes">
   <FastList items={new ArrayColl(genericFileTypes)} bind:selectedItem={selectedFileType} bind:selectedItems={selectedFileTypes}
-    columns="auto">
+    columns="auto" on:selected={onFileTypeSelected}>
     <svelte:fragment slot="header">
       <hbox class="header font-smallest">{$t`File type`}</hbox>
     </svelte:fragment>
@@ -17,6 +17,9 @@
   import { assert } from '../../logic/util/util';
   import { ArrayColl, SetColl } from 'svelte-collections';
   import { t } from '../../l10n/l10n';
+  import { createEventDispatcher } from 'svelte';
+
+  const dispatch = createEventDispatcher<{ change: void }>();
 
   /** in/out */
   export let selectedMIMETypes: SetColl<string> | null;
@@ -24,6 +27,10 @@
   let selectedFileType: FileType; /* in/out */
   let selectedFileTypes = new ArrayColl<FileType>();
   let inSetter;
+
+  function onFileTypeSelected() {
+    dispatch('change');
+  }
 
   // UI control to in/out property
   $: $selectedFileTypes, avoidLoop(toMIMEType, inSetter);

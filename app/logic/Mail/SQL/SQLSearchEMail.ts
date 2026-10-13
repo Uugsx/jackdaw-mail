@@ -51,7 +51,9 @@ export class SQLSearchEMail extends SearchEMail {
         $${this.tags?.hasItems ? sql` AND emailTag.tagName IN ${this.tags.contents.map(tag => tag.name)} ` : sql``}
         $${this.bodyText ? textSearchClause(this.bodyText) : sql``}
       GROUP BY email.id
-      $${this.tags?.hasItems ? sql` HAVING COUNT(DISTINCT emailTag.tagName) = ${this.tags.length} ` : sql``}
+      $${this.tags?.hasItems && !this.tagsMatchAny
+        ? sql` HAVING COUNT(DISTINCT emailTag.tagName) = ${this.tags.length} `
+        : sql``}
       ORDER BY dateSent DESC
       $${limit ? sql` LIMIT ${limit} ` : sql``}
       `;

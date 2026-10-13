@@ -58,6 +58,13 @@ export class SearchEMail extends Observable {
   @notifyChangedProperty
   isImportant: boolean | null = null;
   readonly tags = new SetColl<Tag>();
+  /**
+   * При включении письмо подходит хотя бы по одному выбранному тегу.
+   * По умолчанию сохраняется историческое требование всех тегов для
+   * сохранённых поисков и правил фильтрации.
+   */
+  @notifyChangedProperty
+  tagsMatchAny = false;
 
   @notifyChangedProperty
   hasAttachment: boolean | null = null;
@@ -100,6 +107,7 @@ export class SearchEMail extends Observable {
     this.folderID = sanitize.nonemptystring(json.folderID, null);
     this._folder = null;
     this.tags.replaceAll(sanitize.array(json.tags, [])?.map(name => getTagByName(name)));
+    this.tagsMatchAny = json.tagsMatchAny === true;
   }
 
   toJSON() {
@@ -123,6 +131,7 @@ export class SearchEMail extends Observable {
       accountID: this.account?.id ?? this.folder?.account?.id,
       folderID: this.folderID,
       tags: this.tags?.contents.map(tag => tag.name),
+      tagsMatchAny: this.tagsMatchAny,
     };
   }
 
@@ -192,9 +201,22 @@ export class SearchEMail extends Observable {
       if (!email.tags?.hasItems) {
         return false;
       }
-      for (let tag of this.tags) {
-        if (!email.tags.has(tag)) {
+      if (this.tagsMatchAny) {
+        let hasSelectedTag = false;
+        for (let tag of this.tags) {
+          if (email.tags.has(tag)) {
+            hasSelectedTag = true;
+            break;
+          }
+        }
+        if (!hasSelectedTag) {
           return false;
+        }
+      } else {
+        for (let tag of this.tags) {
+          if (!email.tags.has(tag)) {
+            return false;
+          }
         }
       }
     }

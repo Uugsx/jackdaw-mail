@@ -41,6 +41,14 @@
           <CalendarIcon size="22px" aria-hidden="true" />
         </div>
         <p>{$t`Pay month by month. The current price is shown on the secure checkout page.`}</p>
+        {#if checkoutURLs.monthly}
+          <Button
+            label={$t`Open plans`}
+            icon={ExternalLinkIcon}
+            classes="plan-action"
+            onClick={() => openCheckout("monthly")}
+            />
+        {/if}
       </article>
       <article class="plan-card featured">
         <div class="plan-heading">
@@ -51,6 +59,14 @@
           <SparklesIcon size="22px" aria-hidden="true" />
         </div>
         <p>{$t`One annual payment. The current price and renewal terms are shown before payment.`}</p>
+        {#if checkoutURLs.yearly}
+          <Button
+            label={$t`Open plans`}
+            icon={ExternalLinkIcon}
+            classes="plan-action"
+            onClick={() => openCheckout("yearly")}
+            />
+        {/if}
       </article>
     </div>
   </HeaderGroupBox>
@@ -63,7 +79,9 @@
   import SparklesIcon from "lucide-svelte/icons/sparkles";
   import { t } from "../../../l10n/l10n";
   import {
+    BILLING_CHECKOUT_URLS,
     BILLING_PLANS_URL,
+    type BillingPlan,
   } from "../../../logic/Billing/Billing";
   import ClockIcon from "lucide-svelte/icons/clock-3";
   import BellIcon from "lucide-svelte/icons/bell-ring";
@@ -71,6 +89,8 @@
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
   import { openExternalURL } from "../../../logic/util/os-integration";
+
+  const checkoutURLs = BILLING_CHECKOUT_URLS;
 
   const proFeatures = [
     {
@@ -102,6 +122,15 @@
 
   async function openPlans(): Promise<void> {
     await openExternalURL(BILLING_PLANS_URL);
+  }
+
+  async function openCheckout(plan: BillingPlan): Promise<void> {
+    let checkoutURL = checkoutURLs[plan];
+    if (checkoutURL) {
+      await openExternalURL(checkoutURL);
+      return;
+    }
+    await openPlans();
   }
 </script>
 
@@ -192,6 +221,10 @@
 
   .plan-card p {
     font-size: 14px;
+  }
+
+  :global(.plan-action) {
+    margin-block-start: 16px;
   }
 
   @media (max-width: 720px) {

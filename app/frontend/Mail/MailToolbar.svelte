@@ -22,13 +22,16 @@
       <hbox class="search-wrap">
         <SearchField bind:searchTerm={$globalSearchTerm} variant="toolbar" />
         <button type="button" class="search-filters-btn"
-          class:active={filtersOpen}
+          class:active={filtersOpen || usingAdvancedSearch}
           title={$t`Search filters`}
+          aria-label={$t`Search filters`}
           aria-haspopup="dialog"
           aria-expanded={filtersOpen}
+          aria-pressed={usingAdvancedSearch}
+          aria-controls="mail-search-filters"
           bind:this={filtersAnchor}
           on:click|stopPropagation={() => filtersOpen = !filtersOpen}>
-          <SlidersIcon size="16px" />
+          <SlidersIcon size="16px" aria-hidden="true" />
         </button>
       </hbox>
       <CreateItemMenu account={selectedAccount} />
@@ -53,9 +56,10 @@
 {#if filtersAnchor}
   <Popup bind:popupOpen={filtersOpen} popupAnchor={filtersAnchor}
     placement="bottom-start" boundaryElSel="body">
-    <vbox class="search-filters-popup">
+    <vbox id="mail-search-filters" class="search-filters-popup" role="dialog"
+      aria-label={$t`Search filters`}>
       <hbox class="search-filters-title font-small">{$t`Search filters`}</hbox>
-      <SearchCriteria search={globalSearch} showSearchTerm={false}
+      <SearchCriteria search={globalSearch} showSearchTerm={false} compact
         on:change={onAdvancedSearchCriteriaChanged} />
       <hbox class="search-filters-actions">
         <Button label={$t`Clear`} plain onClick={clearAdvancedSearch} />
@@ -166,7 +170,10 @@
   function onGlobalSearchTermChanged() {
     usingAdvancedSearch = false;
     searchGeneration++;
+    refreshAdvancedSearchDebounced.cancel();
+    globalSearch = newCurrentMailboxSearch();
     if ($globalSearchTerm) {
+      globalSearchResults = null;
       runGlobalSearchDebounced();
     } else {
       globalSearchResults = null;
@@ -177,14 +184,18 @@
   const refreshAdvancedSearchDebounced = debounce(() => catchErrors(refreshAdvancedSearch), 300);
 
   function onAdvancedSearchCriteriaChanged() {
+    runGlobalSearchDebounced.cancel();
+    // Пока popup открыт, пользователь собирает составной фильтр. Поиск
+    // запускается одной операцией по кнопке «Применить», поэтому первый
+    // выбранный тег не может преждевременно обнулить список писем.
     if (usingAdvancedSearch) {
       searchGeneration++;
-      refreshAdvancedSearchDebounced();
+      refreshAdvancedSearchDebounced.cancel();
     }
   }
 
   async function runGlobalSearch() {
-    if (!$globalSearchTerm) {
+    if (!$globalSearchTerm || usingAdvancedSearch) {
       globalSearchResults = null;
       return;
     }
@@ -232,14 +243,19 @@
 
   function clearAdvancedSearch() {
     searchGeneration++;
+    runGlobalSearchDebounced.cancel();
     refreshAdvancedSearchDebounced.cancel();
     globalSearch = newCurrentMailboxSearch();
+    globalSearchResults = null;
     advancedSearchMessages = null;
     usingAdvancedSearch = false;
+    $globalSearchTerm = null;
+    $selectedMessageStore = null;
     filtersOpen = false;
   }
 
   async function applyAdvancedSearch() {
+    runGlobalSearchDebounced.cancel();
     refreshAdvancedSearchDebounced.cancel();
     try {
       let results = await executeAdvancedSearch();
@@ -248,7 +264,6 @@
       }
       advancedSearchMessages = results;
       usingAdvancedSearch = true;
-      $globalSearchTerm = globalSearch.bodyText ?? null;
       $selectedMessageStore = results.first ?? null;
       filtersOpen = false;
     } catch (ex) {
@@ -358,6 +373,7 @@
     box-sizing: border-box;
   }
   .search-filters-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -368,28 +384,90 @@
     border-radius: var(--border-radius);
     background: var(--toolbar-control-bg);
     color: var(--toolbar-control-fg);
-    cursor: default;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .search-filters-btn:hover,
-  .search-filters-btn.active {
+  .search-filters-btn:hover {
     background: var(--hover-bg);
     color: var(--hover-fg);
   }
+  .search-filters-btn.active {
+    background: var(--selected-bg);
+    border-color: var(--selected-bg);
+    color: var(--selected-fg);
+  }
+  .search-filters-btn.active::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .search-filters-btn:focus-visible {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 2px;
+  }
+  .search-filters-btn:active {
+    transform: scale(0.97);
+  }
   .search-filters-popup {
-    min-width: 18em;
-    max-width: 24em;
-    padding: 12px 14px;
-    gap: 10px;
-    background: var(--main-bg);
+    width: min(380px, calc(100vw - 24px));
+    min-width: min(320px, calc(100vw - 24px));
+    max-width: min(380px, calc(100vw - 24px));
+    max-height: min(70dvh, var(--popup-max-height, 640px));
+    box-sizing: border-box;
+    padding: 12px;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--glass-bg-elevated);
     color: var(--main-fg);
   }
   .search-filters-title {
+    flex: 0 0 auto;
     font-weight: 600;
+    line-height: 1.2;
+    padding-block-end: 8px;
+    border-block-end: 1px solid var(--glass-border-subtle);
   }
   .search-filters-actions {
+    position: sticky;
+    bottom: -12px;
+    flex: 0 0 auto;
     align-items: center;
     gap: 8px;
-    margin-block-start: 4px;
+    margin: 0 -12px -12px;
+    padding: 10px 12px 12px;
+    border-block-start: 1px solid var(--glass-border-subtle);
+    background: var(--glass-bg-elevated);
+  }
+  .search-filters-popup :global(.search-criteria.compact) {
+    flex: 0 0 auto;
+  }
+  .search-filters-popup :global(.button.primary) {
+    background: var(--selected-bg);
+    border-color: var(--selected-bg);
+    color: var(--selected-fg);
+    font-weight: 600;
+  }
+  .search-filters-popup :global(.button.primary:hover:not(.disabled)) {
+    background: var(--selected-hover-bg);
+    color: var(--selected-hover-fg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .search-filters-btn {
+      transition: none;
+    }
+    .search-filters-btn:active {
+      transform: none;
+    }
   }
   .mail-toolbar :global(.create),
   .mail-toolbar :global(.mail-create-item-menu .menu-button) {

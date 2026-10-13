@@ -24,7 +24,7 @@
 * Payment: Jackdaw Mail Pro
   * Upgrade page in Settings: Jackdaw Mail Pro — client foundation done
   * License server — pending deployment
-  * YooKassa onboarding and production checkout — pending
+  * Lemon Squeezy store activation, product variants and production checkout — pending
 * OAuth
   * Google: Renewal TAC - Started, waiting for Google
   * Microsoft: localhost redirect URL - Client ID vs. account unclear
