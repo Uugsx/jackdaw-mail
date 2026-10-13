@@ -56,7 +56,7 @@ export interface SignatureFontDefaults {
   fontSize: string;
 }
 
-/** Читает первый явно заданный шрифт подписи для форматирования текста ответа. */
+/** Читает первый явно заданный шрифт подписи, чтобы сохранить её форматирование. */
 export function readSignatureFontDefaults(root: ParentNode | null | undefined): SignatureFontDefaults {
   let signature = root?.querySelector("footer.signature");
   if (!signature) {

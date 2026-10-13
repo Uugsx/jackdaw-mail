@@ -187,7 +187,7 @@ describe("signature font size", () => {
     element.remove();
   });
 
-  it("does not apply compose defaults to the signature footer", () => {
+  it("applies compose defaults to the reply body without changing the signature footer", () => {
     let element = document.createElement("div");
     document.body.appendChild(element);
     let editor = new Editor({
@@ -211,6 +211,21 @@ describe("signature font size", () => {
       .setFontFamily("Calibri, Arial, sans-serif")
       .setFontSize("12pt")
       .run();
+    expect(applyComposeDefaultBlockFormatting(editor, 1, bodyEnd, {
+      lineHeight: "1.5",
+      textAlign: "left",
+      paragraphSpacing: "0",
+      firstLineIndent: "0",
+    })).toBe(true);
+
+    let replyParagraphs = [...element.querySelectorAll("p")]
+      .filter(paragraph => !paragraph.closest("footer.signature"));
+    expect(replyParagraphs.length).toBeGreaterThanOrEqual(2);
+    let formattedReplyParagraphs = replyParagraphs.filter(paragraph => paragraph.style.lineHeight == "1.5");
+    expect(formattedReplyParagraphs.length).toBeGreaterThanOrEqual(2);
+    let replyText = replyParagraphs.find(paragraph => paragraph.textContent?.includes("Reply"));
+    expect(replyText?.querySelector("span")?.getAttribute("style")).toMatch(/font-family:\s*Calibri/i);
+    expect(replyText?.querySelector("span")?.getAttribute("style")).toMatch(/font-size:\s*12pt/i);
 
     let signature = element.querySelector("footer.signature span");
     expect(signature?.getAttribute("style")).toMatch(/font-family:\s*Arial/i);
@@ -220,7 +235,7 @@ describe("signature font size", () => {
     element.remove();
   });
 
-  it("keeps the reply signature style after applying compose defaults to the reply area", () => {
+  it("keeps the configured reply style separate from the signature style", () => {
     let normalized = normalizeSignatureHTML(
       `<p><span style="font-family: Arial, Helvetica, sans-serif; font-size: 10pt">Signature</span></p>`,
     )!;
@@ -238,20 +253,22 @@ describe("signature font size", () => {
         bodyEnd = Math.max(bodyEnd, position + node.nodeSize - 1);
       }
     });
+    let composeFontFamily = "Calibri, Arial, sans-serif";
+    let composeFontSize = "12pt";
     editor.chain().focus()
       .setTextSelection({ from: 1, to: bodyEnd })
-      .setFontFamily(signatureDefaults.fontFamily)
-      .setFontSize(`${signatureDefaults.fontSize}pt`)
+      .setFontFamily(composeFontFamily)
+      .setFontSize(composeFontSize)
       .run();
     editor.chain().focus()
       .setTextSelection(1)
-      .setFontFamily(signatureDefaults.fontFamily)
-      .setFontSize(`${signatureDefaults.fontSize}pt`)
+      .setFontFamily(composeFontFamily)
+      .setFontSize(composeFontSize)
       .run();
     editor.commands.setTextSelection(1);
-    setStoredComposeTextStyle(editor, signatureDefaults.fontFamily, `${signatureDefaults.fontSize}pt`);
-    expect(currentFontFamily(editor)).toMatch(/Arial/i);
-    expect(currentFontSize(editor)).toBe("10");
+    setStoredComposeTextStyle(editor, composeFontFamily, composeFontSize);
+    expect(currentFontFamily(editor)).toMatch(/Calibri/i);
+    expect(currentFontSize(editor)).toBe("12");
 
     let textPos = editor.state.doc.textContent.indexOf("Signature");
     editor.commands.setTextSelection({

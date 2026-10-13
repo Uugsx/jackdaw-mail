@@ -475,6 +475,7 @@
     composeDefaultFontFamily,
     composeDefaultFontSize,
     composeDefaultTextColor,
+    composeDefaultLineHeight,
     composeDefaultHighlightColor,
     currentFontFamily,
     currentFontSize,
@@ -579,6 +580,7 @@
   let formatSetting = getLocalStorage("mail.send.format", "html");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
+  let defaultLineHeightSetting = getLocalStorage("mail.compose.defaultLineHeight", composeDefaultLineHeight);
   let defaultTextColorSetting = getLocalStorage("mail.compose.defaultTextColor", composeDefaultTextColor);
   $: sendAsHtml = formatSetting.value === "html";
   function toggleSendFormat() {
@@ -717,7 +719,12 @@
   $: selectedLineHeight = editor
     ? readEditorStyle(() => quoteSelectionActive ? quoteStyle?.lineHeight ?? "" : currentLineHeight(editor), styleTick)
     : "";
-  $: displayLineHeight = selectedLineHeight;
+  $: configuredLineHeight = composeLineHeights.some(lineHeight => lineHeight.value === $defaultLineHeightSetting.value)
+    ? $defaultLineHeightSetting.value
+    : composeDefaultLineHeight;
+  $: displayLineHeight = quoteSelectionActive
+    ? selectedLineHeight
+    : selectedLineHeight || configuredLineHeight;
   $: lineHeightLabel = formatLineHeightLabel(displayLineHeight);
   $: selectedTextColor = editor
     ? readEditorStyle(() => quoteSelectionActive

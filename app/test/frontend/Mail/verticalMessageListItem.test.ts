@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import type { EMail as EMailType } from "../../../logic/Mail/EMail";
+
+const openEMailMessageMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../../frontend/Mail/open", () => ({ openEMailMessage: openEMailMessageMock }));
 
 let VerticalMessageListItem: any;
 let EMailClass: any;
@@ -36,6 +39,7 @@ afterEach(() => {
   mounted = [];
   document.body.replaceChildren();
   localStorageValues.clear();
+  openEMailMessageMock.mockClear();
 });
 
 function createMessage(): EMailType {
@@ -63,5 +67,24 @@ describe("выделение писем со звёздочкой", () => {
     await tick();
 
     expect(messageElement?.classList.contains("starred")).toBe(false);
+  });
+});
+
+describe("открытие письма", () => {
+  test("открывает письмо двойным кликом по строке", async () => {
+    let message = createMessage();
+    let target = document.createElement("div");
+    document.body.append(target);
+
+    mounted.push(mount(VerticalMessageListItem, { target, props: { message } }));
+    await tick();
+
+    let messageElement = target.querySelector(".message");
+    expect(messageElement).not.toBeNull();
+    messageElement?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await tick();
+
+    expect(openEMailMessageMock).toHaveBeenCalledTimes(1);
+    expect(openEMailMessageMock).toHaveBeenCalledWith(message);
   });
 });

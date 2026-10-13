@@ -7,6 +7,7 @@
   style="--account-color: {$message.folder.account.color};"
   on:contextmenu={contextMenu.onContextMenu}
   on:click
+  on:dblclick={onDoubleClick}
   on:swiperight={() => catchErrors(deleteMessage)}
   on:swipeleft={() => catchErrors(markAsSpam)}
   bind:this={popupAnchor}
@@ -85,6 +86,7 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { personDisplayName } from "../../../logic/Abstract/PersonUID";
   import { onDragStartMail } from "../Message/drag";
+  import { openEMailMessage } from "../open";
   import { selectedMessage, selectedMessages } from "../Selected";
   import MessageTags from "../../Shared/Tag/MessageTags.svelte";
   import MessageMenu from "../Message/MessageMenu.svelte";
@@ -138,6 +140,14 @@
       ? $selectedMessages.contents
       : [message]).slice();
     await deleteMessagesFromUI(list);
+  }
+
+  function onDoubleClick(event: MouseEvent) {
+    if (event.target instanceof Element
+      && event.target.closest("button, a, input, select, textarea")) {
+      return;
+    }
+    void catchErrors(() => openEMailMessage(message));
   }
 
   let contextMenu: ContextMenu;

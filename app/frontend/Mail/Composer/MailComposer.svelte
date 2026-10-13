@@ -224,7 +224,6 @@
     composeParagraphSpacingValues,
     composeFirstLineIndentValues,
     fontSizeToCSS,
-    readSignatureFontDefaults,
     setStoredComposeTextStyle,
     normalizeComposeTextColor,
   } from "../../Shared/Editor/composeEditorExtensions";
@@ -518,11 +517,6 @@
       ? defaultFontSizeSetting.value
       : composeDefaultFontSize;
     let defaultFontFamily = defaultFontFamilySetting.value;
-    if (isReplyQuote && editor) {
-      let signatureDefaults = readSignatureFontDefaults(editor.view.dom);
-      defaultFontFamily = signatureDefaults.fontFamily || defaultFontFamily;
-      defaultFontSize = signatureDefaults.fontSize || defaultFontSize;
-    }
     let defaultLineHeight = composeLineHeights.some(lineHeight => lineHeight.value == defaultLineHeightSetting.value)
       ? defaultLineHeightSetting.value
       : composeDefaultLineHeight;
@@ -677,14 +671,10 @@
     if (!editor || !isReplyQuote) {
       return;
     }
-    let signatureDefaults = readSignatureFontDefaults(editor.view.dom);
-    if (signatureDefaults.fontFamily || signatureDefaults.fontSize) {
-      setStoredComposeTextStyle(
-        editor,
-        signatureDefaults.fontFamily,
-        fontSizeToCSS(signatureDefaults.fontSize),
-      );
-    }
+    let defaultFontSize = composeFontSizes.includes(defaultFontSizeSetting.value)
+      ? defaultFontSizeSetting.value
+      : composeDefaultFontSize;
+    setStoredComposeTextStyle(editor, defaultFontFamilySetting.value, fontSizeToCSS(defaultFontSize));
   }
 
   $: fromIdentity && setAuthor()
