@@ -23,7 +23,9 @@
   let startingTrial = false;
   let trialMessage: string | null = null;
   $: state = $proEntitlement.value;
-  $: enabled = hasProFeature(feature);
+  // hasProFeature читает хранилище внутри функции, поэтому зависимость от
+  // state нужна явно: иначе доступ не откроется после проверки лицензии.
+  $: enabled = !!state && hasProFeature(feature);
   $: featureName = feature == "reports"
     ? $t`Interactive reports`
     : feature == "live-sla"
@@ -74,13 +76,13 @@
 {#if enabled}
   <slot />
 {:else if state.status == "checking"}
-  <main class="pro-gate loading" class:compact aria-busy="true" aria-live="polite">
+  <svelte:element this={compact ? "section" : "main"} class="pro-gate loading" class:compact aria-busy="true" aria-live="polite">
     <div class="gate-icon" aria-hidden="true"><RefreshIcon size="22px" /></div>
     <h1>{$t`Checking Pro access`}</h1>
     <p>{$t`The license server is checking the entitlement for this device.`}</p>
-  </main>
+  </svelte:element>
 {:else}
-  <main class="pro-gate" class:compact aria-labelledby="pro-gate-title">
+  <svelte:element this={compact ? "section" : "main"} class="pro-gate" class:compact aria-labelledby="pro-gate-title">
     <div class="gate-icon" aria-hidden="true"><LockKeyholeIcon size="22px" /></div>
     <p class="eyebrow">{$t`JACKDAW PRO`}</p>
     <h1 id="pro-gate-title">{featureName}</h1>
@@ -115,7 +117,7 @@
         />
     </div>
     <p class="hint">{$t`After purchase, paste the key in Settings → Jackdaw Pro. No mail password or mailbox data is sent to the license server.`}</p>
-  </main>
+  </svelte:element>
 {/if}
 
 <style>

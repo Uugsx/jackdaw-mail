@@ -2,6 +2,7 @@ import { CollectionObserver, type ArrayColl } from "svelte-collections";
 import { writable } from "svelte/store";
 import { gt } from "../../l10n/l10n";
 import { appGlobal } from "../../logic/app";
+import { hasProFeature, proEntitlement } from "../../logic/Billing/ProEntitlement";
 import { MailAccount } from "../../logic/Mail/MailAccount";
 import { type Folder } from "../../logic/Mail/Folder";
 import type { EMail } from "../../logic/Mail/EMail";
@@ -264,6 +265,7 @@ export function startResponseReminderWatcher(): void {
   subscribeWorkingHoursSettings(() => scheduleEvaluation());
   responderAttributionSetting.subscribe(() => scheduleEvaluation());
   responseTrackingArchiveSetting.subscribe(() => scheduleEvaluation());
+  proEntitlement.subscribe(() => scheduleEvaluation());
   for (const account of appGlobal.emailAccounts.contents) {
     hookMailAccount(account);
   }
@@ -320,6 +322,11 @@ async function evaluateResponseReminders(): Promise<void> {
       }
       const accountId = numericId(account.dbID);
       if (accountId == null) {
+        continue;
+      }
+      if (!hasProFeature("reminders")) {
+        // Напоминания входят в Pro. Настройки и состояние не трогаем,
+        // чтобы после продления всё продолжилось с того же места.
         continue;
       }
 

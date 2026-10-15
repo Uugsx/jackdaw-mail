@@ -226,7 +226,7 @@
   let startingTrial = false;
 
   $: state = $proEntitlement.value;
-  $: hasAccess = hasProFeature("reports") || hasProFeature("live-sla");
+  $: hasAccess = !!state && (hasProFeature("reports") || hasProFeature("live-sla"));
   $: statusLabel = getStatusLabel(state.status);
 
   const proFeatures = [
