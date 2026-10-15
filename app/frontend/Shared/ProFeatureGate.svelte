@@ -150,15 +150,15 @@
     justify-content: center;
     width: 52px;
     height: 52px;
-    border: 1px solid var(--selected-bg);
+    border: 1px solid var(--icon-primary);
     border-radius: 14px;
-    color: var(--selected-bg);
-    background: color-mix(in srgb, var(--selected-bg) 10%, var(--main-bg));
+    color: var(--icon-primary);
+    background: color-mix(in srgb, var(--icon-primary) 10%, var(--main-bg));
   }
 
   .eyebrow {
     margin: 10px 0 0;
-    color: var(--selected-bg);
+    color: var(--fg);
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.12em;

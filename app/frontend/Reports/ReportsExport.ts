@@ -18,8 +18,16 @@ import {
 } from "../../logic/Reports/ReportsPresentation";
 import { appGlobal } from "../../logic/app";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
+import {
+  DEFAULT_EXPORT_LANGUAGE,
+  exportText,
+  type ExportLanguage,
+} from "./ReportsExportText";
 
-const EXPORT_LOCALE = "ru-RU";
+const EXPORT_LOCALES: Record<ExportLanguage, string> = {
+  ru: "ru-RU",
+  en: "en-US",
+};
 const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const RHYTHM_HOURS = 24;
 const MAX_DOWNLOAD_FILENAME_ATTEMPTS = 100;
@@ -27,6 +35,8 @@ const RHYTHM_EXPORT_SELECT_ID = "report-rhythm-select";
 const RHYTHM_EXPORT_PANEL_PREFIX = "report-rhythm-panel-";
 
 export interface ReportExportOptions {
+  /** Язык отчёта. По умолчанию русский, как и раньше. */
+  language?: ExportLanguage;
   categoryFilterLabel?: string;
   responderColumnLabel?: string;
   responderMetricLabel?: string;
@@ -109,11 +119,35 @@ export async function downloadTextFile(
   return safeFilename;
 }
 
+/** Язык отчёта, который сейчас собирается. Сборка синхронная, поэтому состояние не пересекается между вызовами. */
+let exportLanguage: ExportLanguage = DEFAULT_EXPORT_LANGUAGE;
+
+function x(ru: string, params?: Record<string, string>): string {
+  return exportText(ru, exportLanguage, params);
+}
+
+function exportLocale(): string {
+  return EXPORT_LOCALES[exportLanguage];
+}
+
 export function createReportHTML(
   report: ReportData,
   options: ReportExportOptions = {},
 ): string {
-  const title = "Отчёт об активности Jackdaw Mail";
+  const previousLanguage = exportLanguage;
+  exportLanguage = options.language ?? DEFAULT_EXPORT_LANGUAGE;
+  try {
+    return buildReportHTML(report, options);
+  } finally {
+    exportLanguage = previousLanguage;
+  }
+}
+
+function buildReportHTML(
+  report: ReportData,
+  options: ReportExportOptions,
+): string {
+  const title = x("Отчёт об активности Jackdaw Mail");
   const maxTimeline = Math.max(
     1,
     ...report.timeline.map((point) => point.total),
@@ -135,7 +169,7 @@ export function createReportHTML(
     1,
     ...report.mail.responseTimeDays.map((day) => day.answered),
   );
-  const weekdays = WEEKDAY_LABELS;
+  const weekdays = WEEKDAY_LABELS.map((label) => x(label));
   const outsideWorkingHoursResponseTimes = report.mail.responseTimes
     .filter(
       (response) =>
@@ -203,12 +237,12 @@ export function createReportHTML(
             row.name,
             row.afterHours,
             afterHoursCategoryMax,
-            `${formatNumber(row.answered)} ответов · ${formatPercent(row.afterHoursRate)} вне графика`,
+            x("{answered} ответов · {rate} вне графика", { answered: formatNumber(row.answered), rate: formatPercent(row.afterHoursRate) }),
             "accent",
           ),
         )
         .join("")
-    : emptyChart("Нет ответов категорий вне рабочего времени.");
+    : emptyChart(x("Нет ответов категорий вне рабочего времени."));
   const selectedRhythmPanelIndex = Math.max(
     0,
     categoryRhythmRows.findIndex(
@@ -216,7 +250,7 @@ export function createReportHTML(
     ),
   );
   const categoryRhythmSelector = categoryRhythmRows.length
-    ? `<div class="rhythm-picker"><label for="${RHYTHM_EXPORT_SELECT_ID}">Сотрудник</label><select id="${RHYTHM_EXPORT_SELECT_ID}" aria-label="Выберите сотрудника">${categoryRhythmRows
+    ? `<div class="rhythm-picker"><label for="${RHYTHM_EXPORT_SELECT_ID}">${x("Сотрудник")}</label><select id="${RHYTHM_EXPORT_SELECT_ID}" aria-label="${x("Выберите сотрудника")}">${categoryRhythmRows
         .map(
           (row, index) =>
             `<option value="${RHYTHM_EXPORT_PANEL_PREFIX}${index}"${index == selectedRhythmPanelIndex ? " selected" : ""}>${escapeHTML(row.name)}</option>`,
@@ -227,10 +261,10 @@ export function createReportHTML(
     ? categoryRhythmRows
         .map((row, index) => {
           const panelId = `${RHYTHM_EXPORT_PANEL_PREFIX}${index}`;
-          return `<div class="rhythm-heatmap-panel" data-rhythm-panel="${panelId}"><h3>Ритм: ${escapeHTML(row.name)}</h3><div class="chart-scroll">${categoryRhythmHeatmap(row)}</div></div>`;
+          return `<div class="rhythm-heatmap-panel" data-rhythm-panel="${panelId}"><h3>${x("Ритм: {name}", { name: escapeHTML(row.name) })}</h3><div class="chart-scroll">${categoryRhythmHeatmap(row)}</div></div>`;
         })
         .join("")
-    : emptyChart("Нет данных по ритму категорий.");
+    : emptyChart(x("Нет данных по ритму категорий."));
   const categoryRhythmScript = categoryRhythmRows.length
     ? `<script>
     (() => {
@@ -248,52 +282,52 @@ export function createReportHTML(
   </script>`
     : "";
   const summaryRows = [
-    ["Наблюдаемая активность", formatNumber(report.summary.activityCount)],
-    ["Сообщения почты", formatNumber(report.summary.mailMessages)],
+    [x("Наблюдаемая активность"), formatNumber(report.summary.activityCount)],
+    [x("Сообщения почты"), formatNumber(report.summary.mailMessages)],
     [
-      "Запросы с подтверждённым ответом",
+      x("Запросы с подтверждённым ответом"),
       `${formatNumber(report.summary.mailAnswered)} / ${formatNumber(report.summary.mailIncoming)} (${formatPercent(report.summary.responseRate)})`,
     ],
     [
-      "Норматив первого ответа",
-      `${formatNumber(report.summary.responseTargetMinutes)} рабочих мин`,
+      x("Норматив первого ответа"),
+      x("{n} рабочих мин", { n: formatNumber(report.summary.responseTargetMinutes) }),
     ],
     [
-      "Среднее время ответа",
+      x("Среднее время ответа"),
       formatDuration(report.summary.responseTime.averageSeconds),
     ],
     [
-      "Ответов в срок",
+      x("Ответов в срок"),
       `${formatNumber(report.summary.responseTime.withinTarget)} (${formatPercent(responseRate(report.summary.responseTime.withinTarget, report.summary.responseTime.answered))})`,
     ],
     [
-      "Просроченных ответов",
+      x("Просроченных ответов"),
       formatNumber(report.summary.responseTime.overTarget),
     ],
     [
-      "Ответы вне рабочего времени без категории",
+      x("Ответы вне рабочего времени без категории"),
       formatNumber(outsideWorkingHoursWithoutCategoryCount),
     ],
     [
-      "Ответы вне рабочего времени",
+      x("Ответы вне рабочего времени"),
       formatNumber(outsideWorkingHoursResponseTimes.length),
     ],
     [
-      "Ответы вне рабочего времени с категорией сотрудника",
+      x("Ответы вне рабочего времени с категорией сотрудника"),
       formatNumber(categorizedOutsideWorkingHoursResponseCount),
     ],
     [
-      "Ответы вне рабочего времени без оценки SLA",
+      x("Ответы вне рабочего времени без оценки SLA"),
       formatNumber(outsideWorkingHoursNotEvaluatedCount),
     ],
     [
-      "SLA ответов вне рабочего времени",
-      `${formatNumber(outsideWorkingHoursWithinTargetCount)} в срок · ${formatNumber(outsideWorkingHoursOverTargetCount)} просрочек`,
+      x("SLA ответов вне рабочего времени"),
+      x("{within} в срок · {over} просрочек", { within: formatNumber(outsideWorkingHoursWithinTargetCount), over: formatNumber(outsideWorkingHoursOverTargetCount) }),
     ],
-    ["Сообщения чатов", formatNumber(report.summary.chatMessages)],
-    ["Часы в календаре", formatNumber(report.summary.calendarHours, 1)],
+    [x("Сообщения чатов"), formatNumber(report.summary.chatMessages)],
+    [x("Часы в календаре"), formatNumber(report.summary.calendarHours, 1)],
     [
-      "Изменено файлов",
+      x("Изменено файлов"),
       `${formatNumber(report.summary.filesChanged)} (${formatBytes(report.summary.fileBytes)})`,
     ],
   ];
@@ -323,12 +357,12 @@ export function createReportHTML(
             responder.accountName,
             responder.requests,
             maxResponderRequests,
-            `${formatNumber(responder.answered)} с ответом · ${formatPercent(responderResponseShare(responder.answered, responderAnsweredTotal))}`,
+            x("{n} с ответом · {share}", { n: formatNumber(responder.answered), share: formatPercent(responderResponseShare(responder.answered, responderAnsweredTotal)) }),
             responder.responseTime.overTarget ? "alert" : "accent",
           ),
         )
         .join("")
-    : emptyChart("Нет данных по отвечающим за этот период.");
+    : emptyChart(x("Нет данных по отвечающим за этот период."));
   const categoryChart = report.mail.categories.length
     ? report.mail.categories
         .slice(0, 12)
@@ -337,12 +371,12 @@ export function createReportHTML(
             category.name,
             category.incoming,
             maxCategoryRequests,
-            `${formatNumber(category.answered)} с ответом · ${formatNumber(category.responseTime.overTarget)} просрочек`,
+            x("{n} с ответом · {over} просрочек", { n: formatNumber(category.answered), over: formatNumber(category.responseTime.overTarget) }),
             category.responseTime.overTarget ? "alert" : "good",
           ),
         )
         .join("")
-    : emptyChart("Нет категорий за этот период.");
+    : emptyChart(x("Нет категорий за этот период."));
   const responseDayChart = report.mail.responseTimeDays.length
     ? report.mail.responseTimeDays
         .slice(-14)
@@ -351,12 +385,12 @@ export function createReportHTML(
             formatDate(parseInputDate(day.day)),
             day.answered,
             maxResponseDayAnswers,
-            `${formatNumber(day.withinTarget)} в срок · ${formatNumber(day.overTarget)} просрочек`,
+            x("{within} в срок · {over} просрочек", { within: formatNumber(day.withinTarget), over: formatNumber(day.overTarget) }),
             day.overTarget ? "alert" : "good",
           ),
         )
         .join("")
-    : emptyChart("Нет подтверждённых ответов по дням.");
+    : emptyChart(x("Нет подтверждённых ответов по дням."));
   const responseDetailRows = report.mail.responseTimes.map((response) => [
     formatDateTime(response.requestAt),
     formatDateTime(response.responseAt),
@@ -372,7 +406,7 @@ export function createReportHTML(
   );
 
   return `<!doctype html>
-<html lang="ru">
+<html lang="${exportLanguage}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -457,39 +491,39 @@ export function createReportHTML(
 </head>
 <body>
   <header>
-    <p class="eyebrow">ОТЧЁТЫ ОБ АКТИВНОСТИ</p>
+    <p class="eyebrow">${x("ОТЧЁТЫ ОБ АКТИВНОСТИ")}</p>
     <h1>${escapeHTML(title)}</h1>
-  <p class="meta">${escapeHTML(formatRange(report.range))} · ${escapeHTML(report.mailAccountFilter ? `почтовый аккаунт: ${report.mailAccountFilter.accountName}${report.mailAccountFilter.email ? ` — ${report.mailAccountFilter.email}` : ""}` : "все почтовые аккаунты")} · ${escapeHTML(report.mailFolderFilter ? `папка: ${report.mailFolderFilter.name}` : "все папки")}${options.categoryFilterLabel ? ` · ${escapeHTML(`фильтр категорий: ${options.categoryFilterLabel}`)}` : ""} · сформирован ${escapeHTML(formatDateTime(report.generatedAt))}</p>
+  <p class="meta">${escapeHTML(formatRange(report.range))} · ${escapeHTML(report.mailAccountFilter ? x("почтовый аккаунт: {name}", { name: `${report.mailAccountFilter.accountName}${report.mailAccountFilter.email ? ` — ${report.mailAccountFilter.email}` : ""}` }) : x("все почтовые аккаунты"))} · ${escapeHTML(report.mailFolderFilter ? x("папка: {name}", { name: report.mailFolderFilter.name }) : x("все папки"))}${options.categoryFilterLabel ? ` · ${escapeHTML(x("фильтр категорий: {label}", { label: options.categoryFilterLabel }))}` : ""} · ${x("сформирован {date}", { date: escapeHTML(formatDateTime(report.generatedAt)) })}</p>
   </header>
   <div class="summary">${summaryRows.map(([label, value]) => `<div class="summary-card"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`).join("")}</div>
   <section>
-    <div class="section-head"><div><p class="section-kicker">ДИНАМИКА</p><h2>Активность во времени</h2><p>Почта, чаты, календарь и файлы по ${escapeHTML(granularityLabel(report.granularity))}.</p></div><div class="legend"><span><i class="dot mail-in"></i>Входящие письма</span><span><i class="dot mail-out"></i>Исходящие письма</span><span><i class="dot chat"></i>Чаты</span><span><i class="dot calendar"></i>Календарь</span><span><i class="dot files"></i>Файлы</span></div></div>
+    <div class="section-head"><div><p class="section-kicker">${x("ДИНАМИКА")}</p><h2>${x("Активность во времени")}</h2><p>${x("Почта, чаты, календарь и файлы по {unit}.", { unit: escapeHTML(granularityLabel(report.granularity)) })}</p></div><div class="legend"><span><i class="dot mail-in"></i>${x("Входящие письма")}</span><span><i class="dot mail-out"></i>${x("Исходящие письма")}</span><span><i class="dot chat"></i>${x("Чаты")}</span><span><i class="dot calendar"></i>${x("Календарь")}</span><span><i class="dot files"></i>${x("Файлы")}</span></div></div>
     <div class="chart-scroll"><div class="chart">${timeline}</div></div>
   </section>
   <section>
-    <div class="section-head"><div><p class="section-kicker">РИТМ РАБОТЫ</p><h2>Когда происходит активность</h2><p>Исходящие сообщения, встречи и изменения файлов по дням недели и часам.</p></div></div>
+    <div class="section-head"><div><p class="section-kicker">${x("РИТМ РАБОТЫ")}</p><h2>${x("Когда происходит активность")}</h2><p>${x("Исходящие сообщения, встречи и изменения файлов по дням недели и часам.")}</p></div></div>
     <div class="chart-scroll"><div class="heatmap"><div class="heat-hours"><span></span>${Array.from({ length: 24 }, (_, hour) => `<span>${hour % 4 == 0 ? `${String(hour).padStart(2, "0")}:00` : ""}</span>`).join("")}</div>${heatmap}</div></div>
   </section>
-  <section><div class="section-head"><div><p class="section-kicker">ВРЕМЯ ОТВЕТА</p><h2>Скорость первого ответа</h2><p>От получения запроса до первого подтверждённого ответа. Норматив: ${escapeHTML(`${formatNumber(report.summary.responseTargetMinutes)} рабочих мин.`)}</p><p class="schedule-note">Рабочий календарь: ${escapeHTML(formatWorkingHoursSummary(report.workingHours))}. Ответы считаются по рабочим минутам, если запрос или ответ пришёл в рабочем графике. Если оба момента вне графика, ответ засчитывается сотруднику, но SLA не оценивается; показанное время является справочным.</p></div></div>
+  <section><div class="section-head"><div><p class="section-kicker">${x("ВРЕМЯ ОТВЕТА")}</p><h2>${x("Скорость первого ответа")}</h2><p>${x("От получения запроса до первого подтверждённого ответа. Норматив: {target}", { target: escapeHTML(x("{n} рабочих мин.", { n: formatNumber(report.summary.responseTargetMinutes) })) })}</p><p class="schedule-note">${x("Рабочий календарь: {schedule}. Ответы считаются по рабочим минутам, если запрос или ответ пришёл в рабочем графике. Если оба момента вне графика, ответ засчитывается сотруднику, но SLA не оценивается; показанное время является справочным.", { schedule: escapeHTML(formatWorkingHoursSummary(report.workingHours)) })}</p></div></div>
     <div class="response-summary">
-      <div class="summary-card"><span>Среднее время ответа</span><strong>${escapeHTML(formatDuration(report.summary.responseTime.averageSeconds))}</strong></div>
-      <div class="summary-card"><span>Минимальное время ответа</span><strong>${escapeHTML(formatDuration(report.summary.responseTime.minimumSeconds))}</strong></div>
-      <div class="summary-card"><span>Максимальное время ответа</span><strong class="response-alert">${escapeHTML(formatDuration(report.summary.responseTime.maximumSeconds))}</strong></div>
-      <div class="summary-card"><span>В срок</span><strong class="response-good">${escapeHTML(formatPercent(responseRate(report.summary.responseTime.withinTarget, report.summary.responseTime.answered)))}</strong></div>
-      <div class="summary-card"><span>Просрочки</span><strong class="response-alert">${escapeHTML(formatNumber(report.summary.responseTime.overTarget))}</strong></div>
-      <div class="summary-card"><span>Ответы вне рабочего времени</span><strong class="response-alert">${escapeHTML(formatNumber(outsideWorkingHoursResponseTimes.length))}</strong><small>${escapeHTML(`SLA не оценивается: ${formatNumber(outsideWorkingHoursNotEvaluatedCount)}`)}</small><small>${escapeHTML(`${formatNumber(outsideWorkingHoursWithinTargetCount)} в срок · ${formatNumber(outsideWorkingHoursOverTargetCount)} просрочек`)}</small></div>
+      <div class="summary-card"><span>${x("Среднее время ответа")}</span><strong>${escapeHTML(formatDuration(report.summary.responseTime.averageSeconds))}</strong></div>
+      <div class="summary-card"><span>${x("Минимальное время ответа")}</span><strong>${escapeHTML(formatDuration(report.summary.responseTime.minimumSeconds))}</strong></div>
+      <div class="summary-card"><span>${x("Максимальное время ответа")}</span><strong class="response-alert">${escapeHTML(formatDuration(report.summary.responseTime.maximumSeconds))}</strong></div>
+      <div class="summary-card"><span>${x("В срок")}</span><strong class="response-good">${escapeHTML(formatPercent(responseRate(report.summary.responseTime.withinTarget, report.summary.responseTime.answered)))}</strong></div>
+      <div class="summary-card"><span>${x("Просрочки")}</span><strong class="response-alert">${escapeHTML(formatNumber(report.summary.responseTime.overTarget))}</strong></div>
+      <div class="summary-card"><span>${x("Ответы вне рабочего времени")}</span><strong class="response-alert">${escapeHTML(formatNumber(outsideWorkingHoursResponseTimes.length))}</strong><small>${escapeHTML(x("SLA не оценивается: {n}", { n: formatNumber(outsideWorkingHoursNotEvaluatedCount) }))}</small><small>${escapeHTML(x("{within} в срок · {over} просрочек", { within: formatNumber(outsideWorkingHoursWithinTargetCount), over: formatNumber(outsideWorkingHoursOverTargetCount) }))}</small></div>
     </div>
-    <div class="chart-block response-day-chart"><h3>Ответы по дням и SLA</h3><div class="bar-chart" role="img" aria-label="Ответы по дням и SLA">${responseDayChart}</div></div>
-    <div class="section-head"><div><p class="section-kicker">ДНИ С ПРОСРОЧКАМИ</p><h2>Когда были задержки</h2><p>Дни отсортированы по количеству ответов позже норматива.</p></div></div>
+    <div class="chart-block response-day-chart"><h3>${x("Ответы по дням и SLA")}</h3><div class="bar-chart" role="img" aria-label="${x("Ответы по дням и SLA")}">${responseDayChart}</div></div>
+    <div class="section-head"><div><p class="section-kicker">${x("ДНИ С ПРОСРОЧКАМИ")}</p><h2>${x("Когда были задержки")}</h2><p>${x("Дни отсортированы по количеству ответов позже норматива.")}</p></div></div>
     <div class="table-scroll">${table(
       [
-        "День",
-        "Ответов",
-        "Среднее время",
-        "Минимум",
-        "Максимум",
-        "В срок",
-        "Просрочки",
+        x("День"),
+        x("Ответов"),
+        x("Среднее время"),
+        x("Минимум"),
+        x("Максимум"),
+        x("В срок"),
+        x("Просрочки"),
       ],
       report.mail.responseTimeDays
         .filter((day) => day.overTarget > 0)
@@ -510,23 +544,23 @@ export function createReportHTML(
         ]),
       [1, 2, 3, 4, 5, 6],
     )}</div>
-    <div class="section-head"><div><p class="section-kicker">ПОДРОБНОСТИ</p><h2>Самые долгие ответы</h2><p>Полный список ответов за выбранный период.</p></div></div>
+    <div class="section-head"><div><p class="section-kicker">${x("ПОДРОБНОСТИ")}</p><h2>${x("Самые долгие ответы")}</h2><p>${x("Полный список ответов за выбранный период.")}</p></div></div>
     <div class="table-scroll">${table(
       [
-        "Поступило",
-        "Ответ",
-        "Время ответа",
-        options.responderColumnLabel ?? "Профиль",
-        "Тема",
-        "Статус SLA",
+        x("Поступило"),
+        x("Ответ"),
+        x("Время ответа"),
+        x(options.responderColumnLabel ?? "Профиль"),
+        x("Тема"),
+        x("Статус SLA"),
       ],
       responseDetailRows,
       [0, 1, 2],
       responseDetailRowClasses,
     )}</div>
   </section>
-  <section><div class="section-head"><div><p class="section-kicker">ВНЕ РАБОЧЕГО ВРЕМЕНИ</p><h2>Кто отвечал вне графика</h2><p>Первые подтверждённые ответы, отправленные вне выбранного графика. При наличии категории показывается сотрудник, иначе — почтовый профиль.</p></div></div><div class="table-scroll">${table(
-    ["Ответ", "Сотрудник / профиль", "Время ответа", "Тема", "Статус SLA"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("ВНЕ РАБОЧЕГО ВРЕМЕНИ")}</p><h2>${x("Кто отвечал вне графика")}</h2><p>${x("Первые подтверждённые ответы, отправленные вне выбранного графика. При наличии категории показывается сотрудник, иначе — почтовый профиль.")}</p></div></div><div class="table-scroll">${table(
+    [x("Ответ"), x("Сотрудник / профиль"), x("Время ответа"), x("Тема"), x("Статус SLA")],
     outsideWorkingHoursResponseTimes.map((response) => [
       formatDateTime(response.responseAt),
       responseAfterHoursOwnerLabel(response, employeeCategoryNames),
@@ -537,23 +571,23 @@ export function createReportHTML(
     [0, 2],
     outsideWorkingHoursResponseTimes.map(() => "outside-hours-row"),
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ОТВЕТЫ</p><h2>Кто отвечает</h2><p>Сотрудники или почтовые профили с запросами, ответами и самым активным днём/часом.</p></div></div><div class="chart-grid"><div class="chart-block"><h3>Запросы по сотрудникам</h3><div class="bar-chart" role="img" aria-label="Запросы по сотрудникам">${responderChart}</div></div><div class="chart-block"><h3>Запросы по категориям</h3><div class="bar-chart" role="img" aria-label="Запросы по категориям">${categoryChart}</div></div></div><div class="table-scroll">${table(
+  <section><div class="section-head"><div><p class="section-kicker">${x("ОТВЕТЫ")}</p><h2>${x("Кто отвечает")}</h2><p>${x("Сотрудники или почтовые профили с запросами, ответами и самым активным днём/часом.")}</p></div></div><div class="chart-grid"><div class="chart-block"><h3>${x("Запросы по сотрудникам")}</h3><div class="bar-chart" role="img" aria-label="${x("Запросы по сотрудникам")}">${responderChart}</div></div><div class="chart-block"><h3>${x("Запросы по категориям")}</h3><div class="bar-chart" role="img" aria-label="${x("Запросы по категориям")}">${categoryChart}</div></div></div><div class="table-scroll">${table(
     [
-      options.responderColumnLabel ?? "Профиль",
-      "Электронная почта",
-      "Запросы",
-      "С ответом",
-      "Доля ответов",
-      "Среднее время",
-      "Минимум",
-      "Максимум",
-      "В срок",
-      "Доля в срок",
-      "Просрочки",
-      options.responderMetricLabel ?? "Отправлено",
-      "Пиковый день",
-      "Пиковый час",
-      "Последняя активность",
+      x(options.responderColumnLabel ?? "Профиль"),
+      x("Электронная почта"),
+      x("Запросы"),
+      x("С ответом"),
+      x("Доля ответов"),
+      x("Среднее время"),
+      x("Минимум"),
+      x("Максимум"),
+      x("В срок"),
+      x("Доля в срок"),
+      x("Просрочки"),
+      x(options.responderMetricLabel ?? "Отправлено"),
+      x("Пиковый день"),
+      x("Пиковый час"),
+      x("Последняя активность"),
     ],
     report.mail.responders.map((responder) => [
       responder.accountName,
@@ -581,18 +615,18 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">РИТМ СОТРУДНИКОВ</p><h2>Кто и когда отвечает</h2><p>Рейтинг ответов вне графика и ритм каждой категории по дням недели и часам. Выберите сотрудника, чтобы посмотреть его тепловую карту.</p></div></div><div class="chart-grid"><div class="chart-block"><h3>Кто отвечает чаще вне графика</h3><div class="bar-chart" role="img" aria-label="Ответы категорий вне рабочего времени">${categoryRhythmRanking}</div></div><div class="chart-block"><h3>Ритм сотрудника</h3>${categoryRhythmSelector}<div class="rhythm-heatmap-panels">${categoryRhythmHeatmapPanels}</div></div></div><div class="table-scroll">${table(
+  <section><div class="section-head"><div><p class="section-kicker">${x("РИТМ СОТРУДНИКОВ")}</p><h2>${x("Кто и когда отвечает")}</h2><p>${x("Рейтинг ответов вне графика и ритм каждой категории по дням недели и часам. Выберите сотрудника, чтобы посмотреть его тепловую карту.")}</p></div></div><div class="chart-grid"><div class="chart-block"><h3>${x("Кто отвечает чаще вне графика")}</h3><div class="bar-chart" role="img" aria-label="${x("Ответы категорий вне рабочего времени")}">${categoryRhythmRanking}</div></div><div class="chart-block"><h3>${x("Ритм сотрудника")}</h3>${categoryRhythmSelector}<div class="rhythm-heatmap-panels">${categoryRhythmHeatmapPanels}</div></div></div><div class="table-scroll">${table(
     [
-      "Категория сотрудника",
-      "Ответы",
-      "Вне графика",
-      "Доля вне графика",
-      "Без подтверждённого ответа",
-      "Активные дни",
-      "Тихие дни",
-      "Тихие рабочие слоты",
-      "Пик",
-      "Тише всего",
+      x("Категория сотрудника"),
+      x("Ответы"),
+      x("Вне графика"),
+      x("Доля вне графика"),
+      x("Без подтверждённого ответа"),
+      x("Активные дни"),
+      x("Тихие дни"),
+      x("Тихие рабочие слоты"),
+      x("Пик"),
+      x("Тише всего"),
     ],
     categoryRhythmRows.map((row) => [
       row.name,
@@ -607,19 +641,19 @@ export function createReportHTML(
       formatCategoryRhythmSlot(row.quietSlotWeekday, row.quietSlotHour),
     ]),
     [1, 2, 3, 4, 5, 6, 7],
-  )}</div><p class="note">В селекторе доступны все сотрудники из текущего отчёта. Если одно письмо имеет несколько категорий, оно учитывается в каждой из них. «Без подтверждённого ответа» — входящие запросы категории, для которых не найден первый подтверждённый ответ.</p></section>
-  <section><div class="section-head"><div><p class="section-kicker">ИСТОЧНИКИ ЗАПРОСОВ</p><h2>Кто создаёт спрос</h2><p>Отправители с наибольшим количеством входящих запросов.</p></div></div><div class="table-scroll">${table(
+  )}</div><p class="note">${x("В селекторе доступны все сотрудники из текущего отчёта. Если одно письмо имеет несколько категорий, оно учитывается в каждой из них. «Без подтверждённого ответа» — входящие запросы категории, для которых не найден первый подтверждённый ответ.")}</p></section>
+  <section><div class="section-head"><div><p class="section-kicker">${x("ИСТОЧНИКИ ЗАПРОСОВ")}</p><h2>${x("Кто создаёт спрос")}</h2><p>${x("Отправители с наибольшим количеством входящих запросов.")}</p></div></div><div class="table-scroll">${table(
     [
-      "Человек",
-      "Электронная почта",
-      "Запросы",
-      "С ответом",
-      "Доля",
-      "Отправлено",
-      "Последняя активность",
+      x("Человек"),
+      x("Электронная почта"),
+      x("Запросы"),
+      x("С ответом"),
+      x("Доля"),
+      x("Отправлено"),
+      x("Последняя активность"),
     ],
     report.mail.correspondents.map((person) => [
-      person.name || person.email || "Неизвестный контакт",
+      person.name || person.email || x("Неизвестный контакт"),
       person.email,
       formatNumber(person.incoming),
       formatNumber(person.answered),
@@ -629,8 +663,8 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5, 6],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">СПРОС</p><h2>Частые запросы</h2><p>Повторяющиеся темы входящих писем без префиксов ответа и пересылки.</p></div></div><div class="table-scroll">${table(
-    ["Тема", "Запросы", "С ответом", "Доля", "Последняя активность"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("СПРОС")}</p><h2>${x("Частые запросы")}</h2><p>${x("Повторяющиеся темы входящих писем без префиксов ответа и пересылки.")}</p></div></div><div class="table-scroll">${table(
+    [x("Тема"), x("Запросы"), x("С ответом"), x("Доля"), x("Последняя активность")],
     report.mail.topics.map((topic) => [
       topic.topic,
       formatNumber(topic.requests),
@@ -640,19 +674,19 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">КАТЕГОРИИ</p><h2>Категории и теги</h2><p>Уникальные письма с каждой меткой; одно письмо может попасть в несколько строк.</p></div></div><div class="table-scroll">${table(
+  <section><div class="section-head"><div><p class="section-kicker">${x("КАТЕГОРИИ")}</p><h2>${x("Категории и теги")}</h2><p>${x("Уникальные письма с каждой меткой; одно письмо может попасть в несколько строк.")}</p></div></div><div class="table-scroll">${table(
     [
-      "Категория",
-      "Письма с меткой",
-      "Входящие запросы",
-      "Исходящие",
-      "Подтверждённые ответы",
-      "Среднее время",
-      "Минимум",
-      "Максимум",
-      "В срок",
-      "Доля в срок",
-      "Просрочки",
+      x("Категория"),
+      x("Письма с меткой"),
+      x("Входящие запросы"),
+      x("Исходящие"),
+      x("Подтверждённые ответы"),
+      x("Среднее время"),
+      x("Минимум"),
+      x("Максимум"),
+      x("В срок"),
+      x("Доля в срок"),
+      x("Просрочки"),
     ],
     report.mail.categories.map((category) => [
       category.name,
@@ -674,15 +708,15 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ПОЧТОВЫЕ ЯЩИКИ</p><h2>Почтовые аккаунты</h2><p>Активность по аккаунтам и папкам.</p></div></div><div class="table-scroll">${table(
+  <section><div class="section-head"><div><p class="section-kicker">${x("ПОЧТОВЫЕ ЯЩИКИ")}</p><h2>${x("Почтовые аккаунты")}</h2><p>${x("Активность по аккаунтам и папкам.")}</p></div></div><div class="table-scroll">${table(
     [
-      "Аккаунт",
-      "Сообщения",
-      "Входящие",
-      "Исходящие",
-      "С ответом",
-      "Размер, байт",
-      "Последняя активность",
+      x("Аккаунт"),
+      x("Сообщения"),
+      x("Входящие"),
+      x("Исходящие"),
+      x("С ответом"),
+      x("Размер, байт"),
+      x("Последняя активность"),
     ],
     report.mail.accounts.map((account) => [
       account.accountName,
@@ -695,8 +729,8 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5, 6],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ПАПКИ</p><h2>Почтовые папки</h2><p>Где хранится почтовая активность.</p></div></div><div class="table-scroll">${table(
-    ["Аккаунт", "Папка", "Путь", "Сообщения", "Входящие", "Исходящие"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("ПАПКИ")}</p><h2>${x("Почтовые папки")}</h2><p>${x("Где хранится почтовая активность.")}</p></div></div><div class="table-scroll">${table(
+    [x("Аккаунт"), x("Папка"), x("Путь"), x("Сообщения"), x("Входящие"), x("Исходящие")],
     report.mail.folders.map((folder) => [
       folder.accountName,
       folder.folderName,
@@ -707,8 +741,8 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ВРЕМЯ</p><h2>Загрузка календаря</h2><p>Время в событиях и встречах.</p></div></div><div class="table-scroll">${table(
-    ["Календарь", "События", "Часы", "Онлайн-встречи", "Участники"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("ВРЕМЯ")}</p><h2>${x("Загрузка календаря")}</h2><p>${x("Время в событиях и встречах.")}</p></div></div><div class="table-scroll">${table(
+    [x("Календарь"), x("События"), x("Часы"), x("Онлайн-встречи"), x("Участники")],
     report.calendar.calendars.map((calendar) => [
       calendar.calendarName,
       formatNumber(calendar.events),
@@ -718,8 +752,8 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">УЧАСТНИКИ</p><h2>Участники календаря</h2><p>Люди, участвовавшие во встречах за период.</p></div></div><div class="table-scroll">${table(
-    ["Человек", "Электронная почта", "События"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("УЧАСТНИКИ")}</p><h2>${x("Участники календаря")}</h2><p>${x("Люди, участвовавшие во встречах за период.")}</p></div></div><div class="table-scroll">${table(
+    [x("Человек"), x("Электронная почта"), x("События")],
     report.calendar.participants.map((person) => [
       person.name,
       person.email,
@@ -727,14 +761,14 @@ export function createReportHTML(
     ]),
     [0, 1, 2],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ДИАЛОГИ</p><h2>Чаты</h2><p>Чаты с наибольшим количеством сообщений.</p></div></div><div class="table-scroll">${table(
+  <section><div class="section-head"><div><p class="section-kicker">${x("ДИАЛОГИ")}</p><h2>${x("Чаты")}</h2><p>${x("Чаты с наибольшим количеством сообщений.")}</p></div></div><div class="table-scroll">${table(
     [
-      "Чат",
-      "Аккаунт",
-      "Сообщения",
-      "Входящие",
-      "Исходящие",
-      "Последняя активность",
+      x("Чат"),
+      x("Аккаунт"),
+      x("Сообщения"),
+      x("Входящие"),
+      x("Исходящие"),
+      x("Последняя активность"),
     ],
     report.chat.rooms.map((room) => [
       room.roomName,
@@ -746,8 +780,8 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4, 5],
   )}</div></section>
-  <section><div class="section-head"><div><p class="section-kicker">ДОКУМЕНТЫ</p><h2>Изменённые файлы</h2><p>Папки с наибольшим количеством изменённых файлов.</p></div></div><div class="table-scroll">${table(
-    ["Аккаунт", "Папка", "Путь", "Файлы", "Размер"],
+  <section><div class="section-head"><div><p class="section-kicker">${x("ДОКУМЕНТЫ")}</p><h2>${x("Изменённые файлы")}</h2><p>${x("Папки с наибольшим количеством изменённых файлов.")}</p></div></div><div class="table-scroll">${table(
+    [x("Аккаунт"), x("Папка"), x("Путь"), x("Файлы"), x("Размер")],
     report.files.directories.map((directory) => [
       directory.accountName,
       directory.directoryName,
@@ -757,7 +791,7 @@ export function createReportHTML(
     ]),
     [0, 1, 2, 3, 4],
   )}</div></section>
-  <p class="note">Важно для интерпретации: активность — это измеряемый ориентир по синхронизированным локальным данным, а не учёт рабочего времени. Ответ считается подтверждённым, если почтовый сервер пометил письмо как отвеченное или найдено отправленное письмо, связанное с запросом по In-Reply-To или с той же цепочкой. SLA считается в рабочих минутах по выбранному графику, если запрос или ответ пришёл в рабочее время. Если и запрос, и ответ вне графика, ответ засчитывается сотруднику, но SLA не оценивается; в строке показывается фактическое время как справочное. Такие ответы выделены отдельно и исключены из SLA-агрегатов. Ответ после конца периода учитывается, если запрос пришёл в выбранный период. Одно письмо может иметь несколько меток, поэтому строки категорий не складываются. Архив почты хранит текущую категорию, но не время её назначения, поэтому отчёт не может восстановить точный момент, когда запрос взяли в работу. Отсутствующая история или несинхронизированный аккаунт делают отчёт неполным.</p>
+  <p class="note">${x("Важно для интерпретации: активность — это измеряемый ориентир по синхронизированным локальным данным, а не учёт рабочего времени. Ответ считается подтверждённым, если почтовый сервер пометил письмо как отвеченное или найдено отправленное письмо, связанное с запросом по In-Reply-To или с той же цепочкой. SLA считается в рабочих минутах по выбранному графику, если запрос или ответ пришёл в рабочее время. Если и запрос, и ответ вне графика, ответ засчитывается сотруднику, но SLA не оценивается; в строке показывается фактическое время как справочное. Такие ответы выделены отдельно и исключены из SLA-агрегатов. Ответ после конца периода учитывается, если запрос пришёл в выбранный период. Одно письмо может иметь несколько меток, поэтому строки категорий не складываются. Архив почты хранит текущую категорию, но не время её назначения, поэтому отчёт не может восстановить точный момент, когда запрос взяли в работу. Отсутствующая история или несинхронизированный аккаунт делают отчёт неполным.")}</p>
   ${categoryRhythmScript}
 </body>
 </html>`;
@@ -797,7 +831,8 @@ function categoryRhythmHeatmap(row: CategoryRhythmRow): string {
     { length: RHYTHM_HOURS },
     (_, hour) => `<span>${hour % 4 == 0 ? formatHour(hour) : ""}</span>`,
   ).join("");
-  const rows = WEEKDAY_LABELS.map((weekday, index) => {
+  const rows = WEEKDAY_LABELS.map((label, index) => {
+    const weekday = x(label);
     const cells = Array.from({ length: RHYTHM_HOURS }, (_, hour) => {
       const count = row.activity[index * RHYTHM_HOURS + hour] ?? 0;
       const opacity = count ? Math.max(0.14, count / maximum) : 0;
@@ -841,7 +876,7 @@ function table(
             `<tr${rowClasses[index] ? ` class="${escapeHTML(rowClasses[index])}"` : ""}>${row.map((value, cellIndex) => `<td${numericColumns.includes(cellIndex) ? ` class="numeric"` : ""}>${escapeHTML(value)}</td>`).join("")}</tr>`,
         )
         .join("")
-    : `<tr><td class="muted" colspan="${headers.length}">Нет данных за этот период.</td></tr>`;
+    : `<tr><td class="muted" colspan="${headers.length}">${x("Нет данных за этот период.")}</td></tr>`;
   return `<table><thead><tr>${headerHTML}</tr></thead><tbody>${bodyHTML}</tbody></table>`;
 }
 
@@ -859,14 +894,14 @@ function numberStyle(value: number): string {
 }
 
 function formatNumber(value: number, maximumFractionDigits = 0): string {
-  return new Intl.NumberFormat(EXPORT_LOCALE, { maximumFractionDigits }).format(
+  return new Intl.NumberFormat(exportLocale(), { maximumFractionDigits }).format(
     value || 0,
   );
 }
 
 function formatPercent(value: number): string {
   const normalized = Number.isFinite(value) ? Math.max(0, value) : 0;
-  return new Intl.NumberFormat(EXPORT_LOCALE, {
+  return new Intl.NumberFormat(exportLocale(), {
     style: "percent",
     maximumFractionDigits: 2,
   }).format(normalized);
@@ -882,8 +917,8 @@ function formatWorkingHoursSummary(
   return schedule.days
     .map((day, index) =>
       day.enabled
-        ? `${WEEKDAY_LABELS[index]} ${formatWorkingTime(day.startMinutes)}–${formatWorkingTime(day.endMinutes)}`
-        : `${WEEKDAY_LABELS[index]} — выходной`,
+        ? `${x(WEEKDAY_LABELS[index])} ${formatWorkingTime(day.startMinutes)}–${formatWorkingTime(day.endMinutes)}`
+        : x("{day} — выходной", { day: x(WEEKDAY_LABELS[index]) }),
     )
     .join(" · ");
 }
@@ -898,19 +933,19 @@ function formatDuration(seconds: number | null): string {
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const restSeconds = totalSeconds % 60;
   if (days) {
-    return `${formatNumber(days)} д ${formatNumber(hours)} ч`;
+    return `${formatNumber(days)} ${x("д")} ${formatNumber(hours)} ${x("ч")}`;
   }
   if (hours) {
     return minutes
-      ? `${formatNumber(hours)} ч ${formatNumber(minutes)} мин`
-      : `${formatNumber(hours)} ч`;
+      ? `${formatNumber(hours)} ${x("ч")} ${formatNumber(minutes)} ${x("мин")}`
+      : `${formatNumber(hours)} ${x("ч")}`;
   }
   if (minutes) {
     return restSeconds
-      ? `${formatNumber(minutes)} мин ${formatNumber(restSeconds)} с`
-      : `${formatNumber(minutes)} мин`;
+      ? `${formatNumber(minutes)} ${x("мин")} ${formatNumber(restSeconds)} ${x("с")}`
+      : `${formatNumber(minutes)} ${x("мин")}`;
   }
-  return `${formatNumber(restSeconds)} с`;
+  return `${formatNumber(restSeconds)} ${x("с")}`;
 }
 
 function formatResponseDuration(
@@ -921,11 +956,11 @@ function formatResponseDuration(
 ): string {
   if (response.withinTarget == null) {
     return response.actualDurationSeconds == null
-      ? "Не оценивается"
+      ? x("Не оценивается")
       : formatDuration(response.actualDurationSeconds);
   }
   return response.durationSeconds == null
-    ? "Не оценивается"
+    ? x("Не оценивается")
     : formatDuration(response.durationSeconds);
 }
 
@@ -948,12 +983,12 @@ function formatResponseStatus(
   response: Pick<MailResponseRow, "responseTimeStatus" | "withinTarget">,
 ): string {
   if (response.withinTarget === true) {
-    return "В срок";
+    return x("В срок");
   }
   if (response.withinTarget === false) {
-    return "Просрочка";
+    return x("Просрочка");
   }
-  return "Не оценивается";
+  return x("Не оценивается");
 }
 
 function formatResponseStatusWithSchedule(
@@ -968,14 +1003,14 @@ function formatResponseStatusWithSchedule(
     response.responseAt,
     workingHours,
   );
-  return outsideWorkingHours && status != "Вне рабочего времени"
-    ? `${status} · Вне рабочего времени`
+  return outsideWorkingHours && status != x("Вне рабочего времени")
+    ? `${status} · ${x("Вне рабочего времени")}`
     : status;
 }
 
 function formatBytes(bytes: number): string {
-  if (!bytes) return "0 Б";
-  const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  if (!bytes) return x("0 Б");
+  const units = [x("Б"), x("КБ"), x("МБ"), x("ГБ"), x("ТБ")];
   const index = Math.min(
     Math.floor(Math.log(bytes) / Math.log(1024)),
     units.length - 1,
@@ -985,7 +1020,7 @@ function formatBytes(bytes: number): string {
 
 function formatDate(date: Date | null): string {
   return (
-    date?.toLocaleDateString(EXPORT_LOCALE, {
+    date?.toLocaleDateString(exportLocale(), {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -994,7 +1029,7 @@ function formatDate(date: Date | null): string {
 }
 
 function formatDateTime(date: Date): string {
-  return date.toLocaleString(EXPORT_LOCALE, {
+  return date.toLocaleString(exportLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -1011,12 +1046,13 @@ function formatRange(range: ReportDateRange): string {
 function timelineLabel(value: string): string {
   const date = parseInputDate(value);
   return date
-    ? date.toLocaleDateString(EXPORT_LOCALE, { day: "numeric", month: "short" })
+    ? date.toLocaleDateString(exportLocale(), { day: "numeric", month: "short" })
     : value;
 }
 
 function weekdayLabel(weekday: number): string {
-  return WEEKDAY_LABELS[weekday] ?? "—";
+  const label = WEEKDAY_LABELS[weekday];
+  return label ? x(label) : "—";
 }
 
 function formatCategoryRhythmSlot(
@@ -1034,10 +1070,10 @@ function formatHour(hour: number): string {
 
 function granularityLabel(granularity: TimelineGranularity): string {
   return granularity == "day"
-    ? "дням"
+    ? x("дням")
     : granularity == "week"
-      ? "неделям"
-      : "месяцам";
+      ? x("неделям")
+      : x("месяцам");
 }
 
 function parseInputDate(value: string): Date | null {

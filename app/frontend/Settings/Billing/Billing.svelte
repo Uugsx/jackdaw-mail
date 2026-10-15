@@ -432,8 +432,8 @@
   }
 
   .access-summary.enabled {
-    border-color: color-mix(in srgb, var(--selected-bg) 48%, var(--border));
-    background: color-mix(in srgb, var(--selected-bg) 7%, var(--main-bg));
+    border-color: color-mix(in srgb, var(--icon-primary) 48%, var(--border));
+    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
   }
 
   .status-mark {
@@ -444,8 +444,8 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    color: var(--selected-bg);
-    background: color-mix(in srgb, var(--selected-bg) 12%, var(--main-bg));
+    color: var(--icon-primary);
+    background: color-mix(in srgb, var(--icon-primary) 12%, var(--main-bg));
   }
 
   strong {
@@ -500,7 +500,7 @@
   }
 
   input:focus-visible {
-    outline: 2px solid var(--selected-bg);
+    outline: 2px solid var(--icon-primary);
     outline-offset: 2px;
   }
 
@@ -527,8 +527,8 @@
   }
 
   .feedback.success {
-    color: var(--selected-bg);
-    background: color-mix(in srgb, var(--selected-bg) 10%, var(--main-bg));
+    color: var(--fg);
+    background: color-mix(in srgb, var(--icon-primary) 10%, var(--main-bg));
   }
 
   .feature-icon {
@@ -536,7 +536,7 @@
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    color: var(--selected-bg);
+    color: var(--icon-primary);
   }
 
   .eyebrow {
@@ -588,8 +588,8 @@
   }
 
   .plan-card.featured {
-    border-color: color-mix(in srgb, var(--selected-bg) 48%, var(--border));
-    background: color-mix(in srgb, var(--selected-bg) 7%, var(--main-bg));
+    border-color: color-mix(in srgb, var(--icon-primary) 48%, var(--border));
+    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
   }
 
   .plan-heading {
@@ -601,12 +601,12 @@
 
   .plan-heading :global(svg) {
     flex: 0 0 auto;
-    color: var(--selected-bg);
+    color: var(--icon-primary);
   }
 
   .plan-price {
     margin-block-start: 16px;
-    color: var(--selected-bg);
+    color: var(--fg);
     font-size: 22px;
     font-variant-numeric: tabular-nums;
     font-weight: 700;
@@ -632,9 +632,9 @@
     gap: 16px;
     margin-block-start: 16px;
     padding: 14px 16px;
-    border: 1px solid color-mix(in srgb, var(--selected-bg) 48%, var(--border));
+    border: 1px solid color-mix(in srgb, var(--icon-primary) 48%, var(--border));
     border-radius: 8px;
-    background: color-mix(in srgb, var(--selected-bg) 7%, var(--main-bg));
+    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
   }
 
   .trial-panel p {

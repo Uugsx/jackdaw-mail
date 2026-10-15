@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import {
   createReportHTML,
   downloadTextFile,
 } from "../../../frontend/Reports/ReportsExport";
+import {
+  exportText,
+  exportTextKeys,
+} from "../../../frontend/Reports/ReportsExportText";
 import type { ReportData } from "../../../logic/Reports/ReportsData";
 import { DEFAULT_WORKING_HOURS_SCHEDULE } from "../../../logic/Reports/WorkingHours";
 import { appGlobal } from "../../../logic/app";
@@ -402,4 +407,44 @@ test("saves desktop HTML exports in Downloads without overwriting an existing fi
   ).toBe("второй");
   expect(firstFilename).toBe("jackdaw-report-2026-09-09.html");
   expect(secondFilename).toBe("jackdaw-report-2026-09-09 (2).html");
+});
+
+test("builds the English report without Russian interface text", () => {
+  const html = createReportHTML(fixture(), { language: "en" });
+  const cyrillicText = html.replace(/Никита Левченко|Письмо вне графика|Без категории/g, "");
+
+  expect(html).toContain('<html lang="en">');
+  expect(html).toContain("Jackdaw Mail activity report");
+  expect(html).toContain("Mon 09:00–18:00");
+  expect(html).toContain("First-reply speed");
+  expect(cyrillicText).not.toMatch(/[А-Яа-яЁё]/);
+});
+
+test("keeps the Russian report as the default and restores the language", () => {
+  const before = createReportHTML(fixture());
+  createReportHTML(fixture(), { language: "en" });
+  const after = createReportHTML(fixture());
+
+  expect(after).toBe(before);
+  expect(after).toContain('<html lang="ru">');
+});
+
+test("fills placeholders and falls back to the Russian text", () => {
+  expect(exportText("{n} рабочих мин", "ru", { n: "5" })).toBe("5 рабочих мин");
+  expect(exportText("{n} рабочих мин", "en", { n: "5" })).toBe("5 working min");
+  expect(exportText("Неизвестная фраза", "en")).toBe("Неизвестная фраза");
+});
+
+test("has an English translation for every phrase in the export code", () => {
+  const source = readFileSync(
+    new URL("../../../frontend/Reports/ReportsExport.ts", import.meta.url),
+    "utf8",
+  );
+  const used = [...source.matchAll(/\bx\("((?:[^"\\]|\\.)*)"/g)].map(
+    (match) => match[1],
+  );
+  const known = new Set(exportTextKeys());
+
+  expect(used.length).toBeGreaterThan(100);
+  expect(used.filter((phrase) => !known.has(phrase))).toEqual([]);
 });

@@ -15,7 +15,7 @@
   import SearchIcon from "lucide-svelte/icons/search";
   import TagsIcon from "lucide-svelte/icons/tags";
   import UsersIcon from "lucide-svelte/icons/users";
-  import { t, gt, getDateTimeLocale } from "../../l10n/l10n";
+  import { t, gt, getDateTimeLocale, getUILocale } from "../../l10n/l10n";
   import { appGlobal } from "../../logic/app";
   import {
     DEFAULT_RESPONSE_TARGET_MINUTES,
@@ -1517,6 +1517,9 @@
 
   function exportOptions() {
     return {
+      language: getUILocale().toLowerCase().startsWith("ru")
+        ? ("ru" as const)
+        : ("en" as const),
       categoryFilterLabel:
         categoryFilter == null
           ? undefined
