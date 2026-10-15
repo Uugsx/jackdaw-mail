@@ -31,3 +31,18 @@ Email не является учётной записью приложения �
 ## Проверка
 
 Тесты запускаются из корня репозитория командой `python3 -m unittest discover -s license_server/tests -v`.
+
+## Автодеплой
+
+Workflow `.github/workflows/deploy-license-server.yml` при пуше в `license_server/` запускает тесты, загружает `app.py` на VPS и перезапускает сервис. Миграции базы он не применяет.
+
+Сервис работает под пользователем `jackdaw-license`, файл лежит в `/opt/jackdaw-license/app.py`. Для деплоя нужен отдельный пользователь, например `jackdaw-deploy`, у которого нет прав на запись в `/opt/jackdaw-license` и на чтение базы. Ему разрешены ровно две команды через `sudo`. Файл `/etc/sudoers.d/jackdaw-license-deploy` создают на сервере командой `visudo -f`:
+
+```
+jackdaw-deploy ALL=(root) NOPASSWD: /usr/bin/install -o jackdaw-license -g jackdaw-license -m 0644 /home/jackdaw-deploy/license-incoming/app.py /opt/jackdaw-license/app.py
+jackdaw-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart jackdaw-license
+```
+
+Пути в `sudoers` должны совпадать с теми, что вызывает workflow, и с абсолютным путём домашней папки deploy-пользователя.
+
+Секреты репозитория: `LICENSE_DEPLOY_SSH_KEY` (закрытый ключ, который нужен только для деплоя) и `LICENSE_DEPLOY_KNOWN_HOSTS` (результат `ssh-keyscan -t ed25519 <хост>`). Переменные: `LICENSE_DEPLOY_HOST`, `LICENSE_DEPLOY_USER`; необязательные `LICENSE_DEPLOY_PATH` и `LICENSE_SERVICE_USER`. Пока обязательные значения не заданы, шаг деплоя пропускается с предупреждением.
