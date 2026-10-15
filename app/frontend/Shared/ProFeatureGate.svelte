@@ -8,6 +8,7 @@
   import { BILLING_PLANS_URL, type ProFeatureKey } from "../../logic/Billing/Billing";
   import {
     hasProFeature,
+    getProEntitlementErrorMessage,
     proEntitlement,
     refreshProEntitlement,
     startProTrial,
@@ -63,7 +64,7 @@
     try {
       await startProTrial();
     } catch (error) {
-      trialMessage = error instanceof Error ? error.message : $t`The trial could not be started.`;
+      trialMessage = getProEntitlementErrorMessage(error);
     } finally {
       startingTrial = false;
     }

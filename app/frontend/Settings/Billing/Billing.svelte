@@ -201,6 +201,7 @@
   import {
     activateProLicense,
     deactivateProLicense,
+    getProEntitlementErrorMessage,
     hasProFeature,
     proEntitlement,
     refreshProEntitlement,
@@ -339,7 +340,7 @@
         : $t`The license was accepted, but its current status needs attention.`;
     } catch (error) {
       feedbackKind = "error";
-      feedbackMessage = error instanceof Error ? error.message : $t`The license could not be activated.`;
+      feedbackMessage = getProEntitlementErrorMessage(error);
     } finally {
       activating = false;
     }
@@ -372,7 +373,7 @@
         : nextState.message ?? $t`The trial could not be started.`;
     } catch (error) {
       feedbackKind = "error";
-      feedbackMessage = error instanceof Error ? error.message : $t`The trial could not be started.`;
+      feedbackMessage = getProEntitlementErrorMessage(error);
     } finally {
       startingTrial = false;
     }

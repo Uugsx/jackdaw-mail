@@ -3,6 +3,7 @@
  * Доступ к Pro-функциям проверяется отдельно через подписанное entitlement.
  * Почтовые и meeting-сценарии сохраняют прежний контракт этого модуля.
  */
+import { gt } from "../../l10n/l10n";
 import { gLicense } from "./License";
 import type { URLString } from "../util/util";
 import { BILLING_PLANS_URL } from "../Billing/Billing";
@@ -32,7 +33,7 @@ export class BadTicket extends Ticket {
 
 export class LicenseError extends Error {}
 export class NoValidLicense extends LicenseError {
-  message = "Базовая лицензия недоступна.";
+  message = gt`The base license is unavailable.`;
 }
 export class AccountMissingError extends LicenseError {}
 

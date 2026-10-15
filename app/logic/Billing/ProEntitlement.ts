@@ -1,5 +1,6 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { Observable } from "../util/Observable";
+import { gt } from "../../l10n/l10n";
 import {
   BILLING_ENTITLEMENT_PUBLIC_KEY,
   BILLING_LICENSE_API_DEFAULT_URL,
@@ -180,7 +181,7 @@ function scheduleTrialRefresh(state: ProEntitlementState): void {
           status: "error",
           plan: state.plan,
           validUntil: state.validUntil,
-          message: "Обнаружено изменение системных часов. Подключитесь к серверу лицензий для повторной проверки.",
+          message: gt`A system clock change was detected. Connect to the license service to verify access again.`,
           lastValidatedAt: state.lastValidatedAt,
         });
         return;
@@ -241,11 +242,11 @@ function normalizedLicenseKey(value: string): string {
   }
   let compact = value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (!compact.startsWith("JACKDAWPRO") || compact.length != 26) {
-    throw new Error("Введите ключ JACKDAW-PRO-XXXX-XXXX-XXXX-XXXX или ключ из письма после покупки.");
+    throw new ProEntitlementError(gt`Enter a JACKDAW-PRO-XXXX-XXXX-XXXX-XXXX key or the key from your purchase email.`);
   }
   let formatted = `JACKDAW-PRO-${compact.slice(10, 14)}-${compact.slice(14, 18)}-${compact.slice(18, 22)}-${compact.slice(22, 26)}`;
   if (!JACKDAW_LICENSE_KEY_PATTERN.test(formatted)) {
-    throw new Error("Введите ключ JACKDAW-PRO-XXXX-XXXX-XXXX-XXXX или ключ из письма после покупки.");
+    throw new ProEntitlementError(gt`Enter a JACKDAW-PRO-XXXX-XXXX-XXXX-XXXX key or the key from your purchase email.`);
   }
   return formatted;
 }
@@ -313,7 +314,7 @@ function decodeBase64URL(value: string): Uint8Array {
 
 function assertValidEntitlement(payload: ProEntitlementPayload, signature: string): void {
   if (!BILLING_ENTITLEMENT_PUBLIC_KEY) {
-    throw new Error("Сборка приложения не содержит публичный ключ сервера лицензий.");
+    throw new ProEntitlementError(gt`This app build does not contain the public key for the license service.`);
   }
   if (
     payload.product != "jackdaw-mail" ||
@@ -325,13 +326,13 @@ function assertValidEntitlement(payload: ProEntitlementPayload, signature: strin
     (payload.serverNow !== undefined && (typeof payload.serverNow != "string" || !Number.isFinite(Date.parse(payload.serverNow)))) ||
     (payload.trialStartedAt !== undefined && (typeof payload.trialStartedAt != "string" || !Number.isFinite(Date.parse(payload.trialStartedAt))))
   ) {
-    throw new Error("Сервер лицензий вернул некорректное право доступа.");
+    throw new ProEntitlementError(gt`The license service returned an invalid entitlement.`);
   }
   let features = payload.features.filter((feature): feature is ProFeatureKey =>
     (PRO_FEATURE_KEYS as readonly string[]).includes(feature),
   );
   if (features.length != payload.features.length || !ENTITLEMENT_STATUSES.has(payload.status)) {
-    throw new Error("Право доступа не прошло проверку политики Pro.");
+    throw new ProEntitlementError(gt`The entitlement does not comply with the Pro access policy.`);
   }
   let valid = ed25519.verify(
     decodeBase64URL(signature),
@@ -339,7 +340,7 @@ function assertValidEntitlement(payload: ProEntitlementPayload, signature: strin
     decodeBase64URL(BILLING_ENTITLEMENT_PUBLIC_KEY),
   );
   if (!valid) {
-    throw new Error("Подпись права доступа не прошла проверку.");
+    throw new ProEntitlementError(gt`The entitlement signature could not be verified.`);
   }
 }
 
@@ -362,7 +363,7 @@ function stateFromPayload(
       features: [],
       validUntil,
       keyLast4,
-      message: "Срок действия Pro-лицензии закончился.",
+      message: gt`The Pro license has expired.`,
       lastValidatedAt,
     };
   }
@@ -390,6 +391,47 @@ class LicenseRequestError extends Error {
   }
 }
 
+class ProEntitlementError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProEntitlementError";
+  }
+}
+
+export function getProEntitlementErrorMessage(error: unknown): string {
+  if (error instanceof LicenseRequestError) {
+    switch (error.responseCode) {
+      case "invalid_license_key":
+        return gt`The license key format is invalid. Use JACKDAW-PRO-XXXX-XXXX-XXXX-XXXX or the key from your purchase email.`;
+      case "license_not_found":
+        return gt`This license key was not found.`;
+      case "license_inactive":
+        return gt`This license is inactive or has expired.`;
+      case "device_not_activated":
+        return gt`This device is not activated for this license.`;
+      case "activation_limit_reached":
+        return gt`This license has reached its device activation limit.`;
+      case "trial_not_started":
+        return gt`The trial has not been started on this device.`;
+      case "trial_expired":
+        return gt`The trial has ended. Activate a Pro license to continue.`;
+      case "trial_revoked":
+        return gt`The trial was disabled by an administrator.`;
+      case "rate_limited":
+        return gt`Too many requests. Try again later.`;
+      case "internal_error":
+      case "license_read_failed":
+        return gt`The license service is temporarily unavailable. Try again later.`;
+      case "not_found":
+        return gt`The requested license service resource was not found.`;
+      default:
+        return gt`The license service rejected the request.`;
+    }
+  }
+  if (error instanceof ProEntitlementError && error.message) return error.message;
+  return gt`Could not reach the license service. Check your internet connection and try again.`;
+}
+
 interface EntitlementResponse {
   payload: ProEntitlementPayload;
   signature: string;
@@ -401,11 +443,10 @@ async function parseEntitlementResponse(response: Response): Promise<Entitlement
     entitlement?: { payload?: ProEntitlementPayload; signature?: string };
     license?: { keyLast4?: string };
     error?: string;
-    message?: string;
   } | null;
   if (!response.ok || !body?.entitlement?.payload || !body.entitlement.signature) {
     throw new LicenseRequestError(
-      body?.message ?? "Сервер лицензий отклонил запрос.",
+      gt`The license service rejected the request.`,
       response.status,
       body?.error ?? null,
     );
@@ -425,7 +466,7 @@ async function requestEntitlement(
   deviceName: string,
 ): Promise<EntitlementResponse> {
   if (!BILLING_LICENSE_API_URL || BILLING_LICENSE_API_URL == BILLING_LICENSE_API_DEFAULT_URL && !BILLING_ENTITLEMENT_PUBLIC_KEY) {
-    throw new Error("Сервер лицензий ещё не настроен в этой сборке.");
+    throw new ProEntitlementError(gt`The license service is not configured in this app build.`);
   }
   let controller = new AbortController();
   let timeout = setTimeout(() => controller.abort(), 10_000);
@@ -444,7 +485,7 @@ async function requestEntitlement(
 
 async function requestTrialEntitlement(path: string, deviceName: string): Promise<EntitlementResponse> {
   if (!BILLING_LICENSE_API_URL || !BILLING_ENTITLEMENT_PUBLIC_KEY) {
-    throw new Error("Сервер лицензий ещё не настроен в этой сборке.");
+    throw new ProEntitlementError(gt`The license service is not configured in this app build.`);
   }
   let controller = new AbortController();
   let timeout = setTimeout(() => controller.abort(), 10_000);
@@ -500,7 +541,7 @@ export async function activateProLicense(licenseKey: string, deviceName = getDev
 export async function startProTrial(deviceName = getDeviceName()): Promise<ProEntitlementState> {
   let stored = readStoredEntitlement();
   if (stored && stored.credentialType != "trial" && stored.payload.status == "active") {
-    throw new Error("На этом устройстве уже активна платная Pro-лицензия.");
+    throw new ProEntitlementError(gt`A paid Pro license is already active on this device.`);
   }
   let response = await requestTrialEntitlement("/v1/trial/start", deviceName);
   let validatedAt = new Date().toISOString();
@@ -521,12 +562,12 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
   refreshPromise = (async () => {
     let stored = readStoredEntitlement();
     if (!BILLING_LICENSE_API_URL || !BILLING_ENTITLEMENT_PUBLIC_KEY) {
-      let state = { ...defaultState, status: "not-configured" as const, message: "Сервер лицензий не подключён к этой сборке." };
+      let state = { ...defaultState, status: "not-configured" as const, message: gt`The license service is not connected to this app build.` };
       proEntitlement.setValue(state);
       return state;
     }
     if (!stored) {
-      let state = { ...defaultState, status: "not-activated" as const, message: "Введите Pro-лицензионный ключ." };
+      let state = { ...defaultState, status: "not-activated" as const, message: gt`Enter a Pro license key.` };
       proEntitlement.setValue(state);
       return state;
     }
@@ -534,7 +575,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
       assertValidEntitlement(stored.payload, stored.signature);
     } catch {
       removeStoredEntitlement();
-      let state = { ...defaultState, status: "not-activated" as const, message: "Сохранённая Pro-лицензия повреждена. Введите ключ ещё раз." };
+      let state = { ...defaultState, status: "not-activated" as const, message: gt`The saved Pro license is damaged. Enter the key again.` };
       proEntitlement.setValue(state);
       return state;
     }
@@ -564,7 +605,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
             status,
             plan: "trial",
             validUntil: stored.payload.validUntil,
-            message: error.message,
+            message: getProEntitlementErrorMessage(error),
             lastValidatedAt: stored.validatedAt,
           };
           proEntitlement.setValue(state);
@@ -575,7 +616,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
           status: "trial-offline" as const,
           plan: "trial",
           validUntil: stored.payload.validUntil,
-          message: "Пробный доступ требует подключения к интернету для проверки.",
+          message: gt`The trial needs an internet connection for verification.`,
           lastValidatedAt: stored.validatedAt,
         };
         proEntitlement.setValue(state);
@@ -588,7 +629,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
           ...defaultState,
           status,
           keyLast4: stored.keyLast4 ?? stored.licenseKey.slice(-4),
-          message: error.message,
+          message: getProEntitlementErrorMessage(error),
         };
         proEntitlement.setValue(state);
         return state;
@@ -598,7 +639,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
           ...defaultState,
           status: "error" as const,
           keyLast4: stored.keyLast4 ?? stored.licenseKey.slice(-4),
-          message: "Обнаружено изменение системных часов. Подключитесь к серверу лицензий для повторной проверки.",
+          message: gt`A system clock change was detected. Connect to the license service to verify access again.`,
         };
         proEntitlement.setValue(state);
         return state;
@@ -607,7 +648,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
         stored.payload,
         stored.keyLast4 ?? stored.licenseKey.slice(-4),
         "offline",
-        "Сервер временно недоступен. Используется последнее проверенное право доступа.",
+        gt`The license service is temporarily unavailable. The last verified entitlement is being used.`,
         stored.validatedAt,
         Date.now(),
       );
@@ -615,7 +656,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
         proEntitlement.setValue(cachedState);
         return cachedState;
       }
-      let state = { ...defaultState, status: "error" as const, keyLast4: stored.keyLast4 ?? stored.licenseKey.slice(-4), message: error instanceof Error ? error.message : "Не удалось проверить Pro-лицензию." };
+      let state = { ...defaultState, status: "error" as const, keyLast4: stored.keyLast4 ?? stored.licenseKey.slice(-4), message: getProEntitlementErrorMessage(error) };
       proEntitlement.setValue(state);
       return state;
     }
@@ -647,5 +688,5 @@ export async function deactivateProLicense(): Promise<void> {
     }
   }
   removeStoredEntitlement();
-  proEntitlement.setValue({ ...defaultState, status: "not-activated", message: "Введите Pro-лицензионный ключ." });
+  proEntitlement.setValue({ ...defaultState, status: "not-activated", message: gt`Enter a Pro license key.` });
 }
