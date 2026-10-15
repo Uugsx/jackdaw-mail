@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title data-i18n="page.title">Jackdaw Mail — Почта, Календарь, Контакты и Живой контроль SLA для Exchange / OWA</title>
-  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Быстрый desktop-клиент для Exchange, OWA, EWS и IMAP с живым контролем SLA, интерактивными отчётами, учётом рабочего календаря и Local-first архитектурой.">
+  <meta name="color-scheme" content="light dark">
+  <title data-i18n="page.title">Jackdaw Mail — почтовый клиент для Exchange и OWA с контролем срока ответа</title>
+  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Desktop-клиент для Exchange, OWA, EWS и IMAP. Считает время ответа в рабочих минутах, показывает очередь неотвеченных писем и строит отчёты по скорости ответов.">
   <link rel="canonical" href="https://jackdaw-mail.pro">
-  
+
   <!-- Open Graph / Social -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://jackdaw-mail.pro/">
-  <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — Почта, Календарь и Живой контроль SLA для Exchange / OWA">
-  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Быстрый desktop-клиент для Exchange, OWA, EWS и IMAP с живым контролем SLA, интерактивными отчётами и Local-first архитектурой.">
+  <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — почта для Exchange и OWA с контролем срока ответа">
+  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Считает время ответа в рабочих минутах, показывает очередь неотвеченных писем и строит отчёты по скорости ответов.">
   <meta property="og:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" data-i18n="page.twitterTitle" data-i18n-attr="content" content="Jackdaw Mail — Почтовый клиент для Exchange и OWA">
-  <meta name="twitter:description" data-i18n="page.twitterDescription" data-i18n-attr="content" content="Интерактивные отчёты, живой контроль SLA, синхронизация OWA Shared Mailboxes и локальная приватность.">
+  <meta name="twitter:title" data-i18n="page.twitterTitle" data-i18n-attr="content" content="Jackdaw Mail — почтовый клиент для Exchange и OWA">
+  <meta name="twitter:description" data-i18n="page.twitterDescription" data-i18n-attr="content" content="Время ответа в рабочих минутах, очередь неотвеченных писем и отчёты по скорости ответов.">
   <meta name="twitter:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
 
   <!-- Favicon -->
@@ -28,27 +29,20 @@
 </head>
 <body>
 
-  <!-- Site Navigation -->
   <header class="header">
     <div class="container header-inner">
       <a href="#" class="brand">
-        <img src="assets/icon-jackdaw-github.png" data-i18n="brand.logoAlt" data-i18n-attr="alt" alt="Jackdaw Logo" class="brand-icon">
+        <img src="assets/icon-jackdaw-128.png" width="28" height="28" data-i18n="brand.logoAlt" data-i18n-attr="alt" alt="Логотип Jackdaw Mail" class="brand-icon">
         <span>Jackdaw Mail</span>
-        <span class="brand-badge">v0.9.125-dev</span>
       </a>
 
-      <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" data-i18n="nav.menu" data-i18n-attr="aria-label" aria-label="Открыть меню" aria-expanded="false" aria-controls="site-nav">
-        <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
-      </button>
-
       <nav id="site-nav" class="nav" data-i18n="nav.label" data-i18n-attr="aria-label" aria-label="Основная навигация">
+        <a href="#sla" class="nav-link" data-i18n="nav.sla">Как считается срок</a>
         <a href="#features" class="nav-link" data-i18n="nav.features">Возможности</a>
-        <a href="#showcase" class="nav-link" data-i18n="nav.showcase">SLA и отчёты</a>
-        <a href="#plans" class="nav-link" data-i18n="nav.plans">Тарифы</a>
-        <a href="#comparison" class="nav-link" data-i18n="nav.comparison">Сравнение</a>
-        <a href="#architecture" class="nav-link" data-i18n="nav.architecture">Архитектура</a>
+        <a href="#data" class="nav-link" data-i18n="nav.data">Данные</a>
+        <a href="#plans" class="nav-link" data-i18n="nav.plans">Цены</a>
         <a href="#downloads" class="nav-link" data-i18n="nav.downloads">Скачать</a>
-        <a href="#faq" class="nav-link" data-i18n="nav.faq">FAQ</a>
+        <a href="#faq" class="nav-link" data-i18n="nav.faq">Вопросы</a>
       </nav>
 
       <div class="header-actions">
@@ -56,668 +50,389 @@
           <button type="button" class="language-option active" data-language-option="ru" aria-pressed="true">RU</button>
           <button type="button" class="language-option" data-language-option="en" aria-pressed="false">EN</button>
         </div>
-        <button id="theme-toggle" class="theme-toggle" data-i18n="theme.toggle" data-i18n-attr="aria-label" aria-label="Переключить тему">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button id="theme-toggle" class="theme-toggle" type="button" data-i18n="theme.toggle" data-i18n-attr="aria-label" aria-label="Переключить тему">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
-        <a href="https://github.com/Uugsx/jackdaw-mail" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="header.githubTitle" data-i18n-attr="title" title="GitHub Repository">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-          <span data-i18n="header.github">GitHub</span>
-        </a>
-        <a href="#downloads" class="btn btn-primary" data-i18n="header.download">Скачать</a>
+        <a href="https://github.com/Uugsx/jackdaw-mail" target="_blank" rel="noopener noreferrer" class="header-link" data-i18n="header.github">GitHub</a>
+        <a href="#downloads" class="btn btn-primary btn-small" data-i18n="header.download">Скачать</a>
+        <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" data-i18n="nav.menu" data-i18n-attr="aria-label" aria-label="Открыть меню" aria-expanded="false" aria-controls="site-nav">
+          <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+        </button>
       </div>
     </div>
   </header>
 
   <main>
-    <!-- Hero Section -->
-    <section class="hero">
-      <div class="container">
-        <div class="kicker">
-          <span class="kicker-dot"></span>
-          <span data-i18n="hero.kicker">Новый уровень продуктивности Exchange & OWA</span>
-        </div>
+    <section class="hero container" aria-labelledby="hero-title">
+      <h1 id="hero-title" class="hero-title" data-i18n="hero.title">Почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах</h1>
+      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
 
-        <h1 class="hero-title" data-i18n="hero.title">
-          Desktop-клиент для Exchange и OWA с живым контролем SLA
-        </h1>
+      <div class="hero-actions">
+        <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary">
+          <span id="hero-download-label" data-i18n="hero.download">Скачать Jackdaw Mail</span>
+        </a>
+        <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="text-link" data-i18n="hero.allBuilds">Все сборки на GitHub</a>
+      </div>
 
-        <p class="hero-subtitle" data-i18n="hero.subtitle">
-          Быстрая работа с корпоративной почтой, мгновенная синхронизация общих ящиков (Shared Mailboxes), интерактивные отчёты скорости ответа и рабочий календарь без облачных посредников.
-        </p>
+      <p class="hero-meta">
+        <span id="detected-os-label" data-i18n="platform.all">macOS и Windows</span>
+        · <span data-i18n="hero.free">бесплатно для одного ящика</span>
+        · <span data-i18n="hero.pro">Pro — $9.99 в месяц</span>
+      </p>
+    </section>
 
-        <div class="hero-cta-group">
-          <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary btn-lg">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span id="hero-download-label" data-i18n="hero.download">Скачать Jackdaw Mail</span>
-          </a>
-          <a href="#showcase" class="btn btn-secondary btn-lg" data-i18n="hero.explore">
-            Посмотреть возможности
-          </a>
-        </div>
+    <section id="showcase" class="showcase container" aria-labelledby="showcase-heading">
+      <h2 id="showcase-heading" class="visually-hidden" data-i18n="showcase.heading">Экраны программы</h2>
+      <div class="showcase-tabs" data-i18n="showcase.tablist" data-i18n-attr="aria-label" role="tablist" aria-label="Экраны программы">
+        <button id="showcase-tab-reports" class="showcase-tab active" type="button" role="tab" aria-selected="true" aria-controls="tab-reports" tabindex="0" data-target="tab-reports" data-i18n="showcase.reports.tab">Отчёт</button>
+        <button id="showcase-tab-sla" class="showcase-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-sla" tabindex="-1" data-target="tab-sla" data-i18n="showcase.sla.tab">Очередь неотвеченных</button>
+      </div>
 
-        <div class="platform-indicator">
-          <span id="detected-os-label" data-i18n="platform.all">macOS, Windows, Linux</span>
-          <span>·</span>
-          <span data-i18n="platform.license">Лицензия EUPL-1.2</span>
-          <span>·</span>
-          <span data-i18n="platform.privacy">Local-first безопасность</span>
-        </div>
+      <div id="tab-reports" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-reports" tabindex="0">
+        <img src="assets/reports-demo.svg" width="1440" height="900" data-language-image data-image-ru="assets/reports-demo.svg" data-image-en="assets/reports-demo-en.svg" data-i18n="showcase.reports.imageAlt" data-i18n-attr="alt" alt="Отчёт Jackdaw Mail: число писем, доля ответов, среднее время ответа, график активности, тепловая карта по часам и таблица ответов" class="showcase-img">
+        <p class="showcase-caption" data-i18n="showcase.reports.caption">Отчёт за период: сколько писем пришло, на сколько ответили и за какое время. Тепловая карта показывает, в какие часы писем больше всего. Данные на экране вымышленные.</p>
+      </div>
 
-        <!-- Metric / Spec Highlights -->
-        <div class="specs-bar">
-          <div class="spec-card">
-            <div class="spec-label" data-i18n="spec.privacy.label">Приватность</div>
-            <div class="spec-value" data-i18n="spec.privacy.value">Local-First</div>
-            <div class="spec-desc" data-i18n="spec.privacy.description">Пароли и переписка хранятся локально, без сторонних облачных прокси.</div>
-          </div>
-          <div class="spec-card">
-            <div class="spec-label" data-i18n="spec.sla.label">Контроль SLA</div>
-            <div class="spec-value" data-i18n="spec.sla.value">Рабочий график</div>
-            <div class="spec-desc" data-i18n="spec.sla.description">Точный подсчёт минут ответа без учёта ночных часов и выходных.</div>
-          </div>
-          <div class="spec-card">
-            <div class="spec-label" data-i18n="spec.integration.label">Интеграция</div>
-            <div class="spec-value" data-i18n="spec.integration.value">OWA & Shared</div>
-            <div class="spec-desc" data-i18n="spec.integration.description">Полноценная синхронизация общих ящиков, категорий и уведомлений.</div>
-          </div>
-          <div class="spec-card">
-            <div class="spec-label" data-i18n="spec.performance.label">Производительность</div>
-            <div class="spec-value" data-i18n="spec.performance.value">Svelte + Native</div>
-            <div class="spec-desc" data-i18n="spec.performance.description">Мгновенный отклик интерфейса, клавиатурная навигация и низкий расход RAM.</div>
-          </div>
-        </div>
+      <div id="tab-sla" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-sla" tabindex="0" hidden>
+        <img src="assets/sla-control-demo.svg" width="1440" height="900" data-language-image data-image-ru="assets/sla-control-demo.svg" data-image-en="assets/sla-control-demo-en.svg" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Очередь неотвеченных писем в правой панели Jackdaw Mail рядом с открытым письмом" class="showcase-img">
+        <p class="showcase-caption" data-i18n="showcase.sla.caption">Очередь в правой панели, рядом с открытым письмом: у каждого письма видно, сколько прошло, когда срок и сколько осталось. Данные на экране вымышленные.</p>
       </div>
     </section>
 
-    <!-- Interactive Showcase Section -->
-    <section id="showcase" class="showcase">
-      <div class="container">
-        <div class="showcase-frame">
-          <div class="showcase-header">
-            <div class="window-dots" aria-hidden="true">
-              <span class="dot dot-red"></span>
-              <span class="dot dot-yellow"></span>
-              <span class="dot dot-green"></span>
-            </div>
-
-            <div class="showcase-tabs" data-i18n="showcase.tablist" data-i18n-attr="aria-label" role="tablist" aria-label="Сценарии интерфейса">
-              <button id="showcase-tab-reports" class="showcase-tab active" role="tab" aria-selected="true" aria-controls="tab-reports" tabindex="0" data-target="tab-reports" data-i18n="showcase.reports.tab">
-                Интерактивные отчёты
-              </button>
-              <button id="showcase-tab-sla" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-sla" tabindex="-1" data-target="tab-sla" data-i18n="showcase.sla.tab">
-                Живой контроль SLA
-              </button>
-              <button id="showcase-tab-calendar" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-calendar" tabindex="-1" data-target="tab-calendar" data-i18n="showcase.calendar.tab">
-                Рабочий календарь
-              </button>
-              <button id="showcase-tab-shared" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-shared" tabindex="-1" data-target="tab-shared" data-i18n="showcase.shared.tab">
-                Shared Mailboxes OWA
-              </button>
-            </div>
-          </div>
-
-          <div class="showcase-content">
-            <!-- Panel 1: Reports -->
-            <div id="tab-reports" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-reports" tabindex="0">
-              <img src="assets/reports-demo.svg" data-language-image data-image-ru="assets/reports-demo.svg" data-image-en="assets/reports-demo-en.svg" data-i18n="showcase.reports.imageAlt" data-i18n-attr="alt" alt="Демонстрация отчётов активности и SLA в Jackdaw Mail" class="showcase-img">
-              <div class="showcase-meta">
-                <div>
-                  <strong data-i18n="showcase.reports.title">Аналитический дашборд:</strong>
-                  <span data-i18n="showcase.reports.description"> динамика писем, тепловая карта нагрузки по часам и расчёт среднего времени ответа с учётом рабочего графика.</span>
-                </div>
-                <div data-i18n="showcase.reports.meta">Экспорт в автономный HTML</div>
-              </div>
-            </div>
-
-            <!-- Panel 2: Live SLA -->
-            <div id="tab-sla" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-sla" tabindex="0" hidden>
-              <img src="assets/sla-control-demo.svg" data-language-image data-image-ru="assets/sla-control-demo.svg" data-image-en="assets/sla-control-demo-en.svg" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Демонстрация живого контроля SLA в боковой панели" class="showcase-img">
-              <div class="showcase-meta">
-                <div>
-                  <strong data-i18n="showcase.sla.title">Боковая панель живой очереди:</strong>
-                  <span data-i18n="showcase.sla.description"> персональные таймеры в рабочих минутах, индикаторы дедлайнов и кастомные напоминания.</span>
-                </div>
-                <div data-i18n="showcase.sla.meta">Автоматическое обновление</div>
-              </div>
-            </div>
-
-            <!-- Panel 3: Working Calendar -->
-            <div id="tab-calendar" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-calendar" tabindex="0" hidden>
-              <div style="background: var(--bg-subtle); border-radius: var(--radius-md); padding: 36px; border: 1px solid var(--border);">
-                <div style="max-width: 640px; margin: 0 auto; text-align: left;">
-                  <h3 data-i18n="showcase.calendar.title" style="font-size: 22px; font-weight: 750; margin-bottom: 12px; color: var(--text-primary);">Индивидуальный график рабочих смен</h3>
-                  <p data-i18n="showcase.calendar.description" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px;">
-                    В отличие от примитивных почтовых систем, считающих календарное астрономическое время, Jackdaw Mail точно знает рабочие часы вашей команды по каждому дню недели:
-                  </p>
-                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; font-size: 13px;">
-                    <div style="background: var(--bg-surface); border: 1px solid var(--border); padding: 14px; border-radius: 8px;">
-                      <div data-i18n="showcase.calendar.weekdays" style="font-weight: 700; color: var(--text-primary);">Пн – Чт</div>
-                      <div style="color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums;">09:00 – 18:00</div>
-                      <div data-i18n="showcase.calendar.weekdaysHours" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">9 рабочих часов</div>
-                    </div>
-                    <div style="background: var(--bg-surface); border: 1px solid var(--border); padding: 14px; border-radius: 8px;">
-                      <div data-i18n="showcase.calendar.friday" style="font-weight: 700; color: var(--text-primary);">Пятница</div>
-                      <div style="color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums;">09:00 – 16:45</div>
-                      <div data-i18n="showcase.calendar.fridayHours" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Короткий день</div>
-                    </div>
-                    <div style="background: var(--bg-surface); border: 1px solid var(--border); padding: 14px; border-radius: 8px;">
-                      <div data-i18n="showcase.calendar.weekend" style="font-weight: 700; color: var(--text-primary);">Сб – Вс</div>
-                      <div data-i18n="showcase.calendar.weekendLabel" style="color: var(--sage); font-weight: 600;">Выходные</div>
-                      <div data-i18n="showcase.calendar.weekendHours" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Таймер на паузе</div>
-                    </div>
-                  </div>
-                  <div style="margin-top: 24px; padding: 14px 18px; background: var(--bg-surface); border-radius: 8px; border-left: 3px solid var(--sage); font-size: 13px; color: var(--text-secondary);">
-                    <strong data-i18n="showcase.calendar.calloutTitle">Справедливый SLA:</strong>
-                    <span data-i18n="showcase.calendar.calloutDescription"> Письмо, пришедшее в пятницу в 17:50, не уйдёт в «просроченные» за субботу и воскресенье. Отсчёт продолжится строго в понедельник в 09:00.</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel 4: Shared Mailboxes -->
-            <div id="tab-shared" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-shared" tabindex="0" hidden>
-              <div style="background: var(--bg-subtle); border-radius: var(--radius-md); padding: 36px; border: 1px solid var(--border);">
-                <div style="max-width: 640px; margin: 0 auto; text-align: left;">
-                  <h3 data-i18n="showcase.shared.title" style="font-size: 22px; font-weight: 750; margin-bottom: 12px; color: var(--text-primary);">Настоящие OWA Shared Mailboxes</h3>
-                  <p data-i18n="showcase.shared.description" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 20px;">
-                    Работайте с общими ящиками поддержки, бухгалтерии или продаж без задержек и дублирования:
-                  </p>
-                  <ul style="display: flex; flex-direction: column; gap: 12px; font-size: 14px; color: var(--text-secondary); list-style: none;">
-                    <li style="display: flex; gap: 10px; align-items: flex-start;">
-                      <span style="color: var(--accent); font-weight: 800;">✓</span>
-                      <div><strong data-i18n="showcase.shared.categoriesTitle">Серверные категории OWA:</strong><span data-i18n="showcase.shared.categoriesDescription"> назначение цветовой категории синхронизируется между всеми операторами мгновенно.</span></div>
-                    </li>
-                    <li style="display: flex; gap: 10px; align-items: flex-start;">
-                      <span style="color: var(--accent); font-weight: 800;">✓</span>
-                      <div><strong data-i18n="showcase.shared.deleteTitle">Безопасное удаление:</strong><span data-i18n="showcase.shared.deleteDescription"> встроенный undo и корректное перемещение в корзину ящика.</span></div>
-                    </li>
-                    <li style="display: flex; gap: 10px; align-items: flex-start;">
-                      <span style="color: var(--accent); font-weight: 800;">✓</span>
-                      <div><strong data-i18n="showcase.shared.syncTitle">Фоновая дельта-синхронизация:</strong><span data-i18n="showcase.shared.syncDescription"> только изменённые цепочки сообщений, минимальный сетевой трафик.</span></div>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
+    <section id="sla" class="section container" aria-labelledby="sla-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="sla-title" class="section-title" data-i18n="sla.title">Как считается срок ответа</h2>
+          <p class="section-aside" data-i18n="sla.aside">Пример с настройками по умолчанию и включёнными напоминаниями</p>
         </div>
-      </div>
-    </section>
+        <div class="section-body">
+          <p data-i18n="sla.intro">Таймер идёт только в рабочие часы. По умолчанию это понедельник–пятница с 09:00 до 18:00, срок ответа — 30 рабочих минут. Напоминания включаются в настройках и по умолчанию приходят на 10-й, 20-й и 25-й минуте. Часы задаются отдельно для каждого дня недели.</p>
 
-    <!-- Key Features Grid -->
-    <section id="features" class="section">
-      <div class="container">
-        <div class="section-head">
-          <div class="kicker" data-i18n="features.kicker">Возможности</div>
-          <h2 class="section-title" data-i18n="features.title">Создан для ответственной переписки</h2>
-          <p class="section-desc" data-i18n="features.description">
-            Все инструменты, необходимые специалистам технической поддержки, аккаунт-менеджерам и командам корпоративного сервиса.
-          </p>
-        </div>
-
-        <div class="features-grid">
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.sla.title">Живая очередь SLA</h3>
-            <div class="feature-body">
-              <span data-i18n="features.sla.description">Визуальный контроль неотвеченных входящих в боковой панели. Цветовая индикация дедлайнов и оставшегося времени.</span>
-              <ul>
-                <li data-i18n="features.sla.item1">Индивидуальный норматив в рабочих минутах</li>
-                <li data-i18n="features.sla.item2">Напоминания до наступления дедлайна</li>
-                <li data-i18n="features.sla.item3">Исключение рассылок и писем в копии</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.analytics.title">Интерактивная аналитика</h3>
-            <div class="feature-body">
-              <span data-i18n="features.analytics.description">Полноценный встроенный дашборд для оценки скорости и ритма работы сотрудников без выгрузки данных на сторонние сервисы.</span>
-              <ul>
-                <li data-i18n="features.analytics.item1">Тепловая карта загрузки по часам</li>
-                <li data-i18n="features.analytics.item2">Процент вовремя обработанных обращений</li>
-                <li data-i18n="features.analytics.item3">Сортировка и фильтрация по категориям</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.calendar.title">Рабочий календарь</h3>
-            <div class="feature-body">
-              <span data-i18n="features.calendar.description">Точный алгоритм вычисления SLA: учитываются только фактические рабочие часы по каждому дню недели.</span>
-              <ul>
-                <li data-i18n="features.calendar.item1">Настройка начала и конца дня для каждого дня</li>
-                <li data-i18n="features.calendar.item2">Исключение нерабочего времени и выходных</li>
-                <li data-i18n="features.calendar.item3">Справедливые показатели скорости ответа</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.sync.title">Синхронизация OWA & EWS</h3>
-            <div class="feature-body">
-              <span data-i18n="features.sync.description">Нативная поддержка протоколов Microsoft Exchange: от личных профилей до сложных корпоративных Shared Mailboxes.</span>
-              <ul>
-                <li data-i18n="features.sync.item1">Мгновенная смена категорий и тегов</li>
-                <li data-i18n="features.sync.item2">Дерево папок с дельта-синхронизацией</li>
-                <li data-i18n="features.sync.item3">Поддержка IMAP, JMAP, CalDAV и CardDAV</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.export.title">Автономный HTML-экспорт</h3>
-            <div class="feature-body">
-              <span data-i18n="features.export.description">Сохраняйте детальные отчёты в виде самодостаточного HTML-файла для отправки руководству или клиентам.</span>
-              <ul>
-                <li data-i18n="features.export.item1">Все графики и таблицы встроены в один файл</li>
-                <li data-i18n="features.export.item2">Открывается в любом браузере офлайн</li>
-                <li data-i18n="features.export.item3">Никаких внешних ссылок и утечек данных</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="feature-item">
-            <div class="feature-icon-wrapper">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </div>
-            <h3 class="feature-title" data-i18n="features.privacy.title">Local-First безопасность</h3>
-            <div class="feature-body">
-              <span data-i18n="features.privacy.description">Прямое подключение к вашему почтовому серверу. Ни одно письмо или пароль не проходит через облако Jackdaw.</span>
-              <ul>
-                <li data-i18n="features.privacy.item1">Открытый исходный код (EUPL-1.2)</li>
-                <li data-i18n="features.privacy.item2">Локальная база данных SQLite</li>
-                <li data-i18n="features.privacy.item3">Полное соответствие требованиям 152-ФЗ и GDPR</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Раздел тарифов -->
-    <section id="plans" class="section plans-section">
-      <div class="container">
-        <div class="section-head">
-          <div class="kicker" data-i18n="plans.kicker">Jackdaw Pro</div>
-          <h2 class="section-title" data-i18n="plans.title">Срок ответа виден до того, как он станет проблемой</h2>
-          <p class="section-desc" data-i18n="plans.description">
-            Базовая почта остаётся бесплатной. Pro добавляет несколько почтовых аккаунтов, HTML-подписи, рабочий календарь, живой контроль SLA, напоминания и отчёты.
-          </p>
-        </div>
-
-        <div class="plans-grid">
-          <article class="plan-offer plan-offer-free">
-            <div class="plan-kicker" data-i18n="plans.free.label">Бесплатно</div>
-            <h3 data-i18n="plans.free.title">Jackdaw Mail</h3>
-            <p class="plan-summary" data-i18n="plans.free.description">Полноценная local-first почта для ежедневной работы.</p>
-            <ul class="plan-features">
-              <li data-i18n="plans.free.item1">Почта, календарь и контакты</li>
-              <li data-i18n="plans.free.item2">Exchange / OWA, IMAP и JMAP</li>
-              <li data-i18n="plans.free.item3">Локальный кэш и прямое подключение</li>
-              <li data-i18n="plans.free.item4">Один почтовый аккаунт</li>
-            </ul>
-            <a href="#downloads" class="btn btn-secondary plan-offer-action" data-i18n="plans.free.action">Скачать клиент</a>
-          </article>
-
-          <article class="plan-offer plan-offer-pro">
-            <div class="plan-offer-heading">
-              <div>
-                <div class="plan-kicker" data-i18n="plans.pro.label">Pro</div>
-                <h3 data-i18n="plans.monthly.title">Monthly</h3>
-              </div>
-              <span class="plan-tag" data-i18n="plans.monthly.tag">Гибко</span>
-            </div>
-            <div class="plan-price" data-i18n="plans.monthly.price">$9.99 / месяц</div>
-            <p class="plan-summary" data-i18n="plans.monthly.description">Помесячная подписка. После оплаты письмо с лицензионным ключом приходит на email покупки.</p>
-            <ul class="plan-features">
-              <li data-i18n="plans.monthly.item1">Интерактивные отчёты и HTML-экспорт</li>
-              <li data-i18n="plans.monthly.item2">Живая очередь SLA, рабочий календарь и напоминания</li>
-              <li data-i18n="plans.monthly.item3">Несколько почтовых аккаунтов и форматированные HTML-подписи</li>
-            </ul>
-            <a
-              href="#plans"
-              class="btn btn-primary plan-offer-action billing-checkout-link"
-              data-billing-plan="monthly"
-              aria-describedby="billing-monthly-status"
-              ><span data-i18n="plans.checkout">Купить и получить ключ</span></a>
-            <p class="billing-status" id="billing-monthly-status" data-billing-status="monthly">
-              <span data-i18n="billing.unavailable">Checkout будет доступен после активации магазина.</span>
-            </p>
-          </article>
-
-          <article class="plan-offer plan-offer-pro plan-offer-featured">
-            <div class="plan-offer-heading">
-              <div>
-                <div class="plan-kicker" data-i18n="plans.pro.label">Pro</div>
-                <h3 data-i18n="plans.yearly.title">Yearly</h3>
-              </div>
-              <span class="plan-tag" data-i18n="plans.yearly.tag">Выгоднее</span>
-            </div>
-            <div class="plan-price" data-i18n="plans.yearly.price">$79.99 / год</div>
-            <p class="plan-summary" data-i18n="plans.yearly.description">Годовая лицензия с ключом после оплаты и прозрачными условиями продления.</p>
-            <ul class="plan-features">
-                <li data-i18n="plans.yearly.item1">Все возможности Jackdaw Pro, включая аккаунты и подписи</li>
-              <li data-i18n="plans.yearly.item2">Условия продления показаны до оплаты</li>
-              <li data-i18n="plans.yearly.item3">Лицензия и подписка привязаны к покупке</li>
-            </ul>
-            <a
-              href="#plans"
-              class="btn btn-primary plan-offer-action billing-checkout-link"
-              data-billing-plan="yearly"
-              aria-describedby="billing-yearly-status"
-              ><span data-i18n="plans.checkout">Купить и получить ключ</span></a>
-            <p class="billing-status" id="billing-yearly-status" data-billing-status="yearly">
-              <span data-i18n="billing.unavailable">Checkout будет доступен после активации магазина.</span>
-            </p>
-          </article>
-        </div>
-
-        <p class="payment-note" data-i18n="plans.paymentNote">
-          Оплата проходит на стороне Lemon Squeezy. После оплаты магазин отправляет лицензионный ключ на email покупки. Jackdaw Mail не получает данные банковской карты.
-        </p>
-        <p class="trial-note" data-i18n="plans.trialNote">
-          Попробуйте все возможности Pro бесплатно 7 дней прямо в Jackdaw Mail. Карта не нужна: пробный период проверяется онлайн и привязывается к одному устройству.
-        </p>
-      </div>
-    </section>
-
-    <!-- Comparison Table Section -->
-    <section id="comparison" class="section">
-      <div class="container">
-        <div class="section-head">
-          <div class="kicker" data-i18n="comparison.kicker">Сравнение решений</div>
-          <h2 class="section-title" data-i18n="comparison.title">Честное сопоставление возможностей</h2>
-          <p class="section-desc" data-i18n="comparison.description">
-            Почему команды, работающие по стандартам SLA и корпоративным регламентам, выбирают Jackdaw Mail.
-          </p>
-        </div>
-
-        <div class="comparison-table-wrapper">
-          <table class="comparison-table">
-            <thead>
-              <tr>
-                <th style="width: 34%;" data-i18n="comparison.header.feature">Функциональность</th>
-                <th class="highlight-col" style="width: 24%;" data-i18n="comparison.header.jackdaw">Jackdaw Mail</th>
-                <th style="width: 21%;" data-i18n="comparison.header.outlook">Классический Outlook</th>
-                <th style="width: 21%;" data-i18n="comparison.header.owa">Веб-клиент OWA</th>
-              </tr>
-            </thead>
+          <table class="timeline">
+            <caption class="visually-hidden" data-i18n="sla.caption">Письмо пришло в пятницу в 17:45</caption>
             <tbody>
               <tr>
-                <td data-i18n="comparison.row1.feature">Живой таймер SLA в рабочих минутах</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row1.jackdaw">✓ Встроен в боковую панель</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row1.outlook">✕ Отсутствует</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row1.owa">✕ Отсутствует</span></td>
+                <th scope="row" data-i18n="sla.step1.time">пт 17:45</th>
+                <td data-i18n="sla.step1.text">Пришло письмо. Отсчёт начался.</td>
               </tr>
               <tr>
-                <td data-i18n="comparison.row2.feature">Расчёт SLA с учётом рабочего графика по дням недели</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row2.jackdaw">✓ Автоматически</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row2.outlook">✕ Нет</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row2.owa">✕ Нет</span></td>
+                <th scope="row" data-i18n="sla.step2.time">пт 17:55</th>
+                <td data-i18n="sla.step2.text">Первое напоминание: прошло 10 рабочих минут.</td>
               </tr>
               <tr>
-                <td data-i18n="comparison.row3.feature">Интерактивный дашборд и тепловая карта</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row3.jackdaw">✓ Встроено</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row3.outlook">✕ Требует сторонних надстроек</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row3.owa">✕ Нет</span></td>
+                <th scope="row" data-i18n="sla.step3.time">пт 18:00</th>
+                <td data-i18n="sla.step3.text">Рабочий день закончился на 15-й минуте. Выходные не считаются.</td>
               </tr>
               <tr>
-                <td data-i18n="comparison.row4.feature">Синхронизация OWA Shared Mailboxes</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row4.jackdaw">✓ Нативная, с категориями</span></td>
-                <td data-i18n="comparison.row4.outlook">Частичная (бывают задержки)</td>
-                <td data-i18n="comparison.row4.owa">✓ Нативная</td>
+                <th scope="row" data-i18n="sla.step4.time">пн 09:05</th>
+                <td data-i18n="sla.step4.text">Отсчёт продолжился с 15-й минуты. Напоминание: 20 минут.</td>
               </tr>
               <tr>
-                <td data-i18n="comparison.row5.feature">Экспорт отчёта в автономный HTML</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row5.jackdaw">✓ В 1 клик</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row5.outlook">✕ Нет</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row5.owa">✕ Нет</span></td>
+                <th scope="row" data-i18n="sla.step5.time">пн 09:10</th>
+                <td data-i18n="sla.step5.text">Последнее напоминание: 25 минут.</td>
               </tr>
               <tr>
-                <td data-i18n="comparison.row6.feature">Архитектура хранения данных</td>
-                <td class="highlight-col"><strong data-i18n="comparison.row6.jackdaw">Local-First (на устройстве)</strong></td>
-                <td data-i18n="comparison.row6.outlook">Local-First</td>
-                <td data-i18n="comparison.row6.owa">Только облако</td>
-              </tr>
-              <tr>
-                <td data-i18n="comparison.row7.feature">Лицензия и открытость кода</td>
-                <td class="highlight-col"><span class="badge-yes" data-i18n="comparison.row7.jackdaw">EUPL-1.2 Open Source</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row7.outlook">Proprietary</span></td>
-                <td><span class="badge-no" data-i18n="comparison.row7.owa">Proprietary</span></td>
+                <th scope="row" data-i18n="sla.step6.time">пн 09:15</th>
+                <td data-i18n="sla.step6.text">Срок ответа. Если ответа нет, письмо в очереди отмечается как просроченное.</td>
               </tr>
             </tbody>
           </table>
+
+          <p class="note" data-i18n="sla.reply">Ответом считается первое отправленное письмо в этой переписке. Если его нет на компьютере, время ответа берётся из отметки «отвечено» на сервере. Прочтение письма или назначение категории показывает, кто взял его в работу, но срок не сбрасывает.</p>
+          <p class="note" data-i18n="sla.offHours">Если письмо пришло в нерабочее время, отсчёт начнётся с началом рабочего дня. Если кто-то взял такое письмо в работу раньше, срок идёт от этого момента без пауз.</p>
+          <p class="note" data-i18n="sla.limits">Праздники и обеденный перерыв пока не учитываются: в графике один рабочий интервал на день.</p>
         </div>
       </div>
     </section>
 
-    <!-- Architecture & Privacy Section -->
-    <section id="architecture" class="section">
-      <div class="container">
-        <div class="section-head">
-          <div class="kicker" data-i18n="architecture.kicker">Архитектура и безопасность</div>
-          <h2 class="section-title" data-i18n="architecture.title">Никаких облачных посредников</h2>
-          <p class="section-desc" data-i18n="architecture.description">
-            В отличие от современных «умных» почтовых клиентов, мы не читаем ваши письма на сторонних серверах.
-          </p>
+    <section id="features" class="section container" aria-labelledby="features-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="features-title" class="section-title" data-i18n="features.title">Что есть в программе</h2>
+          <p class="section-aside" data-i18n="features.aside">Пункты с пометкой Pro работают по подписке или в пробный период.</p>
         </div>
-
-        <div class="arch-grid">
-          <div class="arch-card">
-            <h3 data-i18n="architecture.cardTitle" style="font-size: 20px; font-weight: 750; margin-bottom: 16px; color: var(--text-primary);">
-              Прямой защищённый контур
-            </h3>
-            <p data-i18n="architecture.cardDescription" style="font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
-              Jackdaw Mail подключается напрямую к вашему корпоративному серверу Microsoft Exchange (OWA/EWS), IMAP или CalDAV.
-            </p>
-            <p data-i18n="architecture.cardDetails" style="font-size: 14px; color: var(--text-secondary); line-height: 1.6;">
-              Все расчёты SLA, парсинг заголовков сообщений, построение графиков и хранение категорий происходят исключительно на вашем компьютере с помощью легковесной встроенной базы данных.
-            </p>
+        <dl class="feature-list">
+          <div class="feature-row">
+            <dt data-i18n="features.queue.title">Очередь неотвеченных · Pro</dt>
+            <dd data-i18n="features.queue.text">Живёт в правой панели рядом с открытым письмом. Можно исключить категории (например, «мы в копии»), решить, попадают ли в очередь письма без категории, и убрать письмо в архив контроля с возможностью вернуть его обратно.</dd>
           </div>
-
-          <div class="arch-flow">
-            <div><span class="tag" data-i18n="architecture.flow.computer">[Ваш компьютер]</span> <span data-i18n="architecture.flow.client">Jackdaw Mail Client</span></div>
-            <div style="padding-left: 20px; color: var(--text-muted);">│</div>
-            <div style="padding-left: 20px;">├── <span class="safe" data-i18n="architecture.flow.channel">Прямой TLS/HTTPS канал</span> ──────────► <span class="tag" data-i18n="architecture.flow.exchange">[Корпоративный Exchange / OWA]</span></div>
-            <div style="padding-left: 20px; color: var(--text-muted);">│</div>
-            <div style="padding-left: 20px;">└── <span class="safe" data-i18n="architecture.flow.database">Локальная БД SQLite</span> <span data-i18n="architecture.flow.cache">(зашифрованный кэш на диске)</span></div>
-            <div style="margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 14px; color: var(--text-muted);">
-              <span data-i18n="architecture.flow.noGateways">✕ Никаких сторонних API-шлюзов</span><br>
-              <span data-i18n="architecture.flow.noAccess">✕ Никакого доступа к содержимому писем</span><br>
-              <span data-i18n="architecture.flow.private">✓ Полная автономность и конфиденциальность</span>
-            </div>
+          <div class="feature-row">
+            <dt data-i18n="features.reports.title">Отчёты · Pro</dt>
+            <dd data-i18n="features.reports.text">Фильтры по периоду, ящику, папке и категориям. Активность по дням, тепловая карта по часам, время первого ответа, доля ответов в срок и таблица всех писем с сортировкой. Готовый отчёт сохраняется одним HTML-файлом.</dd>
           </div>
+          <div class="feature-row">
+            <dt data-i18n="features.owner.title">Кто отвечал · Pro</dt>
+            <dd data-i18n="features.owner.text">Результаты группируются по почтовым ящикам или по категориям с именами сотрудников.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.accounts.title">Несколько ящиков · Pro</dt>
+            <dd data-i18n="features.accounts.text">Второй и следующие аккаунты, общие ящики OWA с папками и серверными категориями. Категорию, которую поставил один сотрудник, остальные увидят после синхронизации своего клиента.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.signatures.title">Подписи · Pro</dt>
+            <dd data-i18n="features.signatures.text">HTML-подписи со ссылками и картинками.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.related.title">Связанные письма</dt>
+            <dd data-i18n="features.related.text">Кнопка в заголовке письма находит письма с тем же номером обращения, из той же переписки или с похожей темой. Поиск запускается только по нажатию и не тормозит открытие письма.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.mail.title">Почта</dt>
+            <dd data-i18n="features.mail.text">Папки, поиск, быстрые фильтры, категории и теги, флажки, архив, отмена удаления, сочетания клавиш для категорий, настраиваемая панель инструментов.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.calendar.title">Календарь и контакты</dt>
+            <dd data-i18n="features.calendar.text">События, приглашения и напоминания; личные адресные книги, группы и глобальный список адресов организации.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.protocols.title">Протоколы</dt>
+            <dd data-i18n="features.protocols.text">Exchange через OWA, EWS и ActiveSync; IMAP; календари и контакты через CalDAV и CardDAV. Microsoft Graph и JMAP — в тестовом режиме.</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="data" class="section container" aria-labelledby="data-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="data-title" class="section-title" data-i18n="data.title">Куда уходят данные</h2>
+          <p class="section-aside" data-i18n="data.aside">Сетевые подключения программы, кроме ваших собственных действий вроде открытия ссылок</p>
+        </div>
+        <div class="section-body">
+          <div class="table-scroll">
+            <table class="data-table stack">
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="data.header.host">Куда</th>
+                  <th scope="col" data-i18n="data.header.what">Что передаётся</th>
+                  <th scope="col" data-i18n="data.header.when">Когда</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row" data-i18n="data.mail.host">Ваш почтовый сервер</th>
+                  <td data-i18n="data.mail.what">Письма, папки, календари и контакты; логин и пароль для входа</td>
+                  <td data-i18n="data.mail.when">Во время работы</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="data.domain.host">Сайт вашего почтового домена</th>
+                  <td data-i18n="data.domain.what">Адрес почты — чтобы найти настройки сервера (autoconfig, autodiscover); значок сайта</td>
+                  <td data-i18n="data.domain.when">При добавлении аккаунта</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>v1.ispdb.net</code>, <code>1.1.1.1</code></th>
+                  <td data-i18n="data.lookup.what">Только домен почты — справочник настроек и DNS-запрос Cloudflare</td>
+                  <td data-i18n="data.lookup.when">При добавлении аккаунта</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="data.oauth.host">Microsoft, Google, Yahoo, AOL, Fastmail, Mail.ru</th>
+                  <td data-i18n="data.oauth.what">Вход через страницу провайдера (OAuth)</td>
+                  <td data-i18n="data.oauth.when">Если вы выбрали такой способ входа</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>license.jackdaw-mail.pro</code></th>
+                  <td data-i18n="data.license.what">Лицензионный ключ, случайный идентификатор устройства и строка User-Agent. Письма и адреса не передаются</td>
+                  <td data-i18n="data.license.when">При активации Pro или пробного периода, затем каждые 15 минут</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>errorlog.jackdaw.app</code></th>
+                  <td data-i18n="data.errors.what">Отчёт об ошибке: текст ошибки и технические подробности сбоя</td>
+                  <td data-i18n="data.errors.when">Когда в программе происходит ошибка</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>github.com</code></th>
+                  <td data-i18n="data.updates.what">Запрос новой версии и загрузка обновления</td>
+                  <td data-i18n="data.updates.when">При проверке обновлений</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>keys.openpgp.org</code></th>
+                  <td data-i18n="data.pgp.what">Адрес получателя</td>
+                  <td data-i18n="data.pgp.when">Только когда вы ищете ключ шифрования</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note" data-i18n="data.storage">Письма, аккаунты, календари и контакты хранятся в локальных базах SQLite в папке данных программы. Между программой и почтовым сервером посредников нет, отчёты и сроки ответа считаются на вашем компьютере.</p>
+          <p class="note" data-i18n="data.hidden">Модули видеовстреч и чатов по умолчанию скрыты. Если их включить, они подключаются к серверам выбранного сервиса.</p>
         </div>
       </div>
     </section>
 
-    <!-- Downloads Section -->
-    <section id="downloads" class="download-section container">
-      <div style="text-align: center; max-width: 600px; margin: 0 auto;">
-        <div class="kicker" data-i18n="downloads.kicker">Загрузки</div>
-        <h2 class="section-title" data-i18n="downloads.title">Установите Jackdaw Mail</h2>
-        <p class="section-desc" data-i18n="downloads.description">
-          Доступно для macOS, Windows и Linux. Бесплатные базовые возможности и прозрачное Pro-лицензирование.
-        </p>
-      </div>
-
-      <div class="download-grid">
-        <!-- macOS -->
-        <div id="card-macos" class="download-card">
-          <div>
-            <div class="os-head">
-              <span class="os-name">macOS</span>
-              <span class="os-badge" data-i18n="downloads.macos.badge">Рекомендуется</span>
-            </div>
-            <div style="margin: 12px 0 6px; font-weight: 600; font-size: 14px; color: var(--text-primary);">
-              <span data-i18n="downloads.macos.platform">Apple Silicon & Intel</span>
-            </div>
-            <div class="os-details">
-              <span data-i18n="downloads.macos.description">macOS 12 Monterey и новее. Готовый `.dmg` с поддержкой автоматического OTA-обновления.</span>
-            </div>
-          </div>
-          <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="btn btn-primary">
-            <span data-i18n="downloads.macos.action">Скачать DMG</span>
-          </a>
+    <section id="plans" class="section container" aria-labelledby="plans-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="plans-title" class="section-title" data-i18n="plans.title">Цены</h2>
+          <p class="section-aside" data-i18n="plans.aside">Почта для одного ящика бесплатна без ограничений по времени.</p>
         </div>
+        <div class="section-body">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col"><span class="visually-hidden" data-i18n="plans.header.feature">Возможность</span></th>
+                  <th scope="col" data-i18n="plans.header.free">Бесплатно</th>
+                  <th scope="col">Pro</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.mail">Почта, календарь, контакты</th>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.accounts">Почтовые аккаунты</th>
+                  <td class="yes" data-i18n="plans.accounts.free">один</td>
+                  <td class="yes" data-i18n="plans.accounts.pro">несколько, включая общие ящики</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.queue">Очередь неотвеченных и напоминания</th>
+                  <td class="no" data-i18n="plans.no">нет</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.schedule">Рабочий график по дням недели</th>
+                  <td class="no" data-i18n="plans.no">нет</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.reports">Отчёты и сохранение в HTML</th>
+                  <td class="no" data-i18n="plans.no">нет</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.signatures">HTML-подписи</th>
+                  <td class="no" data-i18n="plans.no">нет</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-        <!-- Windows -->
-        <div id="card-windows" class="download-card">
-          <div>
-            <div class="os-head">
-              <span class="os-name">Windows</span>
-              <span class="os-badge" data-i18n="downloads.windows.badge">x64</span>
+          <div class="checkout">
+            <div class="checkout-option">
+              <h3 data-i18n="plans.monthly.title">Pro помесячно</h3>
+              <div class="plan-price" data-i18n="plans.monthly.price">$9.99 в месяц</div>
+              <p class="plan-price-note" data-i18n="plans.monthly.note">Оплата раз в месяц.</p>
+              <a
+                href="#plans"
+                class="btn btn-primary billing-checkout-link"
+                data-billing-plan="monthly"
+                aria-describedby="billing-monthly-status"
+                ><span data-i18n="plans.checkout">Купить ключ</span></a>
+              <p class="billing-status" id="billing-monthly-status" data-billing-status="monthly">
+                <span data-i18n="billing.unavailable">Ссылка на покупку ещё не настроена.</span>
+              </p>
             </div>
-            <div style="margin: 12px 0 6px; font-weight: 600; font-size: 14px; color: var(--text-primary);">
-              <span data-i18n="downloads.windows.platform">Windows 10 / 11</span>
-            </div>
-            <div class="os-details">
-              <span data-i18n="downloads.windows.description">Стандартный инсталлятор `.exe` со встроенным механизмом фонового обновления.</span>
+            <div class="checkout-option">
+              <h3 data-i18n="plans.yearly.title">Pro на год</h3>
+              <div class="plan-price" data-i18n="plans.yearly.price">$79.99 в год</div>
+              <p class="plan-price-note" data-i18n="plans.yearly.note">$6.67 в месяц — на треть дешевле помесячной оплаты.</p>
+              <a
+                href="#plans"
+                class="btn btn-primary billing-checkout-link"
+                data-billing-plan="yearly"
+                aria-describedby="billing-yearly-status"
+                ><span data-i18n="plans.checkout">Купить ключ</span></a>
+              <p class="billing-status" id="billing-yearly-status" data-billing-status="yearly">
+                <span data-i18n="billing.unavailable">Ссылка на покупку ещё не настроена.</span>
+              </p>
             </div>
           </div>
-          <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="btn btn-secondary">
-            <span data-i18n="downloads.windows.action">Скачать EXE</span>
-          </a>
-        </div>
 
-        <!-- Linux -->
-        <div id="card-linux" class="download-card">
-          <div>
-            <div class="os-head">
-              <span class="os-name">Linux</span>
-              <span class="os-badge" data-i18n="downloads.linux.badge">Universal</span>
-            </div>
-            <div style="margin: 12px 0 6px; font-weight: 600; font-size: 14px; color: var(--text-primary);">
-              <span data-i18n="downloads.linux.platform">AppImage / DEB</span>
-            </div>
-            <div class="os-details">
-              <span data-i18n="downloads.linux.description">Подходит для большинства дистрибутивов (Ubuntu, Debian, Fedora, Arch).</span>
-            </div>
-          </div>
-          <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="btn btn-secondary">
-            <span data-i18n="downloads.linux.action">Скачать пакеты</span>
-          </a>
+          <p class="note" data-i18n="plans.trialNote">Pro можно бесплатно попробовать 7 дней: пробный период включается в самой программе, карта не нужна. Пока он идёт, программе нужен доступ в интернет — пробный период проверяется онлайн.</p>
+          <p class="note" data-i18n="plans.paymentNote">Оплата проходит через Lemon Squeezy, ключ приходит на почту, указанную при покупке. Данные карты Jackdaw Mail не получает. Когда подписка закончится, подключённые аккаунты останутся — отключатся только функции Pro.</p>
         </div>
       </div>
     </section>
 
-    <!-- FAQ Section -->
-    <section id="faq" class="section">
-      <div class="container">
-        <div class="section-head">
-          <div class="kicker" data-i18n="faq.kicker">Вопросы и ответы</div>
-          <h2 class="section-title" data-i18n="faq.title">Часто задаваемые вопросы</h2>
+    <section id="downloads" class="section container" aria-labelledby="downloads-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="downloads-title" class="section-title" data-i18n="downloads.title">Скачать</h2>
+          <p class="section-aside" data-i18n="downloads.aside">Сборки публикуются на GitHub.</p>
         </div>
+        <div class="section-body">
+          <div class="table-scroll">
+            <table class="data-table download-table stack">
+              <thead>
+                <tr>
+                  <th scope="col" data-i18n="downloads.header.system">Система</th>
+                  <th scope="col" data-i18n="downloads.header.file">Файл</th>
+                  <th scope="col" data-i18n="downloads.header.requirements">Требования</th>
+                  <th scope="col"><span class="visually-hidden" data-i18n="downloads.header.link">Ссылка</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="card-macos">
+                  <th scope="row">macOS</th>
+                  <td><code>.dmg</code></td>
+                  <td data-i18n="downloads.macos.requirements">macOS 12 и новее, Apple Silicon и Intel</td>
+                  <td><a href="https://github.com/Uugsx/jackdaw-mail/releases" data-i18n="downloads.action">Скачать</a></td>
+                </tr>
+                <tr id="card-windows">
+                  <th scope="row">Windows</th>
+                  <td><code>.exe</code>, <code>.msi</code></td>
+                  <td data-i18n="downloads.windows.requirements">Windows 10 и 11, 64-бит</td>
+                  <td><a href="https://github.com/Uugsx/jackdaw-mail/releases" data-i18n="downloads.action">Скачать</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="plain-list note">
+            <li data-i18n="downloads.note.prerelease">Сейчас выходят только предварительные сборки, версии с пометкой -dev обновляются часто.</li>
+            <li data-i18n="downloads.note.macos">Сборка для macOS не заверена Apple. При первом запуске macOS её заблокирует — разрешите запуск в системных настройках, в разделе безопасности.</li>
+            <li data-i18n="downloads.note.windows">Установщик для Windows не подписан, поэтому SmartScreen может показать предупреждение: нажмите «Подробнее», затем «Выполнить в любом случае».</li>
+            <li data-i18n="downloads.note.linux">Готовых сборок для Linux пока нет. Версии для iOS и Android в этом репозитории ещё в работе.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
 
+    <section id="faq" class="section container" aria-labelledby="faq-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="faq-title" class="section-title" data-i18n="faq.title">Вопросы</h2>
+        </div>
         <div class="faq-list">
           <details class="faq-item">
-            <summary class="faq-question">
-              <span data-i18n="faq.q1">Как именно рассчитывается норматив SLA и время первого ответа?</span>
-              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div class="faq-answer">
-              <span data-i18n="faq.a1">Время считается от момента поступления входящего письма до первого подтверждённого ответа сотрудника (найденного на сервере или в связанной переписке). В расчёт попадают строго минуты из настроенного рабочего календаря: нерабочее время, перерывы и выходные дни не увеличивают время реакции.</span>
-            </div>
+            <summary class="faq-question"><span data-i18n="faq.q1">Что считается ответом?</span></summary>
+            <div class="faq-answer" data-i18n="faq.a1">Первое отправленное письмо в этой переписке. Если его нет на компьютере, время ответа берётся из отметки «отвечено» на сервере. Ответ, ушедший вне рабочего времени, отчёт помечает отдельно и не учитывает в среднем времени.</div>
           </details>
-
           <details class="faq-item">
-            <summary class="faq-question">
-              <span data-i18n="faq.q2">Поддерживаются ли корпоративные общие ящики (Shared Mailboxes)?</span>
-              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div class="faq-answer">
-              <span data-i18n="faq.a2">Да, поддержка OWA Shared Mailboxes является одной из ключевых фич Jackdaw Mail. Приложение синхронизирует папки общего ящика, серверные категории и уведомления так же быстро и нативно, как и персональную почту.</span>
-            </div>
+            <summary class="faq-question"><span data-i18n="faq.q2">Сбрасывается ли срок, если письмо прочитали?</span></summary>
+            <div class="faq-answer" data-i18n="faq.a2">Нет. Прочтение и категория с именем сотрудника показывают, кто взял письмо в работу, но срок по-прежнему считается от получения письма.</div>
           </details>
-
           <details class="faq-item">
-            <summary class="faq-question">
-              <span data-i18n="faq.q3">Где хранятся мои пароли и переписка?</span>
-              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div class="faq-answer">
-              <span data-i18n="faq.a3">Исключительно на вашем локальном компьютере. Пароли хранятся в защищённом системном хранилище ОС (Keychain на macOS, Credential Manager на Windows), а кэш писем — в локальной базе данных. Данные никогда не передаются на сторонние серверы.</span>
-            </div>
+            <summary class="faq-question"><span data-i18n="faq.q3">Где хранятся пароли и почта?</span></summary>
+            <div class="faq-answer" data-i18n="faq.a3">На вашем компьютере, в папке данных программы. На серверы Jackdaw пароли и письма не отправляются.</div>
           </details>
-
           <details class="faq-item">
-            <summary class="faq-question">
-              <span data-i18n="faq.q4">Что входит в базовую бесплатную версию, а что в Pro?</span>
-              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div class="faq-answer">
-              <span data-i18n="faq.a4">Базовая версия включает полноценный почтовый клиент, календарь, адресную книгу, поддержку OWA и один почтовый аккаунт. Jackdaw Mail Pro добавляет дополнительные аккаунты, форматированные HTML-подписи, интерактивные SLA-отчёты, живую очередь контроля в боковой панели, гибкий рабочий график по дням недели и экспорт отчётов в автономный HTML.</span>
-            </div>
+            <summary class="faq-question"><span data-i18n="faq.q4">Что будет, когда закончится Pro?</span></summary>
+            <div class="faq-answer" data-i18n="faq.a4">Почта продолжит работать, а подключённые аккаунты останутся. Добавить новый аккаунт будет нельзя, отчёты, очередь неотвеченных и HTML-подписи отключатся до продления.</div>
           </details>
-
           <details class="faq-item">
-            <summary class="faq-question">
-              <span data-i18n="faq.q5">Как работает автообновление (OTA)?</span>
-              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div class="faq-answer">
-              <span data-i18n="faq.a5">Jackdaw Mail проверяет появление новых релизов на GitHub Releases. При выходе обновления приложение скачивает его в фоне и предлагает обновиться в один клик с сохранением всех настроек.</span>
-            </div>
+            <summary class="faq-question"><span data-i18n="faq.q5">Как обновляется программа?</span></summary>
+            <div class="faq-answer" data-i18n="faq.a5">Программа сама проверяет новые версии на GitHub и сообщает о них. На macOS обновление скачивается автоматически, на Windows — по кнопке. Установка начинается после вашего подтверждения, затем программа перезапускается. Настройки и почта сохраняются.</div>
           </details>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- Footer -->
   <footer class="footer">
-    <div class="container">
-      <div class="footer-top">
-        <div>
-          <div class="brand">
-            <img src="assets/icon-jackdaw-github.png" data-i18n="brand.logoAlt" data-i18n-attr="alt" alt="Jackdaw Logo" class="brand-icon">
-            <span>Jackdaw Mail</span>
-          </div>
-          <p class="footer-brand-desc" data-i18n="footer.description">
-            Специализированный desktop-клиент для Exchange, OWA и EWS с живым контролем SLA и локальной приватностью.
-          </p>
-        </div>
-
-        <div class="footer-links-group">
-          <div class="footer-col">
-            <div class="footer-col-title" data-i18n="footer.product">Продукт</div>
-            <a href="#features" class="footer-link" data-i18n="nav.features">Возможности</a>
-            <a href="#showcase" class="footer-link" data-i18n="nav.showcase">SLA и отчёты</a>
-            <a href="#downloads" class="footer-link" data-i18n="nav.downloads">Загрузки</a>
-            <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="footer-link" target="_blank" rel="noopener" data-i18n="footer.releases">История версий</a>
-          </div>
-
-          <div class="footer-col">
-            <div class="footer-col-title" data-i18n="footer.development">Разработка</div>
-            <a href="https://github.com/Uugsx/jackdaw-mail" class="footer-link" target="_blank" rel="noopener" data-i18n="footer.github">GitHub Репозиторий</a>
-            <a href="https://github.com/Uugsx/jackdaw-mail/issues" class="footer-link" target="_blank" rel="noopener" data-i18n="footer.issue">Сообщить об ошибке</a>
-            <a href="https://github.com/Uugsx/jackdaw-mail/blob/main/LICENSE" class="footer-link" target="_blank" rel="noopener" data-i18n="footer.license">Лицензия EUPL-1.2</a>
-            <a href="https://github.com/Uugsx" class="footer-link" target="_blank" rel="noopener" data-i18n="footer.author">Автор @Uugsx</a>
-          </div>
-        </div>
-      </div>
-
-      <div class="footer-bottom">
-        <div data-i18n="footer.copyright">© 2026 Jackdaw Mail. Открытый исходный код под лицензией EUPL-1.2.</div>
-        <div>Сайт: <a href="https://jackdaw-mail.pro" style="color: var(--accent);">jackdaw-mail.pro</a></div>
-      </div>
+    <div class="container footer-inner">
+      <div data-i18n="footer.copyright">© 2026 Jackdaw Mail</div>
+      <nav class="footer-links" data-i18n="footer.label" data-i18n-attr="aria-label" aria-label="Ссылки проекта">
+        <a href="https://github.com/Uugsx/jackdaw-mail" target="_blank" rel="noopener noreferrer" data-i18n="footer.github">Исходный код</a>
+        <a href="https://github.com/Uugsx/jackdaw-mail/releases" target="_blank" rel="noopener noreferrer" data-i18n="footer.releases">История версий</a>
+        <a href="https://github.com/Uugsx/jackdaw-mail/issues" target="_blank" rel="noopener noreferrer" data-i18n="footer.issue">Сообщить об ошибке</a>
+        <a href="https://github.com/Uugsx/jackdaw-mail/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="footer.license">Лицензия</a>
+        <a href="https://github.com/Uugsx" target="_blank" rel="noopener noreferrer" data-i18n="footer.author">Автор — @Uugsx</a>
+      </nav>
+      <p class="footer-credit" data-i18n="footer.credit">Основано на открытом коде Ben Bucksch, Beonex GmbH и других участников.</p>
     </div>
   </footer>
 
