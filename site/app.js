@@ -12,6 +12,8 @@
     "page.twitterDescription": "Interactive reports, live SLA control, OWA Shared Mailboxes sync and local privacy.",
     "brand.logoAlt": "Jackdaw logo",
     "nav.label": "Main navigation",
+    "nav.menu": "Open navigation menu",
+    "nav.close": "Close navigation menu",
     "nav.features": "Features",
     "nav.showcase": "SLA & reports",
     "nav.plans": "Plans",
@@ -111,31 +113,37 @@
     "features.privacy.item3": "Designed for 152-FZ and GDPR requirements",
     "plans.kicker": "Jackdaw Pro",
     "plans.title": "See the response deadline before it becomes a problem",
-    "plans.description": "Core email remains free. Pro adds a working calendar, live SLA queue, reminders and reports for teams where response time must be measurable.",
+    "plans.description": "Core email remains free. Pro adds multiple mail accounts, formatted HTML signatures, a working calendar, live SLA control, reminders and reports.",
     "plans.free.label": "Free",
     "plans.free.title": "Jackdaw Mail",
     "plans.free.description": "A complete local-first mail client for everyday work.",
     "plans.free.item1": "Mail, calendar and contacts",
     "plans.free.item2": "Exchange / OWA, IMAP and JMAP",
     "plans.free.item3": "Local cache and direct connection",
+    "plans.free.item4": "One mail account",
     "plans.free.action": "Download client",
     "plans.pro.label": "Pro",
     "plans.monthly.title": "Monthly",
     "plans.monthly.tag": "Flexible",
-    "plans.price": "Price shown at checkout",
-    "plans.monthly.description": "Monthly billing with automatic renewal and subscription management.",
+    "plans.monthly.price": "$9.99 / month",
+    "plans.monthly.description": "Monthly subscription. After payment, the purchase email receives the license key.",
     "plans.monthly.item1": "Interactive reports and HTML export",
-    "plans.monthly.item2": "Live SLA queue in the sidebar",
-    "plans.monthly.item3": "Working calendar and reminders",
+    "plans.monthly.item2": "Live SLA queue, working calendar and reminders",
+    "plans.monthly.item3": "Multiple mail accounts and formatted HTML signatures",
     "plans.yearly.title": "Yearly",
     "plans.yearly.tag": "Best value",
-    "plans.yearly.description": "One annual payment for a team already working to SLA.",
-    "plans.yearly.item1": "Everything in Jackdaw Pro",
+    "plans.yearly.price": "$79.99 / year",
+    "plans.yearly.description": "An annual license with a key after payment and clear renewal terms.",
+    "plans.yearly.item1": "Everything in Jackdaw Pro, including accounts and signatures",
     "plans.yearly.item2": "Renewal terms shown before payment",
     "plans.yearly.item3": "License and subscription tied to the purchase",
-    "plans.checkout": "Open checkout",
-    "plans.paymentNote": "Payment is handled by Lemon Squeezy. Depending on country and device, checkout shows available methods including Visa, Mastercard, PayPal and Apple Pay. Jackdaw Mail never receives your card details.",
-    "billing.unavailable": "Checkout will be available after the store is activated.",
+    "plans.checkout": "Buy and get a key",
+    "plans.paymentNote": "Payment is handled by Lemon Squeezy. The store sends the license key to the purchase email after payment. Jackdaw Mail never receives your card details.",
+    "plans.trialNote": "Try every Pro feature free for 7 days inside Jackdaw Mail. No card is required: the trial is checked online and tied to one device.",
+    "billing.unavailable": "The purchase link is not configured yet.",
+    "billing.storeUnavailable": "The payment store is not connected yet.",
+    "billing.checking": "Checking the payment store…",
+    "billing.network": "The payment status is temporarily unavailable.",
     "comparison.kicker": "Solution comparison",
     "comparison.title": "A straightforward capability comparison",
     "comparison.description": "Why teams working to SLA standards and corporate procedures choose Jackdaw Mail.",
@@ -210,7 +218,7 @@
     "faq.q3": "Where are my passwords and conversations stored?",
     "faq.a3": "Only on your local computer. Passwords are stored in the operating system's secure storage (Keychain on macOS, Credential Manager on Windows), while the mail cache stays in a local database. Data is never sent to third-party servers.",
     "faq.q4": "What is included in the free version and what is in Pro?",
-    "faq.a4": "The free version includes the full mail client, calendar, address book and OWA support. Jackdaw Mail Pro adds interactive SLA reports, a live sidebar control queue, flexible weekday working hours and standalone HTML report export.",
+    "faq.a4": "The free version includes the full mail client, calendar, address book, OWA support and one mail account. Jackdaw Mail Pro adds additional accounts, formatted HTML signatures, interactive SLA reports, a live sidebar control queue, flexible weekday working hours and standalone HTML report export.",
     "faq.q5": "How does automatic updating (OTA) work?",
     "faq.a5": "Jackdaw Mail checks GitHub Releases for new versions. When an update is available, the app downloads it in the background and offers a one-click update while keeping your settings.",
     "footer.description": "A specialized desktop client for Exchange, OWA and EWS with live SLA control and local privacy.",
@@ -225,12 +233,17 @@
   };
 
   const RU_DYNAMIC_TRANSLATIONS = {
+    "nav.menu": "Открыть меню",
+    "nav.close": "Закрыть меню",
     "theme.light": "Включить светлую тему",
     "theme.dark": "Включить тёмную тему",
-    "billing.unavailable": "Checkout будет доступен после активации магазина.",
-    "billing.available": "Откроется защищённая страница Lemon Squeezy.",
-    "billing.unavailableTitle": "Checkout будет доступен после активации магазина.",
-    "billing.availableTitle": "Откроется защищённая страница Lemon Squeezy.",
+    "billing.unavailable": "Ссылка на покупку ещё не настроена.",
+    "billing.storeUnavailable": "Платёжный магазин ещё не подключён.",
+    "billing.checking": "Проверяем состояние платёжного магазина…",
+    "billing.network": "Статус платёжного магазина временно недоступен.",
+    "billing.available": "Откроется защищённая страница покупки.",
+    "billing.unavailableTitle": "Ссылка на покупку ещё не настроена.",
+    "billing.availableTitle": "Откроется защищённая страница покупки.",
     "downloads.hero.mac": "Скачать для macOS",
     "downloads.hero.windows": "Скачать для Windows",
     "downloads.hero.linux": "Скачать для Linux",
@@ -242,11 +255,16 @@
   };
 
   const EN_DYNAMIC_TRANSLATIONS = {
+    "nav.menu": "Open navigation menu",
+    "nav.close": "Close navigation menu",
     "theme.light": "Switch to light theme",
     "theme.dark": "Switch to dark theme",
-    "billing.available": "A secure Lemon Squeezy checkout will open.",
-    "billing.unavailableTitle": "Checkout will be available after the store is activated.",
-    "billing.availableTitle": "A secure Lemon Squeezy checkout will open.",
+    "billing.available": "A secure purchase page will open.",
+    "billing.unavailableTitle": "The purchase link is not configured yet.",
+    "billing.availableTitle": "A secure purchase page will open.",
+    "billing.storeUnavailable": "The payment store is not connected yet.",
+    "billing.checking": "Checking the payment store…",
+    "billing.network": "The payment status is temporarily unavailable.",
     "downloads.hero.mac": "Download for macOS",
     "downloads.hero.windows": "Download for Windows",
     "downloads.hero.linux": "Download for Linux",
@@ -279,6 +297,15 @@
     return RU_DYNAMIC_TRANSLATIONS[key] || key;
   }
 
+  function updateLocalizedShowcaseImages() {
+    document.querySelectorAll('[data-language-image]').forEach((element) => {
+      const imageSource = element.getAttribute(`data-image-${currentLanguage}`);
+      if (imageSource && element.getAttribute('src') !== imageSource) {
+        element.setAttribute('src', imageSource);
+      }
+    });
+  }
+
   function applyLanguage(language) {
     if (language !== 'ru' && language !== 'en') return;
     currentLanguage = language;
@@ -308,6 +335,8 @@
       option.setAttribute('aria-pressed', String(isActive));
     });
 
+    updateLocalizedShowcaseImages();
+
     try {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     } catch (_error) {
@@ -330,12 +359,22 @@
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
 
   function getSavedTheme() {
-    return localStorage.getItem('jackdaw-theme') || (prefersDark.matches ? 'dark' : 'light');
+    try {
+      const saved = localStorage.getItem('jackdaw-theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch (_error) {
+      // Storage can be disabled without making the theme switch unusable.
+    }
+    return prefersDark.matches ? 'dark' : 'light';
   }
 
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('jackdaw-theme', theme);
+    try {
+      localStorage.setItem('jackdaw-theme', theme);
+    } catch (_error) {
+      // The selected theme remains active for the current page.
+    }
     if (themeToggle) {
       themeToggle.setAttribute('aria-label', getLocalized(theme === 'dark' ? 'theme.light' : 'theme.dark'));
       themeToggle.innerHTML = theme === 'dark'
@@ -356,8 +395,44 @@
   }
 
   prefersDark.addEventListener('change', (e) => {
-    if (!localStorage.getItem('jackdaw-theme')) {
+    let savedTheme = null;
+    try {
+      savedTheme = localStorage.getItem('jackdaw-theme');
+    } catch (_error) {
+      savedTheme = null;
+    }
+    if (!savedTheme) {
       applyTheme(e.matches ? 'dark' : 'light');
+    }
+  });
+
+  // Мобильная навигация остаётся клавиатурно доступной и не меняет разметку
+  // десктопного меню.
+  const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+  const siteNav = document.getElementById('site-nav');
+
+  function setMobileMenu(open) {
+    if (!mobileMenuToggle || !siteNav) return;
+    mobileMenuToggle.setAttribute('aria-expanded', String(open));
+    mobileMenuToggle.setAttribute('aria-label', getLocalized(open ? 'nav.close' : 'nav.menu'));
+    siteNav.classList.toggle('is-open', open);
+  }
+
+  mobileMenuToggle?.addEventListener('click', () => {
+    setMobileMenu(mobileMenuToggle.getAttribute('aria-expanded') !== 'true');
+  });
+  siteNav?.querySelectorAll('.nav-link').forEach((link) => {
+    link.addEventListener('click', () => setMobileMenu(false));
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setMobileMenu(false);
+  });
+  languageListeners.push(() => {
+    if (mobileMenuToggle) {
+      mobileMenuToggle.setAttribute(
+        'aria-label',
+        getLocalized(mobileMenuToggle.getAttribute('aria-expanded') === 'true' ? 'nav.close' : 'nav.menu'),
+      );
     }
   });
 
@@ -366,6 +441,11 @@
     && window.JACKDAW_BILLING_CONFIG.checkout
     ? window.JACKDAW_BILLING_CONFIG.checkout
     : {};
+  const billingApiBaseUrl = window.JACKDAW_BILLING_CONFIG
+    && typeof window.JACKDAW_BILLING_CONFIG.apiBaseUrl === 'string'
+    ? window.JACKDAW_BILLING_CONFIG.apiBaseUrl
+    : '';
+  const ownBillingHosts = new Set(['jackdaw-mail.pro', 'www.jackdaw-mail.pro', 'license.jackdaw-mail.pro']);
   const billingStates = [];
 
   function validCheckoutURL(value) {
@@ -373,8 +453,11 @@
     try {
       const url = new URL(value);
       if (url.protocol !== 'https:') return null;
-      if (!url.hostname.endsWith('.lemonsqueezy.com')) return null;
-      if (!/^\/checkout\/buy\/[^/]+\/?$/.test(url.pathname)) return null;
+      const isLemonSqueezy = url.hostname.endsWith('.lemonsqueezy.com')
+        && /^\/checkout\/buy\/[^/]+\/?$/.test(url.pathname);
+      const isOwnLicenseCheckout = ownBillingHosts.has(url.hostname)
+        && /^\/buy\/(monthly|yearly)\/?$/.test(url.pathname);
+      if (!isLemonSqueezy && !isOwnLicenseCheckout) return null;
       return url.toString();
     } catch (_error) {
       return null;
@@ -382,61 +465,147 @@
   }
 
   function updateBillingCopy() {
-    billingStates.forEach(({ link, status, available }) => {
-      link.setAttribute('title', getLocalized(available ? 'billing.availableTitle' : 'billing.unavailableTitle'));
+    billingStates.forEach(({ link, status, state }) => {
+      const available = state === 'available';
+      const statusKey = state === 'available'
+        ? 'billing.available'
+        : state === 'checking'
+          ? 'billing.checking'
+          : state === 'store-unavailable'
+            ? 'billing.storeUnavailable'
+            : state === 'network-error'
+              ? 'billing.network'
+              : 'billing.unavailable';
+      const titleKey = state === 'available' ? 'billing.availableTitle' : statusKey;
+      link.setAttribute('title', getLocalized(titleKey));
       if (status) {
-        status.textContent = getLocalized(available ? 'billing.available' : 'billing.unavailable');
+        status.textContent = getLocalized(statusKey);
       }
     });
+  }
+
+  function setBillingState(item, state) {
+    item.state = state;
+    const available = state === 'available';
+    linkState(item, available);
+    updateBillingCopy();
+  }
+
+  function linkState(item, available) {
+    const { link, checkoutURL } = item;
+    link.classList.toggle('is-unavailable', !available);
+    if (available) {
+      link.setAttribute('href', checkoutURL);
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+      link.removeAttribute('aria-disabled');
+      link.removeAttribute('tabindex');
+    } else {
+      link.setAttribute('href', '#plans');
+      link.setAttribute('aria-disabled', 'true');
+      link.setAttribute('tabindex', '-1');
+    }
+  }
+
+  function validBillingAPIURL(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || !ownBillingHosts.has(url.hostname)) return null;
+      return url.toString().replace(/\/$/, '');
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function resolveOwnCheckoutAvailability() {
+    const pending = billingStates.filter((item) => item.state === 'checking');
+    if (!pending.length) return;
+    const apiURL = validBillingAPIURL(billingApiBaseUrl);
+    if (!apiURL) {
+      pending.forEach((item) => setBillingState(item, 'network-error'));
+      return;
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeout = window.setTimeout(() => controller?.abort(), 5000);
+    try {
+      const response = await fetch(`${apiURL}/v1/public-config`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller?.signal,
+      });
+      const config = await response.json().catch(() => null);
+      if (!response.ok || !config || typeof config.checkout !== 'object') throw new Error('billing-config');
+      pending.forEach((item) => {
+        const configured = config.checkout?.[item.plan]?.configured === true;
+        setBillingState(item, configured ? 'available' : 'store-unavailable');
+      });
+    } catch (_error) {
+      pending.forEach((item) => setBillingState(item, 'network-error'));
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   billingCheckoutLinks.forEach((link) => {
     const plan = link.getAttribute('data-billing-plan');
     const checkoutURL = validCheckoutURL(billingCheckout[plan]);
     const status = document.getElementById(`billing-${plan}-status`);
-    billingStates.push({ link, status, available: Boolean(checkoutURL) });
-
-    if (!checkoutURL) {
-      link.classList.add('is-unavailable');
-      link.setAttribute('aria-disabled', 'true');
-      link.setAttribute('tabindex', '-1');
-      link.addEventListener('click', (event) => {
-        event.preventDefault();
-      });
-      return;
-    }
-
-    link.setAttribute('href', checkoutURL);
-    link.setAttribute('target', '_blank');
-    link.setAttribute('rel', 'noopener noreferrer');
+    const state = checkoutURL
+      ? (new URL(checkoutURL).hostname.endsWith('.lemonsqueezy.com') ? 'available' : 'checking')
+      : 'unavailable';
+    const item = { link, status, plan, checkoutURL, state };
+    billingStates.push(item);
+    linkState(item, state === 'available');
+    link.addEventListener('click', (event) => {
+      if (item.state !== 'available') event.preventDefault();
+    });
   });
   updateBillingCopy();
+  void resolveOwnCheckoutAvailability();
   languageListeners.push(updateBillingCopy);
 
   // 2. Showcase Tab Switcher
   const tabs = document.querySelectorAll('.showcase-tab');
   const panels = document.querySelectorAll('.showcase-panel');
 
-  tabs.forEach((tab) => {
+  function activateTab(tab, moveFocus = false) {
+    const targetId = tab.getAttribute('data-target');
+    const targetPanel = targetId ? document.getElementById(targetId) : null;
+    if (!targetPanel) return;
+
+    tabs.forEach((currentTab) => {
+      const isActive = currentTab === tab;
+      currentTab.classList.toggle('active', isActive);
+      currentTab.setAttribute('aria-selected', String(isActive));
+      currentTab.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+    panels.forEach((panel) => {
+      const isActive = panel === targetPanel;
+      panel.classList.toggle('active', isActive);
+      panel.hidden = !isActive;
+    });
+    if (moveFocus) tab.focus();
+  }
+
+  tabs.forEach((tab, index) => {
     tab.addEventListener('click', () => {
-      const targetId = tab.getAttribute('data-target');
-
-      tabs.forEach((t) => {
-        t.classList.remove('active');
-        t.setAttribute('aria-selected', 'false');
-      });
-      panels.forEach((p) => {
-        p.classList.remove('active');
-      });
-
-      tab.classList.add('active');
-      tab.setAttribute('aria-selected', 'true');
-      const targetPanel = document.getElementById(targetId);
-      if (targetPanel) {
-        targetPanel.classList.add('active');
-      }
+      activateTab(tab);
+    });
+    tab.addEventListener('keydown', (event) => {
+      let nextIndex = index;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
+      if (event.key === 'Home') nextIndex = 0;
+      if (event.key === 'End') nextIndex = tabs.length - 1;
+      if (nextIndex === index) return;
+      event.preventDefault();
+      activateTab(tabs[nextIndex], true);
     });
   });
+  const initiallyActiveTab = document.querySelector('.showcase-tab.active');
+  if (initiallyActiveTab) activateTab(initiallyActiveTab);
 
   // 3. Platform Detection for Download Buttons
   function detectOS() {
@@ -508,7 +677,12 @@
     anchor.addEventListener('click', function (e) {
       const href = this.getAttribute('href');
       if (href === '#' || !href) return;
-      const target = document.querySelector(href);
+      let target = null;
+      try {
+        target = document.querySelector(href);
+      } catch (_error) {
+        return;
+      }
       if (target) {
         e.preventDefault();
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Jackdaw Mail — live SLA control demo</title>
+  <desc id="desc">Mail and a live-control sidebar with an unanswered-message queue and a working timer. Synthetic data is used.</desc>
+  <style>
+    text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #242321; }
+    .muted { fill: #817c73; }
+    .kicker { fill: #ad6510; font-size: 12px; font-weight: 800; letter-spacing: 2.4px; }
+    .title { font-size: 25px; font-weight: 800; letter-spacing: -.7px; }
+    .small { font-size: 12px; }
+    .caption { font-size: 13px; font-weight: 650; }
+    .rowtext { font-size: 14px; font-weight: 650; }
+    .paneltitle { font-size: 22px; font-weight: 800; }
+    .stat { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  </style>
+
+  <rect width="1440" height="900" fill="#eeebe5"/>
+  <rect x="28" y="24" width="1384" height="852" rx="22" fill="#fbfaf7" stroke="#d7d0c5" stroke-width="2"/>
+
+  <rect x="48" y="45" width="795" height="811" rx="16" fill="#fff" stroke="#ddd5c9"/>
+  <text x="74" y="81" class="title">Inbox</text>
+  <text x="759" y="81" text-anchor="end" class="muted" font-size="12">128 messages</text>
+  <line x1="48" y1="101" x2="843" y2="101" stroke="#ded7cc"/>
+
+  <g>
+    <rect x="64" y="122" width="763" height="72" rx="11" fill="#f4e7d0"/>
+    <rect x="64" y="122" width="4" height="72" rx="2" fill="#ad6510"/>
+    <text x="84" y="149" class="rowtext">Alex Morozov</text><text x="806" y="149" text-anchor="end" class="muted" font-size="12">10:42</text>
+    <text x="84" y="174" class="muted" font-size="13">API integration question</text><rect x="630" y="158" width="177" height="23" rx="11" fill="#e3eee8"/><text x="718" y="174" text-anchor="middle" fill="#397e72" font-size="11" font-weight="750">API · INTEGRATION</text>
+
+    <rect x="64" y="204" width="763" height="72" rx="11" fill="#fff"/>
+    <rect x="64" y="204" width="4" height="72" rx="2" fill="#c15b4a"/>
+    <text x="84" y="231" class="rowtext">Mila Petrova</text><text x="806" y="231" text-anchor="end" class="muted" font-size="12">10:27</text>
+    <text x="84" y="256" class="muted" font-size="13">Client portal access</text><rect x="654" y="240" width="153" height="23" rx="11" fill="#f3dfda"/><text x="730" y="256" text-anchor="middle" fill="#ad4636" font-size="11" font-weight="750">SLA · 4 MIN</text>
+
+    <rect x="64" y="286" width="763" height="72" rx="11" fill="#fff"/>
+    <rect x="64" y="286" width="4" height="72" rx="2" fill="#5f7d9e"/>
+    <text x="84" y="313" class="rowtext">Ilya Sokolov</text><text x="806" y="313" text-anchor="end" class="muted" font-size="12">10:11</text>
+    <text x="84" y="338" class="muted" font-size="13">Delivery terms clarification</text><rect x="660" y="322" width="147" height="23" rx="11" fill="#f0e1c9"/><text x="733" y="338" text-anchor="middle" fill="#9c5b0d" font-size="11" font-weight="750">SLA ACTIVE</text>
+  </g>
+  <text x="74" y="414" class="kicker" font-size="11">MESSAGE OPENS IN WORKSPACE</text>
+  <text x="74" y="448" class="title" font-size="21">API integration question</text>
+  <text x="74" y="477" class="muted" font-size="13">support@demo.example → team@demo.example</text>
+  <line x1="74" y1="505" x2="817" y2="505" stroke="#e4ddd4"/>
+  <text x="74" y="544" font-size="15" font-weight="650">Need help connecting the test service.</text>
+  <text x="74" y="580" class="muted" font-size="13">Category: API · Integration · no employee has replied yet.</text>
+  <rect x="74" y="624" width="190" height="38" rx="19" fill="#ad6510"/><text x="169" y="648" text-anchor="middle" fill="#fff" font-size="13" font-weight="750">Reply</text>
+  <rect x="280" y="624" width="194" height="38" rx="19" fill="#fff" stroke="#c9c1b5" stroke-width="1.5"/><text x="377" y="648" text-anchor="middle" fill="#6f6b64" font-size="13" font-weight="750">Assign category</text>
+  <text x="74" y="815" class="muted" font-size="11">Demo screen · no real messages or addresses are used</text>
+
+  <rect x="867" y="45" width="525" height="811" rx="16" fill="#f8f5ef" stroke="#c8954c" stroke-width="1.5"/>
+  <text x="895" y="81" class="kicker">LIVE SLA CONTROL</text>
+  <text x="895" y="113" class="paneltitle">Live response control</text>
+  <rect x="1288" y="65" width="77" height="30" rx="15" fill="#fff" stroke="#c9c1b5"/><path d="M1304 80a9 9 0 1 0 3-7" fill="none" stroke="#ad6510" stroke-width="2"/><path d="M1303 69v5h5" fill="none" stroke="#ad6510" stroke-width="2"/><text x="1341" y="84" class="small" text-anchor="middle" font-weight="750">Refresh</text>
+  <text x="895" y="141" class="muted" font-size="12">The queue updates immediately after a message or category changes.</text>
+
+  <rect x="895" y="161" width="115" height="66" rx="11" fill="#fff" stroke="#d7d0c5"/><text x="911" y="188" class="stat">9</text><text x="911" y="210" class="muted" font-size="11">unanswered</text>
+  <rect x="1022" y="161" width="115" height="66" rx="11" fill="#f5e8e4" stroke="#c15b4a"/><text x="1038" y="188" class="stat" fill="#ad4636">3</text><text x="1038" y="210" class="muted" font-size="11">overdue</text>
+  <rect x="1149" y="161" width="115" height="66" rx="11" fill="#fff" stroke="#d7d0c5"/><text x="1165" y="188" class="stat">4</text><text x="1165" y="210" class="muted" font-size="11">within SLA</text>
+  <rect x="1276" y="161" width="89" height="66" rx="11" fill="#fff" stroke="#d7d0c5"/><text x="1292" y="188" class="stat">2</text><text x="1292" y="210" class="muted" font-size="11">waiting for schedule</text>
+
+  <rect x="895" y="244" width="470" height="34" rx="8" fill="#f1ede6" stroke="#ddd5c9"/><text x="911" y="266" class="muted" font-size="11" font-weight="750">SORT BY</text><text x="1008" y="266" class="muted" font-size="11">Status ↕</text><text x="1080" y="266" fill="#ad6510" font-size="11" font-weight="750">Deadline ↓</text><text x="1190" y="266" class="muted" font-size="11">Response time ↕</text><text x="1307" y="266" class="muted" font-size="11">Subject ↕</text>
+
+  <g>
+    <rect x="895" y="294" width="470" height="118" rx="12" fill="#fff" stroke="#c15b4a" stroke-width="2"/>
+    <text x="913" y="322" class="rowtext">API integration question</text>
+    <rect x="1196" y="307" width="151" height="25" rx="12" fill="#e3eee8"/><text x="1271" y="324" text-anchor="middle" fill="#397e72" font-size="11" font-weight="800">12 MIN LEFT</text>
+    <text x="913" y="348" class="muted" font-size="11">Received today, 10:42 · Assigned to Alex Morozov</text>
+    <text x="913" y="371" class="muted" font-size="11">18 min elapsed of 30 · Deadline 11:12</text>
+    <rect x="1212" y="379" width="135" height="22" rx="11" fill="#fff" stroke="#c9c1b5"/><text x="1279" y="394" text-anchor="middle" fill="#8e4c12" font-size="10" font-weight="750">Open message</text>
+
+    <rect x="895" y="424" width="470" height="118" rx="12" fill="#fff" stroke="#c15b4a" stroke-width="2"/>
+    <text x="913" y="452" class="rowtext">Client portal access</text>
+    <rect x="1184" y="437" width="163" height="25" rx="12" fill="#f3dfda"/><text x="1265" y="454" text-anchor="middle" fill="#ad4636" font-size="11" font-weight="800">OVERDUE BY 4 MIN</text>
+    <text x="913" y="478" class="muted" font-size="11">Received today, 10:27 · Assigned to Mila Petrova</text>
+    <text x="913" y="501" class="muted" font-size="11">34 min elapsed of 30 · Deadline 10:57</text>
+    <rect x="1212" y="509" width="135" height="22" rx="11" fill="#fff" stroke="#c9c1b5"/><text x="1279" y="524" text-anchor="middle" fill="#8e4c12" font-size="10" font-weight="750">Open message</text>
+
+    <rect x="895" y="554" width="470" height="102" rx="12" fill="#fff" stroke="#d7d0c5"/>
+    <text x="913" y="582" class="rowtext">Delivery terms clarification</text>
+    <rect x="1190" y="567" width="157" height="25" rx="12" fill="#f0e1c9"/><text x="1269" y="584" text-anchor="middle" fill="#9c5b0d" font-size="11" font-weight="800">WAITING FOR SCHEDULE</text>
+    <text x="913" y="608" class="muted" font-size="11">Received today, 10:11 · Outside working hours</text>
+    <text x="913" y="631" class="muted" font-size="11">After reading or assigning a category, SLA starts immediately</text>
+
+    <rect x="895" y="668" width="470" height="102" rx="12" fill="#fff" stroke="#d7d0c5"/>
+    <text x="913" y="696" class="rowtext">Pricing question</text>
+    <rect x="1196" y="681" width="151" height="25" rx="12" fill="#e3eee8"/><text x="1271" y="698" text-anchor="middle" fill="#397e72" font-size="11" font-weight="800">27 MIN LEFT</text>
+    <text x="913" y="722" class="muted" font-size="11">Received today, 10:05 · Assigned to Ilya Sokolov</text>
+    <text x="913" y="745" class="muted" font-size="11">3 min elapsed of 30 · Deadline 10:35</text>
+  </g>
+
+  <rect x="895" y="792" width="470" height="40" rx="10" fill="#f1ede6"/>
+  <text x="913" y="817" class="muted" font-size="11">Control archive: 5 · reminder intervals are configurable</text>
+</svg>

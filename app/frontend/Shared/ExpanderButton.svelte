@@ -1,6 +1,6 @@
 {#if !expanded}
   <hbox class="expander-button {classes}">
-    <Button plain onClick={onExpand} tooltip={label}>
+    <Button plain onClick={onExpand} tooltip={label} {disabled}>
       <hbox class="content font-small" slot="label">
         {#if typeof(icon) == "string"}
           <hbox class="icon">
@@ -41,6 +41,7 @@
   export let iconSize = "16px";
   export let addIconSize = iconSize;
   export let classes = "";
+  export let disabled: boolean | string = false;
 
   function onExpand() {
     expanded = true;

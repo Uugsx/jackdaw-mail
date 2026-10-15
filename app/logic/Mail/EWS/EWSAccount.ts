@@ -22,6 +22,7 @@ import { NTLMChromiumSession } from "../../Auth/NTLM/NTLMChromiumSession";
 import { ContentDisposition } from "../../Abstract/Attachment";
 import { ConnectError, LoginError } from "../../Abstract/Account";
 import { appGlobal } from "../../app";
+import { assertCanAddMailAccount } from "../../Billing/ProPolicy";
 import { XML2JSON, JSON2XML } from "./XML2JSON";
 import { ensureLicensed } from "../../util/LicenseClient";
 import { Throttle } from "../../util/flow/Throttle";
@@ -1209,6 +1210,7 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     if (this.mainAccount) {
       throw new NotReached();
     }
+    assertCanAddMailAccount(appGlobal.emailAccounts.length);
     let account = newAccountForProtocol("ews") as EWSAccount;
     account.initFromMainAccount(this);
     account.name = person.name;

@@ -25,9 +25,9 @@
     "electron": "^30.0.2",
     "i18n": "^0.15.3"
   },
-  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw.app)",
+  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw-mail.pro)",
   "copyright": "Ben Bucksch",
   "license": "EUPL-1.2",
   "licenseText": "See LICENSE file at top level",
-  "homepage": "https://jackdaw.app"
+  "homepage": "https://jackdaw-mail.pro"
 }

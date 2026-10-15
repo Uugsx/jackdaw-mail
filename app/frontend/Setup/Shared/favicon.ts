@@ -15,7 +15,7 @@ export async function getFavIcon(site: string): Promise<URLString | null> {
  * @returns `data:` image URL */
 export async function getFavIconFromService(site: string): Promise<URLString | null> {
   try {
-    //let imageURL = `https://jackdaw.app/favicon/${site}`;
+    //let imageURL = `https://jackdaw-mail.pro/favicon/${site}`;
     let imageURL = `https://favicon.im/${site}`;
     return await fetchIcon(imageURL);
   } catch (ex) {

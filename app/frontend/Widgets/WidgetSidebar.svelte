@@ -58,7 +58,9 @@
       {#if activeWidget?.kind === "calendar" && $widgetsExpanded.value}
         <CalendarWidgetPanel />
       {:else if activeWidget?.kind === "live-sla" && $widgetsExpanded.value}
-        <LiveSlaApp embedded={true} />
+        <ProFeatureGate feature="live-sla" compact={true}>
+          <LiveSlaApp embedded={true} />
+        </ProFeatureGate>
       {/if}
     </vbox>
   </vbox>
@@ -166,6 +168,7 @@
   import AddWidgetDialog from "./AddWidgetDialog.svelte";
   import CalendarWidgetPanel from "./CalendarWidgetPanel.svelte";
   import LiveSlaApp from "../Reports/LiveSlaApp.svelte";
+  import ProFeatureGate from "../Shared/ProFeatureGate.svelte";
   import ButtonMenu from "../Shared/Menu/ButtonMenu.svelte";
   import ContextMenu from "../Shared/Menu/ContextMenu.svelte";
   import { onMount } from "svelte";
@@ -436,13 +439,6 @@
     width: 100%;
     height: 100%;
     border: none;
-  }
-  .widget-empty {
-    align-items: center;
-    justify-content: center;
-    padding: 20px 16px;
-    text-align: center;
-    color: color-mix(in srgb, var(--leftbar-fg) 68%, transparent);
   }
   .widget-rail {
     box-sizing: border-box;

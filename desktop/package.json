@@ -1,6 +1,6 @@
 {
   "name": "jackdaw-mail",
-  "version": "0.9.120-dev",
+  "version": "0.9.124-dev",
   "description": "Jackdaw Mail — Mail, Calendar & Contacts",
   "repository": {
     "type": "git",
@@ -77,5 +77,5 @@
   "copyright": "Jackdaw Mail",
   "license": "EUPL-1.2",
   "licenseText": "See LICENSE file at top level",
-  "homepage": "https://jackdaw.app"
+  "homepage": "https://jackdaw-mail.pro"
 }

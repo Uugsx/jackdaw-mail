@@ -25,7 +25,11 @@
             onClick={() => goToAccount(account)} />
         {/each}
       </vbox>
-      <RowButton label={$t`New account`} onClick={onNewAccount} />
+      <RowButton
+        label={$t`New account`}
+        onClick={onNewAccount}
+        disabled={category?.id == "mail" && !canCreateAccount ? $t`A second email account requires Jackdaw Pro. Start the 7-day trial or activate a license.` : false}
+        />
     {/if}
 
     {#if category?.windowContent}
@@ -55,8 +59,13 @@
   import InboxIcon from "lucide-svelte/icons/inbox";
   import { assert } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
+  import { canAddMailAccount } from "../../../logic/Billing/ProPolicy";
+  import { proEntitlement } from "../../../logic/Billing/ProEntitlement";
 
   export let category: SettingsCategory | null;
+
+  $: billingState = $proEntitlement.value;
+  $: canCreateAccount = !category || category.id != "mail" || (!!billingState && canAddMailAccount(appGlobal.emailAccounts.length));
 
   $: subCategories = category
     ? category.subCategories

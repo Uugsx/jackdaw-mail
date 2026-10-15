@@ -2,7 +2,7 @@
   "name": "jackdaw-frontend",
   "description": "Jackdaw Mail UI",
   "private": true,
-  "version": "0.9.120-dev",
+  "version": "0.9.124-dev",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -117,7 +117,7 @@
   },
   "author": "Jackdaw Mail",
   "copyright": "Jackdaw Mail",
-  "homepage": "https://jackdaw.app",
+  "homepage": "https://jackdaw-mail.pro",
   "license": "EUPL-1.2",
   "licenseText": "See LICENSE file at top level",
   "type": "module"

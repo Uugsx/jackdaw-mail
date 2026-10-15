@@ -17,6 +17,7 @@ import { ArrayColl, type Collection } from "svelte-collections";
 import { addSenderToCC } from "./composeRecipients";
 import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
 import { normalizeSignatureHTML } from "./SignatureHTML";
+import { hasProFeature } from "../Billing/ProEntitlement";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -457,6 +458,10 @@ export class ComposeActions {
 
   /** Apply current identity signature onto the raw HTML body. */
   applySignature() {
+    if (!hasProFeature("signatures")) {
+      this.email.rawHTMLDangerous = this.stripSignatureFooters(this.email.rawHTMLDangerous);
+      return;
+    }
     let identity = this.email.identity;
     this.email.rawHTMLDangerous = this.applySignatureHTML(
       this.email.rawHTMLDangerous,
@@ -510,10 +515,15 @@ export class ComposeActions {
     }
     let account = fromIdentity.account;
 
-    // Add the signature when it is missing, but keep user edits made inside
-    // the existing signature footer.
-    if (!this.hasSignatureFooter(this.email.rawHTMLDangerous)) {
-      this.applySignature();
+    // Добавляем подпись, если её нет, и сохраняем правки внутри существующего
+    // footer. Бесплатный аккаунт не должен отправить управляемую подпись из
+    // старого черновика или импортированного письма.
+    if (hasProFeature("signatures")) {
+      if (!this.hasSignatureFooter(this.email.rawHTMLDangerous)) {
+        this.applySignature();
+      }
+    } else {
+      this.email.rawHTMLDangerous = this.stripSignatureFooters(this.email.rawHTMLDangerous);
     }
     await this.convertInlineAttachmentsURLs();
     this.applyComposeSendOptions();

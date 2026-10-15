@@ -6,7 +6,11 @@
     {:else if step == Step.Login}
       <LoginPage {account} onContinue={onPasswordContinue} onBack={onPasswordBack} onSkip={onAccountSkip} />
     {:else if step == Step.FinalizeAccount}
-      <FinalizeAccount {account} onContinue={onFinalizeContinue} onBack={onFinalizeBack} />
+      <FinalizeAccount
+        {account}
+        mailAccountCount={appGlobal.emailAccounts.length + importedAccountIDs.size}
+        onContinue={onFinalizeContinue}
+        onBack={onFinalizeBack} />
     {:else if step == Step.SelectAddressBooks}
       <SelectAddressbooks onContinue={onAddressbooksContinue} />
     {:else if step == Step.Done}
@@ -27,11 +31,13 @@
   import BackgroundVideo from "../Shared/BackgroundVideo.svelte";
   import SelectAddressbooks from "./SelectAddressbooks.svelte";
   import SetupAnyAccountType from "../SetupAnyAccountType.svelte";
+  import { appGlobal } from "../../../logic/app";
 
   let accountCandidates: MailAccount[];
   let accounts: MailAccount[];
   let account: MailAccount;
   let currentAccountIndex = 0;
+  let importedAccountIDs = new Set<string>();
 
   enum Step {
     SelectAccounts = 1,
@@ -43,6 +49,7 @@
   let step: Step = Step.SelectAccounts;
 
   function onSelectAccountsContinue() {
+    importedAccountIDs = new Set();
     accounts = accountCandidates.filter(acc => (acc as any).import);
     if (accounts.length) {
       currentAccountIndex = 0;
@@ -55,6 +62,7 @@
 
   function onBackToAccountsList() {
     accountCandidates = [];
+    importedAccountIDs = new Set();
     step = Step.SelectAccounts;
   }
 
@@ -75,6 +83,9 @@
   }
 
   function onFinalizeContinue() {
+    let finalized = new Set(importedAccountIDs);
+    finalized.add(account.id);
+    importedAccountIDs = finalized;
     nextAccount();
   }
 

@@ -9,9 +9,11 @@ import { readSavedSearches } from '../Mail/Virtual/SavedSearchFolder';
 import { loadTagsList } from '../Abstract/Tag';
 import { getComputerOn } from '../util/backend-wrapper';
 import { logError } from '../../frontend/Util/error';
+import { refreshProEntitlement } from '../Billing/ProEntitlement';
 
 export async function getStartObjects(): Promise<void> {
   gLicense.license = { valid: true }; // Proprietary, see comment in License.ts
+  void refreshProEntitlement();
   appGlobal.remoteApp = new WebMailBackend();
   appGlobal.collectedAddressbook = await createCollectedAddressbook();
   appGlobal.personalAddressbook = appGlobal.collectedAddressbook;

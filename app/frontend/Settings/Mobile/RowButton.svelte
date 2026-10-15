@@ -2,6 +2,7 @@
   <Button
     icon={icon}
     {onClick}
+    {disabled}
     classes="plain category-button"
   >
     <hbox class="content" slot="label" flex>
@@ -24,6 +25,7 @@
   export let label: string;
   export let icon: ConstructorOfATypedSvelteComponent | string | null = null;
   export let onClick: (event: Event) => void;
+  export let disabled: boolean | string = false;
 </script>
 
 <style>

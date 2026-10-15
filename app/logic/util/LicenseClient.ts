@@ -1,10 +1,21 @@
 /**
- * License system removed for Jackdaw.
- * Kept as a thin stub so existing imports compile; everything is always licensed.
+ * Совместимый слой для старых проверок базового клиента.
+ * Доступ к Pro-функциям проверяется отдельно через подписанное entitlement.
+ * Почтовые и meeting-сценарии сохраняют прежний контракт этого модуля.
  */
 import { gLicense } from "./License";
 import type { URLString } from "../util/util";
-import { siteRoot } from "../build";
+import { BILLING_PLANS_URL } from "../Billing/Billing";
+import {
+  activateProLicense,
+  deactivateProLicense,
+  getSavedProLicenseKey,
+  hasProFeature,
+  proEntitlement,
+  refreshProEntitlement,
+  startProTrial,
+  type ProEntitlementState,
+} from "../Billing/ProEntitlement";
 
 export class Ticket {
   get valid() { return true; }
@@ -21,7 +32,7 @@ export class BadTicket extends Ticket {
 
 export class LicenseError extends Error {}
 export class NoValidLicense extends LicenseError {
-  message = "License checks disabled";
+  message = "Базовая лицензия недоступна.";
 }
 export class AccountMissingError extends LicenseError {}
 
@@ -54,12 +65,18 @@ export async function openPurchasePage(
   _paidCallback?: (license: Ticket) => void,
   _mode: "welcome" | "purchase" = "purchase",
 ) {
-  // Billing removed
+  if (typeof window != "undefined") {
+    window.open(BILLING_PLANS_URL, "_blank", "noopener,noreferrer");
+  }
 }
 
 export function purchagePageURL(_mode: "welcome" | "purchase" | "inline-payment" = "purchase"): URLString {
-  return siteRoot;
+  return BILLING_PLANS_URL;
 }
 
 export function startFastPolling(_paidCallback?: (license: Ticket) => void) {}
 export function stopFastPolling() {}
+
+/** Текущее подписанное право доступа к Pro-возможностям. */
+export { activateProLicense, deactivateProLicense, getSavedProLicenseKey, hasProFeature, proEntitlement, refreshProEntitlement, startProTrial };
+export type { ProEntitlementState };

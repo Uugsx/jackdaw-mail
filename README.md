@@ -12,7 +12,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-lightgrey)
 ![Stack](https://img.shields.io/badge/stack-Electron%20%7C%20Svelte%20%7C%20TypeScript-646cff)
 
-[Русский](#-русский) · [English](#-english) · [Скачать Android](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [Сайт](https://jackdaw.app)
+[Русский](#-русский) · [English](#-english) · [Скачать Android](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [Сайт](https://jackdaw-mail.pro)
 
 </div>
 
@@ -49,9 +49,9 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 ### Особенности
 
 - **Рабочие пространства** — раздельные контексты для почты, календарей, контактов, файлов и чатов; последнее выбранное пространство восстанавливается после перезапуска
-- **Почта** — несколько аккаунтов, дополнительные OWA-ящики, дерево папок, поиск, быстрые фильтры, smart views, категории и массовые действия
+- **Почта** — один аккаунт в бесплатной версии; несколько аккаунтов и дополнительные OWA-ящики доступны в Pro, вместе с деревом папок, поиском, быстрыми фильтрами, smart views, категориями и массовыми действиями
 - **Связанные письма** — поиск запускается только по кнопке в открытом письме, результаты группируются по номеру обращения, переписке и теме
-- **Композер** — плавающий редактор, HTML или plain text, форматирование, вложения, drag-and-drop, черновики, подписи, уведомления о прочтении и шифрование при наличии ключей
+- **Композер** — плавающий редактор, HTML или plain text, форматирование, Pro-подписи с ссылками и изображениями, вложения, drag-and-drop, черновики, уведомления о прочтении и шифрование при наличии ключей
 - **Управление почтой** — архив, спам, корзина, перенос, undo удаления, флаги, статусы прочтения, настраиваемая ribbon-панель и сочетания клавиш для категорий
 - **Боковая панель** — виджеты, календарь, живой контроль SLA, встречи и встроенные web-приложения
 - **Отчёты и SLA** — интерактивный дашборд, рабочий календарь по дням недели, живой таймер ответа и настраиваемые напоминания
@@ -59,7 +59,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 - **Файлы и коммуникации** — локальное файловое хранилище, WebDAV/Nextcloud/OpenCloud, чаты и видеовстречи с поддерживаемыми аккаунтами
 - **Обновлённый UI** — адаптивные layout'ы почты, ribbon, тёмная тема писем, масштабирование и сохранение пользовательских настроек
 - **Desktop OTA** — автообновление через GitHub Releases (Mac + Windows); см. [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
-- **Roadmap** — [jackdaw.app](https://jackdaw.app), дальнейшие OWA-фичи
+- **Roadmap** — [jackdaw-mail.pro](https://jackdaw-mail.pro), дальнейшие OWA-фичи
 
 ### Возможности
 
@@ -67,8 +67,8 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 | Модуль | Что умеет | Статус |
 |--------|-----------|--------|
-| **Почта** | IMAP, JMAP, EWS, OWA, ActiveSync и MS Graph (beta); несколько аккаунтов, shared mailboxes, папки, поиск, smart views «Непрочитанные/С флажком/Вложения», быстрые фильтры, категории, теги, архив, спам, корзина, перенос и уведомления | ✅ / ◐ протокол |
-| **Композер** | Плавающее окно, HTML/plain text, форматирование, цитирование, подписи, вложения и inline-изображения, drag-and-drop, черновики, read receipt, PGP/S/MIME UI | ✅ / ◐ ключи и сервер |
+| **Почта** | IMAP, JMAP, EWS, OWA, ActiveSync и MS Graph (beta); Pro-доступ к нескольким аккаунтам и shared mailboxes, папки, поиск, smart views «Непрочитанные/С флажком/Вложения», быстрые фильтры, категории, теги, архив, спам, корзина, перенос и уведомления | ✅ / ◐ протокол / Pro |
+| **Композер** | Плавающее окно, HTML/plain text, форматирование, Pro-подписи с ссылками и изображениями, цитирование, вложения и inline-изображения, drag-and-drop, черновики, read receipt, PGP/S/MIME UI | ✅ / ◐ ключи и сервер / Pro |
 | **Связанные письма** | Поиск по кнопке в заголовке письма; точные дубликаты, цепочка, номера обращения/клиента, одинаковая тема и похожий текст; сворачиваемые группы и переход к письму | ✅ локальный индекс |
 | **Рабочие пространства** | Фильтрация связанных данных по контексту «Все/Работа/…» и восстановление последнего выбранного пространства | ✅ |
 | **UI и производительность** | Перестраиваемые layout'ы, ribbon, масштаб письма, корректный горизонтальный overflow, быстрый виртуализированный список, защита от двойного срабатывания горячих клавиш | ✅ desktop |
@@ -108,7 +108,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 ### Jackdaw Mail Pro
 
-Отчёты и живой контроль SLA подготовлены как Pro-модуль: в него входят рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр и HTML-экспорт. Для международного запуска выбран внешний checkout Lemon Squeezy; платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
+Jackdaw Mail Pro включает рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр, HTML-экспорт, несколько почтовых аккаунтов и форматированные HTML-подписи с ссылками и изображениями. Публичные цены Pro — **$9.99 / month** или **$79.99 / year**. Для международного запуска выбран внешний checkout Lemon Squeezy; платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. Первый почтовый аккаунт остаётся бесплатным, а существующие аккаунты не удаляются при окончании Pro. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
 
 ### Платформы
 
@@ -160,7 +160,7 @@ lib/        — общие библиотеки (JPC protocol)
 
 - **Maintainer:** [uugsx](https://github.com/Uugsx)
 - **Android-клиент:** [скачать последнюю версию](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [репозиторий](https://github.com/SpliffRa/jackdaw-mail-android) · [SpliffRa](https://github.com/SpliffRa)
-- **Сайт:** [jackdaw.app](https://jackdaw.app)
+- **Сайт:** [jackdaw-mail.pro](https://jackdaw-mail.pro)
 - **Репозиторий:** [github.com/Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail)
 
 ---
@@ -180,9 +180,9 @@ The standalone native Android client for Jackdaw Mail is developed by **[SpliffR
 ### Highlights
 
 - **Workspaces** — separate contexts for mail, calendars, contacts, files and chats; the last selected workspace is restored after restart
-- **Mail** — multiple accounts, additional OWA mailboxes, folder tree, search, quick filters, smart views, categories and bulk actions
+- **Mail** — one account on Free; multiple accounts and additional OWA mailboxes on Pro, plus folder tree, search, quick filters, smart views, categories and bulk actions
 - **Related messages** — search starts only from the button in an open message; results are grouped by reference number, conversation and topic
-- **Composer** — floating editor, HTML or plain text, formatting, attachments, drag-and-drop, drafts, signatures, read receipts and encryption when keys are available
+- **Composer** — floating editor, HTML or plain text, formatting, Pro signatures with links and images, attachments, drag-and-drop, drafts, read receipts and encryption when keys are available
 - **Mail workflow** — archive, junk, trash, move, delete undo, flags, read state, customizable ribbon and category keyboard shortcuts
 - **Sidebar** — widgets, calendar, live SLA control, meetings and embedded web apps
 - **Reports & SLA** — interactive dashboard, per-weekday working calendar, live response timers and configurable reminders
@@ -190,7 +190,7 @@ The standalone native Android client for Jackdaw Mail is developed by **[SpliffR
 - **Files & communication** — local file storage, WebDAV/Nextcloud/OpenCloud, chats and video meetings with supported accounts
 - **Updated UI** — responsive mail layouts, ribbon, dark-mode email rendering, zoom and persisted user preferences
 - **Desktop OTA** — auto-update via GitHub Releases (Mac + Windows); see [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
-- **Roadmap** — [jackdaw.app](https://jackdaw.app), more OWA work
+- **Roadmap** — [jackdaw-mail.pro](https://jackdaw-mail.pro), more OWA work
 
 ### Features
 
@@ -198,8 +198,8 @@ Before an account is connected, the available features depend on its protocol, p
 
 | Module | Highlights | Status |
 |--------|------------|--------|
-| **Mail** | IMAP, JMAP, EWS, OWA, ActiveSync and MS Graph (beta); multiple accounts, shared mailboxes, folders, search, Unread/Flagged/Attachments smart views, quick filters, categories, tags, archive, junk, trash, move and notifications | ✅ / ◐ protocol |
-| **Composer** | Floating window, HTML/plain text, formatting, quoting, signatures, attachments and inline images, drag-and-drop, drafts, read receipts and PGP/S/MIME UI | ✅ / ◐ keys and server |
+| **Mail** | IMAP, JMAP, EWS, OWA, ActiveSync and MS Graph (beta); multiple accounts and shared mailboxes with Pro, folders, search, Unread/Flagged/Attachments smart views, quick filters, categories, tags, archive, junk, trash, move and notifications | ✅ / ◐ protocol / Pro |
+| **Composer** | Floating window, HTML/plain text, formatting, Pro signatures with links and images, quoting, attachments and inline images, drag-and-drop, drafts, read receipts and PGP/S/MIME UI | ✅ / ◐ keys and server / Pro |
 | **Related messages** | On-demand button in the message header; exact duplicates, conversation links, case/customer identifiers, same subject and similar text; collapsible groups and open-message navigation | ✅ local index |
 | **Workspaces** | Context filtering for “All/Work/…” and restoration of the last selected workspace | ✅ |
 | **UI & performance** | Reworked layouts, ribbon, message zoom, horizontal overflow handling, virtualized fast lists and protection against duplicate keyboard shortcut actions | ✅ desktop |
@@ -239,7 +239,7 @@ Live-control settings are persisted per mailbox. The queue refreshes immediately
 
 ### Jackdaw Mail Pro
 
-Reports and live SLA control are prepared as a Pro module covering the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view and HTML export. Lemon Squeezy is the selected hosted checkout for an international launch; payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
+Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view, HTML export, multiple mail accounts and formatted HTML signatures with links and images. Public Pro pricing is **$9.99 / month** or **$79.99 / year**. The first mail account remains free and existing accounts are preserved after Pro expires. Lemon Squeezy is the selected hosted checkout for an international launch; payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
 
 ### Platforms
 
@@ -291,7 +291,7 @@ lib/        — shared libraries (JPC protocol)
 
 - **Maintainer:** [uugsx](https://github.com/Uugsx)
 - **Android client:** [download the latest release](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [repository](https://github.com/SpliffRa/jackdaw-mail-android) · [SpliffRa](https://github.com/SpliffRa)
-- **Website:** [jackdaw.app](https://jackdaw.app)
+- **Website:** [jackdaw-mail.pro](https://jackdaw-mail.pro)
 - **Repository:** [github.com/Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail)
 
 ---

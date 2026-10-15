@@ -31,6 +31,7 @@ import { type Attachment, ContentDisposition } from "../../Abstract/Attachment";
 import { LoginError } from "../../Abstract/Account";
 import { ensureLicensed } from "../../util/LicenseClient";
 import { appGlobal } from "../../app";
+import { assertCanAddMailAccount } from "../../Billing/ProPolicy";
 import { Throttle } from "../../util/flow/Throttle";
 import { Semaphore } from "../../util/flow/Semaphore";
 import { RunOnce } from "../../util/flow/RunOnce";
@@ -3024,6 +3025,7 @@ export class OWAAccount extends ExchangeMailAccount {
     if (this.mainAccount) {
       throw new NotReached();
     }
+    assertCanAddMailAccount(appGlobal.emailAccounts.length);
     let account = newAccountForProtocol("owa") as OWAAccount;
     account.initFromMainAccount(this);
     account.name = person.name;

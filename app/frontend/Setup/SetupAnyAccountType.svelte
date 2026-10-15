@@ -3,7 +3,8 @@
 <hbox class="add-buttons">
   <ExpanderButton
     on:expand={() => catchErrors(() => startSetup("mail"))}
-    label={$t`Add email address`} />
+    label={$t`Add email address`}
+    disabled={!mailAccountAvailable ? $t`A second email account requires Jackdaw Pro. Start the 7-day trial or activate a license.` : false} />
   <ExpanderButton
     on:expand={() => catchErrors(() => startSetup("chat"))}
     label={$t`Add chat account`} />
@@ -40,8 +41,13 @@
   import Button from "../Shared/Button.svelte";
   import { catchErrors } from "../Util/error";
   import { t } from "../../l10n/l10n";
+  import { canAddMailAccount } from "../../logic/Billing/ProPolicy";
+  import { proEntitlement } from "../../logic/Billing/ProEntitlement";
 
   export let onContinue: () => void = null;
+
+  $: billingState = $proEntitlement.value;
+  $: mailAccountAvailable = !!billingState && canAddMailAccount(appGlobal.emailAccounts.length);
 
   async function startSetup(urlSuffix: string) {
     let setupApp = new SetupJackdawApp();

@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Jackdaw Mail — interactive report demo</title>
+  <desc id="desc">Demo dashboard with an activity chart, heatmap and response table. Synthetic data is used.</desc>
+  <style>
+    text { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #242321; }
+    .muted { fill: #817c73; }
+    .kicker { fill: #ad6510; font-size: 13px; font-weight: 800; letter-spacing: 2.6px; }
+    .title { font-size: 36px; font-weight: 800; letter-spacing: -1.4px; }
+    .section { font-size: 21px; font-weight: 750; }
+    .caption { font-size: 13px; font-weight: 600; }
+    .small { font-size: 12px; }
+    .number { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .table-head { fill: #817c73; font-size: 11px; font-weight: 800; letter-spacing: 1.2px; }
+    .table-text { font-size: 13px; font-weight: 600; }
+  </style>
+
+  <rect width="1440" height="900" fill="#eeebe5"/>
+  <rect x="36" y="28" width="1368" height="844" rx="24" fill="#fbfaf7" stroke="#d7d0c5" stroke-width="2"/>
+
+  <text x="72" y="70" class="kicker">ACTIVITY REPORTS</text>
+  <text x="72" y="112" class="title">Detailed report</text>
+  <text x="72" y="139" class="muted" font-size="15">Charts, working-time SLA and a complete response list — directly inside Jackdaw Mail.</text>
+
+  <rect x="1160" y="63" width="177" height="42" rx="21" fill="#fff" stroke="#c9c1b5" stroke-width="2"/>
+  <path d="M1182 78v13m0 0-5-5m5 5 5-5M1175 95h14" fill="none" stroke="#ad6510" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1200" y="90" font-size="13" font-weight="750">Save HTML</text>
+  <rect x="1352" y="63" width="27" height="42" rx="13" fill="#f3e8d6"/>
+  <text x="1365" y="89" text-anchor="middle" fill="#ad6510" font-size="12" font-weight="800">⋯</text>
+
+  <rect x="72" y="165" width="1296" height="45" rx="12" fill="#f4f0e9" stroke="#ddd5c9"/>
+  <text x="92" y="193" class="caption">01–30 September 2026</text>
+  <text x="270" y="193" class="muted" font-size="13">·</text>
+  <text x="290" y="193" class="caption">Mail: support@demo.example</text>
+  <text x="535" y="193" class="muted" font-size="13">·</text>
+  <text x="555" y="193" class="caption">Folder: Inbox</text>
+  <text x="715" y="193" class="muted" font-size="13">·</text>
+  <text x="735" y="193" class="caption">Target: 30 working minutes</text>
+  <rect x="1188" y="175" width="160" height="25" rx="12" fill="#f0e1c9"/>
+  <text x="1268" y="192" text-anchor="middle" fill="#9c5b0d" font-size="11" font-weight="800" letter-spacing="1">DEMO DATA</text>
+
+  <g>
+    <rect x="72" y="230" width="300" height="96" rx="15" fill="#f4e7d0" stroke="#c8954c" stroke-width="1.5"/>
+    <text x="92" y="257" class="muted" font-size="12" font-weight="700">MAIL</text>
+    <text x="92" y="292" class="number">1 275</text>
+    <text x="92" y="311" class="muted" font-size="12">869 received · 406 sent</text>
+    <path d="M335 254v24m0 0-7-7m7 7 7-7" fill="none" stroke="#ad6510" stroke-width="2" stroke-linecap="round"/>
+
+    <rect x="390" y="230" width="300" height="96" rx="15" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+    <text x="410" y="257" class="muted" font-size="12" font-weight="700">RESPONDED REQUESTS</text>
+    <text x="410" y="292" class="number" fill="#397e72">45%</text>
+    <text x="410" y="311" class="muted" font-size="12">387 requests received a response</text>
+    <circle cx="653" cy="270" r="17" fill="#e2eee9"/>
+    <path d="M645 270h16m-8-8v16" stroke="#397e72" stroke-width="2" stroke-linecap="round"/>
+
+    <rect x="708" y="230" width="300" height="96" rx="15" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+    <text x="728" y="257" class="muted" font-size="12" font-weight="700">AVERAGE RESPONSE TIME</text>
+    <text x="728" y="292" class="number">22 min 33 sec</text>
+    <text x="728" y="311" class="muted" font-size="12">based on the working calendar</text>
+    <circle cx="968" cy="270" r="17" fill="#f0e1c9"/>
+    <path d="M968 261v10l6 4" fill="none" stroke="#ad6510" stroke-width="2" stroke-linecap="round"/>
+
+    <rect x="1026" y="230" width="342" height="96" rx="15" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+    <text x="1046" y="257" class="muted" font-size="12" font-weight="700">SLA</text>
+    <text x="1046" y="292" class="number" fill="#397e72">86%</text>
+    <text x="1046" y="311" class="muted" font-size="12">296 on time · 48 over target</text>
+    <rect x="1278" y="252" width="64" height="34" rx="17" fill="#e2eee9"/>
+    <text x="1310" y="273" text-anchor="middle" fill="#397e72" font-size="12" font-weight="800">ON TIME</text>
+  </g>
+
+  <rect x="72" y="348" width="805" height="220" rx="16" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+  <text x="96" y="380" class="kicker" font-size="11">ACTIVITY</text>
+  <text x="96" y="409" class="section">Activity over time</text>
+  <text x="96" y="432" class="muted" font-size="12">Mail, chats, calendar and files by day.</text>
+  <circle cx="650" cy="378" r="5" fill="#5f7d9e"/><text x="662" y="382" class="muted" font-size="11">Incoming</text>
+  <circle cx="732" cy="378" r="5" fill="#ad6510"/><text x="744" y="382" class="muted" font-size="11">Outgoing</text>
+  <circle cx="823" cy="378" r="5" fill="#397e72"/><text x="835" y="382" class="muted" font-size="11">Chats</text>
+  <line x1="96" y1="528" x2="850" y2="528" stroke="#ded7cc"/>
+  <g fill="#5f7d9e">
+    <rect x="118" y="479" width="14" height="49" rx="3"/><rect x="190" y="448" width="14" height="80" rx="3"/>
+    <rect x="262" y="466" width="14" height="62" rx="3"/><rect x="334" y="420" width="14" height="108" rx="3"/>
+    <rect x="406" y="456" width="14" height="72" rx="3"/><rect x="478" y="437" width="14" height="91" rx="3"/>
+    <rect x="550" y="470" width="14" height="58" rx="3"/><rect x="622" y="402" width="14" height="126" rx="3"/>
+    <rect x="694" y="455" width="14" height="73" rx="3"/><rect x="766" y="430" width="14" height="98" rx="3"/>
+  </g>
+  <g fill="#ad6510">
+    <rect x="137" y="497" width="14" height="31" rx="3"/><rect x="209" y="478" width="14" height="50" rx="3"/>
+    <rect x="281" y="491" width="14" height="37" rx="3"/><rect x="353" y="465" width="14" height="63" rx="3"/>
+    <rect x="425" y="486" width="14" height="42" rx="3"/><rect x="497" y="466" width="14" height="62" rx="3"/>
+    <rect x="569" y="493" width="14" height="35" rx="3"/><rect x="641" y="450" width="14" height="78" rx="3"/>
+    <rect x="713" y="486" width="14" height="42" rx="3"/><rect x="785" y="468" width="14" height="60" rx="3"/>
+  </g>
+  <g class="muted" font-size="10"><text x="118" y="548">01 Sep</text><text x="262" y="548">07 Sep</text><text x="406" y="548">13 Sep</text><text x="550" y="548">19 Sep</text><text x="694" y="548">25 Sep</text></g>
+
+  <rect x="895" y="348" width="473" height="220" rx="16" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+  <text x="919" y="380" class="kicker" font-size="11">WORK RHYTHM</text>
+  <text x="919" y="409" class="section">When activity happens</text>
+  <text x="919" y="432" class="muted" font-size="12">Outgoing message intensity by hour.</text>
+  <g class="muted" font-size="10"><text x="1001" y="458">09</text><text x="1071" y="458">12</text><text x="1141" y="458">15</text><text x="1211" y="458">18</text></g>
+  <g fill="#eeeae3" stroke="#e0d9ce"><rect x="919" y="472" width="50" height="19" rx="4"/><rect x="975" y="472" width="50" height="19" rx="4"/><rect x="1031" y="472" width="50" height="19" rx="4"/><rect x="1087" y="472" width="50" height="19" rx="4"/><rect x="1143" y="472" width="50" height="19" rx="4"/><rect x="1199" y="472" width="50" height="19" rx="4"/><rect x="1255" y="472" width="50" height="19" rx="4"/><rect x="1311" y="472" width="37" height="19" rx="4"/></g>
+  <g fill="#d8b98e"><rect x="975" y="496" width="50" height="19" rx="4"/><rect x="1031" y="496" width="50" height="19" rx="4"/><rect x="1087" y="496" width="50" height="19" rx="4"/></g>
+  <g fill="#b87320"><rect x="1087" y="520" width="50" height="19" rx="4"/><rect x="1143" y="520" width="50" height="19" rx="4"/><rect x="1199" y="520" width="50" height="19" rx="4"/></g>
+  <g class="muted" font-size="10"><text x="919" y="486">Mon</text><text x="919" y="510">Tue</text><text x="919" y="534">Wed</text></g>
+
+  <rect x="72" y="590" width="1296" height="246" rx="16" fill="#fff" stroke="#d7d0c5" stroke-width="1.5"/>
+  <text x="96" y="622" class="kicker" font-size="11">RESPONSE TIME</text>
+  <text x="96" y="651" class="section">Response details</text>
+  <text x="96" y="674" class="muted" font-size="12">Full list of intervals to the first confirmed response. Click a header to sort.</text>
+  <rect x="96" y="694" width="1248" height="32" rx="7" fill="#f4f0e9"/>
+  <text x="112" y="715" class="table-head">RECEIVED ↕</text><text x="278" y="715" class="table-head">ANSWERED ↕</text><text x="448" y="715" class="table-head">RESPONSE TIME ↕</text><text x="638" y="715" class="table-head">RESPONDER ↕</text><text x="842" y="715" class="table-head">SUBJECT ↕</text><text x="1260" y="715" class="table-head">STATUS</text>
+  <line x1="96" y1="758" x2="1344" y2="758" stroke="#e3ddd3"/><line x1="96" y1="798" x2="1344" y2="798" stroke="#e3ddd3"/>
+  <text x="112" y="746" class="table-text">10 Sep, 09:52</text><text x="278" y="746" class="table-text">10 Sep, 10:15</text><text x="448" y="746" class="table-text">23 min</text><text x="638" y="746" class="table-text">Alex Morozov</text><text x="842" y="746" class="table-text">API integration</text><rect x="1252" y="731" width="75" height="22" rx="11" fill="#e2eee9"/><text x="1289" y="746" text-anchor="middle" fill="#397e72" font-size="11" font-weight="800">ON TIME</text>
+  <text x="112" y="786" class="table-text">09 Sep, 16:40</text><text x="278" y="786" class="table-text">10 Sep, 09:35</text><text x="448" y="786" class="table-text">1 hr 25 min</text><text x="638" y="786" class="table-text">Mila Petrova</text><text x="842" y="786" class="table-text">Portal access</text><rect x="1252" y="771" width="75" height="22" rx="11" fill="#f3dfda"/><text x="1289" y="786" text-anchor="middle" fill="#ad4636" font-size="11" font-weight="800">OVERDUE</text>
+  <text x="112" y="826" class="muted" font-size="11">All report rows are shown · data on this screen is synthetic</text>
+</svg>

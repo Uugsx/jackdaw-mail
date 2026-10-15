@@ -22,9 +22,9 @@
 * Polish based on feedback
 * License notification bar
 * Payment: Jackdaw Mail Pro
-  * Upgrade page in Settings: Jackdaw Mail Pro — client foundation done
-  * License server — pending deployment
-  * Lemon Squeezy store activation, product variants and production checkout — pending
+  * Upgrade page in Settings: Jackdaw Mail Pro — activation, status, device deactivation and checkout links implemented
+  * License server — deployed separately with signed entitlement, admin issuance/revocation and device limits
+  * Lemon Squeezy store activation, product variants and production checkout — requires the merchant's store credentials and variant URLs
 * OAuth
   * Google: Renewal TAC - Started, waiting for Google
   * Microsoft: localhost redirect URL - Client ID vs. account unclear

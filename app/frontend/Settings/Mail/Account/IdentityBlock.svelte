@@ -44,7 +44,7 @@
       {/if}
     </grid>
 
-    {#if showSignature}
+    {#if signatureEnabled && showSignature}
       <vbox class="signature">
         {$t`Signature`}
         <vbox class="signature-editor-box">
@@ -74,6 +74,8 @@
           <SentByExplainer />
         {/if}
       </vbox>
+    {:else if !signatureEnabled}
+      <ProFeatureGate feature="signatures" compact />
     {/if}
 
     {#if showEncryption || showEncryptionOverride}
@@ -83,7 +85,9 @@
     <ExpanderButtons>
       <ExpanderButton bind:expanded={showReplyTo} label={$t`Reply-To`} />
       <ExpanderButton bind:expanded={showOrganisation} label={$t`Organisation`} />
-      <ExpanderButton bind:expanded={showSignature} label={$t`Signature`} />
+      {#if signatureEnabled}
+        <ExpanderButton bind:expanded={showSignature} label={$t`Signature`} />
+      {/if}
       <ExpanderButton bind:expanded={showEncryption} label={$t`Encryption`} on:expand={addEcryption} />
     </ExpanderButtons>
   </vbox>
@@ -103,6 +107,7 @@
   import ExpanderButtons from "../../../Shared/ExpanderButtons.svelte";
   import HeaderGroupBox from "../../../Shared/HeaderGroupBox.svelte";
   import RoundButton from "../../../Shared/RoundButton.svelte";
+  import ProFeatureGate from "../../../Shared/ProFeatureGate.svelte";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
   import RemoveIcon from "lucide-svelte/icons/circle-x";
   import type { Editor } from "@tiptap/core";
@@ -111,6 +116,7 @@
   import { catchErrors } from "../../../Util/error";
   import { sanitize } from "../../../../../lib/util/sanitizeDatatypes";
   import { t } from "../../../../l10n/l10n";
+  import { hasProFeature, proEntitlement } from "../../../../logic/Billing/ProEntitlement";
   import { createEventDispatcher } from 'svelte';
   import { tick } from 'svelte';
   const dispatchEvent = createEventDispatcher();
@@ -131,6 +137,8 @@
   let signatureEditor: HTMLEditor;
   let emailInput: HTMLInputElement;
   let signatureContentPrepared = false;
+  $: billingState = $proEntitlement.value;
+  $: signatureEnabled = !!billingState && hasProFeature("signatures");
 
   $: if (editor && signatureHTML != null && !signatureContentPrepared) {
     signatureContentPrepared = true;
@@ -145,6 +153,9 @@
   }
 
   export function flushSignature() {
+    if (!signatureEnabled) {
+      return;
+    }
     signatureEditor?.syncContent();
     identity.signatureHTML = signatureHTML;
   }

@@ -10,6 +10,7 @@
           padding="3px"
           classes="small"
           label={$t`New account for ${category.name}`}
+          disabled={!canCreateAccount ? $t`A second email account requires Jackdaw Pro. Start the 7-day trial or activate a license.` : false}
           onClick={onNewAccount}
           />
       {/if}
@@ -29,12 +30,17 @@
   import RoundButton from "../../Shared/RoundButton.svelte";
   import AddIcon from "lucide-svelte/icons/plus";
   import { assert } from "../../../logic/util/util";
+  import { appGlobal } from "../../../logic/app";
+  import { canAddMailAccount } from "../../../logic/Billing/ProPolicy";
+  import { proEntitlement } from "../../../logic/Billing/ProEntitlement";
   import { t } from "../../../l10n/l10n";
 
   /** in */
   export let category: SettingsCategory;
 
   $: accounts = category.accounts;
+  $: billingState = $proEntitlement.value;
+  $: canCreateAccount = category.id != "mail" || (!!billingState && canAddMailAccount(appGlobal.emailAccounts.length));
 
   function onNewAccount() {
     assert(category.newAccountURL, "Need newAccountURL");

@@ -14,6 +14,7 @@ import { backgroundError } from "../../../frontend/Util/error";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { NotReached, assert } from "../../util/util";
 import { SetColl } from "svelte-collections";
+import { assertCanAddMailAccount } from "../../Billing/ProPolicy";
 
 export async function saveAndInitConfig(config: MailAccount, emailAddress: string, password: string): Promise<void> {
   await saveConfig(config, emailAddress, password);
@@ -33,6 +34,7 @@ export async function saveAndInitConfig(config: MailAccount, emailAddress: strin
 }
 
 export async function saveConfig(config: MailAccount, emailAddress: string, password: string): Promise<void> {
+  assertCanAddMailAccount(appGlobal.emailAccounts.length);
   fillConfig(config, emailAddress, password);
 
   let identity = new MailIdentity(config);

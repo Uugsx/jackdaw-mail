@@ -6,6 +6,8 @@ import { EMail } from "../../../logic/Mail/EMail";
 import { Folder, SpecialFolder } from "../../../logic/Mail/Folder";
 import { MailAccount } from "../../../logic/Mail/MailAccount";
 import { MailIdentity } from "../../../logic/Mail/MailIdentity";
+import { PRO_FEATURE_KEYS } from "../../../logic/Billing/Billing";
+import { proEntitlement } from "../../../logic/Billing/ProEntitlement";
 
 function createAccount(emailAddress: string): MailAccount {
   let account = new MailAccount();
@@ -77,6 +79,16 @@ describe("адресат ответа", () => {
     original.to.add(identity.asPersonUID());
     original.html = "<p>Original message</p>";
 
+    let previousEntitlement = proEntitlement.value;
+    proEntitlement.setValue({
+      status: "active",
+      plan: "yearly",
+      features: [...PRO_FEATURE_KEYS],
+      validUntil: null,
+      keyLast4: null,
+      message: null,
+      lastValidatedAt: new Date().toISOString(),
+    });
     try {
       let reply = new ComposeActions(original).replyToAuthor();
 
@@ -84,6 +96,42 @@ describe("адресат ответа", () => {
       expect(reply.rawHTMLDangerous).toMatch(/font-family:\s*Arial/i);
       expect(reply.rawHTMLDangerous).toMatch(/font-size:\s*10pt/i);
     } finally {
+      proEntitlement.setValue(previousEntitlement);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("не добавляет подпись без активного Pro-доступа", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => undefined,
+    });
+    let account = createAccount("team@smartds.test");
+    let sent = new Folder(account);
+    sent.specialFolder = SpecialFolder.Sent;
+    account.rootFolders.add(sent);
+    let identity = account.identities.first!;
+    identity.signatureHTML = "<p>Подпись</p>";
+    let original = new EMail(new Folder(account));
+    original.from = new PersonUID("customer@example.test", "Customer");
+    original.to.add(identity.asPersonUID());
+    original.html = "<p>Original message</p>";
+    let previousEntitlement = proEntitlement.value;
+    proEntitlement.setValue({
+      status: "not-activated",
+      plan: null,
+      features: [],
+      validUntil: null,
+      keyLast4: null,
+      message: null,
+      lastValidatedAt: null,
+    });
+
+    try {
+      let reply = new ComposeActions(original).replyToAuthor();
+      expect(reply.rawHTMLDangerous).not.toContain(`<footer class="signature">`);
+    } finally {
+      proEntitlement.setValue(previousEntitlement);
       vi.unstubAllGlobals();
     }
   });

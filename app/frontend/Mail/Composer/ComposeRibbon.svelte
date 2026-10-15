@@ -267,7 +267,10 @@
               on:click={() => dispatch("addAttachment")}>
               <PaperclipIcon size="18px" />
             </button>
-            <button type="button" class="ribbon-btn" title={$t`Signature`}
+            <button type="button" class="ribbon-btn"
+              title={signatureEnabled ? $t`Signature` : $t`HTML email signatures are included in Jackdaw Pro`}
+              aria-label={signatureEnabled ? $t`Signature` : $t`HTML email signatures are included in Jackdaw Pro`}
+              disabled={!signatureEnabled}
               on:click={() => dispatch("insertSignature")}>
               <SignatureIcon size="18px" />
             </button>
@@ -556,6 +559,7 @@
   export let spellcheckOn = false;
   export let editorZoom = 100;
   export let hasSML = false;
+  export let signatureEnabled = true;
   export let openLinkDialog = false;
   export let quoteEditor: QuoteEditorHandle | null = null;
 

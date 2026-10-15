@@ -11,7 +11,7 @@ echo Building Jackdaw Mail version $VERSION
 perl -p -i \
   -e "s|production = false|production = true|;" \
   -e "s|appName: string = '.*';|appName: string = 'Jackdaw Mail';|;" \
-  -e "s|siteRoot: string = '.*';|siteRoot: string = 'https://jackdaw.app';|;" \
+  -e "s|siteRoot: string = '.*';|siteRoot: string = 'https://jackdaw-mail.pro';|;" \
   -e "s|appVersion: string = '.*';\$|appVersion: string = '$VERSION';|;" \
   ../logic/build.ts
 

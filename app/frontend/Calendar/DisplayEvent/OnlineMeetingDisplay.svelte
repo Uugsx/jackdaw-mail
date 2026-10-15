@@ -49,7 +49,7 @@
       return "Zoom";
     } else if (domain == "webex.com") {
       return "Cisco Webex";
-    } else if (domain == "jackdaw.app" || domain == "jackdaw.app") {
+    } else if (domain == "jackdaw.app" || domain == "jackdaw-mail.pro") {
       return gt`${"Jackdaw"} online meeting`;
     } else {
       return gt`Online meeting` + " " + domain;

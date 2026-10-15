@@ -9,6 +9,7 @@
         iconSize="10px"
         padding="3px"
         classes="small"
+        disabled={!canCreateAccount ? $t`A second email account requires Jackdaw Pro. Start the 7-day trial or activate a license.` : false}
         onClick={onNewAccount}
         />
     </hbox>
@@ -45,6 +46,9 @@
   import { assert } from "../../../logic/util/util";
   import { Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
+  import { appGlobal } from "../../../logic/app";
+  import { canAddMailAccount } from "../../../logic/Billing/ProPolicy";
+  import { proEntitlement } from "../../../logic/Billing/ProEntitlement";
 
   export let title: string;
   export let workspace: Workspace;
@@ -53,6 +57,8 @@
   export let accountSettingsID: string;
 
   $: accounts = $changedWorkspace && allAccounts.filter(acc => acc.workspace == workspace);
+  $: billingState = $proEntitlement.value;
+  $: canCreateAccount = accountSettingsID != "mail" || (!!billingState && canAddMailAccount(appGlobal.emailAccounts.length));
 
   function onOpenAccount(account: Account) {
     openSettingsCategoryForAccount(account);

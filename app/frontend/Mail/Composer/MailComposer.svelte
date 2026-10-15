@@ -110,6 +110,7 @@
       spellcheckOn={$spellcheckEnabled.value}
       {editorZoom}
       hasSML={!!$mail.sml}
+      signatureEnabled={signatureEnabled}
       on:send={() => catchErrors(onSend)}
       on:addAttachment={() => catchErrors(onAddAttachment)}
       on:insertSignature={insertSignature}
@@ -199,6 +200,7 @@
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { goBack } from "../../AppsBar/selectedApp";
   import { appGlobal } from "../../../logic/app";
+  import { hasProFeature, proEntitlement } from "../../../logic/Billing/ProEntitlement";
   import { UserError, assert } from "../../../logic/util/util";
   import { backgroundError, catchErrors, showUserError } from "../../Util/error";
   import CloseButton from "./CloseButton.svelte";
@@ -297,6 +299,8 @@
   let defaultFirstLineIndentSetting = getLocalStorage("mail.compose.defaultFirstLineIndent", composeDefaultFirstLineIndent);
   $: showQuoteAttribution = $quoteAttributionSetting.value;
   $: isReplyQuote = !!(mail.composeSource && mail.inReplyTo);
+  $: billingState = $proEntitlement.value;
+  $: signatureEnabled = !!billingState && hasProFeature("signatures");
   let editorZoom = 100;
   let encryptionError: string | null = null;
 
@@ -590,6 +594,10 @@
   }
 
   function insertSignature() {
+    if (!signatureEnabled) {
+      showUserError(new UserError(gt`HTML email signatures are included in Jackdaw Pro.`));
+      return;
+    }
     if (!editor) {
       return;
     }

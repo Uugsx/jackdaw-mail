@@ -36,9 +36,9 @@
     "vite": "^7.3.1",
     "vite-plugin-conditional-compile": "^1.4.5"
   },
-  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw.app)",
+  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw-mail.pro)",
   "copyright": "Ben Bucksch",
   "license": "EUPL-1.2",
   "licenseText": "See LICENSE file at top level",
-  "homepage": "https://jackdaw.app"
+  "homepage": "https://jackdaw-mail.pro"
 }

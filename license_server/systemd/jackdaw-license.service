@@ -1,0 +1,26 @@
+[Unit]
+Description=Jackdaw Mail license and entitlement service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jackdaw-license
+Group=jackdaw-license
+WorkingDirectory=/opt/jackdaw-license
+EnvironmentFile=/etc/jackdaw-license/license.env
+ExecStart=/opt/jackdaw-license/venv/bin/python /opt/jackdaw-license/app.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jackdaw-license
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

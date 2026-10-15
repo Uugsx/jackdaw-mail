@@ -25,14 +25,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://jackdaw.app"
+    "url": "https://jackdaw-mail.pro"
   },
   "bugs": {
-    "url": "https://jackdaw.app"
+    "url": "https://jackdaw-mail.pro"
   },
-  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw.app)",
+  "author": "Ben Bucksch and Jackdaw Mail (https://jackdaw-mail.pro)",
   "copyright": "Ben Bucksch",
-  "homepage": "https://jackdaw.app",
+  "homepage": "https://jackdaw-mail.pro",
   "license": "EUPL-1.2",
   "licenseText": "See LICENSE file at top level",
   "type": "module"

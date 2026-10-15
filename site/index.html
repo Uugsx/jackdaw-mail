@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="page.title">Jackdaw Mail — Почта, Календарь, Контакты и Живой контроль SLA для Exchange / OWA</title>
   <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Быстрый desktop-клиент для Exchange, OWA, EWS и IMAP с живым контролем SLA, интерактивными отчётами, учётом рабочего календаря и Local-first архитектурой.">
-  <link rel="canonical" href="https://jackdaw-mail.app">
+  <link rel="canonical" href="https://jackdaw-mail.pro">
   
   <!-- Open Graph / Social -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://jackdaw-mail.app/">
+  <meta property="og:url" content="https://jackdaw-mail.pro/">
   <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — Почта, Календарь и Живой контроль SLA для Exchange / OWA">
   <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Быстрый desktop-клиент для Exchange, OWA, EWS и IMAP с живым контролем SLA, интерактивными отчётами и Local-first архитектурой.">
-  <meta property="og:image" content="https://jackdaw-mail.app/assets/icon-jackdaw-github.png">
+  <meta property="og:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" data-i18n="page.twitterTitle" data-i18n-attr="content" content="Jackdaw Mail — Почтовый клиент для Exchange и OWA">
   <meta name="twitter:description" data-i18n="page.twitterDescription" data-i18n-attr="content" content="Интерактивные отчёты, живой контроль SLA, синхронизация OWA Shared Mailboxes и локальная приватность.">
-  <meta name="twitter:image" content="https://jackdaw-mail.app/assets/icon-jackdaw-github.png">
+  <meta name="twitter:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
@@ -34,10 +34,14 @@
       <a href="#" class="brand">
         <img src="assets/icon-jackdaw-github.png" data-i18n="brand.logoAlt" data-i18n-attr="alt" alt="Jackdaw Logo" class="brand-icon">
         <span>Jackdaw Mail</span>
-        <span class="brand-badge">v0.9.119-dev</span>
+        <span class="brand-badge">v0.9.124-dev</span>
       </a>
 
-      <nav class="nav" data-i18n="nav.label" data-i18n-attr="aria-label" aria-label="Основная навигация">
+      <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" data-i18n="nav.menu" data-i18n-attr="aria-label" aria-label="Открыть меню" aria-expanded="false" aria-controls="site-nav">
+        <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+      </button>
+
+      <nav id="site-nav" class="nav" data-i18n="nav.label" data-i18n-attr="aria-label" aria-label="Основная навигация">
         <a href="#features" class="nav-link" data-i18n="nav.features">Возможности</a>
         <a href="#showcase" class="nav-link" data-i18n="nav.showcase">SLA и отчёты</a>
         <a href="#plans" class="nav-link" data-i18n="nav.plans">Тарифы</a>
@@ -139,16 +143,16 @@
             </div>
 
             <div class="showcase-tabs" data-i18n="showcase.tablist" data-i18n-attr="aria-label" role="tablist" aria-label="Сценарии интерфейса">
-              <button class="showcase-tab active" role="tab" aria-selected="true" data-target="tab-reports" data-i18n="showcase.reports.tab">
+              <button id="showcase-tab-reports" class="showcase-tab active" role="tab" aria-selected="true" aria-controls="tab-reports" tabindex="0" data-target="tab-reports" data-i18n="showcase.reports.tab">
                 Интерактивные отчёты
               </button>
-              <button class="showcase-tab" role="tab" aria-selected="false" data-target="tab-sla" data-i18n="showcase.sla.tab">
+              <button id="showcase-tab-sla" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-sla" tabindex="-1" data-target="tab-sla" data-i18n="showcase.sla.tab">
                 Живой контроль SLA
               </button>
-              <button class="showcase-tab" role="tab" aria-selected="false" data-target="tab-calendar" data-i18n="showcase.calendar.tab">
+              <button id="showcase-tab-calendar" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-calendar" tabindex="-1" data-target="tab-calendar" data-i18n="showcase.calendar.tab">
                 Рабочий календарь
               </button>
-              <button class="showcase-tab" role="tab" aria-selected="false" data-target="tab-shared" data-i18n="showcase.shared.tab">
+              <button id="showcase-tab-shared" class="showcase-tab" role="tab" aria-selected="false" aria-controls="tab-shared" tabindex="-1" data-target="tab-shared" data-i18n="showcase.shared.tab">
                 Shared Mailboxes OWA
               </button>
             </div>
@@ -156,8 +160,8 @@
 
           <div class="showcase-content">
             <!-- Panel 1: Reports -->
-            <div id="tab-reports" class="showcase-panel active">
-              <img src="assets/reports-demo.svg" data-i18n="showcase.reports.imageAlt" data-i18n-attr="alt" alt="Демонстрация отчётов активности и SLA в Jackdaw Mail" class="showcase-img">
+            <div id="tab-reports" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-reports" tabindex="0">
+              <img src="assets/reports-demo.svg" data-language-image data-image-ru="assets/reports-demo.svg" data-image-en="assets/reports-demo-en.svg" data-i18n="showcase.reports.imageAlt" data-i18n-attr="alt" alt="Демонстрация отчётов активности и SLA в Jackdaw Mail" class="showcase-img">
               <div class="showcase-meta">
                 <div>
                   <strong data-i18n="showcase.reports.title">Аналитический дашборд:</strong>
@@ -168,8 +172,8 @@
             </div>
 
             <!-- Panel 2: Live SLA -->
-            <div id="tab-sla" class="showcase-panel">
-              <img src="assets/sla-control-demo.svg" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Демонстрация живого контроля SLA в боковой панели" class="showcase-img">
+            <div id="tab-sla" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-sla" tabindex="0" hidden>
+              <img src="assets/sla-control-demo.svg" data-language-image data-image-ru="assets/sla-control-demo.svg" data-image-en="assets/sla-control-demo-en.svg" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Демонстрация живого контроля SLA в боковой панели" class="showcase-img">
               <div class="showcase-meta">
                 <div>
                   <strong data-i18n="showcase.sla.title">Боковая панель живой очереди:</strong>
@@ -180,7 +184,7 @@
             </div>
 
             <!-- Panel 3: Working Calendar -->
-            <div id="tab-calendar" class="showcase-panel">
+            <div id="tab-calendar" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-calendar" tabindex="0" hidden>
               <div style="background: var(--bg-subtle); border-radius: var(--radius-md); padding: 36px; border: 1px solid var(--border);">
                 <div style="max-width: 640px; margin: 0 auto; text-align: left;">
                   <h3 data-i18n="showcase.calendar.title" style="font-size: 22px; font-weight: 750; margin-bottom: 12px; color: var(--text-primary);">Индивидуальный график рабочих смен</h3>
@@ -213,7 +217,7 @@
             </div>
 
             <!-- Panel 4: Shared Mailboxes -->
-            <div id="tab-shared" class="showcase-panel">
+            <div id="tab-shared" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-shared" tabindex="0" hidden>
               <div style="background: var(--bg-subtle); border-radius: var(--radius-md); padding: 36px; border: 1px solid var(--border);">
                 <div style="max-width: 640px; margin: 0 auto; text-align: left;">
                   <h3 data-i18n="showcase.shared.title" style="font-size: 22px; font-weight: 750; margin-bottom: 12px; color: var(--text-primary);">Настоящие OWA Shared Mailboxes</h3>
@@ -354,7 +358,7 @@
           <div class="kicker" data-i18n="plans.kicker">Jackdaw Pro</div>
           <h2 class="section-title" data-i18n="plans.title">Срок ответа виден до того, как он станет проблемой</h2>
           <p class="section-desc" data-i18n="plans.description">
-            Базовая почта остаётся бесплатной. Pro добавляет рабочий календарь, живую очередь SLA, напоминания и отчёты для команд, где ответ должен быть измеримым.
+            Базовая почта остаётся бесплатной. Pro добавляет несколько почтовых аккаунтов, HTML-подписи, рабочий календарь, живой контроль SLA, напоминания и отчёты.
           </p>
         </div>
 
@@ -367,6 +371,7 @@
               <li data-i18n="plans.free.item1">Почта, календарь и контакты</li>
               <li data-i18n="plans.free.item2">Exchange / OWA, IMAP и JMAP</li>
               <li data-i18n="plans.free.item3">Локальный кэш и прямое подключение</li>
+              <li data-i18n="plans.free.item4">Один почтовый аккаунт</li>
             </ul>
             <a href="#downloads" class="btn btn-secondary plan-offer-action" data-i18n="plans.free.action">Скачать клиент</a>
           </article>
@@ -379,19 +384,19 @@
               </div>
               <span class="plan-tag" data-i18n="plans.monthly.tag">Гибко</span>
             </div>
-            <div class="plan-price" data-i18n="plans.price">Цена указана в checkout</div>
-            <p class="plan-summary" data-i18n="plans.monthly.description">Оплата помесячно с автоматическим продлением и управлением подпиской.</p>
+            <div class="plan-price" data-i18n="plans.monthly.price">$9.99 / месяц</div>
+            <p class="plan-summary" data-i18n="plans.monthly.description">Помесячная подписка. После оплаты письмо с лицензионным ключом приходит на email покупки.</p>
             <ul class="plan-features">
               <li data-i18n="plans.monthly.item1">Интерактивные отчёты и HTML-экспорт</li>
-              <li data-i18n="plans.monthly.item2">Живая очередь SLA в боковой панели</li>
-              <li data-i18n="plans.monthly.item3">Рабочий календарь и напоминания</li>
+              <li data-i18n="plans.monthly.item2">Живая очередь SLA, рабочий календарь и напоминания</li>
+              <li data-i18n="plans.monthly.item3">Несколько почтовых аккаунтов и форматированные HTML-подписи</li>
             </ul>
             <a
               href="#plans"
               class="btn btn-primary plan-offer-action billing-checkout-link"
               data-billing-plan="monthly"
               aria-describedby="billing-monthly-status"
-              ><span data-i18n="plans.checkout">Открыть checkout</span></a>
+              ><span data-i18n="plans.checkout">Купить и получить ключ</span></a>
             <p class="billing-status" id="billing-monthly-status" data-billing-status="monthly">
               <span data-i18n="billing.unavailable">Checkout будет доступен после активации магазина.</span>
             </p>
@@ -405,10 +410,10 @@
               </div>
               <span class="plan-tag" data-i18n="plans.yearly.tag">Выгоднее</span>
             </div>
-            <div class="plan-price" data-i18n="plans.price">Цена указана в checkout</div>
-            <p class="plan-summary" data-i18n="plans.yearly.description">Один годовой платёж для команды, которая уже работает по SLA.</p>
+            <div class="plan-price" data-i18n="plans.yearly.price">$79.99 / год</div>
+            <p class="plan-summary" data-i18n="plans.yearly.description">Годовая лицензия с ключом после оплаты и прозрачными условиями продления.</p>
             <ul class="plan-features">
-              <li data-i18n="plans.yearly.item1">Все возможности Jackdaw Pro</li>
+                <li data-i18n="plans.yearly.item1">Все возможности Jackdaw Pro, включая аккаунты и подписи</li>
               <li data-i18n="plans.yearly.item2">Условия продления показаны до оплаты</li>
               <li data-i18n="plans.yearly.item3">Лицензия и подписка привязаны к покупке</li>
             </ul>
@@ -417,7 +422,7 @@
               class="btn btn-primary plan-offer-action billing-checkout-link"
               data-billing-plan="yearly"
               aria-describedby="billing-yearly-status"
-              ><span data-i18n="plans.checkout">Открыть checkout</span></a>
+              ><span data-i18n="plans.checkout">Купить и получить ключ</span></a>
             <p class="billing-status" id="billing-yearly-status" data-billing-status="yearly">
               <span data-i18n="billing.unavailable">Checkout будет доступен после активации магазина.</span>
             </p>
@@ -425,7 +430,10 @@
         </div>
 
         <p class="payment-note" data-i18n="plans.paymentNote">
-          Оплата проходит на стороне Lemon Squeezy. В зависимости от страны и устройства checkout показывает доступные способы оплаты, включая Visa, Mastercard, PayPal и Apple Pay. Jackdaw Mail не получает данные банковской карты.
+          Оплата проходит на стороне Lemon Squeezy. После оплаты магазин отправляет лицензионный ключ на email покупки. Jackdaw Mail не получает данные банковской карты.
+        </p>
+        <p class="trial-note" data-i18n="plans.trialNote">
+          Попробуйте все возможности Pro бесплатно 7 дней прямо в Jackdaw Mail. Карта не нужна: пробный период проверяется онлайн и привязывается к одному устройству.
         </p>
       </div>
     </section>
@@ -655,7 +663,7 @@
               <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </summary>
             <div class="faq-answer">
-              <span data-i18n="faq.a4">Базовая версия включает полноценный почтовый клиент, календарь, адресную книгу и поддержку OWA. Модуль Jackdaw Mail Pro расширяет клиент интерактивными SLA-отчётами, живой очередью контроля в боковой панели, гибким рабочим графиком по дням недели и экспортом отчётов в автономный HTML.</span>
+              <span data-i18n="faq.a4">Базовая версия включает полноценный почтовый клиент, календарь, адресную книгу, поддержку OWA и один почтовый аккаунт. Jackdaw Mail Pro добавляет дополнительные аккаунты, форматированные HTML-подписи, интерактивные SLA-отчёты, живую очередь контроля в боковой панели, гибкий рабочий график по дням недели и экспорт отчётов в автономный HTML.</span>
             </div>
           </details>
 
@@ -708,7 +716,7 @@
 
       <div class="footer-bottom">
         <div data-i18n="footer.copyright">© 2026 Jackdaw Mail. Открытый исходный код под лицензией EUPL-1.2.</div>
-        <div>Сайт: <a href="https://jackdaw-mail.app" style="color: var(--accent);">jackdaw-mail.app</a></div>
+        <div>Сайт: <a href="https://jackdaw-mail.pro" style="color: var(--accent);">jackdaw-mail.pro</a></div>
       </div>
     </div>
   </footer>
