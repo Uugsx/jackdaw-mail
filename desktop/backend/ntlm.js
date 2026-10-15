@@ -5,7 +5,7 @@
  * This source code is licensed under the MIT license.
  */
 
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac, randomBytes } from "crypto";
 import { create as createHashMD4 } from "js-md4";
 import { DES } from "des.js";
 import { hostname } from "os";
@@ -193,11 +193,8 @@ export function createType3Message(msg2, username = "", password = "", workstati
      * However, the target info is needed to construct the NTLMv2 response so if it can't be negotiated,
      * fall back to NTLMv1 with NTLMv2 extended security.
      */
-    var clientChallenge = [];
-    for (var i = 0; i < 8; i++) {
-      clientChallenge.push(Math.floor(Math.random() * 256));
-    }
-    var clientChallengeBytes = Buffer.from(clientChallenge);
+    // Клиентский challenge должен быть непредсказуемым, Math.random для этого не годится.
+    var clientChallengeBytes = randomBytes(8);
     var challenges = msg2.targetInfo
       ? calc_ntlmv2_resp(pwhash, username, domainName, msg2.targetInfo, nonce, clientChallengeBytes)
       : ntlm2sr_calc_resp(pwhash, nonce, clientChallengeBytes);

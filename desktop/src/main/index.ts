@@ -2,6 +2,7 @@ import { setMainWindow, startupBackend, shutdownBackend, startupArgs, updateStat
 import { app, shell, BrowserWindow, session, Menu, MenuItemConstructorOptions, type ContextMenuParams, type WebContents } from 'electron'
 import { ipcMain } from 'electron/main';
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
 import { installSignalServiceCATrust } from './signalServiceCA'
@@ -343,6 +344,7 @@ function createComposeWindow(windowID: string, payload: ComposeWindowMail): void
     },
   });
   setupSpellcheckContextMenu(composeWindow);
+  restrictWindowNavigation(composeWindow);
   registerComposeWindow(windowID, payload, composeWindow);
   composeWindow.once("ready-to-show", () => {
     if (!composeWindow.isDestroyed()) {
@@ -384,6 +386,7 @@ function createMessageWindow(windowID: string, payload: MessageWindowPayload): v
     },
   });
   setupSpellcheckContextMenu(messageWindow);
+  restrictWindowNavigation(messageWindow);
   messageWindows.set(windowID, { window: messageWindow, payload });
   messageWindow.on("closed", () => {
     if (messageWindows.get(windowID)?.window === messageWindow) {
@@ -694,6 +697,7 @@ async function createWindow(): Promise<void> {
     })
 
     setupSpellcheckContextMenu(mainWindow);
+    restrictWindowNavigation(mainWindow);
 
     mainWindow.webContents.on('did-create-window', (child, details) => {
       connectOAuth2Window(mainWindow, child, details.frameName, ipcMain);
@@ -971,7 +975,17 @@ const kBackgroundUpdateCheckMs = 4 * 60 * 60 * 1000; // every 4 hours
   }
 }
 
-app.on('web-contents-created', (_event, webContents) => setWindowOpenHandler(webContents));
+app.on('web-contents-created', (_event, webContents) => {
+  setWindowOpenHandler(webContents);
+  // В <webview> показывается недоверенный контент: Node.js и preload ему не положены,
+  // даже если атрибуты тега будут подменены.
+  webContents.on('will-attach-webview', (_attachEvent, webPreferences) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.nodeIntegrationInSubFrames = false;
+    webPreferences.contextIsolation = true;
+  });
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
@@ -1088,6 +1102,40 @@ function setWindowOpenHandler(webContents: WebContents) {
 
 function isExternalLinkURL(url: string | undefined): boolean {
   return !!url && /^(?:https?|mailto|tel):/i.test(url);
+}
+
+/** Окна приложения с preload и JPC-секретом показывают только собственный интерфейс.
+ * Переход верхнего фрейма на чужой адрес (meta refresh из вставленного HTML, брошенный в окно файл)
+ * загрузил бы внешнюю страницу с доступом к preload, поэтому он отменяется,
+ * а веб-ссылка открывается в браузере. Загрузки через loadURL/loadFile эти события не вызывают. */
+function restrictWindowNavigation(window: BrowserWindow): void {
+  const blockForeignNavigation = (details: { url: string; isMainFrame: boolean; preventDefault: () => void }): void => {
+    // Переходы и редиректы внутри iframe не дают доступа к preload, их не трогаем.
+    if (!details.isMainFrame || isAppRendererURL(details.url)) {
+      return;
+    }
+    details.preventDefault();
+    if (isExternalLinkURL(details.url)) {
+      shell.openExternal(details.url).catch(console.error);
+    }
+  };
+  window.webContents.on('will-navigate', blockForeignNavigation);
+  window.webContents.on('will-redirect', blockForeignNavigation);
+}
+
+function isAppRendererURL(url: string): boolean {
+  try {
+    const target = new URL(url);
+    if (is.dev) {
+      return target.origin == 'http://localhost:5454';
+    }
+    if (process.env['ELECTRON_RENDERER_URL']) {
+      return target.origin == new URL(process.env['ELECTRON_RENDERER_URL']).origin;
+    }
+    return target.protocol == 'file:' && target.pathname == pathToFileURL(join(__dirname, '../renderer/index.html')).pathname;
+  } catch {
+    return false;
+  }
 }
 
 // In this file you can include the rest of your app"s specific main process

@@ -220,6 +220,7 @@ Lemon Squeezy License API вызывается только сервером л�
 - опубликовать оферту, privacy, условия подписки и возврата;
 - прогнать test mode: Visa, Mastercard, успешный платёж, отказ, возврат, повтор webhook, отмену, продление и работу без сети;
 - проверить путь `https://jackdaw-mail.pro/#plans` и активацию ключа в реальном desktop-билде;
+- задать на сервере лицензий `LEMON_SQUEEZY_REJECT_TEST_MODE=1` и `LEMON_SQUEEZY_PRODUCT_IDS`, чтобы test mode и другие продукты магазина не выдавали Pro (см. `license_server/README.md`);
 - только после этого включить платный checkout для внешних покупателей.
 
 ## Официальные материалы
