@@ -596,28 +596,8 @@
     fill: var(--icon-primary);
     color: var(--icon-primary);
   }
-  .ribbon-btn.new-action {
-    --ribbon-icon-hover-transform: translateY(-1px) scale(1.04);
-  }
-  .ribbon-btn.reply-action {
-    --ribbon-icon-hover-transform: translateX(-2px);
-  }
-  .ribbon-btn.reply-all-action {
-    --ribbon-icon-hover-transform: translateX(-2px) scale(1.04);
-  }
-  .ribbon-btn.forward-action {
-    --ribbon-icon-hover-transform: translateX(2px);
-  }
-  .ribbon-btn.move-action,
-  .ribbon-btn.archive-action {
-    --ribbon-icon-hover-transform: translateY(-1px) scale(1.04);
-  }
-  .ribbon-btn.spam-action {
-    --ribbon-icon-hover-transform: rotate(-4deg) scale(1.04);
-  }
   .ribbon-btn.flag-action {
     --ribbon-hover-color: var(--danger-fg);
-    --ribbon-icon-hover-transform: rotate(-5deg) scale(1.04);
   }
   .ribbon-btn.flag-action:hover:not(:disabled) :global(svg),
   .ribbon-btn.flag-action:focus-visible:not(:disabled) :global(svg) {
@@ -625,34 +605,12 @@
   }
   .ribbon-btn.important-action {
     --ribbon-hover-color: color-mix(in srgb, var(--danger-fg) 76%, var(--icon-primary));
-    --ribbon-icon-hover-filter: drop-shadow(0 0 3px currentColor);
-    --ribbon-icon-hover-transform: scale(1.08);
   }
   .ribbon-btn.categories-action {
     --ribbon-hover-color: color-mix(in srgb, #3f8f58 88%, var(--main-fg));
-    --ribbon-icon-hover-transform: rotate(-4deg) scale(1.04);
   }
   .ribbon-btn.delete-action {
     --ribbon-hover-color: var(--danger-fg);
-  }
-  .ribbon-btn.delete-action :global(svg path:nth-of-type(4)),
-  .ribbon-btn.delete-action :global(svg path:nth-of-type(5)) {
-    transform-box: view-box;
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .ribbon-btn.delete-action :global(svg path:nth-of-type(4)) {
-    transform-origin: 21px 6px;
-  }
-  .ribbon-btn.delete-action :global(svg path:nth-of-type(5)) {
-    transform-origin: 16px 4px;
-  }
-  .ribbon-btn.delete-action:hover:not(:disabled) :global(svg path:nth-of-type(4)),
-  .ribbon-btn.delete-action:focus-visible:not(:disabled) :global(svg path:nth-of-type(4)) {
-    transform: translateY(-2px) rotate(8deg);
-  }
-  .ribbon-btn.delete-action:hover:not(:disabled) :global(svg path:nth-of-type(5)),
-  .ribbon-btn.delete-action:focus-visible:not(:disabled) :global(svg path:nth-of-type(5)) {
-    transform: translateY(-2px) rotate(8deg);
   }
   .tag-dot {
     width: 10px;

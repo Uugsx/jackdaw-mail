@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import ActivityIcon from "lucide-svelte/icons/activity";
-  import ArrowUpIcon from "lucide-svelte/icons/arrow-up-right";
   import CalendarIcon from "lucide-svelte/icons/calendar-days";
   import ChartIcon from "lucide-svelte/icons/chart-column";
   import ChatIcon from "lucide-svelte/icons/message-circle";
@@ -2479,7 +2478,6 @@
           <article class="summary-card response-card">
             <div class="summary-card-heading">
               <span>{$t`Requests answered`}</span>
-              <ArrowUpIcon size="17px" />
             </div>
             <strong>{formatPercent(report.summary.responseRate)}</strong>
             <p>

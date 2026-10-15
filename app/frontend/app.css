@@ -81,7 +81,7 @@
   --button-motion-duration: 180ms;
   --button-motion-press-duration: 110ms;
   --button-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --button-motion-lift: -1px;
+  --button-motion-lift: 0px;
   --button-motion-press-scale: 0.98;
   --tooltip-bg: #fffaf0;
   --tooltip-fg: #2d3339;
@@ -493,10 +493,7 @@ a:hover {
   --glass-hover-bg: rgba(255, 255, 255, 0.58);
   --glass-selected-bg: rgba(255, 255, 255, 0.96);
   --glass-selected-border: rgba(185, 118, 22, 0.48);
-  background:
-    radial-gradient(1200px 640px at -8% -18%, rgba(210, 138, 27, 0.14), transparent 58%),
-    radial-gradient(900px 520px at 108% 108%, rgba(180, 170, 150, 0.16), transparent 52%),
-    var(--bg);
+  background: var(--bg);
   color: var(--fg);
   color-scheme: light;
 }
@@ -552,10 +549,7 @@ a:hover {
     --glass-selected-bg: rgba(255, 255, 255, 0.16);
     --glass-selected-border: rgba(215, 154, 49, 0.44);
     --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    background:
-      radial-gradient(1100px 600px at -10% -15%, rgba(215, 154, 49, 0.12), transparent 58%),
-      radial-gradient(860px 480px at 105% 105%, rgba(80, 90, 100, 0.18), transparent 52%),
-      var(--bg);
+    background: var(--bg);
     color-scheme: dark;
   }
 }
