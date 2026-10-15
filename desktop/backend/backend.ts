@@ -10,7 +10,7 @@ import { ImapFlow } from 'imapflow';
 import { Database } from "@radically-straightforward/sqlite"; // formerly @leafac/sqlite
 import Zip from "adm-zip";
 import ky from 'ky';
-import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor } from "electron";
+import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, type MessageBoxOptions } from "electron";
 import electronUpdater, { type UpdateCheckResult } from 'electron-updater';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
@@ -1295,11 +1295,69 @@ function setTheme(theme: "system" | "light" | "dark") {
 }
 
 async function openExternalURL(url: string) {
+  // Ссылки приходят и из недоверенных данных (письма, приглашения). Схемы вроде file:, smb:,
+  // search-ms: или ms-msdt: передали бы ОС команду на запуск, поэтому разрешены только веб и почта.
+  if (!/^(?:https?|mailto|tel):/i.test(url)) {
+    throw new Error("Refusing to open a link with an unsupported URL scheme");
+  }
   await shell.openExternal(url);
 }
 
 async function openFileInNativeApp(filePath: string) {
+  if (isExecutableFileType(filePath) && !await confirmOpenExecutableFile(filePath)) {
+    return;
+  }
   await shell.openPath(filePath);
+}
+
+/** Типы, которые ОС запускает как программу или скрипт, а не открывает как документ.
+ * Вложение с таким расширением из чужого письма — типичный способ заразить компьютер. */
+const kExecutableFileExtensions = new Set([
+  // Windows
+  "exe", "com", "scr", "pif", "bat", "cmd", "msi", "msp", "mst", "msix", "msixbundle", "appx", "appxbundle",
+  "appinstaller", "application", "appref-ms", "ps1", "psm1", "psd1", "vbs", "vbe", "js", "jse", "wsf", "wsh",
+  "wsc", "ws", "hta", "cpl", "msc", "lnk", "url", "reg", "inf", "scf", "chm", "gadget", "xll",
+  "settingcontent-ms", "library-ms", "search-ms", "searchconnector-ms", "diagcab", "iso", "img", "vhd", "vhdx",
+  // macOS
+  "app", "command", "tool", "terminal", "pkg", "mpkg", "dmg", "workflow", "scpt", "scptd", "applescript",
+  "webloc", "inetloc", "fileloc",
+  // Linux и кроссплатформенные
+  "sh", "bash", "zsh", "csh", "ksh", "desktop", "run", "bin", "appimage", "deb", "rpm", "jar", "py", "pl",
+]);
+
+function isExecutableFileType(filePath: string): boolean {
+  const extension = path.extname(filePath).slice(1).toLowerCase();
+  return kExecutableFileExtensions.has(extension);
+}
+
+async function confirmOpenExecutableFile(filePath: string): Promise<boolean> {
+  const russian = app.getLocale().toLowerCase().startsWith("ru");
+  const kOpen = 0;
+  const kShowInFolder = 1;
+  const kCancel = 2;
+  const options: MessageBoxOptions = {
+    type: "warning",
+    buttons: russian
+      ? ["Всё равно открыть", "Показать в папке", "Отмена"]
+      : ["Open anyway", "Show in folder", "Cancel"],
+    defaultId: kCancel,
+    cancelId: kCancel,
+    noLink: true,
+    message: russian
+      ? `«${path.basename(filePath)}» — программа или скрипт`
+      : `"${path.basename(filePath)}" is a program or script`,
+    detail: russian
+      ? "При открытии файл запустится на этом компьютере. Открывайте его, только если ждали этот файл и доверяете отправителю."
+      : "Opening it runs it on this computer. Open it only if you expected this file and trust the sender.",
+  };
+  const parent = BrowserWindow.getFocusedWindow();
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  if (response == kShowInFolder) {
+    shell.showItemInFolder(filePath);
+  }
+  return response == kOpen;
 }
 
 class StartupArgs extends Observable {

@@ -391,6 +391,14 @@ class LicenseRequestError extends Error {
   }
 }
 
+/** Ответ сервера, означающий отказ в лицензии. 408 и 429 — таймаут и лимит запросов:
+ * это временная ошибка, как сбой сети, и она не должна выключать Pro. */
+function isLicenseRejection(error: unknown): error is LicenseRequestError {
+  return error instanceof LicenseRequestError
+    && error.responseStatus >= 400 && error.responseStatus < 500
+    && error.responseStatus != 408 && error.responseStatus != 429;
+}
+
 class ProEntitlementError extends Error {
   constructor(message: string) {
     super(message);
@@ -598,7 +606,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
       return state;
     } catch (error) {
       if (storedIsTrial) {
-        if (error instanceof LicenseRequestError && error.responseStatus >= 400 && error.responseStatus < 500) {
+        if (isLicenseRejection(error)) {
           let status: ProEntitlementStatus = error.responseCode == "trial_expired" ? "expired" : "revoked";
           let state = {
             ...defaultState,
@@ -623,7 +631,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
         return state;
       }
       let cachedDate = Date.parse(stored.validatedAt);
-      if (error instanceof LicenseRequestError && error.responseStatus >= 400 && error.responseStatus < 500) {
+      if (isLicenseRejection(error)) {
         let status: ProEntitlementStatus = error.responseStatus == 404 ? "not-activated" : "revoked";
         let state = {
           ...defaultState,

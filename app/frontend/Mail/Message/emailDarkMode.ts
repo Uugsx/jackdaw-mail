@@ -110,7 +110,9 @@ function adaptCssColorDeclaration(prop: string, trimmed: string): string | null 
 }
 
 function stripColorModifiers(value: string): string {
-  return value.trim().replace(/\s*!important\s*$/i, "").trim();
+  // Без регулярки `\s*!important\s*$`: на длинной серии пробелов из стиля письма она работала квадратично.
+  let trimmed = value.trim();
+  return /!important$/i.test(trimmed) ? trimmed.slice(0, -"!important".length).trim() : trimmed;
 }
 
 function mergeInlineColor(el: HTMLElement, color: string): void {

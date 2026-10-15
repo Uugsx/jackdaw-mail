@@ -138,18 +138,52 @@ export async function openMailImageURL(
   await saveAndOpenBlob(blob, srcURL, suggestedFilename);
 }
 
+/** Форматы, которые ОС откроет просмотрщиком картинок. Тип и имя файла задаёт отправитель письма,
+ * поэтому расширение берётся только отсюда: иначе «картинка» invoice.exe запустилась бы как программа. */
+const kOpenableImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "image/tiff", "image/heic", "image/heif"]);
+
 async function saveAndOpenBlob(blob: Blob, srcURL?: URLString, suggestedFilename?: string) {
-  let ext = fileExtensionForMIMEType(blob.type) || "png";
-  let filename = sanitize.filename(
-    suggestedFilename || guessImageFilename(srcURL, ext),
-    `image.${ext}`,
-  );
+  let mimeType = blob.type.split(";")[0].trim().toLowerCase();
+  if (!kOpenableImageTypes.has(mimeType)) {
+    blob = await reencodeImageAsPNG(blob);
+    mimeType = "image/png";
+  }
+  let ext = fileExtensionForMIMEType(mimeType) || "png";
+  let baseName = sanitize.filename(suggestedFilename || guessImageFilename(srcURL, ext), "image").replace(/\.[^.]*$/, "") || "image";
+  let filename = sanitize.filename(`${baseName}.${ext}`, `image.${ext}`);
   let filesDir = await getFilesDir();
   let tmpDir = `${filesDir}/tmp`;
   await appGlobal.remoteApp.fs.mkdir(tmpDir, { recursive: true, mode: 0o700 });
   let tempPath = `${tmpDir}/${crypto.randomUUID()}-${filename}`;
   await appGlobal.remoteApp.writeFile(tempPath, 0o644, new Uint8Array(await blob.arrayBuffer()));
   await openOSAppForFile(tempPath);
+}
+
+/** Декодирует данные как картинку и сохраняет пиксели в PNG. Не-картинка вызывает ошибку. */
+async function reencodeImageAsPNG(blob: Blob): Promise<Blob> {
+  let objectURL = URL.createObjectURL(blob);
+  try {
+    let img = new Image();
+    img.src = objectURL;
+    await img.decode();
+    let canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    let context = canvas.getContext("2d");
+    if (!canvas.width || !canvas.height || !context) {
+      throw new Error("empty image");
+    }
+    context.drawImage(img, 0, 0);
+    let png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!png) {
+      throw new Error("PNG encoding failed");
+    }
+    return png;
+  } catch {
+    throw new UserError(gt`Could not read the image`);
+  } finally {
+    URL.revokeObjectURL(objectURL);
+  }
 }
 
 function guessImageFilename(srcURL: URLString | undefined, ext: string): string {
