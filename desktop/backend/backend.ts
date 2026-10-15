@@ -10,7 +10,7 @@ import { ImapFlow } from 'imapflow';
 import { Database } from "@radically-straightforward/sqlite"; // formerly @leafac/sqlite
 import Zip from "adm-zip";
 import ky from 'ky';
-import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, type MessageBoxOptions } from "electron";
+import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
 import electronUpdater, { type UpdateCheckResult } from 'electron-updater';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
@@ -184,6 +184,9 @@ async function createSharedAppObject() {
     openMenu,
     getConfigDir,
     getFilesDir,
+    isSecretEncryptionAvailable,
+    encryptSecret,
+    decryptSecret,
     // openFileInExternalApp,
     createIMAPFlowConnection,
     getSQLiteDatabase,
@@ -1795,6 +1798,45 @@ async function getThumbnailForLocalFile(fullPath: string, width: number, height:
 
 function platform(): string {
   return os.platform();
+}
+
+/**
+ * Включает safeStorage на macOS. Пока сборки подписаны ad-hoc (identity '-'),
+ * доступ к Keychain-элементу «Jackdaw Mail Safe Storage» привязан к cdhash,
+ * который меняется в каждой сборке, поэтому после OTA-обновления macOS спрашивает
+ * разрешение на Keychain. Включать только после перехода на подпись Developer ID.
+ */
+const kMacSafeStorageEnabled = false;
+
+/** Можно ли шифровать секреты средствами ОС (Keychain / DPAPI / libsecret / kwallet) */
+function isSecretEncryptionAvailable(): boolean {
+  if (process.platform == "darwin" && !kMacSafeStorageEnabled) {
+    return false;
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return false;
+  }
+  if (process.platform == "linux") {
+    // basic_text = ключ зашит в Chromium, это не защита
+    return safeStorage.getSelectedStorageBackend() != "basic_text";
+  }
+  return true;
+}
+
+/** @returns base64 шифртекста. Бросает исключение, если шифрование недоступно */
+function encryptSecret(plaintext: string): string {
+  if (!isSecretEncryptionAvailable()) {
+    throw new Error("OS secret encryption is not available");
+  }
+  return safeStorage.encryptString(plaintext).toString("base64");
+}
+
+/** @param encryptedBase64 результат encryptSecret(). Бросает исключение при ошибке (например, отказ в доступе к Keychain) */
+function decryptSecret(encryptedBase64: string): string {
+  if (!isSecretEncryptionAvailable()) {
+    throw new Error("OS secret encryption is not available");
+  }
+  return safeStorage.decryptString(Buffer.from(encryptedBase64, "base64"));
 }
 
 /** @param type

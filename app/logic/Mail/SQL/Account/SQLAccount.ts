@@ -1,6 +1,6 @@
 import type { Account } from "../../../Abstract/Account";
 import { getDatabase } from "./SQLDatabase";
-import { passwordDecrypt, passwordEncrypt } from "../../../Auth/passwordEncrypt";
+import { passwordDecrypt, passwordEncrypt, isLegacyEncrypted, canEncryptWithOS } from "../../../Auth/passwordEncrypt";
 import { sanitize } from "../../../../../lib/util/sanitizeDatatypes";
 import { assert } from "../../../util/util";
 import sql from "../../../../../lib/rs-sqlite";
@@ -55,8 +55,26 @@ export class SQLAccount {
     json.id = row.idStr;
     acc.fromConfigJSON(json);
     acc.password = await passwordDecrypt(json.passwordEncrypted);
+    if (acc.password && isLegacyEncrypted(json.passwordEncrypted) && await canEncryptWithOS()) {
+      await SQLAccount.migratePassword(row, acc.password);
+    }
     acc._mainAccountID = sanitize.alphanumdash(row.mainAccountIDStr, null);
     return acc;
+  }
+
+  /** Перешифровывает пароль из устаревшего формата средствами ОС. Ошибка не мешает входу. */
+  protected static async migratePassword(row: AccountDBRow, password: string) {
+    try {
+      let json = sanitize.json(row.json, {});
+      json.passwordEncrypted = await passwordEncrypt(password);
+      await (await getDatabase()).run(sql`
+        UPDATE account SET
+          json = ${JSON.stringify(json, null, 2)}
+        WHERE idStr = ${row.idStr}
+        `);
+    } catch (ex) {
+      console.error("Could not re-encrypt the account password", ex);
+    }
   }
 
   /**

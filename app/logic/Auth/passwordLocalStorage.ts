@@ -1,9 +1,18 @@
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
-import { passwordEncrypt, passwordDecrypt } from "./passwordEncrypt";
+import { passwordEncrypt, passwordDecrypt, isLegacyEncrypted, canEncryptWithOS } from "./passwordEncrypt";
 
 export async function getPassword(account: string): Promise<string | null> {
   let encrypted = sanitize.string(localStorage.getItem(getKey(account)), null);
-  return await passwordDecrypt(encrypted);
+  let password = await passwordDecrypt(encrypted);
+  if (password && isLegacyEncrypted(encrypted) && await canEncryptWithOS()) {
+    // Прозрачная миграция со старого формата на шифрование ОС
+    try {
+      await setPassword(account, password);
+    } catch (ex) {
+      console.error("Could not re-encrypt the saved password", ex);
+    }
+  }
+  return password;
 }
 
 export async function setPassword(account: string, password: string | null): Promise<void> {
