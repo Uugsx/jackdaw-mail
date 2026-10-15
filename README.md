@@ -10,9 +10,8 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 [![License: EUPL-1.2](https://img.shields.io/badge/License-EUPL--1.2-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-lightgrey)
-![Stack](https://img.shields.io/badge/stack-Electron%20%7C%20Svelte%20%7C%20TypeScript-646cff)
 
-[Русский](#-русский) · [English](#-english) · [Скачать Android](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [Сайт](https://jackdaw-mail.pro)
+[Русский](#русский) · [English](#english) · [Скачать Android](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest) · [Сайт](https://jackdaw-mail.pro)
 
 </div>
 
@@ -34,7 +33,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 <p align="center"><sub>Демонстрационные экраны · synthetic demo data</sub></p>
 
-## 🇷🇺 Русский
+## Русский
 
 ### О проекте
 
@@ -63,24 +62,24 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 ### Возможности
 
-Перед подключением аккаунта возможности зависят от его протокола, прав доступа и типа сборки. В таблице `✅` означает реализованный сценарий, `◐` — функцию, зависящую от сервера, ключей или proprietary-модуля, а `🚧` — ещё развиваемый сценарий.
+Перед подключением аккаунта возможности зависят от его протокола, прав доступа и типа сборки. В колонке «Статус» «готово» означает реализованный сценарий, «зависит от…» — функцию, которой нужен сервер, ключи или proprietary-модуль, «в работе» — сценарий, который ещё развивается.
 
 | Модуль | Что умеет | Статус |
 |--------|-----------|--------|
-| **Почта** | IMAP, JMAP, EWS, OWA, ActiveSync и MS Graph (beta); Pro-доступ к нескольким аккаунтам и shared mailboxes, папки, поиск, smart views «Непрочитанные/С флажком/Вложения», быстрые фильтры, категории, теги, архив, спам, корзина, перенос и уведомления | ✅ / ◐ протокол / Pro |
-| **Композер** | Плавающее окно, HTML/plain text, форматирование, Pro-подписи с ссылками и изображениями, цитирование, вложения и inline-изображения, drag-and-drop, черновики, read receipt, PGP/S/MIME UI | ✅ / ◐ ключи и сервер / Pro |
-| **Связанные письма** | Поиск по кнопке в заголовке письма; точные дубликаты, цепочка, номера обращения/клиента, одинаковая тема и похожий текст; сворачиваемые группы и переход к письму | ✅ локальный индекс |
-| **Рабочие пространства** | Фильтрация связанных данных по контексту «Все/Работа/…» и восстановление последнего выбранного пространства | ✅ |
-| **UI и производительность** | Перестраиваемые layout'ы, ribbon, масштаб письма, корректный горизонтальный overflow, быстрый виртуализированный список, защита от двойного срабатывания горячих клавиш | ✅ desktop |
-| **Отчёты и SLA** | Интерактивные графики и таблицы, сортировка, фильтры ящика/папки/категорий, рабочие часы по каждому дню, атрибуция ответственного, живой контроль, напоминания, архив контроля и HTML-экспорт | ✅ Pro |
-| **Календарь** | Локальные и серверные календари, представления дня/недели/месяца, события, приглашения, вложения, напоминания и онлайн-встречи | ✅ / ◐ протокол |
-| **Контакты** | Личная адресная книга, GAL, группы, поиск, история взаимодействия, PGP/S/MIME-ключи; EWS, OWA, ActiveSync, CardDAV и JMAP | ✅ / ◐ протокол |
-| **Файлы** | Локальное хранилище, WebDAV, Nextcloud и OpenCloud; каталоги, теги, поиск, таблица/галерея, загрузка, скачивание и предпросмотр | ✅ / ◐ сервер |
-| **Чаты** | XMPP, Matrix, WhatsApp, Signal и MS Graph (beta); комнаты, поиск, вложения, emoji/GIF/stickers и реакции | ✅ / ◐ протокол |
-| **Meet** | Аудио/видео, участники, микрофон/камера, демонстрация экрана и приглашения; LiveKit, M3, SIP и WhatsApp backends | ◐ backend / proprietary |
-| **Web Apps** | Каталог и личный список встроенных web-приложений, запуск рядом с почтой и сохранение выбранных приложений | ✅ / ◐ каталог |
-| **Темы** | Дерево и граф рабочих тем с вложенными подтемами | ◐ рабочая область |
-| **Desktop / mobile** | Electron для macOS, Windows и Linux; Capacitor для iOS и Android; OTA для desktop | ✅ desktop / 🚧 mobile |
+| **Почта** | IMAP, JMAP, EWS, OWA, ActiveSync и MS Graph (beta); Pro-доступ к нескольким аккаунтам и shared mailboxes, папки, поиск, smart views «Непрочитанные/С флажком/Вложения», быстрые фильтры, категории, теги, архив, спам, корзина, перенос и уведомления | готово; зависит от протокола; Pro |
+| **Композер** | Плавающее окно, HTML/plain text, форматирование, Pro-подписи с ссылками и изображениями, цитирование, вложения и inline-изображения, drag-and-drop, черновики, read receipt, PGP/S/MIME UI | готово; зависит от ключей и сервера; Pro |
+| **Связанные письма** | Поиск по кнопке в заголовке письма; точные дубликаты, цепочка, номера обращения/клиента, одинаковая тема и похожий текст; сворачиваемые группы и переход к письму | готово, локальный индекс |
+| **Рабочие пространства** | Фильтрация связанных данных по контексту «Все/Работа/…» и восстановление последнего выбранного пространства | готово |
+| **UI и производительность** | Перестраиваемые layout'ы, ribbon, масштаб письма, корректный горизонтальный overflow, быстрый виртуализированный список, защита от двойного срабатывания горячих клавиш | готово на desktop |
+| **Отчёты и SLA** | Интерактивные графики и таблицы, сортировка, фильтры ящика/папки/категорий, рабочие часы по каждому дню, атрибуция ответственного, живой контроль, напоминания, архив контроля и HTML-экспорт | готово, Pro |
+| **Календарь** | Локальные и серверные календари, представления дня/недели/месяца, события, приглашения, вложения, напоминания и онлайн-встречи | готово; зависит от протокола |
+| **Контакты** | Личная адресная книга, GAL, группы, поиск, история взаимодействия, PGP/S/MIME-ключи; EWS, OWA, ActiveSync, CardDAV и JMAP | готово; зависит от протокола |
+| **Файлы** | Локальное хранилище, WebDAV, Nextcloud и OpenCloud; каталоги, теги, поиск, таблица/галерея, загрузка, скачивание и предпросмотр | готово; зависит от сервера |
+| **Чаты** | XMPP, Matrix, WhatsApp, Signal и MS Graph (beta); комнаты, поиск, вложения, emoji/GIF/stickers и реакции | готово; зависит от протокола |
+| **Meet** | Аудио/видео, участники, микрофон/камера, демонстрация экрана и приглашения; LiveKit, M3, SIP и WhatsApp backends | зависит от backend, proprietary |
+| **Web Apps** | Каталог и личный список встроенных web-приложений, запуск рядом с почтой и сохранение выбранных приложений | готово; зависит от каталога |
+| **Темы** | Дерево и граф рабочих тем с вложенными подтемами | зависит от рабочей области |
+| **Desktop / mobile** | Electron для macOS, Windows и Linux; Capacitor для iOS и Android; OTA для desktop | desktop готово, mobile в работе |
 
 #### Поиск связанных писем по запросу
 
@@ -114,9 +113,10 @@ Jackdaw Mail Pro включает рабочий календарь, тайме�
 
 | Платформа | Статус |
 |-----------|--------|
-| macOS (arm64 / universal) | ✅ основная |
-| Windows / Linux | ✅ desktop |
-| iOS / Android | 🚧 mobile |
+| macOS (universal) | готово, основная платформа |
+| Windows 10/11 x64 | готово |
+| Linux | сборка из исходников; готовых пакетов в релизах пока нет |
+| iOS / Android | в работе |
 
 ### Сборка (dev)
 
@@ -165,7 +165,7 @@ lib/        — общие библиотеки (JPC protocol)
 
 ---
 
-## 🇬🇧 English
+## English
 
 ### About
 
@@ -194,24 +194,24 @@ The standalone native Android client for Jackdaw Mail is developed by **[SpliffR
 
 ### Features
 
-Before an account is connected, the available features depend on its protocol, permissions and build type. In the table, `✅` means implemented, `◐` means dependent on a server, keys or a proprietary module, and `🚧` means the scenario is still being expanded.
+Before an account is connected, the available features depend on its protocol, permissions and build type. In the Status column, “ready” means implemented, “depends on…” means the feature needs a server, keys or a proprietary module, and “in progress” means the scenario is still being built.
 
 | Module | Highlights | Status |
 |--------|------------|--------|
-| **Mail** | IMAP, JMAP, EWS, OWA, ActiveSync and MS Graph (beta); multiple accounts and shared mailboxes with Pro, folders, search, Unread/Flagged/Attachments smart views, quick filters, categories, tags, archive, junk, trash, move and notifications | ✅ / ◐ protocol / Pro |
-| **Composer** | Floating window, HTML/plain text, formatting, Pro signatures with links and images, quoting, attachments and inline images, drag-and-drop, drafts, read receipts and PGP/S/MIME UI | ✅ / ◐ keys and server / Pro |
-| **Related messages** | On-demand button in the message header; exact duplicates, conversation links, case/customer identifiers, same subject and similar text; collapsible groups and open-message navigation | ✅ local index |
-| **Workspaces** | Context filtering for “All/Work/…” and restoration of the last selected workspace | ✅ |
-| **UI & performance** | Reworked layouts, ribbon, message zoom, horizontal overflow handling, virtualized fast lists and protection against duplicate keyboard shortcut actions | ✅ desktop |
-| **Reports & SLA** | Interactive charts and tables, sorting, mailbox/folder/category filters, per-day working hours, responder attribution, live control, reminders, tracking archive and HTML export | ✅ Pro |
-| **Calendar** | Local and server calendars, day/week/month views, events, invitations, attachments, reminders and online meetings | ✅ / ◐ protocol |
-| **Contacts** | Personal address books, GAL, groups, search, contact history, PGP/S/MIME keys; EWS, OWA, ActiveSync, CardDAV and JMAP | ✅ / ◐ protocol |
-| **Files** | Local storage, WebDAV, Nextcloud and OpenCloud; directories, tags, search, table/gallery views, upload, download and preview | ✅ / ◐ server |
-| **Chat** | XMPP, Matrix, WhatsApp, Signal and MS Graph (beta); rooms, search, attachments, emoji/GIF/stickers and reactions | ✅ / ◐ protocol |
-| **Meet** | Audio/video, participants, microphone/camera, screen sharing and invitations; LiveKit, M3, SIP and WhatsApp backends | ◐ backend / proprietary |
-| **Web Apps** | Catalog and personal list of embedded web apps, launch beside mail and persisted app selection | ✅ / ◐ catalog |
-| **Topics** | Tree and graph of work topics with nested subtopics | ◐ workspace |
-| **Desktop / mobile** | Electron for macOS, Windows and Linux; Capacitor for iOS and Android; desktop OTA updates | ✅ desktop / 🚧 mobile |
+| **Mail** | IMAP, JMAP, EWS, OWA, ActiveSync and MS Graph (beta); multiple accounts and shared mailboxes with Pro, folders, search, Unread/Flagged/Attachments smart views, quick filters, categories, tags, archive, junk, trash, move and notifications | ready; depends on the protocol; Pro |
+| **Composer** | Floating window, HTML/plain text, formatting, Pro signatures with links and images, quoting, attachments and inline images, drag-and-drop, drafts, read receipts and PGP/S/MIME UI | ready; depends on keys and server; Pro |
+| **Related messages** | On-demand button in the message header; exact duplicates, conversation links, case/customer identifiers, same subject and similar text; collapsible groups and open-message navigation | ready, local index |
+| **Workspaces** | Context filtering for “All/Work/…” and restoration of the last selected workspace | ready |
+| **UI & performance** | Reworked layouts, ribbon, message zoom, horizontal overflow handling, virtualized fast lists and protection against duplicate keyboard shortcut actions | готово на desktop |
+| **Reports & SLA** | Interactive charts and tables, sorting, mailbox/folder/category filters, per-day working hours, responder attribution, live control, reminders, tracking archive and HTML export | готово, Pro |
+| **Calendar** | Local and server calendars, day/week/month views, events, invitations, attachments, reminders and online meetings | ready; depends on the protocol |
+| **Contacts** | Personal address books, GAL, groups, search, contact history, PGP/S/MIME keys; EWS, OWA, ActiveSync, CardDAV and JMAP | ready; depends on the protocol |
+| **Files** | Local storage, WebDAV, Nextcloud and OpenCloud; directories, tags, search, table/gallery views, upload, download and preview | ready; depends on the server |
+| **Chat** | XMPP, Matrix, WhatsApp, Signal and MS Graph (beta); rooms, search, attachments, emoji/GIF/stickers and reactions | ready; depends on the protocol |
+| **Meet** | Audio/video, participants, microphone/camera, screen sharing and invitations; LiveKit, M3, SIP and WhatsApp backends | зависит от backend, proprietary |
+| **Web Apps** | Catalog and personal list of embedded web apps, launch beside mail and persisted app selection | ready; depends on the catalog |
+| **Topics** | Tree and graph of work topics with nested subtopics | depends on the workspace |
+| **Desktop / mobile** | Electron for macOS, Windows and Linux; Capacitor for iOS and Android; desktop OTA updates | desktop готово, mobile в работе |
 
 #### On-demand related-message search
 
@@ -245,9 +245,10 @@ Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tr
 
 | Platform | Status |
 |----------|--------|
-| macOS (arm64 / universal) | ✅ primary |
-| Windows / Linux | ✅ desktop |
-| iOS / Android | 🚧 mobile |
+| macOS (universal) | ready, primary platform |
+| Windows 10/11 x64 | ready |
+| Linux | build from source; no ready-made packages in releases yet |
+| iOS / Android | in progress |
 
 ### Build (dev)
 
