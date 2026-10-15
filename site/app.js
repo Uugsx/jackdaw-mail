@@ -622,25 +622,25 @@
 
   const DOWNLOAD_LINKS = {
     mac: {
-      url: 'https://github.com/Uugsx/jackdaw-mail/releases/latest',
+      url: 'https://github.com/Uugsx/jackdaw-mail/releases',
       textKey: 'downloads.hero.mac',
       labelKey: 'platform.mac',
       cardId: 'card-macos'
     },
     windows: {
-      url: 'https://github.com/Uugsx/jackdaw-mail/releases/latest',
+      url: 'https://github.com/Uugsx/jackdaw-mail/releases',
       textKey: 'downloads.hero.windows',
       labelKey: 'platform.windows',
       cardId: 'card-windows'
     },
     linux: {
-      url: 'https://github.com/Uugsx/jackdaw-mail/releases/latest',
+      url: 'https://github.com/Uugsx/jackdaw-mail/releases',
       textKey: 'downloads.hero.linux',
       labelKey: 'platform.linux',
       cardId: 'card-linux'
     },
     other: {
-      url: 'https://github.com/Uugsx/jackdaw-mail/releases/latest',
+      url: 'https://github.com/Uugsx/jackdaw-mail/releases',
       textKey: 'downloads.hero.other',
       labelKey: 'platform.other',
       cardId: 'card-macos'
