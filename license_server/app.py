@@ -654,33 +654,38 @@ ADMIN_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Jackdaw Mail · лицензии</title>
   <style>
-    :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; background: #f6f3ee; color: #1c1b19; }
-    body { margin: 0; padding: 32px; }
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f6f5f1; color: #1a1d21; }
+    body { margin: 0; padding: 32px; line-height: 1.5; }
     main { max-width: 980px; margin: 0 auto; }
-    h1 { margin: 0 0 8px; letter-spacing: -.04em; }
-    p { color: #5d584f; line-height: 1.5; }
-    section { background: #fff; border: 1px solid #ddd5ca; border-radius: 14px; padding: 22px; margin-top: 18px; box-shadow: 0 8px 24px rgb(42 34 24 / 7%); }
-    label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: #4c463e; }
-    input, select, textarea { width: 100%; box-sizing: border-box; border: 1px solid #cfc5b8; border-radius: 8px; padding: 10px 12px; font: inherit; background: #fff; color: #1c1b19; }
+    h1 { margin: 0 0 8px; font-size: 26px; font-weight: 700; }
+    h2 { margin: 0 0 14px; font-size: 18px; font-weight: 650; }
+    p { color: #4d525a; }
+    section { border-top: 1px solid #1a1d21; padding-top: 20px; margin-top: 32px; }
+    label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: #1a1d21; }
+    input, select, textarea { width: 100%; box-sizing: border-box; border: 1px solid #7d828a; border-radius: 3px; padding: 9px 11px; font: inherit; background: #fff; color: #1a1d21; }
     textarea { min-height: 80px; resize: vertical; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .wide { grid-column: 1 / -1; }
-    button { border: 1px solid #b65f12; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 750; color: #fff; background: #b65f12; cursor: pointer; }
-    button:hover { background: #944d0c; }
-    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #e2a061; outline-offset: 2px; }
-    button.secondary { background: #fff; color: #9a500d; border-color: #d8b58f; }
-    button.danger { background: #8d2824; border-color: #8d2824; padding: 6px 10px; }
+    button { border: 1px solid #1a1d21; border-radius: 3px; padding: 9px 16px; font: inherit; font-weight: 600; color: #fff; background: #1a1d21; cursor: pointer; }
+    button:hover { background: #343a42; }
+    button:active { transform: translateY(1px); }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #9a5a0e; outline-offset: 2px; }
+    button.secondary { background: transparent; color: #1a1d21; }
+    button.secondary:hover { background: #ecebe6; }
+    button.danger { background: #a3261f; border-color: #a3261f; padding: 5px 10px; }
+    button.danger:hover { background: #82201a; }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-    .status { min-height: 1.5em; color: #5d584f; }
-    .error { color: #8d2824; }
-    .success { color: #24694e; }
-    .key { display: block; padding: 12px; border: 1px dashed #b65f12; border-radius: 8px; background: #fff8ef; font: 700 15px ui-monospace, monospace; overflow-wrap: anywhere; }
+    .status { min-height: 1.5em; color: #4d525a; }
+    .error { color: #a3261f; }
+    .success { color: #1f6b4a; }
+    .key { display: block; padding: 12px; border-left: 3px solid #1a1d21; background: #ecebe6; color: #1a1d21; font: 600 15px ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 700px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee7df; vertical-align: top; font-size: 13px; }
-    th { color: #6a6258; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
-    .muted { color: #7c746a; font-size: 12px; }
+    th, td { text-align: left; padding: 10px 8px 10px 0; border-bottom: 1px solid #d9d6cf; vertical-align: top; font-size: 14px; }
+    th { color: #686d75; font-size: 13px; font-weight: 600; border-bottom-color: #1a1d21; }
+    .muted { color: #686d75; font-size: 13px; }
     @media (max-width: 680px) { body { padding: 16px; } .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+    @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
   </style>
 </head>
 <body>
@@ -940,7 +945,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         if not checkout_url:
             self._send_html(
                 503,
-                """<!doctype html><meta charset='utf-8'><title>Jackdaw Pro</title><style>body{font:16px system-ui;max-width:620px;margin:12vh auto;padding:24px;color:#1c1b19;background:#f6f3ee}main{background:#fff;padding:28px;border:1px solid #ddd5ca;border-radius:14px}a{color:#9a500d}</style><main><h1>Покупка Jackdaw Pro</h1><p>Платёжный магазин ещё не подключён. Сервис лицензий уже готов принимать ключи и выдавать доступ после активации магазина.</p><p><a href='https://jackdaw-mail.pro/#plans'>Вернуться к тарифам</a></p></main>""",
+                """<!doctype html><meta charset='utf-8'><title>Jackdaw Pro</title><style>body{font:16px/1.5 system-ui;max-width:620px;margin:12vh auto;padding:24px;color:#1a1d21;background:#f6f5f1}main{border-top:1px solid #1a1d21;padding-top:20px}p{color:#4d525a}a{color:#9a5a0e}</style><main><h1>Покупка Jackdaw Pro</h1><p>Платёжный магазин ещё не подключён. Сервис лицензий уже готов принимать ключи и выдавать доступ после активации магазина.</p><p><a href='https://jackdaw-mail.pro/#plans'>Вернуться к тарифам</a></p></main>""",
                 "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
             )
             return
