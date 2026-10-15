@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -18,6 +19,7 @@ import secrets
 import sqlite3
 import threading
 import time
+import traceback
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
@@ -54,6 +56,14 @@ MAX_BODY_BYTES = 32 * 1024
 DEFAULT_TRIAL_DAYS = 7
 MIGRATION_VERSION_BASELINE = 1
 MIGRATION_VERSION_TRIAL_CLAIMS = 2
+# Медленный клиент не должен удерживать поток обработчика бесконечно.
+REQUEST_SOCKET_TIMEOUT_SECONDS = 15
+MAX_CONCURRENT_REQUESTS = 64
+# X-Forwarded-For учитывается только от локального reverse proxy и только при явном включении.
+TRUSTED_PROXY_PEERS = frozenset({"127.0.0.1", "::1"})
+LOG_CONTROL_CHARS = {code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0))}
+PROVIDER_REVOKED_KEY_STATUSES = {"disabled", "expired"}
+PROVIDER_PAST_DUE_SUBSCRIPTION_STATUSES = {"past_due", "unpaid", "paused"}
 
 
 class ServiceError(Exception):
@@ -133,6 +143,9 @@ class Configuration:
         self.yearly_checkout_url = self._read_checkout_url("LEMON_SQUEEZY_YEARLY_CHECKOUT_URL")
         self.grace_days = max(0, int(os.getenv("JACKDAW_LICENSE_GRACE_DAYS", "7")))
         self.trial_days = DEFAULT_TRIAL_DAYS
+        self.trust_forwarded_for = os.getenv("JACKDAW_TRUST_X_FORWARDED_FOR", "").strip() == "1"
+        self.reject_test_webhooks = os.getenv("LEMON_SQUEEZY_REJECT_TEST_MODE", "").strip() == "1"
+        self.product_ids = {value.strip() for value in os.getenv("LEMON_SQUEEZY_PRODUCT_IDS", "").split(",") if value.strip()}
         default_origins = {
             "https://jackdaw-mail.pro",
             "https://www.jackdaw-mail.pro",
@@ -350,10 +363,12 @@ class LicenseStore:
                 (license_key_hash(normalized_key), provider_license_id, provider_license_id),
             ).fetchone()
             if existing:
+                # Отзыв не снимается событием провайдера: вернуть лицензию может только администратор.
                 connection.execute(
                     """
                     UPDATE licenses
-                    SET plan = ?, status = ?, email = COALESCE(?, email),
+                    SET plan = ?, status = CASE WHEN status = 'revoked' THEN status ELSE ? END,
+                        email = COALESCE(?, email),
                         provider_license_id = COALESCE(?, provider_license_id),
                         provider_order_id = COALESCE(?, provider_order_id),
                         expires_at = COALESCE(?, expires_at), grace_until = NULL, updated_at = ?
@@ -389,8 +404,21 @@ class LicenseStore:
     def update_provider_status(self, provider_license_id: str, status: str, expires_at: str | None, grace_until: str | None) -> bool:
         with self._write_lock, self._connect() as connection:
             cursor = connection.execute(
-                "UPDATE licenses SET status = ?, expires_at = COALESCE(?, expires_at), grace_until = ?, updated_at = ? WHERE provider_license_id = ?",
+                "UPDATE licenses SET status = ?, expires_at = COALESCE(?, expires_at), grace_until = ?, updated_at = ? WHERE provider_license_id = ? AND status != 'revoked'",
                 (status, expires_at, grace_until, iso_datetime(now_utc()), provider_license_id),
+            )
+            return cursor.rowcount > 0
+
+    def update_provider_status_by_order(self, provider_order_id: str, status: str, expires_at: str | None, grace_until: str | None) -> bool:
+        """События подписки и заказа несут id заказа, а не id ключа, поэтому лицензия ищется по заказу."""
+        with self._write_lock, self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE licenses
+                SET status = ?, expires_at = COALESCE(?, expires_at), grace_until = ?, updated_at = ?
+                WHERE provider_order_id = ? AND source = 'lemon-squeezy' AND status != 'revoked'
+                """,
+                (status, expires_at, grace_until, iso_datetime(now_utc()), provider_order_id),
             )
             return cursor.rowcount > 0
 
@@ -632,8 +660,11 @@ def extract_provider_data(payload: dict[str, Any]) -> tuple[str | None, str | No
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     attributes = data.get("attributes") if isinstance(data.get("attributes"), dict) else {}
     key = attributes.get("key") or attributes.get("license_key") or attributes.get("license_key_value")
-    provider_license_id = attributes.get("license_key_id") or data.get("id")
-    provider_order_id = attributes.get("order_id") or attributes.get("order_item_id")
+    # data.id — id объекта своего типа: ключа, заказа или подписки. Id разных типов пересекаются,
+    # поэтому как id ключа используется только id объекта license-keys.
+    data_type = str(data.get("type", "")).lower()
+    provider_license_id = attributes.get("license_key_id") or (data.get("id") if data_type in {"", "license-keys"} else None)
+    provider_order_id = attributes.get("order_id") or attributes.get("order_item_id") or (data.get("id") if data_type == "orders" else None)
     variant_name = " ".join(
         str(attributes.get(name, ""))
         for name in ("variant_name", "product_name", "product_title")
@@ -790,15 +821,56 @@ ADMIN_HTML = """<!doctype html>
 class LicenseRequestHandler(BaseHTTPRequestHandler):
     server_version = "JackdawLicense/1.0"
     protocol_version = "HTTP/1.1"
+    timeout = REQUEST_SOCKET_TIMEOUT_SECONDS
 
     @property
     def service(self) -> "LicenseHTTPService":
         return self.server.service  # type: ignore[attr-defined]
 
+    def version_string(self) -> str:
+        # Заголовок Server не раскрывает версию Python.
+        return self.server_version
+
+    def parse_request(self) -> bool:
+        self._body_consumed = False
+        return super().parse_request()
+
+    def _request_body_pending(self) -> bool:
+        headers = getattr(self, "headers", None)
+        if headers is None or getattr(self, "_body_consumed", False):
+            return False
+        content_length = headers.get("Content-Length")
+        return "Transfer-Encoding" in headers or (content_length is not None and content_length.strip() != "0")
+
+    def end_headers(self) -> None:
+        # Непрочитанное тело на keep-alive соединении было бы разобрано как следующий запрос (CL.0 desync).
+        if self._request_body_pending():
+            self.send_header("Connection", "close")
+        super().end_headers()
+
+    def _client_ip(self) -> str:
+        peer = self.client_address[0]
+        headers = getattr(self, "headers", None)
+        if headers is None or peer not in TRUSTED_PROXY_PEERS or not getattr(self.service.config, "trust_forwarded_for", False):
+            return peer
+        # Правое значение добавляет сам reverse proxy, левые присылает клиент.
+        forwarded = headers.get("X-Forwarded-For", "").split(",")[-1].strip()
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            return peer
+
+    def address_string(self) -> str:
+        return self._client_ip()
+
     def log_message(self, format: str, *args: Any) -> None:
-        message = format % args
+        message = (format % args).translate(LOG_CONTROL_CHARS)
         if "licenseKey" not in message and "Authorization" not in message:
             print(f"license-server: {self.address_string()} {message}", flush=True)
+
+    def _send_internal_error(self) -> None:
+        self.log_error("unhandled error: %s", traceback.format_exc())
+        self._send_error(ServiceError(500, "internal_error", "Внутренняя ошибка сервиса лицензий."))
 
     def _origin_headers(self) -> None:
         origin = self.headers.get("Origin", "").rstrip("/")
@@ -813,6 +885,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Strict-Transport-Security", "max-age=31536000")
 
     def _send_json(self, status: int, payload: dict[str, Any], head_only: bool = False) -> None:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -845,7 +918,9 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
             raise ServiceError(400, "invalid_content_length", "Некорректный размер запроса.") from exc
         if length <= 0 or length > MAX_BODY_BYTES:
             raise ServiceError(413, "request_too_large", "Запрос слишком большой.")
-        return self.rfile.read(length)
+        body = self.rfile.read(length)
+        self._body_consumed = len(body) == length
+        return body
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -857,7 +932,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         return payload
 
     def _check_rate(self, bucket: str, limit: int) -> None:
-        if not self.service.rate_limiter.allow(f"{bucket}:{self.client_address[0]}", limit):
+        if not self.service.rate_limiter.allow(f"{bucket}:{self._client_ip()}", limit):
             raise ServiceError(429, "rate_limited", "Слишком много запросов. Повторите позже.")
 
     def _require_admin(self) -> None:
@@ -892,7 +967,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         except ServiceError as error:
             self._send_error(error)
         except Exception:
-            self._send_error(ServiceError(500, "internal_error", "Внутренняя ошибка сервиса лицензий."))
+            self._send_internal_error()
 
     def do_GET(self) -> None:
         try:
@@ -938,7 +1013,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         except ServiceError as error:
             self._send_error(error)
         except Exception:
-            self._send_error(ServiceError(500, "internal_error", "Внутренняя ошибка сервиса лицензий."))
+            self._send_internal_error()
 
     def _handle_checkout(self, plan: str) -> None:
         checkout_url = self.service.config.monthly_checkout_url if plan == "monthly" else self.service.config.yearly_checkout_url
@@ -959,7 +1034,8 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             if path == "/v1/webhooks/lemon-squeezy":
-                self._check_rate("webhook", ADMIN_RATE_LIMIT)
+                # Лимит применяется только к запросам с неверной подписью, чтобы мусорный трафик
+                # не вытеснял настоящие доставки Lemon Squeezy.
                 self._handle_webhook()
                 return
             if path in {"/v1/trial/start", "/v1/trial/refresh"}:
@@ -995,7 +1071,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         except ServiceError as error:
             self._send_error(error)
         except Exception:
-            self._send_error(ServiceError(500, "internal_error", "Внутренняя ошибка сервиса лицензий."))
+            self._send_internal_error()
 
     def _handle_activation(self, payload: dict[str, Any], refresh_only: bool) -> None:
         normalized_key = normalize_license_key(payload.get("licenseKey"))
@@ -1092,7 +1168,8 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         secret = self.service.config.webhook_secret
         supplied = self.headers.get("X-Signature", "").strip().lower()
         expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest() if secret else ""
-        if not secret or not self.service.config.store_id or not supplied or not hmac.compare_digest(supplied.removeprefix("sha256="), expected):
+        if not secret or not self.service.config.store_id or not supplied or not hmac.compare_digest(supplied.removeprefix("sha256=").encode("utf-8"), expected.encode("utf-8")):
+            self._check_rate("webhook-invalid", ADMIN_RATE_LIMIT)
             raise ServiceError(401, "invalid_webhook_signature", "Подпись webhook недействительна.")
         try:
             payload = json.loads(raw_body.decode("utf-8"))
@@ -1109,7 +1186,18 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         attributes = data.get("attributes") if isinstance(data.get("attributes"), dict) else {}
         if str(attributes.get("store_id", "")) != self.service.config.store_id:
             raise ServiceError(403, "invalid_webhook_store", "Webhook относится к другому магазину.")
-        event_id = str(self.headers.get("X-Event-Id") or meta.get("event_id") or f"{event_name}:{data.get('id', '')}:{hashlib.sha256(raw_body).hexdigest()[:16]}")
+        if meta.get("test_mode") is True and getattr(self.service.config, "reject_test_webhooks", False):
+            self._send_json(200, {"ok": True, "ignored": "test_mode"})
+            return
+        allowed_products = getattr(self.service.config, "product_ids", set())
+        first_item = attributes.get("first_order_item") if isinstance(attributes.get("first_order_item"), dict) else {}
+        product_id = attributes.get("product_id") or first_item.get("product_id")
+        if allowed_products and str(product_id) not in allowed_products:
+            self._send_json(200, {"ok": True, "ignored": "product"})
+            return
+        # Идентификатор события строится только из подписанного тела: неподписанный заголовок
+        # позволил бы повторно применить перехваченное событие.
+        event_id = str(meta.get("event_id") or f"{event_name}:{data.get('id', '')}:{hashlib.sha256(raw_body).hexdigest()[:16]}")
         if not event_id or len(event_id) > 200:
             raise ServiceError(400, "invalid_webhook_event", "Webhook не содержит корректный идентификатор события.")
         if not self.service.store.record_webhook(event_id, event_name or "unknown", hashlib.sha256(raw_body).hexdigest()):
@@ -1127,16 +1215,39 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
             elif event_name == "subscription_paused":
                 event_status = "past_due"
                 expires_at = iso_datetime(now_utc() + timedelta(days=self.service.config.grace_days))
+            # Статус объекта важнее имени события: license_key_updated и subscription_updated
+            # приходят и при отключении ключа, и при просрочке оплаты.
+            data_type = str(data.get("type", "")).lower()
+            provider_status = str(attributes.get("status", "")).lower()
+            if data_type == "license-keys" and (attributes.get("disabled") is True or provider_status in PROVIDER_REVOKED_KEY_STATUSES):
+                event_status = "revoked"
+            elif data_type == "subscriptions" and provider_status == "expired":
+                event_status = "revoked"
+            elif data_type == "subscriptions" and event_status == "active" and provider_status in PROVIDER_PAST_DUE_SUBSCRIPTION_STATUSES:
+                event_status = "past_due"
+                expires_at = iso_datetime(now_utc() + timedelta(days=self.service.config.grace_days))
+            elif data_type == "subscriptions" and event_status == "active" and provider_status in {"active", "on_trial"}:
+                # Запас на задержку webhook о продлении: подписка не гаснет в момент renews_at.
+                renews_at = parse_iso_datetime(attributes.get("renews_at") if isinstance(attributes.get("renews_at"), str) else None)
+                if renews_at:
+                    expires_at = iso_datetime(renews_at + timedelta(days=self.service.config.grace_days))
+            grace_until = iso_datetime(now_utc() + timedelta(days=self.service.config.grace_days)) if event_status == "past_due" else None
             if raw_key:
                 normalized_key = normalize_license_key(raw_key)
                 email = None
                 user_data = meta.get("custom_data") if isinstance(meta.get("custom_data"), dict) else {}
                 raw_email = user_data.get("email") or attributes.get("user_email")
                 if isinstance(raw_email, str):
-                    email = validate_email(raw_email)
+                    try:
+                        email = validate_email(raw_email)
+                    except ServiceError:
+                        # Email — необязательная метка; из-за неё webhook не должен уходить в бесконечные повторы.
+                        email = None
                 self.service.store.upsert_provider_license(normalized_key, plan, expires_at, event_status, provider_license_id, provider_order_id, email)
             elif provider_license_id:
-                self.service.store.update_provider_status(provider_license_id, event_status, expires_at, iso_datetime(now_utc() + timedelta(days=self.service.config.grace_days)) if event_status == "past_due" else None)
+                self.service.store.update_provider_status(provider_license_id, event_status, expires_at, grace_until)
+            elif provider_order_id:
+                self.service.store.update_provider_status_by_order(provider_order_id, event_status, expires_at, grace_until)
         except Exception:
             self.service.store.forget_webhook(event_id)
             raise
@@ -1149,7 +1260,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         try:
             duration_days = int(payload.get("durationDays", 365))
             max_activations = int(payload.get("maxActivations", 3))
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             raise ServiceError(400, "invalid_license_limits", "Срок и лимит устройств должны быть целыми числами.") from exc
         if duration_days < 0 or duration_days > 3650 or max_activations < 0 or max_activations > 100:
             raise ServiceError(400, "invalid_license_limits", "Срок должен быть от 0 до 3650 дней, лимит устройств — от 0 до 100.")
@@ -1198,6 +1309,30 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True})
 
 
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """Ограничивает число одновременных соединений, чтобы медленные клиенты не исчерпали потоки."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._request_slots = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._request_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
+
 class LicenseHTTPService:
     def __init__(self, config: Configuration, store: LicenseStore, signer: EntitlementSigner):
         self.config = config
@@ -1206,7 +1341,7 @@ class LicenseHTTPService:
         self.rate_limiter = RateLimiter()
 
     def serve_forever(self) -> None:
-        server = ThreadingHTTPServer((self.config.host, self.config.port), LicenseRequestHandler)
+        server = BoundedThreadingHTTPServer((self.config.host, self.config.port), LicenseRequestHandler)
         server.service = self  # type: ignore[attr-defined]
         print(
             f"Jackdaw license server listening on {self.config.host}:{self.config.port}; "

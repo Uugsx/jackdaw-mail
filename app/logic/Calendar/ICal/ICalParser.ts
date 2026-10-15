@@ -5,6 +5,15 @@ function unescaped(value: string): string {
   return value.replace(/\\n|\\(.)/gi, (_, c) => c || "\n");
 }
 
+// Символ значения — экранированный символ или любой другой. Прежний вариант `(\\?.)*?` разрешал
+// прочитать обратный слэш двумя способами, и строка из десятков слэшей без `:` из присланного
+// приглашения вешала разбор экспоненциальным перебором. Здесь слэш читается одним способом:
+// как экранирование, а в конце строки — как обычный символ.
+const kParameter = /^;([-\w]+)=("?)((?:\\(?:.|(?!.))|(?!\\).)*?)\2(?=[;:])/;
+/** Запасной разбор для некорректных строк, где слэш не экранирует следующий символ. */
+const kParameterUnescaped = /^;([-\w]+)=("?)(.*?)\2(?=[;:])/;
+const kValue = /(^:|;)(?:\\(?:.|(?!.))|(?!\\).)*?(?=;|$)/g;
+
 export class ICalEntry {
   properties: Record<string, string> = Object.create(null);
   name: string;
@@ -16,13 +25,13 @@ export class ICalEntry {
     let pos = line.search(/[;:]/);
     this.name = line.slice(0, pos).replace(/.+\.|-/g, "").toLowerCase();
     line = line.slice(pos);
-    while (/^;([-\w]+)=("?)((\\?.)*?)\2(?=[;:])/.test(line)) {
+    while (kParameter.test(line) || kParameterUnescaped.test(line)) {
       let value = this.properties[RegExp.$1.toLowerCase()];
       this.properties[RegExp.$1.toLowerCase()] = (value ? value + "," : "") + unescaped(RegExp.$3);
       line = RegExp.rightContext;
     }
     this.value = unescaped(line.slice(1));
-    this.values = line.match(/(^:|;)(\\?.)*?(?=;|$)/g)?.map(value => unescaped(value.slice(1))) ?? [];
+    this.values = line.match(kValue)?.map(value => unescaped(value.slice(1))) ?? [];
   }
 }
 

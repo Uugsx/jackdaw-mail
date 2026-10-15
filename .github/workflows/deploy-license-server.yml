@@ -38,7 +38,8 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # В прод попадает только main: ручной запуск с другой ветки не должен выкатывать непроверенный код.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       SSH_KEY: ${{ secrets.LICENSE_DEPLOY_SSH_KEY }}

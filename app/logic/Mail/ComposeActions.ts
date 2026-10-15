@@ -8,6 +8,7 @@ import { appName, appVersion, siteRoot } from "../build";
 import { getLocalStorage } from "../../frontend/Util/LocalStorage";
 import { importAutoCryptKeys } from "./Encryption/PGP/AutoCrypt";
 import { fileExtensionForMIMEType } from "../Files/FileType/MIMETypes";
+import { escapeAttr, escapeHTML } from "../Files/FileType/htmlHelper";
 import { backgroundError } from "../../frontend/Util/error";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
 import { UserError, assert, dataURLToBlob, type URLString, ensureArray } from "../util/util";
@@ -70,10 +71,10 @@ export class ComposeActions {
   protected buildReplyQuote(original: EMail): string {
     let showAttribution = getLocalStorage("mail.send.quote.attribution", false).value;
     let header = showAttribution
-      ? `<p class="quote-header">${this.quotePrefixLine()}</p>
+      ? `<p class="quote-header">${escapeHTML(this.quotePrefixLine())}</p>
     `
       : "";
-    return `${header}<blockquote cite="mid:${original.id}">
+    return `${header}<blockquote cite="mid:${escapeAttr(original.id ?? "")}">
       ${original.html}
     </blockquote>`;
   }
@@ -267,7 +268,7 @@ export class ComposeActions {
     <p class="forward-header">
       <div>
         <span class="field">From:</span> <span class="value">
-          ${this.email.from?.name ?? this.email.from.emailAddress}${this.email.from?.name != this.email.from?.emailAddress ? ' <' + this.email.from.emailAddress + '>' : ''}
+          ${escapeHTML(this.email.from?.name ?? this.email.from.emailAddress)}${this.email.from?.name != this.email.from?.emailAddress ? ' &lt;' + escapeHTML(this.email.from.emailAddress) + '&gt;' : ''}
         </span>
       </div>
       <div>
@@ -277,7 +278,7 @@ export class ComposeActions {
       </div>
       <div>
         <span class="field">Subject:</span> <span class="value">
-          ${this.email.subject ?? ""}
+          ${escapeHTML(this.email.subject ?? "")}
         </span>
       </div>
     </p>
