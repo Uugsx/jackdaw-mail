@@ -136,7 +136,7 @@
     box-shadow: 0 5px 14px rgba(var(--shadow-color), 0.1);
   }
   button.button:active:not(.disabled) {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .selected:not(.disabled) {
     background-color: var(--selected-bg);

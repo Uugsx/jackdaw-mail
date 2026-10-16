@@ -174,7 +174,7 @@
     transform: translateX(-50%) translateY(var(--button-motion-lift));
   }
   .toggle:active {
-    transform: translateX(-50%) translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateX(-50%) translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .toggle:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--appbar-fg) 40%, transparent);

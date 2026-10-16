@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import MeetWeb from './MeetWeb.svelte';
 import '../../app.css';
+import '../../icon-motion.css';
 import { installTooltips } from '../../Shared/tooltip';
 
 installTooltips(document);

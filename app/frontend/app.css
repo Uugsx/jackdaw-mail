@@ -80,8 +80,9 @@
   --ui-font-scale: 1;
   --button-motion-duration: 180ms;
   --button-motion-press-duration: 110ms;
-  --button-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --button-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --button-motion-lift: 0px;
+  --button-motion-press-shift: 1px;
   --button-motion-press-scale: 0.98;
   --tooltip-bg: #fffaf0;
   --tooltip-fg: #2d3339;
@@ -740,7 +741,7 @@ button:not(:disabled):not(.disabled):not([data-no-button-motion]) {
 }
 
 button:not(:disabled):not(.disabled):not([data-no-button-motion]):active {
-  transform: translateY(0) scale(var(--button-motion-press-scale));
+  transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   transition-duration: var(--button-motion-press-duration);
 }
 

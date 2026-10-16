@@ -1420,7 +1420,7 @@
     transform: translateY(-1px) scale(1.03);
   }
   .ribbon-btn:active:not(:disabled) {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .ribbon-btn:active:not(:disabled) :global(svg) {
     transform: none;

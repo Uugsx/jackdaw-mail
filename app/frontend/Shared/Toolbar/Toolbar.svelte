@@ -31,7 +31,7 @@
     transform: translateY(var(--button-motion-lift));
   }
   .toolbar :global(button.button:active:not(.disabled)) {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .toolbar :global(button.button.disabled) {
     opacity: 20%;

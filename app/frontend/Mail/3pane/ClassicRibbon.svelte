@@ -73,7 +73,7 @@
       <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
         <FolderInputIcon size="20px" />
       </span>
-      <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+      <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true" data-icon-motion="swap-in">
         <FolderOpenIcon size="20px" />
       </span>
       <span>{$t`Move`}</span>
@@ -106,14 +106,14 @@
         <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
           <MailOpenIcon size="20px" />
         </span>
-        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true" data-icon-motion="swap-in">
           <MailIcon size="20px" />
         </span>
       {:else}
         <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
           <MailIcon size="20px" />
         </span>
-        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true" data-icon-motion="swap-in">
           <MailOpenIcon size="20px" />
         </span>
       {/if}
@@ -536,7 +536,7 @@
     flex-shrink: 0;
     transform-origin: center;
     transition:
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform var(--button-motion-duration) var(--button-motion-ease),
       color 160ms ease,
       fill 160ms ease,
       filter 160ms ease;
@@ -563,7 +563,7 @@
     box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.09);
   }
   .ribbon-btn:active:not(:disabled) {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .ribbon-btn:focus-visible:not(:disabled) {
     outline: 2px solid color-mix(in srgb, var(--icon-primary) 72%, transparent);
@@ -611,6 +611,15 @@
   }
   .ribbon-btn.delete-action {
     --ribbon-hover-color: var(--danger-fg);
+  }
+  /* Разрушительное действие: при наведении фон подкрашивается тем же
+   * красным, что и иконка, — сигнал заметен, но не кричит. */
+  .ribbon-btn.delete-action:hover:not(:disabled),
+  .ribbon-btn.delete-action:focus-visible:not(:disabled) {
+    background-color: color-mix(in srgb, var(--danger-fg) 14%, transparent);
+  }
+  .ribbon-btn.delete-action:focus-visible:not(:disabled) {
+    outline-color: color-mix(in srgb, var(--danger-fg) 72%, transparent);
   }
   .tag-dot {
     width: 10px;
@@ -674,7 +683,7 @@
       transition: none;
     }
     .ribbon-btn :global(svg),
-    .ribbon-btn.delete-action :global(svg path) {
+    .ribbon-btn :global(svg > *) {
       transition: none;
       transform: none !important;
     }
