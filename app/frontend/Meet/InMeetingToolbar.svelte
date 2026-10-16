@@ -272,7 +272,7 @@
   let showViewSelector = false;
   let popupAnchor: HTMLElement;
   let viewSetting = getLocalStorage("meet.videoView", View.GalleryAutoView);
-  $: selectedView = meeting instanceof PhoneCall ? View.Phone : $viewSetting.value;
+  $: selectedView = meeting instanceof PhoneCall || meeting.voiceOnly ? View.Phone : $viewSetting.value;
   $: viewSelectorIcon =
     selectedView == View.SpeakerOnly ? ViewSpeakerOnlyIcon :
     selectedView == View.Thumbnails ? ViewThumbnailsRightIcon :

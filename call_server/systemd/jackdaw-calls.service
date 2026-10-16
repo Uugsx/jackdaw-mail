@@ -1,5 +1,5 @@
 [Unit]
-Description=Jackdaw Mail call signaling (presence, ringing, LiveKit tokens)
+Description=Jackdaw Mail calls and chat signaling (presence, ringing, WebRTC SDP/ICE relay, E2E chat queue)
 After=network-online.target jackdaw-license.service
 Wants=network-online.target
 

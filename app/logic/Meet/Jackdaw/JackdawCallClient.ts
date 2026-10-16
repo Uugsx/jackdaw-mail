@@ -3,7 +3,7 @@
  *
  * Отвечает за вход по лицензии, подтверждённые адреса (присутствие в сети),
  * справочник «этот адрес сейчас доступен для звонка» и доставку сигналов звонкам.
- * Сам звонок (медиа) — в `JackdawCall` через LiveKit.
+ * Сам звонок (медиа) — в `JackdawCall`, напрямую между клиентами (P2P WebRTC).
  */
 import { Observable, notifyChangedProperty } from "../../util/Observable";
 import type { ProCallCredential } from "../../Billing/ProEntitlement";
@@ -288,6 +288,7 @@ export class JackdawCallClient extends Observable {
       case "ringing":
       case "accepted":
       case "joined":
+      case "signal":
       case "call-ended":
         this.calls.get(message.callId)?.onSignal(message);
         break;

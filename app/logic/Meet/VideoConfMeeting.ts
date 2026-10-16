@@ -44,6 +44,8 @@ export class VideoConfMeeting extends Observable {
    * Usually `LocalMediaDeviceStreams` or a protocol-specific impl. */
   mediaDeviceStreams: MediaDeviceStreams;
   hasVideo = true;
+  /** Разговор 1:1 только голосом (не телефонная линия): интерфейс показывает вид телефонного звонка. */
+  readonly voiceOnly: boolean = false;
 
   /** Subclass constructor must set `this.mediaDeviceStreams` and then call this function. */
   protected listenStreamChanges() {

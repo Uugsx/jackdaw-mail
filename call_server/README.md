@@ -1,19 +1,25 @@
 # Сервис звонков и чата Jackdaw Mail
 
-Аудио- и видеозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail по email-адресу.
+Бесплатные голосовые звонки 1:1 и чат со сквозным шифрованием между пользователями Jackdaw Mail по email-адресу.
 
 ```
-Клиент A ──wss /v1/calls──► jackdaw-calls (присутствие, вызов, токены) ◄──wss── Клиент B
+Клиент A ──wss /v1/calls──► jackdaw-calls (присутствие, вызов, SDP/ICE, чат) ◄──wss── Клиент B
    │                                  │ только чтение
    │                                  ▼
    │                         база сервиса лицензий
-   └────── WebRTC ──────► LiveKit SFU + встроенный TURN ◄────── WebRTC ── Клиент B
+   └──────────── WebRTC (аудио, DTLS-SRTP, напрямую P2P) ────────────► Клиент B
+                 STUN: бесплатные публичные серверы Google / Cloudflare
 ```
 
 - `calls.py` — сигналинг на `websockets` (asyncio). Логика (`CallHub`) не зависит от транспорта и покрыта тестами без сети.
-- Медиа идёт через собственный LiveKit (`deploy/livekit.yaml`). Сервис только выдаёт токены на одну комнату `call-<uuid>` на 15 минут; LiveKit сам продлевает токен подключённым участникам.
-- Звонки — 1:1 (`room.max_participants: 2`).
+- Медиа идёт напрямую между клиентами (`RTCPeerConnection`, только аудио). Сервис пересылает между двумя участниками звонка описание сессии (SDP) и ICE-кандидаты и больше в медиа не участвует. Голос шифруется DTLS-SRTP, сервер его не видит.
+- Сервер медиа (LiveKit, TURN) не нужен. Платить нужно только за VPS, на котором уже работает сервис лицензий.
+- Звонки — 1:1, только голос. Видеозвонки между пользователями Jackdaw в клиенте отключены (видео остаётся для WhatsApp).
 - `chat.py` — чат по тому же соединению: открытые ключи устройств, зашифрованная очередь доставки, зашифрованные файлы. Своя база `chat.sqlite3`, схема только через `migrations/` (у каждой миграции есть `*.rollback.sql`).
+
+### Ограничение P2P без TURN
+
+STUN помогает клиентам за обычным домашним или мобильным NAT найти друг друга. Если оба собеседника за симметричным NAT или корпоративным файрволом, который не пропускает UDP, прямое соединение не установится: клиент через 30 секунд завершит звонок с сообщением «Не удалось соединить звонок». По опыту WebRTC это единицы–десятки процентов звонков в зависимости от сетей. Решение на будущее — свой TURN (coturn) с временными учётными данными; это отдельная платная часть (трафик идёт через сервер).
 
 ## Чат
 
@@ -31,42 +37,81 @@
 2. **Владение адресом.** Адрес становится доступным для звонков только после кода из письма (SMTP, `JACKDAW_CALLS_SMTP_*`). Сервис выдаёт подписанное HMAC подтверждение на 90 дней, привязанное к лицензии (или устройству пробного периода): чужая лицензия его не примет. Сервер подтверждений не хранит.
 3. **Присутствие** живёт только в памяти: адрес «в сети», пока открыто соединение с подтверждением. После перезапуска сервиса клиенты переподключаются сами.
 4. Звонящий указывает только свой подтверждённый адрес; подделать отправителя нельзя. Принять, отклонить или завершить звонок может только его участник.
+5. **Сигналы WebRTC** (`signal`) принимаются только от двух соединений идущего (принятого) звонка и пересылаются только второму из них. Другие устройства того же адреса и посторонние получают `call_not_found`. SDP — до 16 КБ и только печатные символы, ICE-кандидат — до 1 КБ; дальше пересылаются только известные поля (`candidate`, `sdpMid`, `sdpMLineIndex`).
 
-Ограничения: 3 письма с кодом на адрес в час, 5 попыток ввода кода, 12 запросов справочника в минуту (до 50 адресов), 10 писем с кодом на лицензию в час, 10 вызовов в минуту на соединение.
+Ограничения: 3 письма с кодом на адрес в час, 5 попыток ввода кода, 12 запросов справочника в минуту (до 50 адресов), 10 писем с кодом на лицензию в час, 10 вызовов в минуту на соединение, 240 сигналов WebRTC в минуту на соединение.
 
 Справочник отвечает лицензированным пользователям, доступен ли адрес для звонка. Это раскрывает факт использования Jackdaw тем, кто знает адрес, — поэтому адрес попадает в справочник только после явного подтверждения пользователем, а запросы ограничены.
 
+IP-адреса собеседников видны друг другу в ICE-кандидатах — это свойство любого P2P-звонка.
+
 ## Состояния звонка
 
-`invite` → `ringing` (всем устройствам вызываемого приходит `incoming`) → `accept` / `reject` / `cancel` / 45 с без ответа → `accepted` + `joined` с токенами LiveKit → `hangup`.
+`invite` → `ringing` (всем устройствам вызываемого приходит `incoming`) → `accept` / `reject` / `cancel` / 45 с без ответа → `accepted` (звонящему) + `joined` (ответившему устройству), оба с `"media": "p2p"` → звонящий отправляет `signal` `offer`, вызываемый — `signal` `answer`, оба — `signal` `ice` → `hangup`.
 
-Причины завершения (`call-ended.reason`): `offline`, `busy`, `declined`, `no-answer`, `cancelled`, `hangup`, `answered-elsewhere`, `connection-lost` (обрыв без переподключения 30 с), `timeout` (4 часа).
+```json
+{"type": "signal", "callId": "…", "kind": "offer",  "sdp": "v=0\r\n…"}
+{"type": "signal", "callId": "…", "kind": "answer", "sdp": "v=0\r\n…"}
+{"type": "signal", "callId": "…", "kind": "ice",    "candidate": {"candidate": "candidate:…", "sdpMid": "0", "sdpMLineIndex": 0}}
+```
 
-## Развёртывание (рядом с сервисом лицензий)
+Если задан `JACKDAW_CALLS_STUN_URLS`, `accepted`/`joined` содержат `iceServers`; иначе клиент использует свои публичные STUN. Отклонённый сигнал (`invalid_signal`, `rate_limited`) звонок не завершает.
 
-1. LiveKit: `docker run` из комментария в `deploy/livekit.yaml`. Открыть наружу UDP 3478, TCP 5349 (TURN/TLS), TCP 7881, UDP 50000–60000. Сертификат для `turn.jackdaw-mail.pro`.
-2. Сигналинг:
+Причины завершения (`call-ended.reason`): `offline`, `busy`, `declined`, `no-answer`, `cancelled`, `hangup`, `answered-elsewhere`, `connection-lost` (обрыв сигналинга без переподключения 30 с), `timeout` (4 часа). Клиент дополнительно завершает звонок сам, если соединение P2P не установилось за 30 с или перешло в `failed`.
+
+Версия протокола (`server-hello.protocol`) — 2.
+
+## Что нужно для запуска
+
+1. SSH-доступ с `sudo` к VPS, где работает сервис лицензий (`jackdaw-license`, база `/var/lib/jackdaw-license/license.sqlite3`).
+2. SMTP-ящик для писем с кодом подтверждения адреса (хост, порт 587 со STARTTLS, логин, пароль, адрес отправителя). Без него подтверждение адресов недоступно, а значит, недоступны и звонки, и чат.
+3. Reverse proxy с TLS на домене сервиса лицензий (в примерах — Caddy). Новый DNS не нужен: клиент обращается к `wss://<домен сервиса лицензий>/v1/calls`.
+4. Входящие порты для медиа открывать не нужно: голос идёт между клиентами.
+
+## Развёртывание (рядом с сервисом лицензий, без LiveKit)
+
+Команды выполняются на VPS из копии репозитория (например, `git clone` в домашнюю папку).
+
+1. Python и venv: `sudo apt install -y python3-venv` (Python ≥ 3.10).
+2. Файлы сервиса:
    ```bash
-   sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls
-   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py /opt/jackdaw-calls/
-   sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls/migrations /var/lib/jackdaw-calls
+   sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls /opt/jackdaw-calls/migrations /var/lib/jackdaw-calls
+   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py call_server/requirements.txt /opt/jackdaw-calls/
    sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/migrations/*.sql /opt/jackdaw-calls/migrations/
    sudo -u jackdaw-license python3 -m venv /opt/jackdaw-calls/venv
-   sudo -u jackdaw-license /opt/jackdaw-calls/venv/bin/pip install -r call_server/requirements.txt
+   sudo -u jackdaw-license /opt/jackdaw-calls/venv/bin/pip install -r /opt/jackdaw-calls/requirements.txt
+   ```
+3. Настройки и секреты (права 0600, владелец root; systemd читает их от root):
+   ```bash
    sudo install -d -m 0700 /etc/jackdaw-calls
    sudo install -m 0600 call_server/deploy/calls.env.example /etc/jackdaw-calls/calls.env
-   sudo sh -c 'openssl rand -hex 32 > /etc/jackdaw-calls/proof.secret && chmod 0600 /etc/jackdaw-calls/proof.secret'
+   sudo sh -c 'umask 077; openssl rand -hex 32 > /etc/jackdaw-calls/proof.secret'
+   sudo sh -c 'umask 077; printf "%s" "ПАРОЛЬ_SMTP" > /etc/jackdaw-calls/smtp.secret'
+   sudoedit /etc/jackdaw-calls/calls.env   # JACKDAW_CALLS_SMTP_HOST, _USER, _MAIL_FROM
+   ```
+   Переменные LiveKit оставить закомментированными — сервис запустится в P2P-режиме и напишет в журнал `media mode: P2P`.
+   Пароль SMTP лучше ввести через `sudoedit /etc/jackdaw-calls/smtp.secret`, чтобы он не попал в историю shell.
+4. systemd:
+   ```bash
    sudo install -m 0644 call_server/systemd/jackdaw-calls.service /etc/systemd/system/
    sudo systemctl daemon-reload && sudo systemctl enable --now jackdaw-calls
+   sudo journalctl -u jackdaw-calls -n 20 --no-pager   # «listening on 127.0.0.1:8091», «media mode: P2P»
    ```
-   Секреты (`livekit.secret`, `smtp.secret`) кладутся файлами с правами 0600; systemd читает env-файл от root.
-3. Reverse proxy: `deploy/Caddyfile.example` — `/v1/calls` на 8091 под тем же доменом, что и сервис лицензий (клиент строит адрес `wss://<домен лицензий>/v1/calls`), и `calls.jackdaw-mail.pro` на LiveKit.
+5. Caddy: добавить в блок домена сервиса лицензий маршрут из `deploy/Caddyfile.example` (`handle /v1/calls { reverse_proxy 127.0.0.1:8091 }` **перед** общим `handle`), затем `sudo systemctl reload caddy`. Для nginx: `location = /v1/calls { proxy_pass http://127.0.0.1:8091; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 120s; }`.
+6. Проверка снаружи: `curl -i -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" https://license.jackdaw-mail.pro/v1/calls` должен вернуть `101 Switching Protocols` (сейчас — 404).
+7. В приложении: Настройки → Jackdaw Pro → Звонки и чат → подтвердить адрес кодом из письма на двух устройствах с разными адресами → позвонить из карточки контакта или заголовка чата.
 
-Схема БД сервиса лицензий не меняется. База чата (`/var/lib/jackdaw-calls/chat.sqlite3`, `JACKDAW_CALLS_DATA_DIR`) создаётся и мигрирует при старте сервиса. Откат: остановить сервис и выполнить `sqlite3 chat.sqlite3 < migrations/001_chat.rollback.sql`.
+Схема БД сервиса лицензий не меняется. База чата (`/var/lib/jackdaw-calls/chat.sqlite3`, `JACKDAW_CALLS_DATA_DIR`) создаётся и мигрирует при старте сервиса. Откат: `sudo systemctl disable --now jackdaw-calls`, убрать маршрут `/v1/calls` из Caddy; при необходимости `sqlite3 chat.sqlite3 < migrations/001_chat.rollback.sql`.
+
+Обновление: повторить шаг 2 для изменённых файлов и `sudo systemctl restart jackdaw-calls`. Состояние звонков хранится в памяти: уже соединённый голос P2P продолжит идти, но сервис о таких звонках забудет, поэтому перезапускать лучше в спокойное время.
+
+## Необязательно: LiveKit SFU
+
+Если задать все три переменные `JACKDAW_LIVEKIT_*` (см. `deploy/calls.env.example`, `deploy/livekit.yaml`), сервис дополнительно положит в `accepted`/`joined` токен комнаты LiveKit. Текущий клиент его не использует — режим оставлен для возможного возврата к SFU (групповые звонки, видео). Частично заданные переменные останавливают запуск, чтобы ошибка конфигурации не превратилась в тихий P2P.
 
 ## Стоимость
 
-VPS 2 vCPU / 4 ГБ для LiveKit + сигналинга + чата: ≈ $10–25 в месяц; файлы чата — до 1 ГБ на лицензию, обычно намного меньше. Основная переменная статья — трафик: видеозвонок 1:1 через SFU ≈ 2 × 1,5 Мбит/с ≈ 1,3 ГБ в час. Аудио ≈ 50 МБ в час.
+Ноль сверх уже оплаченного VPS сервиса лицензий: сигналинг и чат — несколько мегабайт памяти и копейки трафика на звонок (SDP и ICE — единицы килобайт). Публичные STUN бесплатны. Файлы чата — до 1 ГБ на лицензию, обычно намного меньше.
 
 ## Проверка
 

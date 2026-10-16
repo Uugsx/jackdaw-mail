@@ -28,7 +28,7 @@
   export let isSidebar = false;
 
   let viewSetting = getLocalStorage("meet.videoView", MeetVideoView.GalleryAutoView);
-  $: selectedView = meeting instanceof PhoneCall ? MeetVideoView.Phone : $viewSetting.value;
+  $: selectedView = meeting instanceof PhoneCall || meeting.voiceOnly ? MeetVideoView.Phone : $viewSetting.value;
   let showSelfSetting = getLocalStorage("meet.showSelf", true);
   $: showSelf = $showSelfSetting.value;
 </script>

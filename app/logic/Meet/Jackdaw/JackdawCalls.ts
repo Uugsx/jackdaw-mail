@@ -134,10 +134,11 @@ function findPersonByEmail(email: string): Person | null {
 }
 
 /**
- * Создаёт звонок, если собеседник доступен в Jackdaw. Показывает экран подтверждения вызова.
+ * Создаёт голосовой звонок, если собеседник доступен в Jackdaw. Показывает экран подтверждения вызова.
+ * Видеозвонков между пользователями Jackdaw нет: `_video` оставлен для совместимости вызова.
  * @returns null, если звонок через Jackdaw невозможен (тогда вызывающий выбирает другой способ)
  */
-export async function startJackdawCall(target: CallTarget, video: boolean): Promise<JackdawCall | null> {
+export async function startJackdawCall(target: CallTarget, _video = false): Promise<JackdawCall | null> {
   let callClient = getJackdawCallClient();
   if (!callClient.isOnline || !callClient.verifiedEmails.length) return null;
   let emails = callTargetEmails(target);
@@ -149,7 +150,7 @@ export async function startJackdawCall(target: CallTarget, video: boolean): Prom
   if (!email) return null;
   let person = target instanceof Person ? target : target.findPerson();
   let call = getJackdawCallAccount().newMeeting();
-  call.prepareOutgoing(email, person?.name || target.name || "", video, person);
+  call.prepareOutgoing(email, person?.name || target.name || "", false, person);
   appGlobal.meetings.add(call);
   return call;
 }

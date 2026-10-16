@@ -22,6 +22,29 @@ const END_REASONS: readonly JackdawCallEndReason[] = [
   "answered-elsewhere", "connection-lost", "timeout",
 ];
 
+/** ICE-кандидат WebRTC в том виде, в каком его пересылает сервер. */
+export interface JackdawIceCandidate {
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+}
+
+/** STUN/TURN-сервер для `RTCPeerConnection`. Совпадает с `RTCIceServer`. */
+export interface JackdawIceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+/**
+ * Бесплатные публичные STUN-серверы: помогают клиентам узнать свой внешний адрес за NAT.
+ * Медиа через них не идёт. Сервис звонков может прислать свой список в `accepted`/`joined`.
+ */
+export const DEFAULT_ICE_SERVERS: readonly JackdawIceServer[] = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+  { urls: ["stun:stun.cloudflare.com:3478"] },
+];
+
 export type JackdawServerMessage =
   | { type: "server-hello"; protocol: number }
   | { type: "welcome"; emails: string[]; resumedCalls: string[] }
@@ -30,7 +53,11 @@ export type JackdawServerMessage =
   | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean> }
   | { type: "ringing"; callId: string }
   | { type: "incoming"; callId: string; from: string; fromName: string; to: string; video: boolean }
-  | { type: "accepted" | "joined"; callId: string; livekitURL: string; token: string }
+  /** Звонок принят: медиа идёт напрямую между клиентами (P2P). `iceServers` — null, если сервис их не задаёт. */
+  | { type: "accepted" | "joined"; callId: string; iceServers: JackdawIceServer[] | null }
+  /** SDP или ICE-кандидат от собеседника, пересланный сервисом */
+  | { type: "signal"; callId: string; kind: "offer" | "answer"; sdp: string }
+  | { type: "signal"; callId: string; kind: "ice"; candidate: JackdawIceCandidate | null }
   | { type: "call-ended"; callId: string; reason: JackdawCallEndReason }
   | { type: "error"; code: string; message: string; requestType: string | null; callId: string | null; requestId: string | null; email: string | null; messageId: string | null; blobId: string | null }
   | { type: "pong" }
@@ -48,6 +75,13 @@ const CALL_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
+/** Совпадает с ограничениями сервера (call_server/calls.py) */
+const MAX_SDP_LENGTH = 16 * 1024;
+const MAX_ICE_CANDIDATE_LENGTH = 1024;
+const MAX_ICE_MID_LENGTH = 64;
+const MAX_ICE_MLINE_INDEX = 64;
+const MAX_ICE_SERVERS = 8;
+const ICE_URL_PATTERN = /^(stuns?|turns?):[^\s]{1,300}$/;
 
 export function normalizeCallEmail(value: unknown): string | null {
   if (typeof value != "string") return null;
@@ -71,6 +105,41 @@ function callID(value: unknown): string | null {
 
 function base64(value: unknown): string | null {
   return typeof value == "string" && value.length % 4 == 0 && BASE64_PATTERN.test(value) ? value : null;
+}
+
+function iceServers(value: unknown): JackdawIceServer[] | null {
+  if (!Array.isArray(value)) return null;
+  let servers: JackdawIceServer[] = [];
+  for (let item of value.slice(0, MAX_ICE_SERVERS)) {
+    let rawURLs = typeof item?.urls == "string" ? [item.urls] : Array.isArray(item?.urls) ? item.urls : [];
+    let urls = rawURLs.filter((url: unknown): url is string => typeof url == "string" && ICE_URL_PATTERN.test(url)).slice(0, MAX_ICE_SERVERS);
+    if (!urls.length) continue;
+    let server: JackdawIceServer = { urls };
+    if (typeof item.username == "string" && typeof item.credential == "string") {
+      server.username = item.username.slice(0, MAX_TEXT);
+      server.credential = item.credential.slice(0, MAX_TEXT);
+    }
+    servers.push(server);
+  }
+  return servers.length ? servers : null;
+}
+
+/** SDP разбирает сам WebRTC; здесь — только размер и формат, как на сервере. */
+function sdp(value: unknown): string | null {
+  return typeof value == "string" && value.length <= MAX_SDP_LENGTH && value.startsWith("v=0") ? value : null;
+}
+
+/** @returns undefined — кандидат некорректен; null — кандидаты закончились */
+function iceCandidate(value: any): JackdawIceCandidate | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value != "object" || typeof value.candidate != "string" || value.candidate.length > MAX_ICE_CANDIDATE_LENGTH) {
+    return undefined;
+  }
+  let sdpMid = typeof value.sdpMid == "string" && value.sdpMid.length <= MAX_ICE_MID_LENGTH ? value.sdpMid : null;
+  let index = value.sdpMLineIndex;
+  let sdpMLineIndex = Number.isInteger(index) && index >= 0 && index <= MAX_ICE_MLINE_INDEX ? index as number : null;
+  if (sdpMid == null && sdpMLineIndex == null) return undefined;
+  return { candidate: value.candidate, sdpMid, sdpMLineIndex };
 }
 
 function count(value: unknown): number {
@@ -135,10 +204,21 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
     case "accepted":
     case "joined": {
       let id = callID(data.callId);
-      let url = typeof data.livekitURL == "string" ? data.livekitURL : "";
-      // Медиа только по TLS: токен комнаты нельзя отправлять по открытому каналу.
-      if (!id || !url.startsWith("wss://") || typeof data.token != "string" || !data.token) return null;
-      return { type: data.type, callId: id, livekitURL: url, token: data.token };
+      // Токены LiveKit от сервиса в режиме SFU клиент не использует: звонки только P2P.
+      return id ? { type: data.type, callId: id, iceServers: iceServers(data.iceServers) } : null;
+    }
+    case "signal": {
+      let id = callID(data.callId);
+      if (!id) return null;
+      if (data.kind == "offer" || data.kind == "answer") {
+        let description = sdp(data.sdp);
+        return description ? { type: "signal", callId: id, kind: data.kind, sdp: description } : null;
+      }
+      if (data.kind == "ice") {
+        let candidate = iceCandidate(data.candidate);
+        return candidate === undefined ? null : { type: "signal", callId: id, kind: "ice", candidate };
+      }
+      return null;
     }
     case "call-ended": {
       let id = callID(data.callId);

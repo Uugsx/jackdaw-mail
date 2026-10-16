@@ -1,4 +1,5 @@
-# Фрагмент Caddyfile: TLS для сигналинга и SFU.
+# Фрагмент Caddyfile: сигналинг звонков и чат под тем же доменом, что и сервис лицензий.
+# Клиент строит адрес сам: wss://<домен сервиса лицензий>/v1/calls.
 license.jackdaw-mail.pro {
 	handle /v1/calls {
 		reverse_proxy 127.0.0.1:8091
@@ -8,6 +9,7 @@ license.jackdaw-mail.pro {
 	}
 }
 
-calls.jackdaw-mail.pro {
-	reverse_proxy 127.0.0.1:7880
-}
+# Только если включён необязательный LiveKit (deploy/livekit.yaml). Для P2P-звонков не нужен.
+#calls.jackdaw-mail.pro {
+#	reverse_proxy 127.0.0.1:7880
+#}

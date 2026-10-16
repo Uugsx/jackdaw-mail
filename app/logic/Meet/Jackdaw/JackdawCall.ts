@@ -1,23 +1,35 @@
-import { LiveKitConf } from "../LiveKit/LiveKitConf";
-import { LiveKitAccount } from "../LiveKit/LiveKitAccount";
-import { MeetingState } from "../VideoConfMeeting";
+// Порядок важен: VideoConfMeeting раньше MeetAccount, иначе циклический импорт через appGlobal ломает наследование.
+import { MeetingState, VideoConfMeeting } from "../VideoConfMeeting";
+import { MeetAccount } from "../MeetAccount";
+import { LocalMediaDeviceStreams } from "../LocalMediaDeviceStreams";
 import { MeetingParticipant, ParticipantRole } from "../Participant";
+import { VideoStream } from "../VideoStream";
 import type { Person } from "../../Abstract/Person";
-import type { RemoteParticipant } from "livekit-client";
 import type { JackdawCallClient, JackdawCallSignalTarget } from "./JackdawCallClient";
 import { JackdawCallServiceError } from "./JackdawCallClient";
-import { endReasonMessage, type JackdawCallEndReason, type JackdawServerMessage } from "./JackdawCallProtocol";
+import {
+  DEFAULT_ICE_SERVERS,
+  endReasonMessage,
+  type JackdawCallEndReason,
+  type JackdawIceCandidate,
+  type JackdawIceServer,
+  type JackdawServerMessage,
+} from "./JackdawCallProtocol";
 import { notifyChangedProperty } from "../../util/Observable";
 import { NotSupported, UserError, type URLString } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 
-/** Звонки Jackdaw ↔ Jackdaw. Медиа идёт через LiveKit, сигналинг — через `JackdawCallClient`.
+/** Сколько ждать соединения P2P после ответа на звонок. Дольше обычно значит, что NAT не пропускает. */
+const CONNECT_TIMEOUT_MS = 30_000;
+
+/** Звонки Jackdaw ↔ Jackdaw: только голос, 1:1. Медиа идёт напрямую между клиентами (P2P WebRTC),
+ * сигналинг — через `JackdawCallClient`.
  * Аккаунт не сохраняется и не показывается в списке аккаунтов: он есть у каждого пользователя Pro. */
-export class JackdawCallAccount extends LiveKitAccount {
+export class JackdawCallAccount extends MeetAccount {
   readonly protocol: string = "jackdaw-call";
-  canVideo = true;
+  canVideo = false;
   canAudio = true;
-  canScreenShare = true;
+  canScreenShare = false;
   canMultipleParticipants = false;
   canCreateURL = false;
 
@@ -40,6 +52,9 @@ export class JackdawCallAccount extends LiveKitAccount {
   }
   async login(): Promise<void> {
   }
+  get isLoggedIn(): boolean {
+    return true;
+  }
 }
 
 /** Вызывается, когда звонок закончился не по нашему действию: занято, нет ответа и т.п. */
@@ -48,46 +63,61 @@ export function setJackdawCallEndedHandler(handler: (call: JackdawCall, message:
   onJackdawCallEnded = handler;
 }
 
-export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget {
-  account: JackdawCallAccount;
+export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTarget {
+  declare account: JackdawCallAccount;
+  mediaDeviceStreams: LocalMediaDeviceStreams;
   callID: string = crypto.randomUUID();
   /** Адрес собеседника в Jackdaw */
   remoteEmail: string;
   outgoing = false;
+  hasVideo = false;
+  readonly voiceOnly = true;
   @notifyChangedProperty
   endReason: JackdawCallEndReason | null = null;
   /** Звонок уже закончен на сервере: при `hangup()` ничего не отправляем */
   protected remoteEnded = false;
-  protected connecting = false;
   /** Ответ уже отправлен: повторное нажатие «Принять» не должно слать второй `accept` */
   protected answered = false;
+  protected peerConnection: RTCPeerConnection | null = null;
+  /** Аудиоканал соединения. У звонящего создаётся сразу, у вызываемого — из предложения SDP. */
+  protected audioTransceiver: RTCRtpTransceiver | null = null;
+  /** Кандидаты ICE, пришедшие до описания сессии собеседника */
+  protected pendingCandidates: JackdawIceCandidate[] = [];
+  protected connectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Соединение P2P хотя бы раз установилось: для текста ошибки при обрыве */
+  protected mediaConnected = false;
 
   constructor(account: JackdawCallAccount) {
-    super(account);
+    super();
+    this.account = account;
     this.id = this.callID;
+    this.mediaDeviceStreams = new LocalMediaDeviceStreams();
+    this.listenStreamChanges();
+    // Интерфейс звонка включает микрофон по своему участнику, поэтому он нужен с самого начала.
+    this.myParticipant = new MeetingParticipant();
+    this.myParticipant.role = ParticipantRole.User;
   }
 
   protected get client(): JackdawCallClient {
     return this.account.client;
   }
 
-  /** Готовит исходящий звонок. Звонить начнёт `call()` после подтверждения в интерфейсе. */
-  prepareOutgoing(email: string, name: string, video: boolean, person?: Person | null): void {
+  /** Готовит исходящий звонок. Звонить начнёт `call()` после подтверждения в интерфейсе.
+   * Звонки Jackdaw — только голосовые, поэтому `_video` не используется. */
+  prepareOutgoing(email: string, name: string, _video = false, person?: Person | null): void {
     this.outgoing = true;
     this.remoteEmail = email;
-    this.hasVideo = video;
     this.title = name || email;
     this.addRemotePlaceholder(email, name, person);
     this.state = MeetingState.OutgoingCallConfirm;
   }
 
-  /** Входящий звонок от сервиса. */
+  /** Входящий звонок от сервиса. Видеозвонок от старой версии принимается как голосовой. */
   prepareIncoming(message: Extract<JackdawServerMessage, { type: "incoming" }>, person?: Person | null): void {
     this.outgoing = false;
     this.callID = message.callId;
     this.id = message.callId;
     this.remoteEmail = message.from;
-    this.hasVideo = message.video;
     this.title = message.fromName || message.from;
     this.addRemotePlaceholder(message.from, message.fromName, person);
     this.client.register(this);
@@ -105,11 +135,15 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
     this.participants.add(remote);
   }
 
+  protected get remoteParticipant(): MeetingParticipant | null {
+    return this.participants.first ?? null;
+  }
+
   async call(): Promise<void> {
     await super.call(); // → OutgoingCall
     this.client.register(this);
     try {
-      this.client.send({ type: "invite", callId: this.callID, to: this.remoteEmail, video: this.hasVideo });
+      this.client.send({ type: "invite", callId: this.callID, to: this.remoteEmail, video: false });
     } catch (ex) {
       this.client.unregister(this);
       await this.endLocally();
@@ -123,20 +157,23 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
     }
     this.answered = true;
     this.client.send({ type: "accept", callId: this.callID });
-    // Дальше — `joined` в `onSignal()`.
+    // Дальше — `joined` и предложение SDP от звонящего в `onSignal()`.
   }
 
   onSignal(message: JackdawServerMessage): void {
     switch (message.type) {
       case "accepted":
         if (this.outgoing) {
-          this.connectRoom(message.livekitURL, message.token);
+          this.connectMedia(message.iceServers);
         }
         break;
       case "joined":
         if (!this.outgoing) {
-          this.connectRoom(message.livekitURL, message.token);
+          this.connectMedia(message.iceServers);
         }
+        break;
+      case "signal":
+        this.runMediaStep(() => this.onMediaSignal(message));
         break;
       case "call-ended":
         this.remoteEnded = true;
@@ -145,6 +182,10 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
         void this.endLocally();
         break;
       case "error":
+        // Отклонённый сервером сигнал (например, лимит запросов) не значит, что звонок закончился.
+        if (message.requestType == "signal" && message.code != "call_not_found") {
+          break;
+        }
         this.remoteEnded = true;
         this.reportEnd(new JackdawCallServiceError(message.code).message);
         void this.endLocally();
@@ -158,40 +199,214 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
     }
   }
 
-  protected connectRoom(url: string, token: string): void {
-    if (this.connecting || this.room) {
+  // --- медиа P2P ---------------------------------------------------------
+
+  /** Для тестов: в Node нет WebRTC. */
+  protected createPeerConnection(configuration: RTCConfiguration): RTCPeerConnection {
+    return new RTCPeerConnection(configuration);
+  }
+
+  /** Звонок принят: разговор начался, соединение P2P устанавливается.
+   * Звонящий создаёт предложение SDP, вызываемый ждёт его. */
+  protected connectMedia(iceServers: JackdawIceServer[] | null): void {
+    if (this.peerConnection || this.state == MeetingState.Ended) {
       return;
     }
-    this.connecting = true;
-    this.webSocketURL = url as URLString;
-    this.myParticipantToken = token;
-    this.joinRoom(token).catch(ex => {
-      this.reportEnd(gt`Could not connect the call.` + ` (${ex?.message ?? ex})`);
-      void this.hangup();
+    let peerConnection: RTCPeerConnection;
+    try {
+      peerConnection = this.createPeerConnection({
+        iceServers: (iceServers ?? DEFAULT_ICE_SERVERS).map(server => ({ ...server })),
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require",
+      });
+    } catch (ex) {
+      this.failMedia(ex);
+      return;
+    }
+    this.peerConnection = peerConnection;
+    peerConnection.onicecandidate = event => this.sendCandidate(event.candidate);
+    peerConnection.ontrack = event => this.addRemoteTrack(event.track);
+    peerConnection.onconnectionstatechange = () => this.connectionStateChanged(peerConnection);
+    this.connectTimer = setTimeout(() => {
+      if (!this.mediaConnected) {
+        this.failMedia(null);
+      }
+    }, CONNECT_TIMEOUT_MS);
+
+    let remote = this.remoteParticipant;
+    if (remote) {
+      remote.role = ParticipantRole.User;
+    }
+    this.title = remote?.name || this.remoteEmail;
+    this.state = MeetingState.Ongoing;
+    this.startNow();
+
+    if (this.outgoing) {
+      this.audioTransceiver = peerConnection.addTransceiver("audio", { direction: "sendrecv" });
+      this.runMediaStep(async () => {
+        await this.attachLocalAudio();
+        await peerConnection.setLocalDescription(await peerConnection.createOffer());
+        this.sendSignal({ kind: "offer", sdp: peerConnection.localDescription?.sdp });
+      });
+    }
+  }
+
+  protected async onMediaSignal(message: Extract<JackdawServerMessage, { type: "signal" }>): Promise<void> {
+    let peerConnection = this.peerConnection;
+    if (!peerConnection) {
+      return;
+    }
+    if (message.kind == "ice") {
+      if (!message.candidate) {
+        return;
+      }
+      if (peerConnection.remoteDescription) {
+        await peerConnection.addIceCandidate(message.candidate);
+      } else {
+        this.pendingCandidates.push(message.candidate);
+      }
+      return;
+    }
+    // Предложение делает только звонящий, ответ — только вызываемый; остальное — повтор или чужой сигнал.
+    if (message.kind == "offer" && !this.outgoing && !peerConnection.remoteDescription) {
+      await peerConnection.setRemoteDescription({ type: "offer", sdp: message.sdp });
+      this.audioTransceiver = peerConnection.getTransceivers().find(t => t.receiver.track?.kind == "audio") ?? null;
+      if (this.audioTransceiver) {
+        this.audioTransceiver.direction = "sendrecv";
+      }
+      await this.attachLocalAudio();
+      await peerConnection.setLocalDescription(await peerConnection.createAnswer());
+      this.sendSignal({ kind: "answer", sdp: peerConnection.localDescription?.sdp });
+      await this.addPendingCandidates(peerConnection);
+    } else if (message.kind == "answer" && this.outgoing && peerConnection.signalingState == "have-local-offer") {
+      await peerConnection.setRemoteDescription({ type: "answer", sdp: message.sdp });
+      await this.addPendingCandidates(peerConnection);
+    }
+  }
+
+  protected async addPendingCandidates(peerConnection: RTCPeerConnection): Promise<void> {
+    let candidates = this.pendingCandidates;
+    this.pendingCandidates = [];
+    for (let candidate of candidates) {
+      await peerConnection.addIceCandidate(candidate);
+    }
+  }
+
+  protected sendCandidate(candidate: RTCIceCandidate | null): void {
+    // Конец сбора кандидатов собеседнику не нужен: соединение устанавливается и без него.
+    if (!candidate?.candidate) {
+      return;
+    }
+    this.sendSignal({
+      kind: "ice",
+      candidate: { candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMLineIndex },
     });
   }
 
-  protected async joinRoom(token: string): Promise<void> {
-    await this.joinAfterStart(token);
-    this.startNow();
-    this.title = this.participants.first?.name || this.remoteEmail;
+  protected sendSignal(signal: Record<string, unknown>): void {
+    if (this.state == MeetingState.Ended) {
+      return;
+    }
+    // Без соединения с сервисом ошибка всплывёт в runMediaStep() и завершит звонок.
+    this.client.send({ type: "signal", callId: this.callID, ...signal });
   }
 
-  protected participantJoined(remoteParticipant: RemoteParticipant): void {
-    // Заглушка собеседника, показанная во время вызова, заменяется настоящим участником комнаты.
-    let placeholder = this.participants.find(p => p.role == ParticipantRole.Invited);
-    super.participantJoined(remoteParticipant);
-    let joined = this.participants.find(p => p.id == remoteParticipant.identity);
-    if (joined && placeholder) {
-      joined.emailAddress = placeholder.emailAddress;
-      joined.person = placeholder.person;
-      joined.name = placeholder.name || joined.name;
-      this.participants.remove(placeholder);
+  /** Микрофон включает интерфейс звонка через `mediaDeviceStreams`; дорожка подменяется без пересогласования. */
+  protected async attachLocalAudio(): Promise<void> {
+    let sender = this.audioTransceiver?.sender;
+    if (!sender || this.peerConnection?.connectionState == "closed") {
+      return;
+    }
+    let track = this.mediaDeviceStreams.cameraMicStream?.getAudioTracks()[0] ?? null;
+    if (sender.track != track) {
+      await sender.replaceTrack(track);
     }
   }
 
-  /** Сервис звонков сам выдаёт токен комнаты; создавать комнату через другой API нельзя. */
-  protected async createMyParticipant(): Promise<string> {
+  protected addRemoteTrack(track: MediaStreamTrack): void {
+    if (track.kind != "audio" || this.videos.find(v => !v.isMe && v.stream.getTracks().includes(track))) {
+      return;
+    }
+    let remote = this.remoteParticipant;
+    if (remote) {
+      remote.micOn = true;
+    }
+    // Поток без видео воспроизводится как звук (AudioPlayStreams в InMeeting.svelte).
+    this.videos.add(new VideoStream(new MediaStream([track]), remote ?? undefined));
+  }
+
+  protected connectionStateChanged(peerConnection: RTCPeerConnection): void {
+    if (peerConnection != this.peerConnection) {
+      return;
+    }
+    if (peerConnection.connectionState == "connected") {
+      this.mediaConnected = true;
+      this.clearConnectTimer();
+    } else if (peerConnection.connectionState == "failed") {
+      // `disconnected` бывает при смене сети и восстанавливается сам; `failed` — нет.
+      this.failMedia(null);
+    }
+  }
+
+  /** Ошибка в шаге установки соединения завершает звонок с понятным сообщением. */
+  protected runMediaStep(step: () => Promise<void>): void {
+    step().catch(ex => this.failMedia(ex));
+  }
+
+  protected failMedia(ex: unknown): void {
+    if (this.state == MeetingState.Ended) {
+      return;
+    }
+    if (this.mediaConnected) {
+      this.reportEnd(endReasonMessage("connection-lost", this.outgoing));
+    } else {
+      let detail = ex ? (ex as Error)?.message ?? String(ex) : null;
+      this.reportEnd(gt`Could not connect the call.` + (detail ? ` (${detail})` : ""));
+    }
+    void this.hangup();
+  }
+
+  protected clearConnectTimer(): void {
+    if (this.connectTimer != null) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
+  }
+
+  protected closeMedia(): void {
+    this.clearConnectTimer();
+    this.pendingCandidates = [];
+    let peerConnection = this.peerConnection;
+    this.peerConnection = null;
+    this.audioTransceiver = null;
+    if (peerConnection) {
+      peerConnection.onicecandidate = null;
+      peerConnection.ontrack = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.close();
+    }
+    let remoteStreams = this.videos.contents.filter(v => !v.isMe);
+    for (let video of remoteStreams) {
+      for (let track of video.stream.getTracks()) {
+        track.stop();
+      }
+    }
+    this.videos.removeAll(remoteStreams);
+  }
+
+  async startCameraMic(mediaStream: MediaStream): Promise<void> {
+    await super.startCameraMic(mediaStream);
+    await this.attachLocalAudio();
+  }
+
+  async stopCameraMic(oldStream?: MediaStream): Promise<void> {
+    await super.stopCameraMic(oldStream);
+    await this.attachLocalAudio();
+  }
+
+  // --- запрещённые для этого вида звонка действия ----------------------
+
+  async createNewConference(): Promise<void> {
     throw new NotSupported(gt`This call is started from the contact`);
   }
 
@@ -199,15 +414,22 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
     throw new NotSupported(gt`Cannot invite others using a link to this kind of meeting`);
   }
 
+  async join(_url: URLString): Promise<void> {
+    throw new NotSupported(gt`This call is started from the contact`);
+  }
+
   async start(): Promise<void> {
     throw new UserError(gt`This call is started from the contact`);
   }
 
+  // --- завершение ------------------------------------------------------
+
   async hangup(): Promise<void> {
     if (!this.remoteEnded) {
-      let type = this.state == MeetingState.IncomingCall ? "reject"
+      // После `accept` звонок на сервере уже идёт: отклонять поздно, только завершать.
+      let type = this.state == MeetingState.Ongoing || this.answered ? "hangup"
+        : this.state == MeetingState.IncomingCall ? "reject"
         : this.state == MeetingState.OutgoingCall ? "cancel"
-        : this.state == MeetingState.Ongoing ? "hangup"
         : null;
       if (type) {
         try {
@@ -237,6 +459,11 @@ export class JackdawCall extends LiveKitConf implements JackdawCallSignalTarget 
     if (this.state == MeetingState.Ended) {
       return;
     }
+    this.closeMedia();
     await super.hangup();
+    // Микрофон не должен остаться включённым, когда собеседник положил трубку.
+    await this.mediaDeviceStreams.setCameraMicOn(false, false).catch(() => {
+      // Устройство уже освобождено или недоступно: звонок всё равно закончен.
+    });
   }
 }

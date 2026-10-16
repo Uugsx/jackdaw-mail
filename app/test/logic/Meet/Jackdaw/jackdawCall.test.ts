@@ -1,9 +1,11 @@
-import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { JackdawCall, JackdawCallAccount, setJackdawCallEndedHandler } from "../../../../logic/Meet/Jackdaw/JackdawCall";
 import { MeetingState } from "../../../../logic/Meet/VideoConfMeeting";
+import { ParticipantRole } from "../../../../logic/Meet/Participant";
+import { DEFAULT_ICE_SERVERS, endReasonMessage } from "../../../../logic/Meet/Jackdaw/JackdawCallProtocol";
 import { appGlobal } from "../../../../logic/app";
 import { PersonUID } from "../../../../logic/Abstract/PersonUID";
-import { canStartCall, startAudioCall, startVideoCall } from "../../../../logic/Meet/StartCall";
+import { canStartCall, canStartVideoCall, startAudioCall, startVideoCall } from "../../../../logic/Meet/StartCall";
 import { UserError } from "../../../../logic/util/util";
 
 /** Подменяет клиент сигналинга: звонку нужны только register/unregister/send. */
@@ -18,20 +20,89 @@ class FakeClient {
     this.sent.push(message);
   }
   last() { return this.sent[this.sent.length - 1]; }
+  signals(kind?: string) { return this.sent.filter(m => m.type == "signal" && (!kind || m.kind == kind)); }
 }
+
+/** В Node нет WebRTC: минимальные заменители дорожек, потоков и соединения. */
+class FakeTrack {
+  stopped = false;
+  enabled = true;
+  constructor(readonly kind = "audio") {}
+  stop() { this.stopped = true; }
+  getSettings() { return { deviceId: "mic-1" }; }
+}
+
+class FakeMediaStream {
+  readonly id = crypto.randomUUID();
+  protected tracks: FakeTrack[];
+  constructor(tracks: FakeTrack[] = []) { this.tracks = [...tracks]; }
+  getTracks() { return [...this.tracks]; }
+  getAudioTracks() { return this.tracks.filter(t => t.kind == "audio"); }
+  getVideoTracks() { return this.tracks.filter(t => t.kind == "video"); }
+  addTrack(track: FakeTrack) { this.tracks.push(track); }
+}
+
+class FakeTransceiver {
+  sender = { track: null as FakeTrack | null, async replaceTrack(track: FakeTrack | null) { this.track = track; } };
+  receiver = { track: new FakeTrack("audio") };
+  constructor(public direction: string) {}
+}
+
+class FakePeerConnection {
+  transceivers: FakeTransceiver[] = [];
+  localDescription: any = null;
+  remoteDescription: any = null;
+  signalingState = "stable";
+  connectionState = "new";
+  addedCandidates: any[] = [];
+  closed = false;
+  onicecandidate: ((event: any) => void) | null = null;
+  ontrack: ((event: any) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
+  constructor(readonly configuration: any) {}
+  addTransceiver(_kind: string, init: { direction: string }) {
+    let transceiver = new FakeTransceiver(init.direction);
+    this.transceivers.push(transceiver);
+    return transceiver;
+  }
+  getTransceivers() { return this.transceivers; }
+  async createOffer() { return { type: "offer", sdp: "v=0\r\noffer" }; }
+  async createAnswer() { return { type: "answer", sdp: "v=0\r\nanswer" }; }
+  async setLocalDescription(description: any) {
+    this.localDescription = description;
+    this.signalingState = description.type == "offer" ? "have-local-offer" : "stable";
+  }
+  async setRemoteDescription(description: any) {
+    this.remoteDescription = description;
+    if (description.type == "offer") {
+      this.signalingState = "have-remote-offer";
+      this.transceivers.push(new FakeTransceiver("recvonly"));
+    } else {
+      this.signalingState = "stable";
+    }
+  }
+  async addIceCandidate(candidate: any) { this.addedCandidates.push(candidate); }
+  close() { this.closed = true; this.connectionState = "closed"; }
+  changeState(state: string) {
+    this.connectionState = state;
+    this.onconnectionstatechange?.();
+  }
+}
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function makeCall() {
   let client = new FakeClient();
   let account = new JackdawCallAccount(client as any);
   let call = account.newMeeting();
-  // Медиа LiveKit в unit-тесте не подключаем: проверяем только сигналинг.
-  let joined: string[] = [];
-  (call as any).joinRoom = async (token: string) => {
-    joined.push(token);
-    call.state = MeetingState.Ongoing;
+  let connections: FakePeerConnection[] = [];
+  (call as any).createPeerConnection = (configuration: any) => {
+    let connection = new FakePeerConnection(configuration);
+    connections.push(connection);
+    return connection;
   };
   appGlobal.meetings.add(call);
-  return { call, client, joined };
+  return { call, client, connections };
 }
 
 const incoming = {
@@ -43,8 +114,20 @@ const incoming = {
   video: false,
 };
 
+const candidate = { candidate: "candidate:1 1 udp 1 192.0.2.1 5000 typ host", sdpMid: "0", sdpMLineIndex: 0 };
+
 describe("звонок Jackdaw ↔ Jackdaw", () => {
   let endedMessages: string[];
+  let originalMediaStream: unknown;
+
+  beforeAll(() => {
+    originalMediaStream = (globalThis as any).MediaStream;
+    (globalThis as any).MediaStream = FakeMediaStream;
+  });
+
+  afterAll(() => {
+    (globalThis as any).MediaStream = originalMediaStream;
+  });
 
   beforeEach(() => {
     endedMessages = [];
@@ -52,11 +135,23 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     appGlobal.meetings.clear();
   });
 
-  test("исходящий: подтверждение → вызов → ответ → разговор", async () => {
-    let { call, client, joined } = makeCall();
+  test("только голос: видео недоступно даже по запросу", () => {
+    let { call } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", true);
+    expect(call.hasVideo).toBe(false);
+    expect(call.voiceOnly).toBe(true);
+    expect(call.account.canVideo).toBe(false);
+    expect(call.account.canScreenShare).toBe(false);
+    expect(call.account.canAudio).toBe(true);
+    expect(call.myParticipant).toBeTruthy();
+  });
+
+  test("исходящий: подтверждение → вызов → ответ → предложение SDP → разговор", async () => {
+    let { call, client, connections } = makeCall();
     call.prepareOutgoing("bob@example.com", "Bob", true);
     expect(call.state).toBe(MeetingState.OutgoingCallConfirm);
     expect(call.participants.first.emailAddress).toBe("bob@example.com");
@@ -64,17 +159,61 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
 
     await call.call();
     expect(call.state).toBe(MeetingState.OutgoingCall);
-    expect(client.last()).toEqual({ type: "invite", callId: call.callID, to: "bob@example.com", video: true });
+    expect(client.last()).toEqual({ type: "invite", callId: call.callID, to: "bob@example.com", video: false });
     expect(client.registered.has(call.callID)).toBe(true);
 
     call.onSignal({ type: "ringing", callId: call.callID });
-    call.onSignal({ type: "joined", callId: call.callID, livekitURL: "wss://lk.test", token: "wrong-side" });
-    expect(joined).toEqual([]);
-    call.onSignal({ type: "accepted", callId: call.callID, livekitURL: "wss://lk.test", token: "caller-token" });
-    call.onSignal({ type: "accepted", callId: call.callID, livekitURL: "wss://lk.test", token: "duplicate" });
-    await Promise.resolve();
-    expect(joined).toEqual(["caller-token"]);
-    expect(call.webSocketURL).toBe("wss://lk.test");
+    call.onSignal({ type: "joined", callId: call.callID, iceServers: null });
+    expect(connections).toHaveLength(0);
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    expect(connections).toHaveLength(1);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    expect(call.started).toBeInstanceOf(Date);
+    expect(call.participants.first.role).toBe(ParticipantRole.User);
+    let connection = connections[0];
+    expect(connection.configuration.iceServers).toEqual(DEFAULT_ICE_SERVERS);
+    expect(connection.transceivers.map(t => t.direction)).toEqual(["sendrecv"]);
+    await flush();
+    expect(client.signals("offer")).toEqual([{ type: "signal", callId: call.callID, kind: "offer", sdp: "v=0\r\noffer" }]);
+
+    // Кандидат до ответа ждёт описания сессии собеседника.
+    call.onSignal({ type: "signal", callId: call.callID, kind: "ice", candidate });
+    await flush();
+    expect(connection.addedCandidates).toEqual([]);
+    call.onSignal({ type: "signal", callId: call.callID, kind: "answer", sdp: "v=0\r\nanswer" });
+    await flush();
+    expect(connection.remoteDescription).toEqual({ type: "answer", sdp: "v=0\r\nanswer" });
+    expect(connection.addedCandidates).toEqual([candidate]);
+    // Чужое предложение звонящему и повторный ответ игнорируются.
+    call.onSignal({ type: "signal", callId: call.callID, kind: "offer", sdp: "v=0\r\nevil" });
+    call.onSignal({ type: "signal", callId: call.callID, kind: "answer", sdp: "v=0\r\nagain" });
+    await flush();
+    expect(connection.remoteDescription.sdp).toBe("v=0\r\nanswer");
+    expect(call.state).toBe(MeetingState.Ongoing);
+
+    // Свои кандидаты уходят собеседнику; конец сбора — нет.
+    connection.onicecandidate({ candidate: { ...candidate } });
+    connection.onicecandidate({ candidate: null });
+    expect(client.signals("ice")).toEqual([{ type: "signal", callId: call.callID, kind: "ice", candidate }]);
+  });
+
+  test("микрофон подключается к соединению и меняется без пересогласования", async () => {
+    let { call, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    let mic = new FakeTrack("audio");
+    call.mediaDeviceStreams.cameraMicStream = new FakeMediaStream([mic]) as any;
+    await flush();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await flush();
+    let sender = connections[0].transceivers[0].sender;
+    expect(sender.track).toBe(mic);
+    let otherMic = new FakeTrack("audio");
+    call.mediaDeviceStreams.cameraMicStream = new FakeMediaStream([otherMic]) as any;
+    await flush();
+    expect(sender.track).toBe(otherMic);
+    expect(call.selfVideo?.isMe).toBe(true);
   });
 
   test("занято: звонок завершается, пользователь видит причину", async () => {
@@ -130,9 +269,9 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(client.registered.size).toBe(0);
   });
 
-  test("входящий: принять один раз, затем разговор", async () => {
-    let { call, client, joined } = makeCall();
-    call.prepareIncoming(incoming);
+  test("входящий: принять один раз, ответить на предложение, услышать собеседника", async () => {
+    let { call, client, connections } = makeCall();
+    call.prepareIncoming({ ...incoming, video: true });
     expect(call.state).toBe(MeetingState.IncomingCall);
     expect(call.hasVideo).toBe(false);
     expect(call.callID).toBe("call-0001");
@@ -140,11 +279,42 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     await call.answer();
     await call.answer();
     expect(client.sent).toEqual([{ type: "accept", callId: "call-0001" }]);
-    call.onSignal({ type: "joined", callId: "call-0001", livekitURL: "wss://lk.test", token: "callee-token" });
-    await Promise.resolve();
-    expect(joined).toEqual(["callee-token"]);
+    let iceServers = [{ urls: ["stun:stun.example.test:3478"] }];
+    call.onSignal({ type: "accepted", callId: "call-0001", iceServers });
+    expect(connections).toHaveLength(0);
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers });
+    expect(call.state).toBe(MeetingState.Ongoing);
+    let connection = connections[0];
+    expect(connection.configuration.iceServers).toEqual(iceServers);
+    // Вызываемый не создаёт своё предложение, а ждёт предложения звонящего.
+    expect(connection.transceivers).toHaveLength(0);
+    expect(client.signals()).toHaveLength(0);
+
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "ice", candidate });
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "ice", candidate: null });
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0\r\noffer" });
+    await flush();
+    expect(connection.transceivers[0].direction).toBe("sendrecv");
+    expect(client.signals("answer")).toEqual([{ type: "signal", callId: "call-0001", kind: "answer", sdp: "v=0\r\nanswer" }]);
+    expect(connection.addedCandidates).toEqual([candidate]);
+
+    let remoteTrack = new FakeTrack("audio");
+    connection.ontrack({ track: remoteTrack });
+    connection.ontrack({ track: remoteTrack });
+    connection.ontrack({ track: new FakeTrack("video") });
+    let remoteAudio = call.videos.contents.filter(v => !v.isMe);
+    expect(remoteAudio).toHaveLength(1);
+    expect(remoteAudio[0].hasVideo).toBe(false);
+    expect(remoteAudio[0].participant).toBe(call.participants.first);
+    expect(call.participants.first.micOn).toBe(true);
+    connection.changeState("connected");
+
     await call.hangup();
     expect(client.last()).toEqual({ type: "hangup", callId: "call-0001" });
+    expect(connection.closed).toBe(true);
+    expect(remoteTrack.stopped).toBe(true);
+    expect(call.videos.contents.filter(v => !v.isMe)).toHaveLength(0);
+    expect(endedMessages).toHaveLength(0);
   });
 
   test("входящий: отклонить", async () => {
@@ -178,22 +348,91 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(client.registered.size).toBe(0);
   });
 
-  test("ошибка подключения к комнате завершает звонок", async () => {
+  test("WebRTC недоступен — звонок завершается, сервер узнаёт о завершении", async () => {
     let { call, client } = makeCall();
-    (call as any).joinRoom = async () => { throw new Error("ICE failed"); };
+    (call as any).createPeerConnection = () => { throw new Error("WebRTC disabled"); };
     call.prepareIncoming(incoming);
     await call.answer();
-    call.onSignal({ type: "joined", callId: "call-0001", livekitURL: "wss://lk.test", token: "t" });
-    await new Promise(resolve => setTimeout(resolve, 0));
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    await flush();
     expect(call.state).toBe(MeetingState.Ended);
-    expect(endedMessages[0]).toContain("ICE failed");
-    expect(client.last()).toEqual({ type: "reject", callId: "call-0001" });
+    expect(endedMessages[0]).toContain("WebRTC disabled");
+    // Звонок уже принят на сервере: отклонять поздно, только завершать.
+    expect(client.last()).toEqual({ type: "hangup", callId: "call-0001" });
+  });
+
+  test("соединение P2P не установилось — звонок завершается с ошибкой", async () => {
+    let { call, client, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    connections[0].changeState("failed");
+    await flush();
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(endedMessages).toHaveLength(1);
+    expect(client.last()).toEqual({ type: "hangup", callId: call.callID });
+    expect(connections[0].closed).toBe(true);
+  });
+
+  test("нет соединения за отведённое время — звонок завершается", async () => {
+    vi.useFakeTimers();
+    let { call, connections } = makeCall();
+    call.prepareIncoming(incoming);
+    await call.answer();
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    connections[0].changeState("connecting");
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(endedMessages).toHaveLength(1);
+  });
+
+  test("установленное соединение: таймаут не срабатывает, обрыв — понятное сообщение", async () => {
+    vi.useFakeTimers();
+    let { call, connections } = makeCall();
+    call.prepareIncoming(incoming);
+    await call.answer();
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    connections[0].changeState("connected");
+    connections[0].changeState("disconnected");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    connections[0].changeState("failed");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(endedMessages).toEqual([endReasonMessage("connection-lost", false)]);
+  });
+
+  test("отклонённый сервером сигнал не завершает звонок, потерянный звонок — завершает", async () => {
+    let { call } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    let error = { type: "error" as const, message: "", requestType: "signal", callId: call.callID, requestId: null, email: null, messageId: null, blobId: null };
+    call.onSignal({ ...error, code: "rate_limited" });
+    expect(call.state).toBe(MeetingState.Ongoing);
+    call.onSignal({ ...error, code: "call_not_found" });
+    await flush();
+    expect(call.state).toBe(MeetingState.Ended);
+  });
+
+  test("нет связи с сервисом при отправке предложения — звонок завершается", async () => {
+    let { call, client } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    client.online = false;
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await flush();
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(endedMessages).toHaveLength(1);
   });
 
   test("комнату нельзя создать в обход сервиса звонков", async () => {
     let { call } = makeCall();
     await expect(call.start()).rejects.toBeInstanceOf(UserError);
     await expect(call.createInvitationURL()).rejects.toThrow();
+    await expect(call.createNewConference()).rejects.toThrow();
     expect(call.account.isMeetingURL(new URL("https://example.com/#room=x"))).toBe(false);
   });
 });
@@ -202,6 +441,11 @@ describe("выбор способа звонка", () => {
   test("без сервиса звонков и WhatsApp кнопки скрыты", () => {
     expect(canStartCall(null)).toBe(false);
     expect(canStartCall(new PersonUID("bob@example.com", "Bob"))).toBe(false);
+  });
+
+  test("видеозвонок — только через WhatsApp", () => {
+    expect(canStartVideoCall(null)).toBe(false);
+    expect(canStartVideoCall(new PersonUID("bob@example.com", "Bob"))).toBe(false);
   });
 
   test("звонок недоступен — понятная ошибка вместо пустого экрана", async () => {

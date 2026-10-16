@@ -6,9 +6,11 @@
 - подтверждает владение email кодом из письма и выдаёт подписанное подтверждение;
 - держит в памяти, какие подтверждённые адреса сейчас в сети;
 - передаёт приглашение, ответ, отказ и завершение звонка;
-- выдаёт короткоживущие токены LiveKit на одну комнату для двух участников.
+- пересылает между двумя участниками звонка описание сессии WebRTC (SDP) и ICE-кандидаты.
 
-Медиа идёт через LiveKit SFU со встроенным TURN. Контент звонка через этот сервис не проходит.
+Аудио идёт напрямую между клиентами (P2P WebRTC, шифрование DTLS-SRTP). Через этот
+сервис проходит только сигналинг, контент звонка — нет. Если заданы настройки LiveKit,
+сервис дополнительно выдаёт токены комнаты (старый режим через SFU); без них работает только P2P.
 """
 
 from __future__ import annotations
@@ -34,7 +36,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 
-PROTOCOL_VERSION = 1
+# 2 — P2P: `accepted`/`joined` без токенов LiveKit, сообщения `signal` с SDP и ICE.
+PROTOCOL_VERSION = 2
 EMAIL_RE = re.compile(r"^[^@\s]{1,128}@[^@\s]{1,190}$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 CALL_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
@@ -48,7 +51,7 @@ MAX_DISPLAY_NAME_LENGTH = 80
 MAX_LOOKUP_EMAILS = 50
 MAX_EMAILS_PER_CONNECTION = 20
 RING_TIMEOUT_SECONDS = 45
-# Короткий обрыв WebSocket не должен завершать идущий разговор: медиа идёт через LiveKit отдельно.
+# Короткий обрыв WebSocket не должен завершать идущий разговор: медиа идёт напрямую между клиентами.
 RECONNECT_GRACE_SECONDS = 30
 MAX_CALL_DURATION_SECONDS = 4 * 60 * 60
 CREDENTIAL_RECHECK_SECONDS = 15 * 60
@@ -56,6 +59,15 @@ VERIFICATION_CODE_TTL_SECONDS = 10 * 60
 VERIFICATION_MAX_ATTEMPTS = 5
 EMAIL_PROOF_TTL_SECONDS = 90 * 24 * 60 * 60
 LIVEKIT_TOKEN_TTL_SECONDS = 15 * 60
+# Сигналы WebRTC: SDP аудиозвонка — единицы килобайт, кандидат ICE — сотни байт.
+MAX_SDP_LENGTH = 16 * 1024
+MAX_ICE_CANDIDATE_LENGTH = 1024
+MAX_ICE_MID_LENGTH = 64
+MAX_ICE_MLINE_INDEX = 64
+SIGNAL_KINDS = frozenset({"offer", "answer", "ice"})
+# Публичные STUN-серверы, которые сервис может сообщить клиентам. TURN сюда не входит: у него есть секреты.
+STUN_URL_RE = re.compile(r"^stuns?:[A-Za-z0-9.-]{1,253}(?::\d{1,5})?$")
+MAX_STUN_URLS = 8
 RATE_WINDOW_SECONDS = 60
 RATE_LIMITS = {
     "hello": 10,
@@ -63,6 +75,8 @@ RATE_LIMITS = {
     "invite": 10,
     "verify-start": 3,
     "verify-finish": 10,
+    # Кандидатов ICE в одном звонке обычно до двух десятков с каждой стороны.
+    "signal": 240,
     "chat-register": 10,
     "chat-keys": 60,
     "chat-send": 120,
@@ -156,6 +170,43 @@ def validate_call_id(value: Any) -> str:
     if not isinstance(value, str) or not CALL_ID_RE.fullmatch(value):
         raise CallError("invalid_call_id", "Некорректный идентификатор звонка.")
     return value
+
+
+def validate_sdp(value: Any) -> str:
+    """SDP пересылается как есть: разбирает его браузер собеседника. Сервер ограничивает только размер и символы."""
+    if not isinstance(value, str) or not value or len(value) > MAX_SDP_LENGTH:
+        raise CallError("invalid_signal", "Некорректное описание сессии.")
+    if not value.startswith("v=0") or any(char not in "\r\n" and not char.isprintable() for char in value):
+        raise CallError("invalid_signal", "Некорректное описание сессии.")
+    return value
+
+
+def validate_ice_candidate(value: Any) -> dict[str, Any] | None:
+    """None — кандидаты закончились (end-of-candidates)."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise CallError("invalid_signal", "Некорректный ICE-кандидат.")
+    candidate = value.get("candidate")
+    mid = value.get("sdpMid")
+    index = value.get("sdpMLineIndex")
+    if not isinstance(candidate, str) or len(candidate) > MAX_ICE_CANDIDATE_LENGTH or not candidate.isprintable():
+        raise CallError("invalid_signal", "Некорректный ICE-кандидат.")
+    if mid is not None and (not isinstance(mid, str) or len(mid) > MAX_ICE_MID_LENGTH or not mid.isprintable()):
+        raise CallError("invalid_signal", "Некорректный ICE-кандидат.")
+    if index is not None and (isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= MAX_ICE_MLINE_INDEX):
+        raise CallError("invalid_signal", "Некорректный ICE-кандидат.")
+    if mid is None and index is None:
+        raise CallError("invalid_signal", "Некорректный ICE-кандидат.")
+    # Пересылаются только известные поля: лишнее от клиента собеседнику не попадает.
+    return {"candidate": candidate, "sdpMid": mid, "sdpMLineIndex": index}
+
+
+def validate_stun_urls(values: Iterable[str]) -> tuple[str, ...]:
+    urls = tuple(value.strip() for value in values if value and value.strip())
+    if len(urls) > MAX_STUN_URLS or any(not STUN_URL_RE.fullmatch(url) for url in urls):
+        raise RuntimeError("JACKDAW_CALLS_STUN_URLS: нужен список адресов вида stun:host:port через запятую")
+    return urls
 
 
 # ---------------------------------------------------------------------------
@@ -486,16 +537,20 @@ class CallHub:
         self,
         verifier: CredentialVerifier,
         verification: EmailVerification,
-        livekit: LiveKitTokenIssuer,
+        livekit: LiveKitTokenIssuer | None,
         mailer: Mailer | None,
         scheduler: Scheduler | None = None,
         clock: Callable[[], float] = time.monotonic,
         send_mail: Callable[[str, str, Callable[[BaseException | None], None]], None] | None = None,
         chat: Any = None,
+        stun_urls: Iterable[str] = (),
     ):
         self.verifier = verifier
         self.verification = verification
+        # None — LiveKit не настроен: медиа идёт только напрямую между клиентами (P2P)
         self.livekit = livekit
+        # Пустой список — клиент использует свои публичные STUN-серверы
+        self.stun_urls = validate_stun_urls(stun_urls)
         self.mailer = mailer
         self.scheduler = scheduler or Scheduler()
         self._clock = clock
@@ -552,6 +607,7 @@ class CallHub:
                 "reject": self._reject,
                 "cancel": self._cancel,
                 "hangup": self._hangup,
+                "signal": self._signal,
                 **(self.chat.handlers() if self.chat is not None else {}),
             }.get(request_type)
             if handler is None:
@@ -761,21 +817,47 @@ class CallHub:
         call.timers.append(self.scheduler.call_later(MAX_CALL_DURATION_SECONDS, lambda: self._end(call, "timeout")))
         caller_name = call.caller.display_name or call.caller_email
         callee_name = peer.display_name or call.callee_email
-        call.caller.send({
-            "type": "accepted",
-            "callId": call.call_id,
-            "livekitURL": self.livekit.url,
-            "token": self.livekit.issue(call.room, f"{call.caller_email}#{secrets.token_hex(4)}", caller_name),
-        })
-        peer.send({
-            "type": "joined",
-            "callId": call.call_id,
-            "livekitURL": self.livekit.url,
-            "token": self.livekit.issue(call.room, f"{call.callee_email}#{secrets.token_hex(4)}", callee_name),
-        })
+        accepted = self._media_details(call, call.caller_email, caller_name)
+        accepted.update({"type": "accepted", "callId": call.call_id})
+        joined = self._media_details(call, call.callee_email, callee_name)
+        joined.update({"type": "joined", "callId": call.call_id})
+        # Звонящий создаёт предложение SDP, вызываемый отвечает на него.
+        call.caller.send(accepted)
+        peer.send(joined)
         for other in list(self.peers_by_email.get(call.callee_email, ())):
             if other is not peer:
                 other.send({"type": "call-ended", "callId": call.call_id, "reason": "answered-elsewhere"})
+
+    def _media_details(self, call: Call, email: str, name: str) -> dict[str, Any]:
+        """Как участнику подключить медиа: всегда P2P, токен LiveKit — только если он настроен."""
+        details: dict[str, Any] = {"media": "p2p"}
+        if self.stun_urls:
+            details["iceServers"] = [{"urls": list(self.stun_urls)}]
+        if self.livekit is not None:
+            details["livekitURL"] = self.livekit.url
+            details["token"] = self.livekit.issue(call.room, f"{email}#{secrets.token_hex(4)}", name)
+        return details
+
+    def _signal(self, peer: Peer, message: dict[str, Any]) -> None:
+        """Пересылает SDP или ICE-кандидата второму участнику идущего звонка."""
+        call = self._call_for(message)
+        if call.state != CallState.ACTIVE or call.callee is None:
+            raise CallError("call_not_found", "Звонок уже завершён.")
+        if peer is call.caller:
+            target = call.callee
+        elif peer is call.callee:
+            target = call.caller
+        else:
+            raise CallError("call_not_found", "Звонок уже завершён.")
+        kind = message.get("kind")
+        if kind not in SIGNAL_KINDS:
+            raise CallError("invalid_signal", "Некорректный сигнал звонка.")
+        forwarded: dict[str, Any] = {"type": "signal", "callId": call.call_id, "kind": kind}
+        if kind == "ice":
+            forwarded["candidate"] = validate_ice_candidate(message.get("candidate"))
+        else:
+            forwarded["sdp"] = validate_sdp(message.get("sdp"))
+        target.send(forwarded)
 
     def _reject(self, peer: Peer, message: dict[str, Any]) -> None:
         call = self._call_for(message)
@@ -847,11 +929,8 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     host = os.getenv("JACKDAW_CALLS_HOST", "127.0.0.1")
     port = int(os.getenv("JACKDAW_CALLS_PORT", "8091"))
     proof_secret = read_secret("JACKDAW_CALLS_PROOF_SECRET")
-    livekit = LiveKitTokenIssuer(
-        os.getenv("JACKDAW_LIVEKIT_URL", "").strip(),
-        os.getenv("JACKDAW_LIVEKIT_API_KEY", "").strip(),
-        read_secret("JACKDAW_LIVEKIT_API_SECRET"),
-    )
+    livekit = build_livekit_from_environment()
+    stun_urls = os.getenv("JACKDAW_CALLS_STUN_URLS", "").split(",")
     mailer = Mailer(
         os.getenv("JACKDAW_CALLS_SMTP_HOST", "").strip(),
         int(os.getenv("JACKDAW_CALLS_SMTP_PORT", "587")),
@@ -877,8 +956,23 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
 
     data_dir = Path(os.getenv("JACKDAW_CALLS_DATA_DIR", "/var/lib/jackdaw-calls"))
     chat = ChatService(ChatStore(data_dir / "chat.sqlite3", data_dir / "blobs"))
-    hub = CallHub(CredentialVerifier(database_path), verification, livekit, mailer, send_mail=send_mail, chat=chat)
+    hub = CallHub(
+        CredentialVerifier(database_path), verification, livekit, mailer,
+        send_mail=send_mail, chat=chat, stun_urls=stun_urls,
+    )
+    mode = "P2P + LiveKit" if livekit is not None else "P2P"
+    print(f"Jackdaw calls media mode: {mode}", flush=True)
     return hub, host, port
+
+
+def build_livekit_from_environment() -> LiveKitTokenIssuer | None:
+    """LiveKit необязателен. Частично заданные настройки — ошибка конфигурации, а не тихий P2P."""
+    url = os.getenv("JACKDAW_LIVEKIT_URL", "").strip()
+    api_key = os.getenv("JACKDAW_LIVEKIT_API_KEY", "").strip()
+    api_secret = read_secret("JACKDAW_LIVEKIT_API_SECRET")
+    if not url and not api_key and not api_secret:
+        return None
+    return LiveKitTokenIssuer(url, api_key, api_secret)
 
 
 async def serve(hub: CallHub, host: str, port: int) -> None:

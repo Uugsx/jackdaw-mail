@@ -1,4 +1,6 @@
-# /etc/livekit/livekit.yaml — LiveKit SFU только для звонков Jackdaw ↔ Jackdaw.
+# /etc/livekit/livekit.yaml — НЕОБЯЗАТЕЛЬНЫЙ LiveKit SFU (платный трафик и VPS).
+# Текущий клиент звонит только P2P и токены LiveKit не использует; файл оставлен для возможного
+# возврата к SFU (групповые звонки, видео). Для бесплатных аудиозвонков 1:1 не нужен.
 # Запуск: docker run -d --name livekit --restart unless-stopped --network host \
 #   -v /etc/livekit/livekit.yaml:/livekit.yaml livekit/livekit-server:v1.9 --config /livekit.yaml
 port: 7880

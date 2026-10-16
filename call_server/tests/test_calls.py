@@ -281,6 +281,158 @@ class LookupTests(HubTestCase):
         self.assertNotIn("bob@example.com", self.hub.peers_by_email)
 
 
+SDP_OFFER = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
+SDP_ANSWER = SDP_OFFER.replace("o=- 1 2", "o=- 3 4")
+CANDIDATE = {"candidate": "candidate:1 1 udp 2122260223 192.0.2.10 54400 typ host", "sdpMid": "0", "sdpMLineIndex": 0}
+
+
+class P2PCallTests(HubTestCase):
+    """Режим без LiveKit: сервис только пересылает SDP и ICE между участниками."""
+
+    def setUp(self):
+        super().setUp()
+        self.hub.livekit = None
+        self.alice = self.connect(emails=["alice@example.com"], name="Alice")
+        self.bob_desk = self.connect(device="device-bob-0001", emails=["bob@example.com"], name="Bob")
+        self.bob_laptop = self.connect(device="device-carol-01", emails=["bob@example.com"], name="Bob")
+
+    def start_call(self):
+        self.hub.handle(self.alice, {"type": "invite", "callId": "call-p2p1", "to": "bob@example.com", "video": False})
+        self.hub.handle(self.bob_desk, {"type": "accept", "callId": "call-p2p1"})
+
+    def signal(self, peer, kind, **fields):
+        self.hub.handle(peer, {"type": "signal", "callId": "call-p2p1", "kind": kind, **fields})
+
+    def test_accept_without_livekit_announces_p2p(self):
+        self.start_call()
+        accepted = self.last(self.alice, "accepted")
+        joined = self.last(self.bob_desk, "joined")
+        for message in (accepted, joined):
+            self.assertEqual(message["media"], "p2p")
+            self.assertNotIn("token", message)
+            self.assertNotIn("livekitURL", message)
+            self.assertNotIn("iceServers", message)
+
+    def test_configured_stun_servers_are_sent(self):
+        self.hub.stun_urls = calls.validate_stun_urls(["stun:stun.example.test:3478"])
+        self.start_call()
+        self.assertEqual(self.last(self.alice, "accepted")["iceServers"], [{"urls": ["stun:stun.example.test:3478"]}])
+
+    def test_offer_answer_and_candidates_reach_only_the_other_participant(self):
+        self.start_call()
+        self.signal(self.alice, "offer", sdp=SDP_OFFER)
+        self.assertEqual(self.last(self.bob_desk, "signal"), {"type": "signal", "callId": "call-p2p1", "kind": "offer", "sdp": SDP_OFFER})
+        self.assertIsNone(self.last(self.bob_laptop, "signal"))
+        self.signal(self.bob_desk, "answer", sdp=SDP_ANSWER)
+        self.assertEqual(self.last(self.alice, "signal")["sdp"], SDP_ANSWER)
+        self.signal(self.alice, "ice", candidate={**CANDIDATE, "usernameFragment": "abc", "extra": "x" * 10})
+        self.assertEqual(self.last(self.bob_desk, "signal")["candidate"], CANDIDATE)
+        self.signal(self.bob_desk, "ice", candidate=None)
+        self.assertIsNone(self.last(self.alice, "signal")["candidate"])
+        self.assertIsNone(self.last(self.alice, "error"))
+        self.assertIsNone(self.last(self.bob_desk, "error"))
+
+    def test_signal_requires_active_call_participant(self):
+        self.hub.handle(self.alice, {"type": "invite", "callId": "call-p2p1", "to": "bob@example.com"})
+        self.signal(self.alice, "offer", sdp=SDP_OFFER)
+        self.assertEqual(self.last(self.alice, "error")["code"], "call_not_found")
+        self.assertIsNone(self.last(self.bob_desk, "signal"))
+        self.hub.handle(self.bob_desk, {"type": "accept", "callId": "call-p2p1"})
+        # Другое устройство того же адреса и посторонний не участвуют в звонке.
+        intruder = self.connect(device="device-alice-2", emails=["eve@example.com"])
+        for peer in (self.bob_laptop, intruder):
+            self.signal(peer, "offer", sdp=SDP_OFFER)
+            self.assertEqual(self.last(peer, "error")["code"], "call_not_found")
+        self.assertIsNone(self.last(self.alice, "signal"))
+        self.assertIsNone(self.last(self.bob_desk, "signal"))
+        self.signal(self.alice, "offer", sdp=SDP_OFFER)
+        self.hub.handle(self.alice, {"type": "hangup", "callId": "call-p2p1"})
+        self.signal(self.bob_desk, "answer", sdp=SDP_ANSWER)
+        self.assertEqual(self.last(self.bob_desk, "error")["code"], "call_not_found")
+
+    def test_invalid_signals_are_rejected(self):
+        self.start_call()
+        invalid = [
+            {"kind": "bye"},
+            {"kind": "offer"},
+            {"kind": "offer", "sdp": "not sdp"},
+            {"kind": "offer", "sdp": "v=0\r\n" + "a" * calls.MAX_SDP_LENGTH},
+            {"kind": "answer", "sdp": "v=0\r\na=x\x00"},
+            {"kind": "ice", "candidate": "candidate:1"},
+            {"kind": "ice", "candidate": {"candidate": "c" * (calls.MAX_ICE_CANDIDATE_LENGTH + 1), "sdpMid": "0"}},
+            {"kind": "ice", "candidate": {"candidate": "candidate:1", "sdpMid": None, "sdpMLineIndex": None}},
+            {"kind": "ice", "candidate": {"candidate": "candidate:1", "sdpMLineIndex": True}},
+            {"kind": "ice", "candidate": {"candidate": "candidate:1", "sdpMLineIndex": 1000}},
+            {"kind": "ice", "candidate": {"candidate": "candidate:\n1", "sdpMid": "0"}},
+        ]
+        for fields in invalid:
+            with self.subTest(fields=str(fields)[:80]):
+                self.signal(self.alice, **fields)
+                error = self.last(self.alice, "error")
+                self.assertEqual(error["code"], "invalid_signal")
+                self.assertEqual(error["callId"], "call-p2p1")
+                self.assertEqual(error["requestType"], "signal")
+        self.assertIsNone(self.last(self.bob_desk, "signal"))
+        # Ошибка в сигнале не завершает звонок.
+        self.assertIn("call-p2p1", self.hub.calls)
+
+    def test_signals_are_rate_limited(self):
+        self.start_call()
+        for _ in range(calls.RATE_LIMITS["signal"]):
+            self.signal(self.alice, "ice", candidate=CANDIDATE)
+        self.signal(self.alice, "ice", candidate=CANDIDATE)
+        self.assertEqual(self.last(self.alice, "error")["code"], "rate_limited")
+
+    def test_signal_follows_resumed_connection(self):
+        self.start_call()
+        self.hub.disconnected(self.alice)
+        alice_again = calls.Peer(lambda m: alice_again.inbox.append(m))
+        alice_again.inbox = []
+        self.hub.handle(alice_again, {
+            "type": "hello",
+            "credential": {"kind": "license", "deviceId": "device-alice-1", "licenseKey": LICENSE_KEY},
+            "emailProofs": [self.signer.issue("alice@example.com", "license:1")],
+            "activeCalls": ["call-p2p1"],
+        })
+        self.signal(self.bob_desk, "ice", candidate=CANDIDATE)
+        self.assertEqual(self.last(alice_again, "signal")["candidate"], CANDIDATE)
+
+
+class ConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        self.saved = {name: calls.os.environ.pop(name, None) for name in (
+            "JACKDAW_LIVEKIT_URL", "JACKDAW_LIVEKIT_API_KEY", "JACKDAW_LIVEKIT_API_SECRET", "JACKDAW_LIVEKIT_API_SECRET_FILE")}
+
+    def tearDown(self):
+        for name, value in self.saved.items():
+            calls.os.environ.pop(name, None)
+            if value is not None:
+                calls.os.environ[name] = value
+
+    def test_livekit_is_optional(self):
+        self.assertIsNone(calls.build_livekit_from_environment())
+
+    def test_partial_livekit_configuration_is_an_error(self):
+        calls.os.environ["JACKDAW_LIVEKIT_URL"] = "wss://lk.example.test"
+        with self.assertRaises(RuntimeError):
+            calls.build_livekit_from_environment()
+
+    def test_full_livekit_configuration_is_used(self):
+        calls.os.environ.update({
+            "JACKDAW_LIVEKIT_URL": "wss://lk.example.test",
+            "JACKDAW_LIVEKIT_API_KEY": "APIkey",
+            "JACKDAW_LIVEKIT_API_SECRET": LIVEKIT_SECRET,
+        })
+        self.assertEqual(calls.build_livekit_from_environment().url, "wss://lk.example.test")
+
+    def test_stun_urls_are_validated(self):
+        self.assertEqual(calls.validate_stun_urls(["", " stun:stun.l.google.com:19302 ", "stuns:stun.example.test"]),
+                         ("stun:stun.l.google.com:19302", "stuns:stun.example.test"))
+        for bad in (["turn:turn.example.test"], ["stun:evil host"], ["stun:a"] * (calls.MAX_STUN_URLS + 1)):
+            with self.assertRaises(RuntimeError):
+                calls.validate_stun_urls(bad)
+
+
 class CallFlowTests(HubTestCase):
     def setUp(self):
         super().setUp()

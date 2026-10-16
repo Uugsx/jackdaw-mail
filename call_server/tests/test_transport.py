@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import calls  # noqa: E402
-from test_calls import LICENSE_KEY, LIVEKIT_SECRET, create_database  # noqa: E402
+from test_calls import LICENSE_KEY, create_database  # noqa: E402
 
 try:
     from websockets.asyncio.client import connect
@@ -35,7 +35,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         hub = calls.CallHub(
             calls.CredentialVerifier(db_path),
             calls.EmailVerification(self.signer),
-            calls.LiveKitTokenIssuer("wss://calls.example.test", "APIkey", LIVEKIT_SECRET),
+            None,
             None,
         )
         self.port = free_port()
@@ -81,7 +81,11 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             incoming = await self.receive(bob, "incoming")
             self.assertFalse(incoming["video"])
             await bob.send(json.dumps({"type": "accept", "callId": "call-0001"}))
-            self.assertTrue((await self.receive(alice, "accepted"))["token"])
+            self.assertEqual((await self.receive(alice, "accepted"))["media"], "p2p")
+            await self.receive(bob, "joined")
+            sdp = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+            await alice.send(json.dumps({"type": "signal", "callId": "call-0001", "kind": "offer", "sdp": sdp}))
+            self.assertEqual((await self.receive(bob, "signal"))["sdp"], sdp)
             await alice.send(json.dumps({"type": "hangup", "callId": "call-0001"}))
             self.assertEqual((await self.receive(bob, "call-ended"))["reason"], "hangup")
 

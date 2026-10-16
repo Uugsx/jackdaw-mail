@@ -1,10 +1,12 @@
 <hbox class="call-buttons">
-  {#if preferredVideoCall}
+  {#if preferredVideoCall && canVideo}
     <RoundButton
       label={$t`Video call`}
       icon={CameraIcon}
       classes="large secondary action"
       onClick={() => startVideoCall(person)} />
+  {/if}
+  {#if preferredVideoCall}
     <RoundButton
       label={$t`Audio call`}
       icon={CallIcon}
@@ -38,7 +40,7 @@
 
 <script lang="ts">
   import type { Person } from "../../../logic/Abstract/Person";
-  import { startVideoCall, startAudioCall, canStartCall } from "../../../logic/Meet/StartCall";
+  import { startVideoCall, startAudioCall, canStartCall, canStartVideoCall } from "../../../logic/Meet/StartCall";
   import { getJackdawCallClient } from "../../../logic/Meet/Jackdaw/JackdawCalls";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import MailIcon from '../../asset/icon/appBar/mail.svg?raw';
@@ -59,6 +61,8 @@
   const callClient = getJackdawCallClient();
   /** Звонок через WhatsApp или Jackdaw, только если он сейчас возможен */
   $: preferredVideoCall = $callClient && $callClient.presenceVersion >= 0 && $emailAddresses && $chatAccounts && canStartCall(person);
+  /** Видео — только через WhatsApp: звонки между пользователями Jackdaw голосовые */
+  $: canVideo = $chatAccounts && canStartVideoCall(person);
   $: preferredChatAccount = $chatAccounts.isEmpty ? null :
       $chatAccounts.sortBy(p => p.preference).first?.value;
 </script>

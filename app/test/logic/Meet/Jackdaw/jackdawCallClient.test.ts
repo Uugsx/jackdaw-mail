@@ -80,10 +80,47 @@ describe("протокол звонков", () => {
     expect(parseServerMessage(JSON.stringify({ type: "teleport" }))).toBeNull();
   });
 
-  test("токен комнаты принимается только для wss://", () => {
-    expect(parseServerMessage(JSON.stringify({ type: "accepted", callId: "call-0001", livekitURL: "ws://evil.test", token: "t" }))).toBeNull();
+  test("ответ на звонок: P2P, токены LiveKit не используются, STUN проверяется", () => {
+    expect(parseServerMessage(JSON.stringify({ type: "accepted", callId: "call-0001", media: "p2p" })))
+      .toEqual({ type: "accepted", callId: "call-0001", iceServers: null });
     expect(parseServerMessage(JSON.stringify({ type: "joined", callId: "call-0001", livekitURL: "wss://calls.test", token: "t" })))
-      .toEqual({ type: "joined", callId: "call-0001", livekitURL: "wss://calls.test", token: "t" });
+      .toEqual({ type: "joined", callId: "call-0001", iceServers: null });
+    expect(parseServerMessage(JSON.stringify({
+      type: "accepted", callId: "call-0001",
+      iceServers: [
+        { urls: ["stun:stun.example.test:3478", "http://evil.test", "stun:bad host"] },
+        { urls: "turn:turn.example.test", username: "u", credential: "c" },
+        { urls: ["javascript:alert(1)"] },
+        "nonsense",
+      ],
+    }))).toEqual({
+      type: "accepted", callId: "call-0001",
+      iceServers: [
+        { urls: ["stun:stun.example.test:3478"] },
+        { urls: ["turn:turn.example.test"], username: "u", credential: "c" },
+      ],
+    });
+    expect(parseServerMessage(JSON.stringify({ type: "accepted", callId: "../x" }))).toBeNull();
+  });
+
+  test("сигналы WebRTC проверяются", () => {
+    let sdp = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n";
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "offer", sdp })))
+      .toEqual({ type: "signal", callId: "call-0001", kind: "offer", sdp });
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "answer", sdp: "<html>" }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0" + "a".repeat(20_000) }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "bye" }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({
+      type: "signal", callId: "call-0001", kind: "ice",
+      candidate: { candidate: "candidate:1 1 udp 1 192.0.2.1 5000 typ host", sdpMid: "0", sdpMLineIndex: 0, extra: "x" },
+    }))).toEqual({
+      type: "signal", callId: "call-0001", kind: "ice",
+      candidate: { candidate: "candidate:1 1 udp 1 192.0.2.1 5000 typ host", sdpMid: "0", sdpMLineIndex: 0 },
+    });
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "ice", candidate: null })))
+      .toEqual({ type: "signal", callId: "call-0001", kind: "ice", candidate: null });
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "ice", candidate: { candidate: "c" } }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({ type: "signal", callId: "call-0001", kind: "ice", candidate: "c" }))).toBeNull();
   });
 
   test("неизвестная причина завершения считается обычным завершением", () => {
@@ -290,9 +327,13 @@ describe("клиент сигналинга", () => {
     client.register({ callID: "call-0001", onSignal: message => signals.push(message) });
     socket().receive({ type: "incoming", callId: "call-0001", from: "bob@example.com", to: "alice@example.com" });
     expect(incoming).toHaveLength(1);
+    socket().receive({ type: "signal", callId: "call-0001", kind: "ice", candidate: null });
     socket().receive({ type: "call-ended", callId: "call-0001", reason: "cancelled" });
     socket().receive({ type: "call-ended", callId: "call-9999", reason: "cancelled" });
-    expect(signals).toEqual([{ type: "call-ended", callId: "call-0001", reason: "cancelled" }]);
+    expect(signals).toEqual([
+      { type: "signal", callId: "call-0001", kind: "ice", candidate: null },
+      { type: "call-ended", callId: "call-0001", reason: "cancelled" },
+    ]);
   });
 
   test("после переподключения идущие звонки передаются в hello", () => {
