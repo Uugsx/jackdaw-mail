@@ -28,7 +28,7 @@ import { deleteExchangePermissions, setExchangePermissions } from "../EWS/Exchan
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { OWAAuth } from "../../Auth/OWAAuth";
 import { type Attachment, ContentDisposition } from "../../Abstract/Attachment";
-import { LoginError } from "../../Abstract/Account";
+import { LoginError, PasswordRejectedError } from "../../Abstract/Account";
 import { ensureLicensed } from "../../util/LicenseClient";
 import { appGlobal } from "../../app";
 import { assertCanAddMailAccount } from "../../Billing/ProPolicy";
@@ -335,7 +335,10 @@ export class OWAAccount extends ExchangeMailAccount {
           owaAuth.isLoggedIn = true;
           return;
         } catch (ex) {
-          if (!interactive) {
+          // Неверный пароль веб-форма не исправит: встроенный браузер
+          // подставил бы тот же устаревший пароль. Пользователю нужен
+          // запрос нового пароля, его показывает вызывающая сторона.
+          if (!interactive || ex instanceof PasswordRejectedError) {
             throw ex;
           }
         }
@@ -361,7 +364,9 @@ export class OWAAccount extends ExchangeMailAccount {
     let formURL = new URL(elements.url);
     let responseURL = new URL(response.url);
     if (response.status == 401 || responseURL.origin == formURL.origin && /\/auth\/logon\.aspx$/i.test(responseURL.pathname) && responseURL.searchParams.get("reason") == "2") {
-      throw new LoginError(null, gt`Password incorrect`);
+      let rejected = new PasswordRejectedError(null, gt`Password incorrect`);
+      rejected.account = this;
+      throw rejected;
     }
     let isSessionActivationError = response.status == 500 && responseURL.origin == formURL.origin && /\/auth\/errorfe\.aspx$/i.test(responseURL.pathname);
     // Successful OWA logon is a 302 to `/owa/`. Treat that as OK even when
@@ -388,6 +393,24 @@ export class OWAAccount extends ExchangeMailAccount {
     if (!loggedIn && !await this.testLoggedIn()) {
       throw new LoginError(null, `Login check failed`);
     }
+  }
+
+  /**
+   * Пароль сменили в настройках. Незавершённый вход (открытая веб-форма)
+   * держит `loginRunOnce`, и без отмены все новые попытки ждали бы его до
+   * перезапуска приложения. Отменяем его и входим заново с новым паролем.
+   */
+  async applyChangedCredentials(): Promise<void> {
+    if (this.mainAccount instanceof OWAAccount) {
+      await this.mainAccount.applyChangedCredentials();
+      return;
+    }
+    if (this.isLoggedIn) {
+      return;
+    }
+    (this.oAuth2 as OWAAuth | null)?.abort();
+    await this.loginRunOnce.running?.catch(() => undefined);
+    await this.login(false);
   }
 
   async login(interactive: boolean): Promise<void> {

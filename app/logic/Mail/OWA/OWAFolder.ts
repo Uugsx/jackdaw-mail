@@ -90,6 +90,19 @@ const kRecentDayBackgroundPages = 4;
 const kRecentDayContinuationDelayMs = 250;
 /** Повторять незавершённую догрузку текущего дня не чаще раза в 15 секунд. */
 const kRecentDaySyncRetryMs = 15_000;
+/** Сколько раз подряд дельта может упереться в незагруженные заголовки, прежде
+ * чем токен всё-таки сдвигается: письмо, которое GetItem не отдаёт никогда,
+ * не должно навсегда остановить доставку новой почты. Пропуск затем закрывает
+ * проверка истории (`verifyRecentHistory`). */
+const kDeltaHeaderRetryLimit = 3;
+/** Глубина первой проверки истории после обновления, пока граница ещё не сохранена. */
+const kHistoryVerifyInitialWindowMs = 45 * 24 * 60 * 60_000;
+/** Запас под отставание индекса FindItem и разницу часов клиента и сервера. */
+const kHistoryVerifyOverlapMs = 60 * 60_000;
+/** Не опрашивать FindItem ради проверки истории чаще этого интервала. */
+const kHistoryVerifyIntervalMs = 60_000;
+/** Страниц FindItem за один проход проверки истории (40 × 50 = 2000 заголовков). */
+const kHistoryVerifyPagesPerPass = 40;
 /** AQS-фильтр Exchange возвращает именно письма, полученные сегодня. */
 const kRecentDayQuery = "received:today";
 /** Каноническое значение boolean для AQS/EWS: Exchange ожидает `false`, а не `no`. */
@@ -191,6 +204,17 @@ export class OWAFolder extends ExchangeFolder {
   protected recentDaySyncAlternateAttempted = false;
   /** QueryString может завершиться пустой страницей раньше штатного FindItem. */
   protected recentDaySyncQueryExhausted = false;
+  /** Токен дельты, на котором GetItem вернул не все заголовки, и число таких попыток. */
+  protected deltaHeaderRetryState: string | null = null;
+  protected deltaHeaderRetryCount = 0;
+  /** До этого момента (мс, время сервера по письмам) история папки проверена
+   * без пропусков. Хранится в БД: после долгого перерыва проверка продолжается
+   * с этой границы, а не с первой страницы свежих писем. */
+  protected historyVerifiedUntil: number | null = null;
+  protected historyVerifyAttemptAt = 0;
+  /** Смещение FindItem, на котором остановился прерванный по лимиту проход. */
+  protected historyVerifyResumeOffset = 0;
+  protected historyVerifyRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
 
   /** Некоторые on-prem/shared OWA не умеют десериализовать AQS FindItem. */
   protected isRecentDayQueryUnsupportedError(ex: unknown): boolean {
@@ -1585,6 +1609,12 @@ export class OWAFolder extends ExchangeFolder {
         messages.addAll(delta);
         void this.finishNewMessages(delta, true);
       }
+      // Проверка истории идёт в фоне: на первом проходе после долгого
+      // перерыва она читает десятки страниц и не должна держать кнопку
+      // «Получить почту» и спиннер списка.
+      void this.verifyRecentHistory()
+        .then(found => found.hasItems ? this.finishNewMessages(found, true) : found)
+        .catch(ex => this.account.handleBackgroundSyncError(ex));
       if (this.needsFullReconcile()) {
         // После уменьшения TotalCount или при лишних локальных строках
         // нужна полная сверка списка.
@@ -1607,6 +1637,122 @@ export class OWAFolder extends ExchangeFolder {
         this.backfillMessageActionFlags();
       }
     }
+  }
+
+  /**
+   * Закрывает пропуски между свежими письмами и старым кешем.
+   *
+   * Быстрые пути синхронизации читают только первую страницу новых писем и
+   * текущий день. Если приложение долго не запускалось, а дельта на старте
+   * сорвалась, письма за промежуток не попадали в кеш никогда. Здесь FindItem
+   * идёт от новых писем к старым до сохранённой границы `historyVerifiedUntil`
+   * и догружает отсутствующие заголовки. Граница сдвигается только после
+   * полного прохода без ошибок, поэтому прерванная проверка продолжится.
+   */
+  async verifyRecentHistory(force = false): Promise<ArrayColl<OWAEMail>> {
+    let empty = new ArrayColl<OWAEMail>();
+    if (!this.id || !this.account.isLoggedIn || !this.messages.hasItems) {
+      // Пустую папку заполняет первичная синхронизация, а без входа запросы невозможны.
+      return empty;
+    }
+    let now = Date.now();
+    if (!force && now - this.historyVerifyAttemptAt < kHistoryVerifyIntervalMs) {
+      return empty;
+    }
+    this.historyVerifyAttemptAt = now;
+    return await this.historyVerifyRunOnce.runOnce(() => this.verifyRecentHistoryOnce());
+  }
+
+  protected async verifyRecentHistoryOnce(): Promise<ArrayColl<OWAEMail>> {
+    await this.readFolder();
+    let found = new ArrayColl<OWAEMail>();
+    let passStartedAt = Date.now();
+    let boundary = (this.historyVerifiedUntil ?? passStartedAt - kHistoryVerifyInitialWindowMs) -
+      kHistoryVerifyOverlapMs;
+    let request = owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true, this.account.isDependentAccount);
+    let startOffset = this.historyVerifyResumeOffset;
+    request.Body.Paging.Offset = startOffset;
+    let reachedBoundary = false;
+    let complete = true;
+    let seenPageSignatures = new Set<string>();
+    for (let page = 0; page < kHistoryVerifyPagesPerPass; page++) {
+      let result = await this.callFolderSyncOWA(request);
+      let items = ensureArray(result?.RootFolder?.Items);
+      if (!items.length) {
+        // Конец папки: старше ничего нет, значит промежуток проверен целиком.
+        reachedBoundary = true;
+        break;
+      }
+      let signature = items
+        .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
+        .join("\u0000");
+      if (seenPageSignatures.has(signature)) {
+        // Некоторые Exchange отдают одну и ту же страницу при любом Offset.
+        // Дальше идти бессмысленно, а граница остаётся прежней.
+        complete = false;
+        break;
+      }
+      seenPageSignatures.add(signature);
+      let missingIDs: string[] = [];
+      let allOlder = true;
+      for (let item of items) {
+        let received = dateFromOWAListItem(item);
+        if (received == null || received.getTime() >= boundary) {
+          allOlder = false;
+        }
+        let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "");
+        if (id && !this.deletions.has(id) && !this.getEmailByItemID(id)) {
+          missingIDs.push(id);
+        }
+      }
+      if (missingIDs.length) {
+        let loaded = await this.getNewMessageHeaders(missingIDs);
+        for (let email of loaded) {
+          // Это догрузка прошлого, а не новая почта: без уведомлений и бейджа «новые».
+          email.isNewArrived = false;
+        }
+        this.addMessagesIfAbsent(loaded);
+        found.addAll(loaded);
+        if (missingIDs.some(id => !this.deletions.has(id) && !this.getEmailByItemID(id))) {
+          complete = false;
+        }
+      }
+      request.Body.Paging.Offset += items.length;
+      if (allOlder) {
+        reachedBoundary = true;
+        break;
+      }
+    }
+    if (found.hasItems) {
+      this.refreshMessageContacts();
+      this.notifyObservers();
+    }
+    if (reachedBoundary && complete) {
+      this.historyVerifiedUntil = passStartedAt;
+      this.historyVerifyResumeOffset = 0;
+      await this.storage.saveFolderProperties(this);
+    } else if (!reachedBoundary && complete) {
+      // Лимит страниц за проход. Новые письма сдвигают выдачу вниз, поэтому
+      // следующий проход начинает на страницу раньше и перекрывает стык.
+      this.historyVerifyResumeOffset = Math.max(0, request.Body.Paging.Offset - kMaxFetchCount);
+    } else {
+      this.historyVerifyResumeOffset = 0;
+    }
+    return found;
+  }
+
+  fromExtraJSON(json: any) {
+    super.fromExtraJSON(json);
+    let verifiedUntil = Number(json?.historyVerifiedUntil);
+    this.historyVerifiedUntil = Number.isFinite(verifiedUntil) && verifiedUntil > 0 ? verifiedUntil : null;
+  }
+
+  toExtraJSON(): any {
+    let json = super.toExtraJSON();
+    if (this.historyVerifiedUntil != null) {
+      json.historyVerifiedUntil = this.historyVerifiedUntil;
+    }
+    return json;
   }
 
   /** Применяет счётчик и возвращается после первой загрузки соответствующих заголовков. */
@@ -3298,6 +3444,18 @@ export class OWAFolder extends ExchangeFolder {
           ensureArray(changes?.Update).length > 0 ||
           ensureArray(changes?.Create).length > 0 ||
           ensureArray(changes?.Delete).length > 0;
+        let unresolvedIDs = newMessageIDs.filter(id =>
+          !this.deletions.has(id) && !this.getEmailByItemID(id));
+        if (unresolvedIDs.length && this.shouldHoldDeltaToken(syncState)) {
+          // GetItem не отдал часть заголовков (сессия истекла, throttling,
+          // лимит сессий). Если сохранить новый токен, эти Create-события
+          // исчезнут навсегда и в папке останется дыра. Держим старый токен:
+          // следующий проход повторит ту же страницу изменений.
+          this.dirty = true;
+          return newMsgs;
+        }
+        this.deltaHeaderRetryState = null;
+        this.deltaHeaderRetryCount = 0;
         let previousSyncState = syncState;
         syncState = sanitize.nonemptystring(result?.SyncState ?? changes?.SyncState, syncState);
         this.syncState = syncState;
@@ -3333,6 +3491,17 @@ export class OWAFolder extends ExchangeFolder {
     } finally {
       lock.release();
     }
+  }
+
+  /** Можно ли ещё раз повторить страницу дельты с тем же токеном. */
+  protected shouldHoldDeltaToken(syncState: string | null): boolean {
+    let key = syncState ?? "";
+    if (this.deltaHeaderRetryState !== key) {
+      this.deltaHeaderRetryState = key;
+      this.deltaHeaderRetryCount = 0;
+    }
+    this.deltaHeaderRetryCount++;
+    return this.deltaHeaderRetryCount <= kDeltaHeaderRetryLimit;
   }
 
   protected syncChangeItem(change: any): any {
