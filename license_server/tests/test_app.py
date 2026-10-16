@@ -39,7 +39,7 @@ class LicenseServerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def _start_http_service(self, webhook_secret: str = "", store_id: str = "") -> tuple[object, str]:
+    def _start_http_service(self, webhook_secret: str = "", store_id: str = "", admin_token: str = "") -> tuple[object, str]:
         config = SimpleNamespace(
             store_configured=False,
             monthly_checkout_url=None,
@@ -47,7 +47,7 @@ class LicenseServerTests(unittest.TestCase):
             webhook_secret=webhook_secret,
             store_id=store_id,
             allowed_origins={"http://127.0.0.1"},
-            admin_token_sha256="",
+            admin_token_sha256=hashlib.sha256(admin_token.encode("utf-8")).hexdigest() if admin_token else "",
             trial_days=7,
             grace_days=7,
         )
@@ -60,11 +60,14 @@ class LicenseServerTests(unittest.TestCase):
         return server, f"http://127.0.0.1:{server.server_address[1]}"
 
     @staticmethod
-    def _post_json(base_url: str, path: str, payload: dict[str, object]) -> tuple[int, dict[str, object]]:
+    def _post_json(base_url: str, path: str, payload: dict[str, object], token: str = "") -> tuple[int, dict[str, object]]:
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(
             f"{base_url}{path}",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
@@ -190,6 +193,57 @@ class LicenseServerTests(unittest.TestCase):
         self.store.activate(license_id, "device-0001", "Mac", 1)
         self.store.activate(license_id, "device-0001", "Mac mini", 1)
         self.assertTrue(self.store.activation_exists(license_id, "device-0001"))
+
+    def test_license_list_shows_every_activated_device(self) -> None:
+        key = app.normalize_license_key("JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR")
+        license_id = self.store.create_license(key, "admin", None, 0, None, None, "admin")
+        mac_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Jackdaw Mail/1.4.2 Chrome/130 Electron/33"
+        windows_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Jackdaw Mail/1.4.2 Chrome/130 Electron/33"
+        self.store.activate(license_id, "device-11111111-aaaa", mac_agent, 0)
+        self.store.activate(license_id, "device-22222222-bbbb", windows_agent, 0)
+        self.store.deactivate(license_id, "device-22222222-bbbb")
+        listed = self.store.list_licenses()[0]
+        self.assertEqual(listed["activeActivations"], 1)
+        self.assertEqual([device["deviceLabel"] for device in listed["devices"]], ["macOS · Jackdaw Mail 1.4.2", "Windows · Jackdaw Mail 1.4.2"])
+        self.assertEqual([device["active"] for device in listed["devices"]], [True, False])
+        self.assertEqual(listed["devices"][0]["devicePreview"], "111-aaaa")
+
+    def test_admin_can_disconnect_device_and_change_limit(self) -> None:
+        token = "admin-test-token"
+        _, base_url = self._start_http_service(admin_token=token)
+        key = app.normalize_license_key("JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR")
+        license_id = self.store.create_license(key, "admin", None, 0, None, None, "admin")
+        self.store.activate(license_id, "device-0001", "Mac", 0)
+        device_hash = self.store.list_licenses()[0]["devices"][0]["deviceHash"]
+
+        status, _ = self._post_json(base_url, "/v1/admin/licenses/devices/deactivate", {"licenseId": license_id, "deviceHash": device_hash})
+        self.assertEqual(status, 401)
+        status, _ = self._post_json(base_url, "/v1/admin/licenses/devices/deactivate", {"licenseId": license_id, "deviceHash": device_hash}, token)
+        self.assertEqual(status, 200)
+        self.assertFalse(self.store.activation_exists(license_id, "device-0001"))
+        status, body = self._post_json(base_url, "/v1/license/refresh", {"licenseKey": key, "deviceId": "device-0001"})
+        self.assertEqual((status, body["error"]), (403, "device_not_activated"))
+
+        status, _ = self._post_json(base_url, "/v1/admin/licenses/limit", {"licenseId": license_id, "maxActivations": 1}, token)
+        self.assertEqual(status, 200)
+        self.assertEqual(self.store.list_licenses()[0]["maxActivations"], 1)
+        status, _ = self._post_json(base_url, "/v1/admin/licenses/limit", {"licenseId": license_id, "maxActivations": 101}, token)
+        self.assertEqual(status, 400)
+        status, _ = self._post_json(base_url, "/v1/admin/licenses/devices/deactivate", {"licenseId": license_id, "deviceHash": "../x"}, token)
+        self.assertEqual(status, 400)
+
+    def test_admin_plan_respects_requested_device_limit(self) -> None:
+        token = "admin-test-token"
+        _, base_url = self._start_http_service(admin_token=token)
+        status, body = self._post_json(base_url, "/v1/admin/licenses", {"plan": "admin", "durationDays": 365, "maxActivations": 1}, token)
+        self.assertEqual(status, 201)
+        self.assertEqual(body["license"]["maxActivations"], 1)
+        self.assertIsNone(body["license"]["validUntil"])
+        key = body["licenseKey"]
+        status, _ = self._post_json(base_url, "/v1/license/activate", {"licenseKey": key, "deviceId": "device-friend-01", "deviceName": "Mac"})
+        self.assertEqual(status, 200)
+        status, body = self._post_json(base_url, "/v1/license/activate", {"licenseKey": key, "deviceId": "device-owner-002", "deviceName": "Windows"})
+        self.assertEqual((status, body["error"]), (409, "activation_limit_reached"))
 
     def test_trial_claim_is_idempotent_and_never_extends(self) -> None:
         first, created = self.store.claim_trial("device-0001", "Mac", 7)

@@ -1,12 +1,35 @@
 import { notifications, Notification, NotificationSeverity } from "../MainWindow/Notification";
 import { production } from "../../logic/build";
+import { UserCancelled } from "../../logic/util/util";
 import * as Sentry from "@sentry/svelte";
 
 export function showError(ex: Error) {
   console.error(errorMessage(ex), ex);
+  // Проверка по признаку, а не instanceof: импорт Account.ts отсюда создаёт
+  // циклическую зависимость модулей (error.ts подключается почти везде).
+  let rejectedAccount = (ex as any)?.passwordRejected ? (ex as any).account : null;
+  if (rejectedAccount) {
+    // Вместо «Неверный пароль» без действий — баннер с переходом к полю пароля.
+    let account = rejectedAccount;
+    void import("../Mail/passwordRejected").then(module => module.showPasswordRejected(account, ex));
+    return;
+  }
   if (shouldShow(ex)) {
     notifications.add(new Notification(errorMessage(ex), NotificationSeverity.Error, ex));
     logErrorToServer(ex);
+  }
+}
+
+/** Убирает баннеры «войдите в систему» / «неверный пароль» после успешного
+ * входа: сами они закрываются только вручную и вводили бы в заблуждение. */
+export function clearLoginNotifications(accountNames: string[]) {
+  for (let notification of notifications.contents) {
+    let ex = notification.ex as any;
+    let accountName = ex?.accountName;
+    let isLoginProblem = !!ex?.authFail || ex instanceof UserCancelled;
+    if (isLoginProblem && (!accountName || accountNames.includes(accountName))) {
+      notifications.remove(notification);
+    }
   }
 }
 

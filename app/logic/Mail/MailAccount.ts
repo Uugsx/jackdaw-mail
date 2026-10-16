@@ -170,6 +170,15 @@ export class MailAccount extends TCPAccount {
     await this.storage?.saveAccount(this);
   }
 
+  /** Пользователь сохранил новые учётные данные. Если аккаунт был выкинут
+   * из сессии, входим сразу, а не после перезапуска приложения. */
+  async applyChangedCredentials(): Promise<void> {
+    if (this.isLoggedIn) {
+      return;
+    }
+    await this.login(false);
+  }
+
   async deleteIt(): Promise<void> {
     await super.deleteIt();
     await this.storage?.deleteAccount(this);
