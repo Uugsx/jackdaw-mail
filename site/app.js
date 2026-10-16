@@ -161,6 +161,8 @@
     "footer.releases": "Release history",
     "footer.issue": "Report an issue",
     "footer.license": "License",
+    "footer.terms": "Terms of Use",
+    "footer.privacy": "Privacy Policy",
     "footer.author": "Author: @Uugsx",
     "footer.credit": "Based on open-source work by Ben Bucksch, Beonex GmbH and other contributors."
   };
