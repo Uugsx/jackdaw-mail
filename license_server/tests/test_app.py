@@ -172,6 +172,25 @@ class LicenseServerTests(unittest.TestCase):
         self.store.activate(license_id, "device-0002", "Windows", 1)
         self.assertTrue(self.store.activation_exists(license_id, "device-0002"))
 
+    def test_deactivated_device_cannot_bypass_the_activation_limit(self) -> None:
+        key = app.normalize_license_key("JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR")
+        license_id = self.store.create_license(key, "monthly", None, 1, None, None, "admin")
+        self.store.activate(license_id, "device-0001", "Mac", 1)
+        self.store.deactivate(license_id, "device-0001")
+        self.store.activate(license_id, "device-0002", "Windows", 1)
+        with self.assertRaises(app.ServiceError) as raised:
+            self.store.activate(license_id, "device-0001", "Mac", 1)
+        self.assertEqual(raised.exception.status, 409)
+        self.assertFalse(self.store.activation_exists(license_id, "device-0001"))
+        self.assertTrue(self.store.activation_exists(license_id, "device-0002"))
+
+    def test_active_device_can_reactivate_at_the_limit(self) -> None:
+        key = app.normalize_license_key("JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR")
+        license_id = self.store.create_license(key, "monthly", None, 1, None, None, "admin")
+        self.store.activate(license_id, "device-0001", "Mac", 1)
+        self.store.activate(license_id, "device-0001", "Mac mini", 1)
+        self.assertTrue(self.store.activation_exists(license_id, "device-0001"))
+
     def test_trial_claim_is_idempotent_and_never_extends(self) -> None:
         first, created = self.store.claim_trial("device-0001", "Mac", 7)
         second, created_again = self.store.claim_trial("device-0001", "Renamed Mac", 30)

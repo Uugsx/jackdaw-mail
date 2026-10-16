@@ -430,7 +430,8 @@ class LicenseStore:
                 "SELECT deactivated_at FROM activations WHERE license_id = ? AND device_hash = ?",
                 (license_id, hashed_device),
             ).fetchone()
-            if existing is None and max_activations > 0:
+            # Устройство с deactivated_at снова занимает место, поэтому лимит проверяется и для него.
+            if (existing is None or existing["deactivated_at"] is not None) and max_activations > 0:
                 count = connection.execute(
                     "SELECT COUNT(*) AS count FROM activations WHERE license_id = ? AND deactivated_at IS NULL",
                     (license_id,),

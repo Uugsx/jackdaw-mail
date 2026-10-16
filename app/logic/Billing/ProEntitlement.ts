@@ -174,7 +174,19 @@ function scheduleTrialRefresh(state: ProEntitlementState): void {
   if (state.status == "trial") {
     let checkTrialClock = (): void => {
       let trustedNow = trustedServerNowMs();
-      let expired = trustedNow == null || state.validUntil != null && Date.parse(state.validUntil) <= trustedNow;
+      if (trustedNow != null && state.validUntil != null && Date.parse(state.validUntil) <= trustedNow) {
+        // Срок вышел обычным образом, а не из-за смены часов.
+        proEntitlement.setValue({
+          ...defaultState,
+          status: "expired",
+          plan: state.plan,
+          validUntil: state.validUntil,
+          message: gt`The trial has ended. Activate a Pro license to continue.`,
+          lastValidatedAt: state.lastValidatedAt,
+        });
+        return;
+      }
+      let expired = trustedNow == null;
       if (expired) {
         proEntitlement.setValue({
           ...defaultState,
@@ -194,6 +206,19 @@ function scheduleTrialRefresh(state: ProEntitlementState): void {
     }, TRIAL_REFRESH_INTERVAL_MS);
   }
 }
+
+/**
+ * Пробный период определяется по типу учётных данных. План «trial» у ключа
+ * лицензии (выдан администратором) не делает его пробным периодом устройства.
+ * По плану судим только для старых записей, где тип ещё не сохранялся.
+ */
+export function isTrialCredential(stored: Pick<StoredEntitlement, "credentialType" | "payload"> | null | undefined): boolean {
+  if (!stored) return false;
+  return stored.credentialType != null ? stored.credentialType == "trial" : stored.payload.plan == "trial";
+}
+
+/** Растёт при активации, смене или удалении лицензии: запоздавший ответ проверки не должен их отменить. */
+let entitlementGeneration = 0;
 
 function readStoredEntitlement(): StoredEntitlement | null {
   let storage = getStorage();
@@ -526,12 +551,13 @@ export function hasProFeature(feature: ProFeatureKey): boolean {
 
 export function getSavedProLicenseKey(): string | null {
   let stored = readStoredEntitlement();
-  return stored?.credentialType == "trial" || stored?.payload.plan == "trial" ? null : stored?.licenseKey || null;
+  return isTrialCredential(stored) ? null : stored?.licenseKey || null;
 }
 
 export async function activateProLicense(licenseKey: string, deviceName = getDeviceName()): Promise<ProEntitlementState> {
   let normalized = normalizedLicenseKey(licenseKey);
   let response = await requestEntitlement("/v1/license/activate", normalized, deviceName);
+  entitlementGeneration++;
   let validatedAt = new Date().toISOString();
   saveStoredEntitlement({
     licenseKey: normalized,
@@ -552,6 +578,7 @@ export async function startProTrial(deviceName = getDeviceName()): Promise<ProEn
     throw new ProEntitlementError(gt`A paid Pro license is already active on this device.`);
   }
   let response = await requestTrialEntitlement("/v1/trial/start", deviceName);
+  entitlementGeneration++;
   let validatedAt = new Date().toISOString();
   saveStoredEntitlement({
     licenseKey: "",
@@ -587,11 +614,13 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
       proEntitlement.setValue(state);
       return state;
     }
-    let storedIsTrial = stored.credentialType == "trial" || stored.payload.plan == "trial";
+    let storedIsTrial = isTrialCredential(stored);
+    let generation = entitlementGeneration;
     try {
       let response = storedIsTrial
         ? await requestTrialEntitlement("/v1/trial/refresh", getDeviceName())
         : await requestEntitlement("/v1/license/refresh", stored.licenseKey, getDeviceName());
+      if (generation != entitlementGeneration) return proEntitlement.value;
       let validatedAt = new Date().toISOString();
       saveStoredEntitlement({
         ...stored,
@@ -605,6 +634,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
       proEntitlement.setValue(state);
       return state;
     } catch (error) {
+      if (generation != entitlementGeneration) return proEntitlement.value;
       if (storedIsTrial) {
         if (isLicenseRejection(error)) {
           let status: ProEntitlementStatus = error.responseCode == "trial_expired" ? "expired" : "revoked";
@@ -676,7 +706,8 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
 
 export async function deactivateProLicense(): Promise<void> {
   let stored = readStoredEntitlement();
-  let isTrial = stored?.credentialType == "trial" || stored?.payload.plan == "trial";
+  entitlementGeneration++;
+  let isTrial = isTrialCredential(stored);
   if (stored && !isTrial && BILLING_LICENSE_API_URL) {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {

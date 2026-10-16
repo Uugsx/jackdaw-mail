@@ -3,7 +3,6 @@
   import LockKeyholeIcon from "lucide-svelte/icons/lock-keyhole";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
   import ExternalLinkIcon from "lucide-svelte/icons/external-link";
-  import SparklesIcon from "lucide-svelte/icons/sparkles";
   import { t } from "../../l10n/l10n";
   import { BILLING_PLANS_URL, type ProFeatureKey } from "../../logic/Billing/Billing";
   import {
@@ -84,7 +83,6 @@
 {:else}
   <svelte:element this={compact ? "section" : "main"} class="pro-gate" class:compact aria-labelledby="pro-gate-title">
     <div class="gate-icon" aria-hidden="true"><LockKeyholeIcon size="22px" /></div>
-    <p class="eyebrow">{$t`JACKDAW PRO`}</p>
     <h1 id="pro-gate-title">{featureName}</h1>
     <p class="lead">
       {$t`This module is included in Jackdaw Pro. Buy a license key or enter one that was issued by your administrator.`}
@@ -96,7 +94,6 @@
       {#if state.status == "not-activated"}
         <Button
           label={startingTrial ? $t`Starting 7-day trial…` : $t`Try Pro free for 7 days`}
-          icon={SparklesIcon}
           classes="filled large"
           disabled={startingTrial}
           onClick={startTrial}
@@ -105,7 +102,7 @@
       <Button
         label={$t`View Pro plans`}
         icon={ExternalLinkIcon}
-        classes="filled large"
+        classes="large"
         onClick={openPlans}
         />
       <Button
@@ -150,20 +147,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
-    border: 1px solid var(--icon-primary);
-    border-radius: 14px;
+    width: 32px;
+    height: 32px;
     color: var(--icon-primary);
-    background: color-mix(in srgb, var(--icon-primary) 10%, var(--main-bg));
-  }
-
-  .eyebrow {
-    margin: 10px 0 0;
-    color: var(--fg);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
   }
 
   h1 {

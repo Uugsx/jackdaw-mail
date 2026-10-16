@@ -137,14 +137,21 @@
     searchGeneration++;
   }
 
-  $: $smartViewPreferencesEpoch;
-  $: orderedViews = getVisibleSmartViewIds()
+  // Настройки читаются из localStorage внутри функций, поэтому счётчик правок
+  // нужно указать в каждом выражении: иначе список не обновится после
+  // скрытия, переноса или сброса представлений.
+  $: orderedViews = readAtEpoch($smartViewPreferencesEpoch, getVisibleSmartViewIds)
     .map(id => views.find(view => view.id == id))
     .filter((view): view is SmartView => !!view);
-  $: hiddenSmartViewIds = getHiddenSmartViewIds();
+  $: hiddenSmartViewIds = readAtEpoch($smartViewPreferencesEpoch, getHiddenSmartViewIds);
   $: viewIndex = contextViewId == null
     ? -1
     : orderedViews.findIndex(view => view.id == contextViewId);
+
+  /** Читает настройки заново при каждой смене `epoch`. */
+  function readAtEpoch<T>(_epoch: unknown, read: () => T): T {
+    return read();
+  }
 
   function viewById(id: SmartViewId): SmartView | undefined {
     return views.find(view => view.id == id);

@@ -97,19 +97,14 @@
 
   <HeaderGroupBox>
     <hbox slot="header">{$t`What is included in Pro`}</hbox>
-    <div class="feature-grid">
+    <ul class="feature-list">
       {#each proFeatures as feature}
-        <article class="feature">
-          <div class="feature-icon" aria-hidden="true">
-            <svelte:component this={feature.icon} size="18px" />
-          </div>
-          <div>
-            <h2>{feature.title()}</h2>
-            <p>{feature.description()}</p>
-          </div>
-        </article>
+        <li>
+          <h2>{feature.title()}</h2>
+          <p>{feature.description()}</p>
+        </li>
       {/each}
-    </div>
+    </ul>
   </HeaderGroupBox>
 
   <HeaderGroupBox>
@@ -117,11 +112,7 @@
     <div class="plans">
       <article class="plan-card">
         <div class="plan-heading">
-          <div>
-            <span class="eyebrow">{$t`Flexible`}</span>
-            <h2>{$t`Monthly Pro`}</h2>
-          </div>
-          <CalendarIcon size="22px" aria-hidden="true" />
+          <h2>{$t`Monthly Pro`}</h2>
         </div>
         <div class="plan-price">{BILLING_PRICES.monthly}</div>
         <p>{$t`Pay month by month. After checkout, activate the license key on every device you use.`}</p>
@@ -135,11 +126,7 @@
       </article>
       <article class="plan-card featured">
         <div class="plan-heading">
-          <div>
-            <span class="eyebrow">{$t`Best value`}</span>
-            <h2>{$t`Yearly Pro`}</h2>
-          </div>
-          <SparklesIcon size="22px" aria-hidden="true" />
+          <h2>{$t`Yearly Pro`}</h2>
         </div>
         <div class="plan-price">{BILLING_PRICES.yearly}</div>
         <p>{$t`One annual payment. The checkout shows the final price and renewal terms before payment.`}</p>
@@ -160,7 +147,6 @@
         </div>
         <Button
           label={startingTrial ? $t`Starting trial…` : trialChecking ? $t`Checking trial…` : trialAvailable ? $t`Start 7-day trial` : $t`Trial unavailable`}
-          icon={SparklesIcon}
           classes="filled trial-action"
           disabled={startingTrial || trialChecking || !trialAvailable}
           onClick={startTrial}
@@ -176,19 +162,12 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import CalendarIcon from "lucide-svelte/icons/calendar-days";
-  import ChartIcon from "lucide-svelte/icons/chart-column";
   import CheckIcon from "lucide-svelte/icons/check";
-  import ClockIcon from "lucide-svelte/icons/clock-3";
   import ExternalLinkIcon from "lucide-svelte/icons/external-link";
   import KeyRoundIcon from "lucide-svelte/icons/key-round";
-  import BellIcon from "lucide-svelte/icons/bell-ring";
   import LockKeyholeIcon from "lucide-svelte/icons/lock-keyhole";
   import LogOutIcon from "lucide-svelte/icons/log-out";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
-  import SparklesIcon from "lucide-svelte/icons/sparkles";
-  import SignatureIcon from "lucide-svelte/icons/signature";
-  import UsersRoundIcon from "lucide-svelte/icons/users-round";
   import { t } from "../../../l10n/l10n";
   import {
     BILLING_CHECKOUT_URLS,
@@ -231,37 +210,30 @@
 
   const proFeatures = [
     {
-      icon: ChartIcon,
       title: () => $t`Interactive reports`,
       description: () => $t`Charts, dashboard widgets, filters, sorting and a full report view inside Jackdaw.`,
     },
     {
-      icon: ClockIcon,
       title: () => $t`Live SLA control`,
       description: () => $t`A right-side queue with a working-time timer, deadline and overdue state for every open request.`,
     },
     {
-      icon: CalendarIcon,
       title: () => $t`Working calendar`,
       description: () => $t`Different working hours for each weekday, with weekends and out-of-hours time excluded from SLA.`,
     },
     {
-      icon: BellIcon,
       title: () => $t`Reminders`,
       description: () => $t`Configurable checkpoints such as 10, 20 and 25 working minutes before a reply.`,
     },
     {
-      icon: ExternalLinkIcon,
       title: () => $t`HTML export`,
       description: () => $t`Save a checked, detailed report as an HTML copy after reviewing it inside the app.`,
     },
     {
-      icon: SignatureIcon,
       title: () => $t`HTML email signatures`,
       description: () => $t`Create rich signatures with formatting, links and images, then insert them into new mail and replies.`,
     },
     {
-      icon: UsersRoundIcon,
       title: () => $t`Multiple mail accounts`,
       description: () => $t`Connect more than one mailbox, including shared mailboxes, in the same Jackdaw workspace.`,
     },
@@ -425,15 +397,12 @@
     align-items: flex-start;
     gap: 14px;
     min-width: 0;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--main-bg) 84%, var(--headerbar-bg));
+    padding-inline-start: 14px;
+    border-inline-start: 3px solid var(--border);
   }
 
   .access-summary.enabled {
-    border-color: color-mix(in srgb, var(--icon-primary) 48%, var(--border));
-    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
+    border-inline-start-color: var(--icon-primary);
   }
 
   .status-mark {
@@ -441,11 +410,9 @@
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    width: 24px;
+    height: 24px;
     color: var(--icon-primary);
-    background: color-mix(in srgb, var(--icon-primary) 12%, var(--main-bg));
   }
 
   strong {
@@ -531,47 +498,30 @@
     background: color-mix(in srgb, var(--icon-primary) 10%, var(--main-bg));
   }
 
-  .feature-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    color: var(--icon-primary);
+  .feature-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-block-start: 1px solid var(--border);
   }
 
-  .eyebrow {
-    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-  }
-
-  .feature-grid {
+  .feature-list li {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(10em, 15em) minmax(0, 1fr);
+    gap: 4px 24px;
+    padding-block: 12px;
+    border-block-end: 1px solid var(--border);
   }
 
-  .feature {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    min-width: 0;
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--main-bg) 84%, var(--headerbar-bg));
+  .feature-list p {
+    margin: 0;
+    font-size: 14px;
   }
 
   h2 {
     margin: 0;
     font-size: 16px;
     line-height: 1.3;
-  }
-
-  .feature p {
-    font-size: 14px;
   }
 
   .plans {
@@ -584,12 +534,11 @@
     min-width: 0;
     padding: 16px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 4px;
   }
 
   .plan-card.featured {
-    border-color: color-mix(in srgb, var(--icon-primary) 48%, var(--border));
-    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
+    border-color: var(--icon-primary);
   }
 
   .plan-heading {
@@ -597,11 +546,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-  }
-
-  .plan-heading :global(svg) {
-    flex: 0 0 auto;
-    color: var(--icon-primary);
   }
 
   .plan-price {
@@ -631,10 +575,8 @@
     justify-content: space-between;
     gap: 16px;
     margin-block-start: 16px;
-    padding: 14px 16px;
-    border: 1px solid color-mix(in srgb, var(--icon-primary) 48%, var(--border));
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--icon-primary) 7%, var(--main-bg));
+    padding-block: 14px 0;
+    border-block-start: 1px solid var(--border);
   }
 
   .trial-panel p {
@@ -652,8 +594,8 @@
 
   @media (max-width: 720px) {
     .access-layout,
-    .feature-grid,
-    .plans {
+    .plans,
+    .feature-list li {
       grid-template-columns: 1fr;
     }
 
