@@ -4,8 +4,11 @@ import { OAuth2Tab } from "./UI/OAuth2Tab";
 import { OWALoginBackground } from "../Mail/OWA/Login/OWALoginBackground";
 import type { OWAAccount } from "../Mail/OWA/OWAAccount";
 import { appGlobal } from "../app";
-import { assert, NotReached, type URLString } from "../util/util";
+import { assert, NotReached, sleep, type URLString } from "../util/util";
 import { isNetworkError } from "../util/netUtil";
+
+/** Паузы между проверками входа после навигации окна OWA (секунды). */
+const kAuthDoneRetryDelaysSeconds = [1, 2, 4, 8];
 
 /** Log into OWA web interface via browser. Mimics the `OAuth2` API. */
 export class OWAAuth extends WebBasedAuth {
@@ -100,10 +103,30 @@ export class OWAAuth extends WebBasedAuth {
 
   // Called from `OAuth2Embed.urlChanged()` and `OAuth2Tab.urlChanged()`
   async isAuthDoneURL(url: URLString): Promise<boolean> {
-    if (url.includes("/auth/logon.aspx") || url.includes("/auth/errorfe.aspx") || url.includes("reason=2")) {
+    if (url.includes("/auth/logon.aspx") || url.includes("reason=2")) {
       return false;
     }
-    return this.isLoggedIn = await this.account.testLoggedIn();
+    // После POST формы on-prem OWA активирует сессию не сразу, а SPA `/owa/`
+    // больше не навигирует. Одна проверка оставляла окно входа висеть
+    // навсегда, поэтому повторяем её с паузами. errorfe.aspx (HTTP 500)
+    // некоторые сборки показывают уже после выдачи рабочей cookie.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if (await this.account.testLoggedIn()) {
+          return this.isLoggedIn = true;
+        }
+      } catch (ex) {
+        // 502 прокси или таймаут во время активации сессии — не повод
+        // молча бросать вход: проверим ещё раз после паузы.
+        if (!isNetworkError(ex) && !(ex instanceof Error && /HTTP 5\d\d/.test(ex.message))) {
+          throw ex;
+        }
+      }
+      if (attempt >= kAuthDoneRetryDelaysSeconds.length) {
+        return this.isLoggedIn = false;
+      }
+      await sleep(kAuthDoneRetryDelaysSeconds[attempt]);
+    }
   }
 
   // Called from `OAuth2Embed.success()` and `OAuth2Tab.success()`

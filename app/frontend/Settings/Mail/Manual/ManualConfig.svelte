@@ -30,6 +30,8 @@
   import Button from "../../../Shared/Button.svelte";
   import SaveIcon from "lucide-svelte/icons/save";
   import { t } from "../../../../l10n/l10n";
+  import { appGlobal } from "../../../../logic/app";
+  import { clearLoginNotifications } from "../../../Util/error";
 
   /** in/out
    * The entire object changes only when the user changes the protocol,
@@ -51,6 +53,13 @@
     // but we're only interested in the outgoing account.
     if (config.outgoing) {
       await config.outgoing.save();
+    }
+    if (!isSetup && !config.isLoggedIn) {
+      // Новый пароль должен заработать сразу: раньше он применялся только
+      // после перезапуска, а баннер «войдите в систему» оставался висеть.
+      await config.applyChangedCredentials();
+      clearLoginNotifications([config, ...appGlobal.emailAccounts.contents
+        .filter(account => account.mainAccount == config)].map(account => account.name));
     }
   }
 

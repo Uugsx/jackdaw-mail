@@ -318,3 +318,11 @@ export class LoginError extends SpecificError {
   authFail = true;
   isUserError = true;
 }
+
+/** Сервер проверил сохранённый пароль и отказал (например, пароль сменили
+ * на сервере). Нужен новый пароль, а не веб-форма входа и не повтор попытки. */
+export class PasswordRejectedError extends LoginError {
+  passwordRejected = true;
+  /** Аккаунт, которому нужен новый пароль; интерфейс открывает его настройки. */
+  account: Account | null = null;
+}

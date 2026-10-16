@@ -16,6 +16,8 @@ import { ArrayColl, type Collection } from "svelte-collections";
 import { trackMailSync } from "../mailSyncStatus";
 
 export const kMaxCount = 50;
+/** Сколько раз подряд повторять страницу дельты с незагруженными заголовками. */
+const kDeltaHeaderRetryLimit = 3;
 
 export class EWSFolder extends ExchangeFolder {
   declare account: EWSAccount;
@@ -133,6 +135,15 @@ export class EWSFolder extends ExchangeFolder {
         this.messages.addAll(newMsgsInIteration);
         newMsgs.addAll(newMsgsInIteration);
         await this.forEachSyncChange(result.Changes.Delete, this.processSyncDelete, true);
+        let unresolved = newMessageIDs.filter(itemID =>
+          !this.deletions.has(itemID.Id) && !this.getEmailByItemID(itemID.Id));
+        if (unresolved.length && this.shouldHoldDeltaToken(this.syncState)) {
+          // GetItem вернул не все заголовки (ошибки он глотает). Новый токен
+          // навсегда потерял бы эти письма, поэтому повторим страницу позже.
+          return newMsgs;
+        }
+        this.deltaHeaderRetryState = null;
+        this.deltaHeaderRetryCount = 0;
         this.syncState = sync.m$SyncFolderItems.m$SyncState = sanitize.nonemptystring(result.SyncState);
         await this.storage.saveFolder(this);
       }
@@ -140,6 +151,22 @@ export class EWSFolder extends ExchangeFolder {
     } finally {
       lock.release();
     }
+  }
+
+  /** Токен, на котором GetItem вернул не все заголовки, и число повторов на нём. */
+  protected deltaHeaderRetryState: string | null = null;
+  protected deltaHeaderRetryCount = 0;
+
+  /** Повторять страницу с тем же токеном не бесконечно: письмо, которое
+   * сервер не отдаёт никогда, не должно остановить доставку новой почты. */
+  protected shouldHoldDeltaToken(syncState: string | number | null): boolean {
+    let key = String(syncState ?? "");
+    if (this.deltaHeaderRetryState !== key) {
+      this.deltaHeaderRetryState = key;
+      this.deltaHeaderRetryCount = 0;
+    }
+    this.deltaHeaderRetryCount++;
+    return this.deltaHeaderRetryCount <= kDeltaHeaderRetryLimit;
   }
 
   protected async forEachSyncChange(changes: any[], eachCallback: (email: EWSEMail, change: any) => Promise<void>, isDirectList: boolean): Promise<any[]> {

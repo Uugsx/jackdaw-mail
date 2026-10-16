@@ -1,5 +1,4 @@
-import { MeetingState, VideoConfMeeting } from "./VideoConfMeeting";
-import { MeetingParticipant } from "./Participant";
+import type { VideoConfMeeting } from "./VideoConfMeeting";
 import type { MeetAccount } from "./MeetAccount";
 import { WhatsAppMeetAccount } from "./WhatsApp/WhatsAppMeetAccount";
 import { JID } from "../Chat/WhatsApp/Binary/JID";
@@ -22,17 +21,10 @@ export async function startVideoCall(to: Person | Group): Promise<VideoConfMeeti
   if (whatsAppCall) {
     return whatsAppCall;
   }
-  // TODO test code
-  let call = new VideoConfMeeting();
-  let callee = new MeetingParticipant();
-  callee.name = to.name;
-  if (to instanceof Person) {
-    callee.person = to; // picture etc. come from the linked Person
-  }
-  call.participants.add(callee);
-  call.state = MeetingState.OutgoingCallConfirm;
-  appGlobal.meetings.add(call);
-  return call;
+  // Звонков между пользователями Jackdaw пока нет (нет сигнального сервера),
+  // поэтому вместо пустого «звонка», который ничего не отправляет и висит
+  // в состоянии вызова, честно сообщаем, что звонок недоступен.
+  throw new UserError(gt`Calls to this contact are not available yet. Calls currently work only with contacts that have a linked WhatsApp account.`);
 }
 
 /*
@@ -133,7 +125,7 @@ export async function startAudioCall(to: Person | Group): Promise<VideoConfMeeti
   if (whatsAppCall) {
     return whatsAppCall;
   }
-  throw new UserError(gt`Audio calls are not available yet. Try a video call.`);
+  throw new UserError(gt`Calls to this contact are not available yet. Calls currently work only with contacts that have a linked WhatsApp account.`);
 }
 
 /** If the contact has a WhatsApp ID and a WhatsApp Meet account exists, starts a

@@ -59,6 +59,10 @@ const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
 const TRIAL_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const TRIAL_CLOCK_CHECK_INTERVAL_MS = 60 * 1000;
+/** Платный ключ тоже перепроверяется в фоне, иначе отзыв ключа или отключение
+ * устройства в админке доходят до работающего приложения только после перезапуска. */
+const LICENSE_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const LICENSE_REFRESH_STATUSES = new Set<ProEntitlementStatus>(["active", "past_due", "offline"]);
 const JACKDAW_LICENSE_KEY_PATTERN = /^JACKDAW-PRO-(?:[A-Z0-9]{4}-){3}[A-Z0-9]{4}$/;
 const PROVIDER_LICENSE_KEY_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const ENTITLEMENT_STATUSES = new Set(["active", "trial", "past_due"]);
@@ -204,6 +208,10 @@ function scheduleTrialRefresh(state: ProEntitlementState): void {
     trialRefreshTimer = setTimeout(() => {
       void refreshProEntitlement();
     }, TRIAL_REFRESH_INTERVAL_MS);
+  } else if (LICENSE_REFRESH_STATUSES.has(state.status)) {
+    trialRefreshTimer = setTimeout(() => {
+      void refreshProEntitlement();
+    }, LICENSE_REFRESH_INTERVAL_MS);
   }
 }
 

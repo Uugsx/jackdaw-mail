@@ -120,6 +120,39 @@ def device_id_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+DEVICE_PREVIEW_LENGTH = 8
+
+
+def device_preview(device_id: str) -> str:
+    """Хвост идентификатора: у всех ID общий префикс «device-», по нему устройства неразличимы."""
+    return device_id[-DEVICE_PREVIEW_LENGTH:]
+
+
+# Порядок важен: Android и iOS-подстроки встречаются внутри строк Linux/macOS.
+DEVICE_OS_MARKERS = (
+    ("Android", "Android"),
+    ("iPhone", "iOS"),
+    ("iPad", "iPadOS"),
+    ("Windows", "Windows"),
+    ("Mac OS X", "macOS"),
+    ("Macintosh", "macOS"),
+    ("CrOS", "ChromeOS"),
+    ("Linux", "Linux"),
+)
+APP_VERSION_RE = re.compile(r"(?:JackdawMail|Jackdaw Mail|jackdaw)[/ ]([0-9][0-9A-Za-z.\-]*)", re.IGNORECASE)
+
+
+def describe_device(device_name: str | None) -> str:
+    """Человекочитаемая подпись устройства для админки из User-Agent или имени, присланного клиентом."""
+    if not device_name:
+        return "Устройство"
+    if "Mozilla/" not in device_name:
+        return device_name
+    os_name = next((label for marker, label in DEVICE_OS_MARKERS if marker in device_name), "Неизвестная ОС")
+    version = APP_VERSION_RE.search(device_name)
+    return f"{os_name} · Jackdaw Mail {version.group(1)}" if version else os_name
+
+
 def generate_license_key() -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     groups = ["".join(secrets.choice(alphabet) for _ in range(4)) for _ in range(4)]
@@ -447,7 +480,7 @@ class LicenseStore:
                     last_seen_at = excluded.last_seen_at,
                     deactivated_at = NULL
                 """,
-                (license_id, hashed_device, device_id[:8], device_name, timestamp, timestamp),
+                (license_id, hashed_device, device_preview(device_id), device_name, timestamp, timestamp),
             )
 
     def touch_activation(self, license_id: int, device_id: str) -> bool:
@@ -463,6 +496,23 @@ class LicenseStore:
             cursor = connection.execute(
                 "UPDATE activations SET deactivated_at = ?, last_seen_at = ? WHERE license_id = ? AND device_hash = ? AND deactivated_at IS NULL",
                 (iso_datetime(now_utc()), iso_datetime(now_utc()), license_id, device_id_hash(device_id)),
+            )
+            return cursor.rowcount > 0
+
+    def deactivate_by_hash(self, license_id: int, device_hash: str) -> bool:
+        with self._write_lock, self._connect() as connection:
+            timestamp = iso_datetime(now_utc())
+            cursor = connection.execute(
+                "UPDATE activations SET deactivated_at = ? WHERE license_id = ? AND device_hash = ? AND deactivated_at IS NULL",
+                (timestamp, license_id, device_hash),
+            )
+            return cursor.rowcount > 0
+
+    def set_max_activations(self, license_id: int, max_activations: int) -> bool:
+        with self._write_lock, self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE licenses SET max_activations = ?, updated_at = ? WHERE id = ?",
+                (max_activations, iso_datetime(now_utc()), license_id),
             )
             return cursor.rowcount > 0
 
@@ -517,7 +567,7 @@ class LicenseStore:
                     started_at, updated_at, last_seen_at, expires_at
                 ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
                 """,
-                (hashed_device, device_id[:8], device_name, timestamp, timestamp, timestamp, expires_at),
+                (hashed_device, device_preview(device_id), device_name, timestamp, timestamp, timestamp, expires_at),
             )
             row = connection.execute("SELECT * FROM trial_claims WHERE id = ?", (cursor.lastrowid,)).fetchone()
             if row is None:
@@ -543,6 +593,7 @@ class LicenseStore:
                     "id": row["id"],
                     "devicePreview": f"{row['device_prefix']}…",
                     "deviceName": row["device_name"],
+                    "deviceLabel": describe_device(row["device_name"]),
                     "status": self._effective_trial_status(row),
                     "startedAt": row["started_at"],
                     "lastSeenAt": row["last_seen_at"],
@@ -573,12 +624,33 @@ class LicenseStore:
                 "SELECT * FROM licenses ORDER BY id DESC LIMIT ?",
                 (min(max(limit, 1), 100),),
             ).fetchall()
+            devices_by_license: dict[int, list[dict[str, Any]]] = {row["id"]: [] for row in rows}
+            if rows:
+                placeholders = ",".join("?" for _ in rows)
+                activation_rows = connection.execute(
+                    f"""
+                    SELECT license_id, device_hash, device_prefix, device_name, activated_at, last_seen_at, deactivated_at
+                    FROM activations WHERE license_id IN ({placeholders})
+                    ORDER BY deactivated_at IS NOT NULL, last_seen_at DESC
+                    """,
+                    [row["id"] for row in rows],
+                ).fetchall()
+                for activation in activation_rows:
+                    devices_by_license[activation["license_id"]].append(
+                        {
+                            "deviceHash": activation["device_hash"],
+                            "devicePreview": activation["device_prefix"],
+                            "deviceName": activation["device_name"],
+                            "deviceLabel": describe_device(activation["device_name"]),
+                            "activatedAt": activation["activated_at"],
+                            "lastSeenAt": activation["last_seen_at"],
+                            "deactivatedAt": activation["deactivated_at"],
+                            "active": activation["deactivated_at"] is None,
+                        }
+                    )
             result: list[dict[str, Any]] = []
             for row in rows:
-                activation_count = connection.execute(
-                    "SELECT COUNT(*) AS count FROM activations WHERE license_id = ? AND deactivated_at IS NULL",
-                    (row["id"],),
-                ).fetchone()["count"]
+                devices = devices_by_license[row["id"]]
                 result.append(
                     {
                         "id": row["id"],
@@ -592,7 +664,8 @@ class LicenseStore:
                         "updatedAt": row["updated_at"],
                         "expiresAt": row["expires_at"],
                         "maxActivations": row["max_activations"],
-                        "activeActivations": activation_count,
+                        "activeActivations": sum(1 for device in devices if device["active"]),
+                        "devices": devices,
                     }
                 )
             return result
@@ -633,6 +706,17 @@ class RateLimiter:
 
 def features_for_plan(plan: str) -> list[str]:
     return list(PRO_FEATURES) if plan in PLANS else []
+
+
+MAX_ACTIVATIONS_LIMIT = 100
+DEVICE_HASH_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def parse_license_id(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ServiceError(400, "invalid_license_id", "Идентификатор лицензии некорректен.") from exc
 
 
 def validate_device_id(value: Any) -> str:
@@ -716,6 +800,14 @@ ADMIN_HTML = """<!doctype html>
     th, td { text-align: left; padding: 10px 8px 10px 0; border-bottom: 1px solid #d9d6cf; vertical-align: top; font-size: 14px; }
     th { color: #686d75; font-size: 13px; font-weight: 600; border-bottom-color: #1a1d21; }
     .muted { color: #686d75; font-size: 13px; }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    button.link { background: transparent; color: #1a1d21; border-color: transparent; padding: 2px 4px; font-variant-numeric: tabular-nums; text-decoration: underline; text-underline-offset: 3px; }
+    button.link:hover { background: #ecebe6; }
+    tr.devices > td { background: #ecebe6; padding: 12px; }
+    table.nested { min-width: 0; margin-top: 10px; }
+    table.nested th, table.nested td { border-bottom-color: #cfccc4; font-size: 13px; }
+    label.inline { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+    label.inline input { width: 90px; }
     @media (max-width: 680px) { body { padding: 16px; } .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
     @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
   </style>
@@ -768,19 +860,62 @@ ADMIN_HTML = """<!doctype html>
     return body;
   }
   function cell(row, value) { const td = document.createElement('td'); td.textContent = value == null ? '—' : String(value); row.appendChild(td); return td; }
+  const expanded = new Set();
+  function formatDate(value) { if (!value) return '—'; const date = new Date(value); return isNaN(date) ? value : date.toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}); }
+  function limitLabel(value) { return value === 0 ? '∞' : String(value); }
+  async function adminPost(path, payload) { try { await request(path, {method: 'POST', headers: headers(), body: JSON.stringify(payload)}); await loadLicenses(); } catch (error) { showStatus(authStatus, error.message, false); } }
+  function actionButton(label, className, onClick) { const button = document.createElement('button'); button.type = 'button'; button.className = className; button.textContent = label; button.addEventListener('click', onClick); return button; }
+  function renderDevices(item, columns) {
+    const row = document.createElement('tr'); row.className = 'devices';
+    const td = document.createElement('td'); td.colSpan = columns; row.appendChild(td);
+    const limit = document.createElement('div'); limit.className = 'actions';
+    const label = document.createElement('label'); label.className = 'inline'; label.textContent = 'Лимит устройств (0 — без ограничения)';
+    const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = '100'; input.value = String(item.maxActivations); label.appendChild(input);
+    limit.appendChild(label);
+    limit.appendChild(actionButton('Сохранить лимит', 'secondary', () => adminPost('/v1/admin/licenses/limit', {licenseId: item.id, maxActivations: Number(input.value)})));
+    td.appendChild(limit);
+    const devices = item.devices || [];
+    if (!devices.length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Ключ ещё ни на одном устройстве не активирован.'; td.appendChild(empty); return row; }
+    const table = document.createElement('table'); table.className = 'nested';
+    const head = document.createElement('tr');
+    ['Устройство', 'ID', 'Активирован', 'Последняя проверка', 'Статус', ''].forEach(value => { const th = document.createElement('th'); th.textContent = value; head.appendChild(th); });
+    const thead = document.createElement('thead'); thead.appendChild(head); table.appendChild(thead);
+    const body = document.createElement('tbody');
+    for (const device of devices) {
+      const deviceRow = document.createElement('tr');
+      const name = cell(deviceRow, device.deviceLabel); name.title = device.deviceName || '';
+      cell(deviceRow, '…' + device.devicePreview).className = 'mono';
+      cell(deviceRow, formatDate(device.activatedAt)); cell(deviceRow, formatDate(device.lastSeenAt));
+      cell(deviceRow, device.active ? 'активно' : 'отключено ' + formatDate(device.deactivatedAt));
+      const action = document.createElement('td');
+      if (device.active) action.appendChild(actionButton('Отключить', 'danger', () => { if (confirm('Отключить это устройство? Pro на нём перестанет работать при следующей проверке.')) adminPost('/v1/admin/licenses/devices/deactivate', {licenseId: item.id, deviceHash: device.deviceHash}); }));
+      deviceRow.appendChild(action); body.appendChild(deviceRow);
+    }
+    table.appendChild(body); td.appendChild(table);
+    return row;
+  }
   function renderRows(items) {
     licenses.textContent = '';
     if (!items.length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Лицензий пока нет.'; licenses.appendChild(empty); return; }
+    const columnsList = ['Ключ', 'План', 'Статус', 'Устройства', 'Истекает', 'Действие'];
     const table = document.createElement('table');
     const head = document.createElement('tr');
-    ['Ключ', 'План', 'Статус', 'Устройства', 'Истекает', 'Действие'].forEach(value => { const th = document.createElement('th'); th.textContent = value; head.appendChild(th); });
+    columnsList.forEach(value => { const th = document.createElement('th'); th.textContent = value; head.appendChild(th); });
     const thead = document.createElement('thead'); thead.appendChild(head); table.appendChild(thead);
     const body = document.createElement('tbody');
     for (const item of items) {
-      const row = document.createElement('tr'); cell(row, item.keyPreview); cell(row, item.plan); cell(row, item.status); cell(row, item.activeActivations + ' / ' + (item.maxActivations === 0 ? '∞' : item.maxActivations)); cell(row, item.expiresAt);
+      const row = document.createElement('tr'); cell(row, item.keyPreview); cell(row, item.plan); cell(row, item.status);
+      const devicesCell = document.createElement('td');
+      const toggle = actionButton((expanded.has(item.id) ? '▾ ' : '▸ ') + item.activeActivations + ' / ' + limitLabel(item.maxActivations), 'link', () => { if (expanded.has(item.id)) expanded.delete(item.id); else expanded.add(item.id); renderRows(items); });
+      toggle.setAttribute('aria-expanded', expanded.has(item.id) ? 'true' : 'false');
+      toggle.title = 'Показать устройства';
+      devicesCell.appendChild(toggle); row.appendChild(devicesCell);
+      cell(row, item.expiresAt ? formatDate(item.expiresAt) : null);
       const action = document.createElement('td');
-      if (item.status !== 'revoked') { const button = document.createElement('button'); button.type = 'button'; button.className = 'danger'; button.textContent = 'Отозвать'; button.addEventListener('click', async () => { if (!confirm('Отозвать этот ключ?')) return; try { await request('/v1/admin/licenses/revoke', {method: 'POST', headers: headers(), body: JSON.stringify({licenseId: item.id})}); await loadLicenses(); } catch (error) { showStatus(authStatus, error.message, false); } }); action.appendChild(button); } else { const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.textContent = 'Восстановить'; button.addEventListener('click', async () => { if (!confirm('Восстановить этот ключ?')) return; try { await request('/v1/admin/licenses/restore', {method: 'POST', headers: headers(), body: JSON.stringify({licenseId: item.id})}); await loadLicenses(); } catch (error) { showStatus(authStatus, error.message, false); } }); action.appendChild(button); }
+      if (item.status !== 'revoked') action.appendChild(actionButton('Отозвать', 'danger', () => { if (confirm('Отозвать этот ключ?')) adminPost('/v1/admin/licenses/revoke', {licenseId: item.id}); }));
+      else action.appendChild(actionButton('Восстановить', 'secondary', () => { if (confirm('Восстановить этот ключ?')) adminPost('/v1/admin/licenses/restore', {licenseId: item.id}); }));
       row.appendChild(action); body.appendChild(row);
+      if (expanded.has(item.id)) body.appendChild(renderDevices(item, columnsList.length));
     }
     table.appendChild(body); licenses.appendChild(table);
   }
@@ -793,7 +928,7 @@ ADMIN_HTML = """<!doctype html>
     const thead = document.createElement('thead'); thead.appendChild(head); table.appendChild(thead);
     const body = document.createElement('tbody');
     for (const item of items) {
-      const row = document.createElement('tr'); cell(row, item.devicePreview); cell(row, item.deviceName); cell(row, item.status); cell(row, item.startedAt); cell(row, item.lastSeenAt); cell(row, item.expiresAt);
+      const row = document.createElement('tr'); cell(row, item.devicePreview); cell(row, item.deviceLabel || item.deviceName); cell(row, item.status); cell(row, item.startedAt); cell(row, item.lastSeenAt); cell(row, item.expiresAt);
       const action = document.createElement('td');
       if (item.status === 'trial') { const button = document.createElement('button'); button.type = 'button'; button.className = 'danger'; button.textContent = 'Отключить'; button.addEventListener('click', async () => { if (!confirm('Отключить этот пробный период?')) return; try { await request('/v1/admin/trials/revoke', {method: 'POST', headers: headers(), body: JSON.stringify({trialId: item.id})}); await loadTrials(); } catch (error) { showStatus(authStatus, error.message, false); } }); action.appendChild(button); } else { action.textContent = '—'; }
       row.appendChild(action); body.appendChild(row);
@@ -802,7 +937,13 @@ ADMIN_HTML = """<!doctype html>
   }
   async function loadLicenses() { try { const body = await request('/v1/admin/licenses', {headers: headers()}); renderRows(body.licenses || []); showStatus(authStatus, 'Подключено.', true); } catch (error) { showStatus(authStatus, error.message, false); } }
   async function loadTrials() { try { const body = await request('/v1/admin/trials', {headers: headers()}); renderTrials(body.trials || []); } catch (error) { showStatus(authStatus, error.message, false); } }
-  document.getElementById('load').addEventListener('click', async () => { await Promise.all([loadLicenses(), loadTrials()]); });
+  const AUTO_REFRESH_MS = 30000;
+  let autoRefresh = null;
+  document.getElementById('load').addEventListener('click', async () => {
+    await Promise.all([loadLicenses(), loadTrials()]);
+    if (autoRefresh === null) autoRefresh = setInterval(() => { if (document.visibilityState === 'visible' && token.value.trim()) { loadLicenses(); loadTrials(); } }, AUTO_REFRESH_MS);
+  });
+  document.getElementById('plan').addEventListener('change', event => { if (event.target.value === 'admin') document.getElementById('duration').value = '0'; });
   document.getElementById('issue').addEventListener('click', async () => {
     issuedKey.hidden = true;
     try {
@@ -1064,6 +1205,14 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
                 self._require_admin()
                 self._handle_admin_status(self._read_json(), "restore")
                 return
+            if path == "/v1/admin/licenses/limit":
+                self._require_admin()
+                self._handle_admin_limit(self._read_json())
+                return
+            if path == "/v1/admin/licenses/devices/deactivate":
+                self._require_admin()
+                self._handle_admin_device_deactivate(self._read_json())
+                return
             if path == "/v1/admin/trials/revoke":
                 self._require_admin()
                 self._handle_admin_trial_revoke(self._read_json())
@@ -1270,9 +1419,10 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         if note is not None and not isinstance(note, str):
             raise ServiceError(400, "invalid_note", "Заметка должна быть текстом.")
         note = " ".join(note.split())[:500] if note else None
+        # Админский ключ бессрочный, но лимит устройств задаётся явно (0 — без ограничения):
+        # раньше лимит принудительно обнулялся, и один ключ активировался на любом числе машин.
         if plan == "admin":
             duration_days = 0
-            max_activations = 0
         expires_at = iso_datetime(now_utc() + timedelta(days=duration_days)) if duration_days else None
         for _ in range(8):
             normalized_key = generate_license_key()
@@ -1298,6 +1448,27 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         changed = self.service.store.revoke(license_id) if action == "revoke" else self.service.store.restore(license_id)
         if not changed:
             raise ServiceError(404, "license_not_found", "Лицензия не найдена или уже имеет нужный статус.")
+        self._send_json(200, {"ok": True})
+
+    def _handle_admin_limit(self, payload: dict[str, Any]) -> None:
+        license_id = parse_license_id(payload.get("licenseId"))
+        try:
+            max_activations = int(payload.get("maxActivations"))
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ServiceError(400, "invalid_license_limits", "Лимит устройств должен быть целым числом.") from exc
+        if max_activations < 0 or max_activations > MAX_ACTIVATIONS_LIMIT:
+            raise ServiceError(400, "invalid_license_limits", f"Лимит устройств должен быть от 0 до {MAX_ACTIVATIONS_LIMIT}.")
+        if not self.service.store.set_max_activations(license_id, max_activations):
+            raise ServiceError(404, "license_not_found", "Лицензия не найдена.")
+        self._send_json(200, {"ok": True})
+
+    def _handle_admin_device_deactivate(self, payload: dict[str, Any]) -> None:
+        license_id = parse_license_id(payload.get("licenseId"))
+        device_hash = payload.get("deviceHash")
+        if not isinstance(device_hash, str) or not DEVICE_HASH_RE.fullmatch(device_hash):
+            raise ServiceError(400, "invalid_device_hash", "Идентификатор устройства некорректен.")
+        if not self.service.store.deactivate_by_hash(license_id, device_hash):
+            raise ServiceError(404, "activation_not_found", "Активное устройство не найдено.")
         self._send_json(200, {"ok": True})
 
     def _handle_admin_trial_revoke(self, payload: dict[str, Any]) -> None:
