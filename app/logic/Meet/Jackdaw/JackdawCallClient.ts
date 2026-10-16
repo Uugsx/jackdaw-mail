@@ -102,6 +102,8 @@ export class JackdawCallClient extends Observable {
   protected readonly reachable = new Map<string, { value: boolean; at: number }>();
   protected readonly waiters = new Set<Waiter>();
   protected readonly calls = new Map<string, JackdawCallSignalTarget>();
+  /** Остальные получатели сообщений сервера, например чат */
+  protected readonly listeners = new Set<(message: JackdawServerMessage) => void>();
   protected requestCounter = 0;
 
   constructor(options: JackdawCallClientOptions) {
@@ -303,6 +305,13 @@ export class JackdawCallClient extends Observable {
         }
         break;
     }
+    for (let listener of [...this.listeners]) {
+      try {
+        listener(message);
+      } catch (ex) {
+        console.error(ex);
+      }
+    }
     for (let waiter of [...this.waiters]) {
       if (waiter.match(message)) {
         this.waiters.delete(waiter);
@@ -342,6 +351,32 @@ export class JackdawCallClient extends Observable {
       waiter.reject(error);
     }
     this.waiters.clear();
+  }
+
+  /** Подписка на все сообщения сервера. @returns отписка */
+  addListener(listener: (message: JackdawServerMessage) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** Отправляет запрос и ждёт ответ, который распознаёт `match`. Ошибку сервера `match` тоже должен распознать. */
+  async request<T extends JackdawServerMessage>(
+    message: Record<string, unknown>,
+    match: (reply: JackdawServerMessage) => boolean,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ): Promise<T> {
+    let reply = this.waitFor<T>(match, timeoutMs);
+    try {
+      this.send(message);
+    } catch (ex) {
+      reply.catch(() => {});
+      throw ex;
+    }
+    return await reply;
+  }
+
+  nextRequestID(prefix: string): string {
+    return `${prefix}-${++this.requestCounter}`;
   }
 
   // --- звонки ---------------------------------------------------------

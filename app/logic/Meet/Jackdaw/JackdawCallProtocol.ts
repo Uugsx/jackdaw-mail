@@ -32,11 +32,21 @@ export type JackdawServerMessage =
   | { type: "incoming"; callId: string; from: string; fromName: string; to: string; video: boolean }
   | { type: "accepted" | "joined"; callId: string; livekitURL: string; token: string }
   | { type: "call-ended"; callId: string; reason: JackdawCallEndReason }
-  | { type: "error"; code: string; message: string; requestType: string | null; callId: string | null; requestId: string | null; email: string | null }
-  | { type: "pong" };
+  | { type: "error"; code: string; message: string; requestType: string | null; callId: string | null; requestId: string | null; email: string | null; messageId: string | null; blobId: string | null }
+  | { type: "pong" }
+  // Чат: содержимое — шифротекст, разбирается в JackdawChatAccount
+  | { type: "chat-registered"; deviceId: string; emails: string[] }
+  | { type: "chat-keys-result"; requestId: string | null; devices: Record<string, { deviceId: string; publicKey: string }[]> }
+  | { type: "chat-message"; messageId: string; from: string; fromDevice: string; ciphertext: string; key: string; sentAt: number; ephemeral: boolean }
+  | { type: "chat-sent"; messageId: string; queued: number; delivered: number }
+  | { type: "chat-pending"; count: number; remaining: number }
+  | { type: "blob-stored"; blobId: string; index: number; complete: boolean }
+  | { type: "blob-data"; blobId: string; index: number; total: number; data: string };
 
 const EMAIL_PATTERN = /^[^@\s]{1,128}@[^@\s]{1,190}$/;
 const CALL_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
 
 export function normalizeCallEmail(value: unknown): string | null {
@@ -57,6 +67,14 @@ function optionalText(value: unknown): string | null {
 
 function callID(value: unknown): string | null {
   return typeof value == "string" && CALL_ID_PATTERN.test(value) ? value : null;
+}
+
+function base64(value: unknown): string | null {
+  return typeof value == "string" && value.length % 4 == 0 && BASE64_PATTERN.test(value) ? value : null;
+}
+
+function count(value: unknown): number {
+  return typeof value == "number" && Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
 function emailList(value: unknown): string[] {
@@ -136,9 +154,54 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
         callId: callID(data.callId),
         requestId: optionalText(data.requestId),
         email: normalizeCallEmail(data.email),
+        messageId: callID(data.messageId),
+        blobId: typeof data.blobId == "string" && BLOB_ID_PATTERN.test(data.blobId) ? data.blobId : null,
       };
     case "pong":
       return { type: "pong" };
+    case "chat-registered": {
+      let deviceId = callID(data.deviceId);
+      return deviceId ? { type: "chat-registered", deviceId, emails: emailList(data.emails) } : null;
+    }
+    case "chat-keys-result": {
+      let devices: Record<string, { deviceId: string; publicKey: string }[]> = {};
+      if (data.devices && typeof data.devices == "object") {
+        for (let [key, list] of Object.entries(data.devices)) {
+          let email = normalizeCallEmail(key);
+          if (!email || !Array.isArray(list)) continue;
+          devices[email] = list
+            .map((d: any) => ({ deviceId: callID(d?.deviceId), publicKey: base64(d?.publicKey) }))
+            .filter((d): d is { deviceId: string; publicKey: string } => !!d.deviceId && !!d.publicKey);
+        }
+      }
+      return { type: "chat-keys-result", requestId: optionalText(data.requestId), devices };
+    }
+    case "chat-message": {
+      let messageId = callID(data.messageId);
+      let from = normalizeCallEmail(data.from);
+      let fromDevice = callID(data.fromDevice);
+      let ciphertext = base64(data.ciphertext);
+      let key = base64(data.key);
+      return messageId && from && fromDevice && ciphertext && key
+        ? { type: "chat-message", messageId, from, fromDevice, ciphertext, key, sentAt: count(data.sentAt), ephemeral: data.ephemeral === true }
+        : null;
+    }
+    case "chat-sent": {
+      let messageId = callID(data.messageId);
+      return messageId ? { type: "chat-sent", messageId, queued: count(data.queued), delivered: count(data.delivered) } : null;
+    }
+    case "chat-pending":
+      return { type: "chat-pending", count: count(data.count), remaining: count(data.remaining) };
+    case "blob-stored":
+      return typeof data.blobId == "string" && BLOB_ID_PATTERN.test(data.blobId)
+        ? { type: "blob-stored", blobId: data.blobId, index: count(data.index), complete: data.complete === true }
+        : null;
+    case "blob-data": {
+      let payload = base64(data.data);
+      return typeof data.blobId == "string" && BLOB_ID_PATTERN.test(data.blobId) && payload != null
+        ? { type: "blob-data", blobId: data.blobId, index: count(data.index), total: count(data.total), data: payload }
+        : null;
+    }
     default:
       return null;
   }
@@ -175,7 +238,7 @@ export function serverErrorMessage(code: string): string {
     case "invalid_credential":
       return gt`Calls between Jackdaw Mail users need an active Jackdaw Pro license or trial.`;
     case "not_verified":
-      return gt`Confirm your email address in Settings → Jackdaw Pro → Calls to make calls.`;
+      return gt`Confirm your email address in Settings → Jackdaw Pro → Calls and chat to make calls.`;
     case "call_self":
       return gt`You cannot call yourself.`;
     case "verification_unavailable":
@@ -194,6 +257,13 @@ export function serverErrorMessage(code: string): string {
       return gt`The call has already ended.`;
     case "service_unavailable":
       return gt`The call service is temporarily unavailable. Try again later.`;
+    case "quota_exceeded":
+      return gt`The file storage limit is reached. Old files are deleted after 30 days.`;
+    case "blob_not_found":
+      return gt`The file is no longer available. Files are kept for 30 days.`;
+    case "chat_not_registered":
+    case "invalid_device":
+      return gt`The chat could not be set up on this device. Reconnect and try again.`;
     default:
       return gt`The call service rejected the request.`;
   }

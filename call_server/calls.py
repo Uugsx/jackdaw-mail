@@ -42,7 +42,8 @@ LICENSE_KEY_RE = re.compile(r"^JACKDAW-PRO-(?:[A-Z0-9]{4}-){3}[A-Z0-9]{4}$")
 PROVIDER_LICENSE_KEY_RE = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", re.IGNORECASE)
 ACTIVE_LICENSE_STATUSES = frozenset({"active", "trial", "past_due"})
 
-MAX_MESSAGE_BYTES = 16 * 1024
+# Сообщение чата: до 96 КБ шифротекста в base64 плюс ключи для устройств получателей.
+MAX_MESSAGE_BYTES = 192 * 1024
 MAX_DISPLAY_NAME_LENGTH = 80
 MAX_LOOKUP_EMAILS = 50
 MAX_EMAILS_PER_CONNECTION = 20
@@ -62,6 +63,13 @@ RATE_LIMITS = {
     "invite": 10,
     "verify-start": 3,
     "verify-finish": 10,
+    "chat-register": 10,
+    "chat-keys": 60,
+    "chat-send": 120,
+    "chat-ack": 120,
+    "chat-pull": 60,
+    "blob-put": 600,
+    "blob-get": 600,
     "default": 120,
 }
 # Отправка кода на один адрес ограничена отдельно от соединения: иначе можно засыпать чужой ящик письмами.
@@ -431,6 +439,8 @@ class Peer:
         self.emails: set[str] = set()
         self.display_name = ""
         self.rate: dict[str, deque[float]] = {}
+        # Устройство чата этого соединения, после `chat-register`
+        self.chat_device_id: str | None = None
 
     @property
     def identity_email(self) -> str | None:
@@ -481,6 +491,7 @@ class CallHub:
         scheduler: Scheduler | None = None,
         clock: Callable[[], float] = time.monotonic,
         send_mail: Callable[[str, str, Callable[[BaseException | None], None]], None] | None = None,
+        chat: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -489,6 +500,8 @@ class CallHub:
         self.scheduler = scheduler or Scheduler()
         self._clock = clock
         self._send_mail = send_mail
+        # ChatService из chat.py; None — сервис работает только для звонков
+        self.chat = chat
         self.peers_by_email: dict[str, set[Peer]] = {}
         self.calls: dict[str, Call] = {}
 
@@ -498,6 +511,8 @@ class CallHub:
         peer.send({"type": "server-hello", "protocol": PROTOCOL_VERSION})
 
     def disconnected(self, peer: Peer) -> None:
+        if self.chat is not None:
+            self.chat.disconnected(peer)
         for email in list(peer.emails):
             self._unregister(peer, email)
         for call in list(self.calls.values()):
@@ -537,6 +552,7 @@ class CallHub:
                 "reject": self._reject,
                 "cancel": self._cancel,
                 "hangup": self._hangup,
+                **(self.chat.handlers() if self.chat is not None else {}),
             }.get(request_type)
             if handler is None:
                 raise CallError("unknown_type", "Неизвестный тип сообщения.")
@@ -544,7 +560,7 @@ class CallHub:
         except CallError as error:
             reply: dict[str, Any] = {"type": "error", "code": error.code, "message": error.message, "requestType": request_type}
             if isinstance(message, dict):
-                for key in ("callId", "requestId", "email"):
+                for key in ("callId", "requestId", "email", "messageId", "blobId"):
                     if isinstance(message.get(key), str) and len(message[key]) <= 256:
                         reply[key] = message[key]
             peer.send(reply)
@@ -570,6 +586,8 @@ class CallHub:
                 return
             for email in list(peer.emails):
                 self._unregister(peer, email)
+            if self.chat is not None:
+                self.chat.credential_lost(peer)
             peer.credential = None
             peer.send({"type": "error", "code": error.code, "message": error.message, "requestType": "hello"})
             peer.close()
@@ -583,6 +601,9 @@ class CallHub:
         credential = self.verifier.verify(message.get("credential"))
         for email in list(peer.emails):
             self._unregister(peer, email)
+        if self.chat is not None:
+            # Адреса могли измениться: клиент регистрирует устройство чата заново после `welcome`.
+            self.chat.credential_lost(peer)
         peer.credential = credential
         peer.credential_payload = message.get("credential")
         peer.credential_checked_at = self._clock()
@@ -852,7 +873,11 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
 
         future.add_done_callback(finished)
 
-    hub = CallHub(CredentialVerifier(database_path), verification, livekit, mailer, send_mail=send_mail)
+    from chat import ChatService, ChatStore
+
+    data_dir = Path(os.getenv("JACKDAW_CALLS_DATA_DIR", "/var/lib/jackdaw-calls"))
+    chat = ChatService(ChatStore(data_dir / "chat.sqlite3", data_dir / "blobs"))
+    hub = CallHub(CredentialVerifier(database_path), verification, livekit, mailer, send_mail=send_mail, chat=chat)
     return hub, host, port
 
 
@@ -864,7 +889,7 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
         if websocket.request.path.split("?")[0] != "/v1/calls":
             await websocket.close(code=1008, reason="not found")
             return
-        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=256)
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
 
         def send(message: dict[str, Any]) -> None:
             try:

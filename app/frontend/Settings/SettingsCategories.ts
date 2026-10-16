@@ -177,8 +177,8 @@ settingsCategories.add(about);
 
 const billing = new SettingsCategory("billing", gt`Jackdaw Pro`, Billing, true);
 billing.synonyms.addAll([gt`Pro`, gt`Subscription`, gt`Payment`]);
-const jackdawCalls = new SettingsCategory("jackdaw-calls", gt`Calls`, JackdawCalls);
-jackdawCalls.synonyms.addAll([gt`Video call`, gt`Audio call`, gt`Meet`]);
+const jackdawCalls = new SettingsCategory("jackdaw-calls", gt`Calls and chat`, JackdawCalls);
+jackdawCalls.synonyms.addAll([gt`Video call`, gt`Audio call`, gt`Meet`, gt`Chat`]);
 billing.subCategories.add(jackdawCalls);
 settingsCategories.add(billing);
 

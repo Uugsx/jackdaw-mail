@@ -10,6 +10,7 @@ import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
 import { MeetingState } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
+import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
 
 /** Статусы entitlement, при которых сервис звонков примет устройство */
 const CALL_ENTITLEMENT_STATUSES = new Set(["active", "trial", "past_due", "offline"]);
@@ -80,8 +81,11 @@ export function startJackdawCalls(): () => void {
       }
     };
     globalThis.addEventListener?.("online", onOnline);
+    // Чат идёт по тому же соединению и включается вместе со звонками.
+    let stopChat = startJackdawChat(callClient);
     stopWatching = () => {
       unsubscribe();
+      stopChat();
       globalThis.removeEventListener?.("online", onOnline);
       stopWatching = null;
     };

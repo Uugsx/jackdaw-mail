@@ -19,7 +19,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 # WAL-режим SQLite требует записи в файл -shm даже для чтения.
-ReadWritePaths=/var/lib/jackdaw-license
+ReadWritePaths=/var/lib/jackdaw-license /var/lib/jackdaw-calls
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true

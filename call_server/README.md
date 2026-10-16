@@ -1,6 +1,6 @@
-# Сервис звонков Jackdaw Mail
+# Сервис звонков и чата Jackdaw Mail
 
-Аудио- и видеозвонки между пользователями Jackdaw Mail по email-адресу.
+Аудио- и видеозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail по email-адресу.
 
 ```
 Клиент A ──wss /v1/calls──► jackdaw-calls (присутствие, вызов, токены) ◄──wss── Клиент B
@@ -13,6 +13,17 @@
 - `calls.py` — сигналинг на `websockets` (asyncio). Логика (`CallHub`) не зависит от транспорта и покрыта тестами без сети.
 - Медиа идёт через собственный LiveKit (`deploy/livekit.yaml`). Сервис только выдаёт токены на одну комнату `call-<uuid>` на 15 минут; LiveKit сам продлевает токен подключённым участникам.
 - Звонки — 1:1 (`room.max_participants: 2`).
+- `chat.py` — чат по тому же соединению: открытые ключи устройств, зашифрованная очередь доставки, зашифрованные файлы. Своя база `chat.sqlite3`, схема только через `migrations/` (у каждой миграции есть `*.rollback.sql`).
+
+## Чат
+
+- Шифрование на клиенте (`app/logic/Chat/Jackdaw/JackdawChatCrypto.ts`): статический ключ X25519 на устройство, каждое сообщение — случайный ключ XChaCha20-Poly1305, завёрнутый для каждого устройства получателей через X25519 + HKDF. Прямой секретности нет (осознанное упрощение первой версии); подделать отправителя не может ни сервер, ни участник группы.
+- Сервер видит: кто кому пишет (адреса и устройства), размер и время. Не видит: текст, имена файлов, состав и название групп.
+- Устройство чата регистрируется только с подтверждённым адресом; чужой `deviceId` занять нельзя. Сообщение можно адресовать только устройствам указанных получателей и своим другим устройствам.
+- Очередь: сообщение хранится до подтверждения доставки каждым устройством, но не дольше 30 дней; до 5000 сообщений на устройство.
+- Файлы: до 25 МБ, частями по 64 КБ, хранятся 30 дней, квота 1 ГБ на лицензию. Загрузку продолжает только начавшее её устройство.
+- Группы: до 50 участников. Состав и название меняет только создатель группы; сообщения от не-участников отбрасываются клиентом.
+- Клиент запоминает ключи собеседников и предупреждает о новом устройстве или смене ключа.
 
 ## Модель доступа
 
@@ -37,7 +48,9 @@
 2. Сигналинг:
    ```bash
    sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls
-   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py /opt/jackdaw-calls/calls.py
+   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py /opt/jackdaw-calls/
+   sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls/migrations /var/lib/jackdaw-calls
+   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/migrations/*.sql /opt/jackdaw-calls/migrations/
    sudo -u jackdaw-license python3 -m venv /opt/jackdaw-calls/venv
    sudo -u jackdaw-license /opt/jackdaw-calls/venv/bin/pip install -r call_server/requirements.txt
    sudo install -d -m 0700 /etc/jackdaw-calls
@@ -49,11 +62,11 @@
    Секреты (`livekit.secret`, `smtp.secret`) кладутся файлами с правами 0600; systemd читает env-файл от root.
 3. Reverse proxy: `deploy/Caddyfile.example` — `/v1/calls` на 8091 под тем же доменом, что и сервис лицензий (клиент строит адрес `wss://<домен лицензий>/v1/calls`), и `calls.jackdaw-mail.pro` на LiveKit.
 
-Схема БД сервиса лицензий не меняется, миграций нет.
+Схема БД сервиса лицензий не меняется. База чата (`/var/lib/jackdaw-calls/chat.sqlite3`, `JACKDAW_CALLS_DATA_DIR`) создаётся и мигрирует при старте сервиса. Откат: остановить сервис и выполнить `sqlite3 chat.sqlite3 < migrations/001_chat.rollback.sql`.
 
 ## Стоимость
 
-VPS 2 vCPU / 4 ГБ для LiveKit + сигналинга: ≈ $10–25 в месяц. Основная переменная статья — трафик: видеозвонок 1:1 через SFU ≈ 2 × 1,5 Мбит/с ≈ 1,3 ГБ в час. Аудио ≈ 50 МБ в час.
+VPS 2 vCPU / 4 ГБ для LiveKit + сигналинга + чата: ≈ $10–25 в месяц; файлы чата — до 1 ГБ на лицензию, обычно намного меньше. Основная переменная статья — трафик: видеозвонок 1:1 через SFU ≈ 2 × 1,5 Мбит/с ≈ 1,3 ГБ в час. Аудио ≈ 50 МБ в час.
 
 ## Проверка
 

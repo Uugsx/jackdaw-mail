@@ -1,7 +1,7 @@
 <vbox class="jackdaw-calls page">
   <PageHeader
-    title={$t`Calls`}
-    subtitle={$t`Audio and video calls between Jackdaw Mail users, by email address. Media goes through the Jackdaw call server, not through your mail provider.`}
+    title={$t`Calls and chat`}
+    subtitle={$t`Calls and end-to-end encrypted chat between Jackdaw Mail users, by email address. They go through the Jackdaw server, not through your mail provider.`}
     />
 
   <HeaderGroupBox>
@@ -33,7 +33,7 @@
   <HeaderGroupBox>
     <hbox slot="header">{$t`Your addresses for calls`}</hbox>
     <p class="intro">
-      {$t`Other Jackdaw Mail users can call you on a confirmed address while Jackdaw is running. We send a code to the address to make sure it is yours.`}
+      {$t`Other Jackdaw Mail users can call you and write to you in Jackdaw chat on a confirmed address. We send a code to the address to make sure it is yours.`}
     </p>
     {#if !$emailAccounts.length}
       <p class="empty">{$t`Add a mail account first. Its address can then be confirmed for calls.`}</p>

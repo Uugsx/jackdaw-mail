@@ -76,6 +76,7 @@
   <ComposeFloatingLayer />
 </vbox>
 <MeetBackground />
+<JackdawChatBackground />
 <MailInBackground />
 <CalendarInBackground />
 <WebAppsInBackground />
@@ -135,6 +136,7 @@
   import ComposeFloatingLayer from "../Mail/Composer/ComposeFloatingLayer.svelte";
   import CalendarInBackground from "../Calendar/CalendarInBackground.svelte";
   import MeetBackground from "../Meet/MeetBackground.svelte";
+  import JackdawChatBackground from "../Chat/JackdawChatBackground.svelte";
   import WebAppsInBackground from "../WebApps/Runner/WebAppsInBackground.svelte";
   import WidgetSidebar from "../Widgets/WidgetSidebar.svelte";
   import {
