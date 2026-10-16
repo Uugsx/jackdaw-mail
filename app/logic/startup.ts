@@ -21,7 +21,13 @@ import { assert, sleep } from './util/util';
 
 /** Read JPC secret from frontent URL hash `jpcSecret=password`.
  * Before svelte-navigator `<Router>` mounts and rewrites `location.hash` */
-let jpcSecretFromURL = new URLSearchParams(location.hash.slice(1)).get("jpcSecret");
+let startupURLParameters = new URLSearchParams(location.hash.slice(1));
+let jpcSecretFromURL = startupURLParameters.get("jpcSecret");
+let demoModeFromURL = startupURLParameters.get("demo") == "1";
+
+export function isDemoMode(): boolean {
+  return demoModeFromURL;
+}
 
 /**
  * Desktop: frontend URL hash `jpcSecret=password`

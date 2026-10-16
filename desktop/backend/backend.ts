@@ -57,10 +57,16 @@ function hasChromiumUserData(dir: string): boolean {
   return kChromiumUserDataMarkers.some(marker => fs.existsSync(path.join(dir, marker)));
 }
 
+function hasExplicitUserDataDir(): boolean {
+  return app.commandLine.hasSwitch("user-data-dir") ||
+    process.argv.some(argument => argument == "--user-data-dir" || argument.startsWith("--user-data-dir="));
+}
+
 function preserveLegacyUserData(): void {
   let defaultUserDataDir = app.getPath("userData");
   let legacyUserDataDir = path.join(app.getPath("appData"), kLegacyUserDataDirName);
-  if (path.resolve(defaultUserDataDir) == path.resolve(legacyUserDataDir) ||
+  if (hasExplicitUserDataDir() ||
+      path.resolve(defaultUserDataDir) == path.resolve(legacyUserDataDir) ||
       !hasChromiumUserData(legacyUserDataDir)) {
     return;
   }

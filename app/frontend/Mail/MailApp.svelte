@@ -92,7 +92,8 @@
   }
 
   :global(.main-window:not(.mobile)) .mail-app-root {
-    margin-block: 4px;
+    /* Верх и низ островов совпадают с панелью приложений: её поля уже 8px. */
+    margin-block: 0;
     /* Отступ от панели приложений уже даёт её собственное поле. */
     margin-inline-start: 0;
     background: transparent;

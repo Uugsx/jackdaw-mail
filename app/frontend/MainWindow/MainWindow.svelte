@@ -85,12 +85,10 @@
   import { appGlobal } from "../../logic/app";
   import { normalizeUIDensity, uiDensitySetting } from "../Settings/Global/uiDensity";
   // #if [!WEBMAIL]
-  import { getStartObjects, loginOnStartup } from "../../logic/startup";
+  import { getStartObjects as getDesktopStartObjects, isDemoMode, loginOnStartup as loginDesktopOnStartup } from "../../logic/startup";
   import { predefinedConfig } from "../../logic/Mail/AutoConfig/predefinedConfig";
   // #else
   import { getStartObjects as getWebMailStartObjects, loginOnStartup as loginWebMailOnStartup } from "../../logic/WebMail/startup";
-  const getStartObjects = getWebMailStartObjects;
-  const loginOnStartup = loginWebMailOnStartup;
   // #endif
   import { notifications } from "./Notification";
   import { selectedAccount } from "../Mail/Selected";
@@ -278,12 +276,26 @@
   }
 
   async function startup() {
-    await getStartObjects();
+    // #if [!WEBMAIL]
+    await getDesktopStartObjects();
+    if (isDemoMode()) {
+      const { testDataOn } = await import("../../logic/testData");
+      await testDataOn();
+      $selectedAccount = appGlobal.emailAccounts.first;
+      return;
+    }
+    // #else
+    await getWebMailStartObjects();
+    // #endif
     startUpdateNotificationWatcher();
     if (appGlobal.emailAccounts.isEmpty && appGlobal.chatAccounts.isEmpty) {
       await setup();
     } else {
-      await loginOnStartup(console.error);
+      // #if [!WEBMAIL]
+      await loginDesktopOnStartup(console.error);
+      // #else
+      await loginWebMailOnStartup(console.error);
+      // #endif
       // Setting $selectedApp late would overwrite commandline/URL handlers
       $selectedAccount = appGlobal.emailAccounts.first;
       // `MailApp` selects the inbox, once we read the folders

@@ -316,8 +316,9 @@
     height: 100%;
     overflow: hidden;
     gap: 4px;
-    padding: 4px;
-    background: var(--leftbar-bg);
+    /* Верх и низ островов совпадают с остальными панелями окна. */
+    padding: 0 4px;
+    background: transparent;
     color: var(--leftbar-fg);
   }
   .widget-sidebar:not(.expanded) {
@@ -334,8 +335,7 @@
     max-width: calc(100% - 48px);
     max-inline-size: calc(100% - 48px);
     overflow: hidden;
-    border-inline: 0;
-    border-block: 0;
+    border: 1px solid var(--glass-border-subtle);
     border-radius: var(--border-radius);
     background: var(--main-bg);
     box-shadow: none;
@@ -448,7 +448,7 @@
     align-items: center;
     gap: 4px;
     padding-block: 8px 10px;
-    border: 0;
+    border: 1px solid var(--glass-border-subtle);
     border-radius: var(--border-radius);
     background: var(--main-bg);
   }

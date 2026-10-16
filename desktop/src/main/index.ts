@@ -113,6 +113,12 @@ let currentNativeMenuLabels: NativeMenuLabels = {
   zoom: 'Zoom',
   front: 'Bring All to Front',
 };
+
+const demoModeRequested = process.argv.includes('--jackdaw-demo') || process.env['JACKDAW_DEMO_MODE'] == '1';
+
+function isDemoModeRequested(): boolean {
+  return demoModeRequested;
+}
 const nativeMenuLabelKeys = Object.keys(currentNativeMenuLabels) as (keyof NativeMenuLabels)[];
 
 ipcMain.on(nativeMenuLabelsChannel, (_event, labels: unknown) => {
@@ -643,11 +649,15 @@ async function createWindow(): Promise<void> {
       // "did-finish-load" works and is close enough.
       // https://github.com/electron/electron/issues/48859
       mainWindow.webContents.on("did-finish-load", () => {
-        mainWindow.show();
+        if (!isDemoModeRequested()) {
+          mainWindow.show();
+        }
       });
     } else {
       mainWindow.on("ready-to-show", () => {
-        mainWindow.show();
+        if (!isDemoModeRequested()) {
+          mainWindow.show();
+        }
       });
     }
 
@@ -706,7 +716,11 @@ async function createWindow(): Promise<void> {
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     // The `try` above cannot catch these, because they fail asynchronously
-    void loadRendererWindow(mainWindow, 'jpcSecret=' + jpcSecret).catch(console.error);
+    let rendererHash = 'jpcSecret=' + jpcSecret;
+    if (isDemoModeRequested()) {
+      rendererHash += '&demo=1';
+    }
+    void loadRendererWindow(mainWindow, rendererHash).catch(console.error);
   } catch (ex) {
     console.error(ex);
   }

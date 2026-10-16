@@ -56,9 +56,7 @@ export async function testDataOn() {
 
   await readAvatarList();
   realMe = appGlobal.me;
-  if (!appGlobal.me?.name) {
-    appGlobal.me = new FakeChatPerson();
-  }
+  appGlobal.me = new FakeChatPerson();
   let addressbook = new FakeAddressbook();
   let persons = fakePersons(10, addressbook);
   appGlobal.addressbooks.replaceAll([ addressbook ]);
@@ -556,13 +554,21 @@ export function fakeFile(parentDir: Directory): File {
 }
 
 let avatarFiles = {} as Record<string, ArrayColl<string>>;
+const kFallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%23d9e2ec'/%3E%3Ccircle cx='32' cy='25' r='12' fill='%235b7083'/%3E%3Cpath d='M12 58c2-13 10-20 20-20s18 7 20 20' fill='%235b7083'/%3E%3C/svg%3E";
 async function readAvatarList() {
   const rootURL = "https://avatar.jackdaw.app";
   for (let listName of ["man", "woman"]) {
     avatarFiles[listName] = new ArrayColl<string>();
-    let fileNames = await fetchJSON(`${rootURL}/${listName}/list.json`);
-    for (let fileName of fileNames) {
-      avatarFiles[listName].add(`${rootURL}/${listName}/${fileName}`);
+    try {
+      let fileNames = await fetchJSON(`${rootURL}/${listName}/list.json`);
+      for (let fileName of fileNames) {
+        avatarFiles[listName].add(`${rootURL}/${listName}/${fileName}`);
+      }
+    } catch (_ex) {
+      // Демо-данные должны работать и без доступа к сети.
+    }
+    if (!avatarFiles[listName].hasItems) {
+      avatarFiles[listName].add(kFallbackAvatar);
     }
   }
   console.log(avatarFiles);

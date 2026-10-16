@@ -598,6 +598,11 @@ a:hover {
 .main-window.mail-mode:not(.mobile) .content-shell {
   background: var(--bg);
 }
+/* В почте рамки есть у самих островов; внешняя сдвигала их на 1px.
+ * Селектор усилен, потому что исходное правило в MainWindow scoped. */
+.main-window.mail-mode:not(.mobile) .body-row .content-shell.content-shell {
+  border-width: 0;
+}
 
 .main-window:not(.mobile) .popup {
   border: 1px solid var(--glass-border);
