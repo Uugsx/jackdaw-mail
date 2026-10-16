@@ -110,14 +110,8 @@
     min-height: 0;
     max-height: 100%;
     background: var(--glass-bg);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border: 1px solid var(--glass-border-subtle);
     border-radius: var(--border-radius);
-    box-shadow:
-      var(--glass-highlight),
-      0 4px 20px rgba(var(--shadow-color), 0.10),
-      0 1px 2px rgba(var(--shadow-color), 0.06);
     color: var(--appbar-fg);
     padding-block: 10px 52px;
     padding-inline: 6px;

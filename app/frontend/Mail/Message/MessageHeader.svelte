@@ -281,6 +281,8 @@
     max-width: 100%;
   }
   .subject {
+    /* Многоточие работает только у блочного элемента, не у flex. */
+    display: block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

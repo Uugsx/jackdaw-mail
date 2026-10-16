@@ -453,7 +453,7 @@
   .passphrase .value {
     padding-block: 8px;
     letter-spacing: 0.05em;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 15px;
   }
   .fingerprint:not(.obsolete) .value,

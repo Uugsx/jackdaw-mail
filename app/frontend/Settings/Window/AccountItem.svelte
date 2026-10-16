@@ -1,6 +1,6 @@
 <Clickable onClick={onSelect}>
   <vbox class="account" class:selected={itemSelected}>
-    <hbox class="label font-small">
+    <hbox class="label font-small" title={$account.name}>
       {$account.name}
     </hbox>
   </vbox>
@@ -53,9 +53,11 @@
     color:  var(--selected-fg);
   }
   .label {
+    display: block;
     color: var(--fg);
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
     margin-block-start: 4px;
     margin-inline-start: 4px;
     margin-inline-end: 4px;

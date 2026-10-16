@@ -16,15 +16,22 @@
 </script>
 
 <style>
+  /* Сегменты внутри общей рамки: рамка скругляет края, сами кнопки прямые,
+   * поэтому выбранный сегмент не вылезает за скругление. */
   .island.border {
     border: 1px solid var(--border);
-    border-radius: 1000px;
+    border-radius: var(--border-radius);
+    overflow: hidden;
   }
-  .island :global(button) {
-    border-radius: 1000px;
+  /* В узкой колонке крупный переключатель переносится, а не обрезается. */
+  .island.large {
+    flex-wrap: wrap;
   }
-  .island :global(button:not(:last-of-type)) {
-    margin-inline-end: -6px;
+  .island.island :global(button) {
+    border-radius: 0;
+  }
+  .island.island :global(button:not(:last-of-type)) {
+    margin-inline-end: 0;
   }
   .island.faint :global(button.selected:not(.hover)) {
     background-color: var(--offset-bg);
@@ -40,6 +47,7 @@
   }
   .island :global(button .label) {
     margin-inline-end: 4px;
+    white-space: nowrap;
   }
   .island :global(svg) {
     fill: transparent;

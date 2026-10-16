@@ -177,7 +177,7 @@
     padding: 5px 9px;
     box-sizing: border-box;
     border: 1px solid color-mix(in srgb, var(--icon-primary) 28%, transparent);
-    border-radius: 1000px;
+    border-radius: var(--border-radius);
     background-color: color-mix(in srgb, var(--selected-bg) 70%, var(--leftbar-bg));
     color: var(--selected-fg);
   }

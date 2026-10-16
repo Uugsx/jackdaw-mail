@@ -19,6 +19,12 @@ export const BILLING_PRICES: Readonly<Record<BillingPlan, string>> = Object.free
   yearly: "$79.99 / year",
 });
 
+/** Цены Pro в долларах США: для показа в интерфейсе с учётом языка. */
+export const BILLING_PRICE_AMOUNTS_USD: Readonly<Record<BillingPlan, number>> = Object.freeze({
+  monthly: 9.99,
+  yearly: 79.99,
+});
+
 /** Публичный ключ Ed25519. Приватная пара находится только на сервере лицензий. */
 const configuredEntitlementPublicKey = import.meta.env.VITE_BILLING_ENTITLEMENT_PUBLIC_KEY?.trim();
 export const BILLING_ENTITLEMENT_PUBLIC_KEY = configuredEntitlementPublicKey ||

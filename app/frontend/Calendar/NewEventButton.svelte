@@ -42,10 +42,6 @@
 <style>
   .new-event-button {
     align-items: center;
-    border-right: 1px solid var(--border);
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    border-radius: 30px;
     margin: 4px;
   }
   .new-event-button :global(.add-button) {

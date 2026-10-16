@@ -132,20 +132,36 @@ export const t = derived(locale, () => gt);
 /** Used in .ts modules, e.g.
  * gt`Hello World!` or gt`Hello ${username}!` */
 export function gt(descriptor: readonly string[], ...args: any[]) {
-  let str: string = "";
-  str = descriptor[0];
-  args.forEach((_arg, i) => {
-    str += `{${i}}` + descriptor[i + 1];
-  });
+  let str = joinTemplateParts(descriptor, args.length);
+  /* Экстрактор считает ID по исходному тексту шаблона (raw), где `\n` — это два
+   * символа. Если ID считать по готовой строке, строки с переносами и `\``
+   * никогда не находят перевод. Поэтому ID берём из raw, а текст — готовый. */
+  let rawDescriptor = (descriptor as TemplateStringsArray).raw ?? descriptor;
+  let rawStr = joinTemplateParts(rawDescriptor, args.length);
   let segments: string[] = str.split(commentSymbol);
+  let rawSegments: string[] = rawStr.split(commentSymbol);
   let msg: MessageDescriptor = {
-    id: generateMessageID(segments[0], segments[1]),
+    id: generateMessageID(rawSegments[0], rawSegments[1]),
     defaultMessage: segments[0],
     description: segments[1],
   }
   let values = { ...args };
 
-  return translateString(msg, values);
+  let translated = translateString(msg, values);
+  return rawStr == str ? translated : unescapeTemplateText(translated);
+}
+
+function joinTemplateParts(parts: readonly string[], argCount: number): string {
+  let str = parts[0];
+  for (let i = 0; i < argCount; i++) {
+    str += `{${i}}` + parts[i + 1];
+  }
+  return str;
+}
+
+/** Переводы хранят escape-последовательности как в исходном шаблоне. */
+function unescapeTemplateText(text: string): string {
+  return text.replace(/\\([n`\\])/g, (_match, char: string) => char == "n" ? "\n" : char);
 }
 
 /**

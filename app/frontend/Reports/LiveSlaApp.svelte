@@ -684,7 +684,9 @@
 </script>
 
 <svelte:head>
-  <title>{$t`Live response control`} — Jackdaw Mail</title>
+  {#if !embedded}
+    <title>{$t`Live response control`} — Jackdaw Mail</title>
+  {/if}
 </svelte:head>
 
 <main class="live-page" class:embedded>
@@ -1187,9 +1189,9 @@
   .live-page-kicker {
     margin: 0 0 6px;
     color: var(--reports-accent, #b97616);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.14em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
   .live-page h1 {
@@ -1239,7 +1241,7 @@
     gap: 7px;
     min-height: 34px;
     border: 1px solid var(--button-border, var(--border));
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     padding: 7px 12px;
     background: var(--button-bg);
     color: var(--button-fg);
@@ -1289,7 +1291,7 @@
     margin-bottom: 14px;
     padding: 14px 16px 12px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
     box-shadow: none;
   }
@@ -1312,7 +1314,7 @@
 
   .live-scope-heading p {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 60%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -1322,7 +1324,7 @@
     background: transparent;
     color: var(--reports-accent, #b97616);
     font-size: 12px;
-    font-weight: 750;
+    font-weight: 700;
     text-decoration: underline;
     text-underline-offset: 2px;
   }
@@ -1338,9 +1340,9 @@
     display: grid;
     flex: 1 1 280px;
     gap: 5px;
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 11px;
-    font-weight: 750;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .live-settings-launcher-row {
@@ -1362,12 +1364,12 @@
     min-height: 31px;
     border: 1px solid
       color-mix(in srgb, var(--reports-accent) 45%, var(--border));
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     padding: 5px 9px;
     background: color-mix(in srgb, var(--reports-accent) 7%, var(--main-bg));
     color: var(--reports-accent);
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 700;
     transition:
       background-color 150ms ease,
       border-color 150ms ease,
@@ -1386,8 +1388,8 @@
   .live-settings-launcher-summary {
     min-width: 0;
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1408,7 +1410,7 @@
     min-height: 36px;
     min-width: 0;
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     padding: 7px 10px;
     background: var(--input-bg);
     color: var(--input-fg);
@@ -1421,7 +1423,7 @@
     margin-top: 12px;
     border: 1px solid
       color-mix(in srgb, var(--reports-accent) 30%, var(--border));
-    border-radius: 10px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 3%, var(--main-bg));
   }
 
@@ -1436,7 +1438,7 @@
     color: var(--main-fg);
     cursor: pointer;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 700;
     list-style: none;
   }
 
@@ -1463,8 +1465,8 @@
   .live-settings-summary-text {
     min-width: 0;
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1484,7 +1486,7 @@
     margin: 0;
     padding: 10px;
     border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-bg) 78%, transparent);
   }
 
@@ -1510,8 +1512,8 @@
   .live-setting-heading p,
   .live-setting-help {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -1520,9 +1522,9 @@
     border-radius: 999px;
     padding: 4px 7px;
     background: color-mix(in srgb, var(--main-fg) 8%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 10px;
-    font-weight: 800;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .live-setting-status.enabled {
@@ -1532,8 +1534,8 @@
 
   .live-setting-count {
     flex: 0 0 auto;
-    color: color-mix(in srgb, var(--main-fg) 55%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -1542,16 +1544,16 @@
     display: grid;
     gap: 5px;
     margin-top: 10px;
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 10px;
-    font-weight: 750;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .live-setting-field select {
     width: 100%;
     min-height: 32px;
     padding: 6px 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .live-setting-actions {
@@ -1583,7 +1585,7 @@
     gap: 7px;
     min-width: 0;
     color: color-mix(in srgb, var(--main-fg) 78%, transparent);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -1629,8 +1631,8 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-    color: color-mix(in srgb, var(--main-fg) 55%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     flex-wrap: wrap;
   }
 
@@ -1640,12 +1642,12 @@
     min-height: 30px;
     width: 74px;
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: var(--border-radius);
     padding: 5px 7px;
     background: var(--input-bg);
     color: var(--input-fg);
     font: inherit;
-    font-size: 11px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
@@ -1668,9 +1670,9 @@
   }
 
   .live-setting-label {
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 10px;
-    font-weight: 750;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .live-reminder-interval {
@@ -1680,8 +1682,8 @@
     min-width: 0;
     max-width: 100%;
     flex-wrap: wrap;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .live-reminder-interval input {
@@ -1690,17 +1692,17 @@
 
   .live-reminder-interval .inline-action {
     margin-left: 1px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .live-add-reminder {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .live-validation-message {
     margin: 7px 0 0;
     color: var(--danger-fg, #b84e3b);
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -1729,14 +1731,14 @@
     min-width: 0;
     padding: 9px 10px;
     border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-fg) 3%, transparent);
   }
 
   .live-settings-summary span {
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 55%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1757,8 +1759,8 @@
     min-width: 0;
     max-width: 100%;
     margin: 10px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -1775,7 +1777,7 @@
     margin: 42px auto;
     padding: 36px 28px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
     text-align: center;
   }
@@ -1799,7 +1801,7 @@
     justify-content: center;
     width: 48px;
     height: 48px;
-    border-radius: 14px;
+    border-radius: var(--border-radius);
     background: color-mix(
       in srgb,
       var(--reports-accent, #b97616) 15%,
@@ -1836,8 +1838,8 @@
     max-width: 100%;
     min-width: 0;
     margin-bottom: 10px;
-    padding: 12px;
-    border-radius: 12px;
+    padding: 0 0 12px;
+    border-radius: 0;
     box-shadow: none;
   }
 
@@ -1862,11 +1864,11 @@
 
   .live-page.embedded .live-settings-body {
     grid-template-columns: 1fr;
-    padding: 8px;
+    padding: 8px 0;
   }
 
   .live-page.embedded .live-settings-panel summary {
-    padding-inline: 9px;
+    padding-inline: 0;
   }
 
   .live-page.embedded .live-settings-summary-text {
@@ -1907,7 +1909,7 @@
     min-width: 0;
     margin-top: 10px;
     padding: 12px;
-    border-radius: 12px;
+    border-radius: var(--border-radius);
   }
 
   @container live-sla (max-width: 720px) {
@@ -2021,5 +2023,136 @@
     .live-settings-summary-text {
       max-width: 52%;
     }
+  }
+  /*
+   * Плоская подача: рамки внутри рамок, цветные плашки и подписи заглавными
+   * убраны, разделение держат тонкие линии. Минимальный кегль — 12px.
+   */
+  .live-page-kicker {
+    display: none;
+  }
+
+  .live-scope-panel {
+    margin-bottom: 14px;
+    padding: 0 0 14px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-scope-heading h2 {
+    font-size: 15px;
+  }
+
+  .live-scope-heading p {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+  }
+
+  .live-scope-controls label {
+    color: var(--main-fg);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  select {
+    border-radius: var(--border-radius);
+  }
+
+  .live-settings-launcher-row {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .live-settings-launcher {
+    min-height: 32px;
+    border: 1px solid var(--button-border);
+    border-radius: var(--border-radius);
+    background: var(--button-bg);
+    color: var(--main-fg);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .live-settings-launcher:hover {
+    border-color: var(--button-border);
+    background: var(--hover-bg);
+  }
+
+  .live-settings-launcher-summary,
+  .live-settings-summary-text,
+  .live-setting-count {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .live-settings-panel {
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-settings-panel summary {
+    padding-inline: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .live-settings-panel summary::before {
+    color: var(--main-fg);
+  }
+
+  .live-settings-body {
+    padding: 14px 0;
+    gap: 24px;
+  }
+
+  .live-setting-block {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-setting-status {
+    padding: 0;
+    background: transparent;
+    font-size: 12px;
+  }
+
+  .live-setting-status.enabled {
+    background: transparent;
+  }
+
+  .live-checkbox-row {
+    color: var(--main-fg);
+    font-size: 12px;
+  }
+
+  .live-category-option {
+    padding: 6px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-category-option:hover {
+    border-color: var(--border);
+    background: transparent;
+  }
+  .live-state-panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-state-panel h2 {
+    font-size: 15px;
+  }
+
+  .live-state-panel .state-icon {
+    display: none;
   }
 </style>

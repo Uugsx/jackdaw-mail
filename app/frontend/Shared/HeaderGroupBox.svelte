@@ -16,22 +16,20 @@
 </script>
 
 <style>
+  /* Группа настроек: заголовок и линия сверху, без рамки и серой плашки. */
   .group {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    margin-block-start: 24px;
+    margin-block-start: 28px;
+    border-block-start: 1px solid var(--border);
   }
   .header {
-    background-color: var(--headerbar-bg);
-    color: var(--headerbar-fg);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 20px;
-    font-weight: 500;
+    color: var(--main-fg);
+    padding: 14px 0 4px;
+    font-size: 14px;
+    font-weight: 650;
     align-items: center;
   }
   .content {
-    background-color: var(--main-bg);
     color: var(--main-fg);
-    padding: 24px 20px 16px 20px;
+    padding: 12px 0 8px;
   }
 </style>

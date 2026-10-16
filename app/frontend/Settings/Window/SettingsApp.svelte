@@ -64,10 +64,7 @@
   .settings-title-bar {
     margin: 16px 16px 0px 16px;
   }
-  .right-page :global(.group) {
-    border-radius: 10px;
-  }
   .right-page :global(input) {
-    font-size: 16px;
+    font-size: 14px;
   }
 </style>

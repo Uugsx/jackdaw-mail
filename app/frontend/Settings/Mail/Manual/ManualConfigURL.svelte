@@ -186,13 +186,13 @@
   }
   .header .direction {
     margin-inline-end: 6px;
-    color: #555555;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
   .error select {
-    border: 1px solid red;
+    border: 1px solid var(--danger-fg, #b84e3b);
   }
   .error input {
-    border: 1px solid red;
+    border: 1px solid var(--danger-fg, #b84e3b);
   }
   select {
     min-width: 7em;

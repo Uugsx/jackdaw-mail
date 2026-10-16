@@ -473,7 +473,6 @@ function buildReportHTML(
     .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .muted { color: #6A655D; }
     tr.outside-hours-row td { background: #F8F1E7; }
-    tr.outside-hours-row td:first-child { box-shadow: inset 3px 0 0 #B97616; }
     .rate { color: #4C8B7E; font-weight: 700; }
     .response-summary { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 0 0 18px; }
     .response-summary .summary-card { min-height: 86px; }

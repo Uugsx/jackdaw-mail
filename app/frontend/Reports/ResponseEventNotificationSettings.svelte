@@ -75,14 +75,14 @@
   .event-notification-settings legend {
     padding: 0 5px 0 0;
     color: color-mix(in srgb, var(--main-fg) 72%, transparent);
-    font-size: 11px;
-    font-weight: 750;
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .event-notification-help {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -98,7 +98,7 @@
     gap: 7px;
     min-width: 0;
     color: color-mix(in srgb, var(--main-fg) 78%, transparent);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -119,8 +119,8 @@
   }
 
   .event-notification-toggle small {
-    color: color-mix(in srgb, var(--main-fg) 55%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -135,8 +135,8 @@
     display: block;
     margin-bottom: 4px;
     color: color-mix(in srgb, var(--main-fg) 67%, transparent);
-    font-size: 10px;
-    font-weight: 750;
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .event-notification-sounds :global(.sound-list) {
@@ -153,18 +153,18 @@
   }
 
   .event-notification-sounds :global(.sound-copy label) {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
   }
 
   .event-notification-sounds :global(.sound-copy .hint) {
-    font-size: 9px;
+    font-size: 12px;
   }
 
   .event-notification-sounds :global(select) {
     min-height: 30px;
     min-width: 112px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .event-notification-sounds :global(.preview-button) {

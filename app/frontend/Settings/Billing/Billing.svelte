@@ -27,7 +27,7 @@
           <strong>{statusLabel}</strong>
           <p>
             {#if state.plan}
-              {$t`Plan: ${state.plan}`}
+              {$t`Plan: ${planLabel(state.plan)}`}
               {#if state.validUntil}
                 · {$t`valid until ${formatDate(state.validUntil)}`}
               {/if}
@@ -114,7 +114,7 @@
         <div class="plan-heading">
           <h2>{$t`Monthly Pro`}</h2>
         </div>
-        <div class="plan-price">{BILLING_PRICES.monthly}</div>
+        <div class="plan-price">{$t`${formatPrice(BILLING_PRICE_AMOUNTS_USD.monthly)} per month`}</div>
         <p>{$t`Pay month by month. After checkout, activate the license key on every device you use.`}</p>
         <Button
           label={getCheckoutLabel("monthly")}
@@ -128,7 +128,7 @@
         <div class="plan-heading">
           <h2>{$t`Yearly Pro`}</h2>
         </div>
-        <div class="plan-price">{BILLING_PRICES.yearly}</div>
+        <div class="plan-price">{$t`${formatPrice(BILLING_PRICE_AMOUNTS_USD.yearly)} per year`}</div>
         <p>{$t`One annual payment. The checkout shows the final price and renewal terms before payment.`}</p>
         <Button
           label={getCheckoutLabel("yearly")}
@@ -168,10 +168,10 @@
   import LockKeyholeIcon from "lucide-svelte/icons/lock-keyhole";
   import LogOutIcon from "lucide-svelte/icons/log-out";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
-  import { t } from "../../../l10n/l10n";
+  import { t, getDateTimeLocale } from "../../../l10n/l10n";
   import {
     BILLING_CHECKOUT_URLS,
-    BILLING_PRICES,
+    BILLING_PRICE_AMOUNTS_USD,
     BILLING_PLANS_URL,
     fetchBillingCheckoutAvailability,
     fetchBillingTrialAvailability,
@@ -288,7 +288,22 @@
 
   function formatDate(value: string): string {
     let date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString(getDateTimeLocale());
+  }
+
+  function formatPrice(amount: number): string {
+    return new Intl.NumberFormat(getDateTimeLocale(), { style: "currency", currency: "USD" }).format(amount);
+  }
+
+  /** Название тарифа вместо внутреннего кода (`monthly`, `trial`, `admin`). */
+  function planLabel(plan: string): string {
+    switch (plan) {
+      case "monthly": return $t`Monthly`;
+      case "yearly": return $t`Yearly`;
+      case "trial": return $t`Trial`;
+      case "admin": return $t`Issued by administrator`;
+      default: return plan;
+    }
   }
 
   function onLicenseKeyKeydown(event: KeyboardEvent): void {
@@ -397,12 +412,6 @@
     align-items: flex-start;
     gap: 14px;
     min-width: 0;
-    padding-inline-start: 14px;
-    border-inline-start: 3px solid var(--border);
-  }
-
-  .access-summary.enabled {
-    border-inline-start-color: var(--icon-primary);
   }
 
   .status-mark {
@@ -489,7 +498,7 @@
   }
 
   .feedback.error {
-    color: var(--error-fg, #a52f2f);
+    color: var(--danger-fg, #b84e3b);
     background: color-mix(in srgb, #a52f2f 10%, var(--main-bg));
   }
 
@@ -532,13 +541,12 @@
 
   .plan-card {
     min-width: 0;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    padding: 14px 0 0;
+    border-block-start: 1px solid var(--border);
   }
 
   .plan-card.featured {
-    border-color: var(--icon-primary);
+    border-block-start: 2px solid var(--main-fg);
   }
 
   .plan-heading {
@@ -589,7 +597,7 @@
   }
 
   .purchase-note.unavailable {
-    color: var(--error-fg, #a52f2f);
+    color: var(--danger-fg, #b84e3b);
   }
 
   @media (max-width: 720px) {

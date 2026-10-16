@@ -34,10 +34,10 @@
   onContinue={validateAccount}
   errorCallback={showError}
   >
-  <Button label="Back" classes="secondary"
+  <Button label={$t`Back`} classes="secondary"
     onClick={onBack}
     />
-  <Button label="Skip" classes="secondary"
+  <Button label={$t`Skip`} classes="secondary"
     onClick={onSkip}
     />
 </ButtonsBottom>

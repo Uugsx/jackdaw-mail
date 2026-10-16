@@ -10,7 +10,8 @@
     margin-inline-start: 8px;
   }
   .buttons :global(button.delete) {
-    background-color: lightsalmon;
-    color: black;
+    border-color: var(--danger-fg, #b84e3b);
+    background-color: transparent;
+    color: var(--danger-fg, #b84e3b);
   }
 </style>

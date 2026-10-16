@@ -29,20 +29,16 @@
     padding: 6px 4px 4px 0px;
   }
   .date {
-    background-color: var(--headerbar-bg);
-    color: var(--headerbar-fg);
-    border-radius: 30px;
-    font-weight: bold;
+    font-weight: 600;
     align-self: start;
     padding-inline-start: 6px;
-    padding-inline-end: 6px;
     margin-block-end: 2px;
-    max-height: 18px;
-    overflow: hidden;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .time {
     padding-inline-start: 6px;
-    max-height: 18px;
-    overflow: hidden;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 </style>

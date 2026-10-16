@@ -380,7 +380,7 @@
   .verification-code .value {
     letter-spacing: 0.05em;
     padding-block: 8px;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   .fingerprint:not(.obsolete) .value,
   .verification-code:not(.obsolete) .value {

@@ -15,7 +15,7 @@
 <script lang="ts">
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import { createEventDispatcher } from "svelte";
-  import { t } from "../../../l10n/l10n";
+  import { t, plural } from "../../../l10n/l10n";
 
   export let prefix: string;
   export let label: string;
@@ -24,7 +24,7 @@
 
   const dispatch = createEventDispatcher<{ toggle: void }>();
   $: displayLabel = label || $t`No subject`;
-  $: countLabel = $t`${count} entries`;
+  $: countLabel = $plural(count, { one: "# entry", other: "# entries" });
 </script>
 
 <style>

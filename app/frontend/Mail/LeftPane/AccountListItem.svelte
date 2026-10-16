@@ -201,9 +201,11 @@
     border-radius: 2px;
   }
   .label {
+    /* Многоточие работает только у блочного элемента, не у flex. */
+    display: block;
     grid-column: 3;
     margin-inline-start: 4px;
-    font-weight: 300;
+    font-weight: 400;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

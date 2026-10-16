@@ -1,7 +1,8 @@
 <button type="button" class="settings-category" class:selected
   aria-current={selected ? "page" : undefined}
   aria-expanded={isSectionOpen}
-  on:click={onSelect}>
+  on:click={onSelect}
+  title={category.name}>
   <span class="label font-small" class:main={category.isMain}>
     {category.name}
   </span>
@@ -62,8 +63,10 @@
     color:  var(--selected-fg);
   }
   .label {
+    display: block;
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
     margin-block-start: 4px;
     margin-inline-start: 4px;
     margin-inline-end: 4px;

@@ -93,6 +93,31 @@
 
   :global(.main-window:not(.mobile)) .mail-app-root {
     margin-block: 4px;
+    /* Отступ от панели приложений уже даёт её собственное поле. */
+    margin-inline-start: 0;
+    background: transparent;
+  }
+
+  /* Панель папок — отдельный «остров», список и письмо — второй. */
+  :global(.main-window:not(.mobile)) .mail-app-root > :global(.splitter) > :global(.left) > :global(.folder-pane) {
+    box-sizing: border-box;
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--border-radius);
+    background: var(--leftbar-bg);
+    overflow: hidden;
+  }
+
+  :global(.main-window:not(.mobile)) .mail-app-root > :global(.splitter) > :global(.splitter-bar) {
+    background: transparent;
+  }
+
+  :global(.main-window:not(.mobile)) .mail-app-root > :global(.splitter) > :global(.right) > :global(.mail-main) {
+    box-sizing: border-box;
+    margin-inline-start: 6px;
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
+    overflow: hidden;
   }
 
   /* Keep one 8px surface gap when the outer widget splitter is present.

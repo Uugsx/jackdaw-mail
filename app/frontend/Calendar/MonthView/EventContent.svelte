@@ -65,6 +65,13 @@
     font-weight: 600;
   }
   :global(.cancelled) .time,
+  .title {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   :global(.cancelled) .title {
     text-decoration: line-through;
   }

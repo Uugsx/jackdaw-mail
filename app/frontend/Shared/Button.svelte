@@ -117,8 +117,8 @@
     background-color: var(--button-bg);
     color: var(--button-fg);
     border: 1px solid var(--button-border);
-    border-radius: 1000px;
-    padding: 6px 8px;
+    border-radius: var(--border-radius);
+    padding: 6px 10px;
   }
   button {
     transform-origin: center;
@@ -145,9 +145,6 @@
   button:hover:not(.disabled) {
     transform: translateY(var(--button-motion-lift));
   }
-  button:not(.plain):hover:not(.disabled) {
-    box-shadow: 0 5px 14px rgba(var(--shadow-color), 0.1);
-  }
   button:active:not(.disabled) {
     transform: translateY(0) scale(var(--button-motion-press-scale));
   }
@@ -165,7 +162,7 @@
     color: var(--selected-hover-fg);
   }
   button.secondary {
-    border-color: var(--button-secondard-line);
+    border-color: var(--button-border);
   }
   button.filled {
     background-color: var(--inverted-bg);
@@ -192,10 +189,6 @@
   .icon :global(img) {
     transform-origin: center;
     transition: transform var(--button-motion-duration) var(--button-motion-ease);
-  }
-  button:hover:not(.disabled) .icon :global(svg),
-  button:hover:not(.disabled) .icon :global(img) {
-    transform: translateY(-1px) scale(1.03);
   }
   button:active:not(.disabled) .icon :global(svg),
   button:active:not(.disabled) .icon :global(img) {

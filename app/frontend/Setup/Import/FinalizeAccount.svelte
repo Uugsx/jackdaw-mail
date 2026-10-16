@@ -4,10 +4,10 @@
   canContinue={true}
   onContinue={onOK}
   >
-  <Button label="Back" classes="secondary"
+  <Button label={$t`Back`} classes="secondary"
     onClick={onBack}
     />
-  <Button label="Skip" classes="secondary"
+  <Button label={$t`Skip`} classes="secondary"
     onClick={onSkip}
     />
 </ButtonsBottom>
@@ -17,6 +17,7 @@
   import FinalizeConfig from "../Mail/FinalizeConfig.svelte";
   import ButtonsBottom from "../Shared/ButtonsBottom.svelte";
   import Button from "../../Shared/Button.svelte";
+  import { t } from "../../../l10n/l10n";
   import { appGlobal } from "../../../logic/app";
   import { assertCanAddMailAccount } from "../../../logic/Billing/ProPolicy";
 

@@ -710,7 +710,7 @@ ADMIN_HTML = """<!doctype html>
     .status { min-height: 1.5em; color: #4d525a; }
     .error { color: #a3261f; }
     .success { color: #1f6b4a; }
-    .key { display: block; padding: 12px; border-left: 3px solid #1a1d21; background: #ecebe6; color: #1a1d21; font: 600 15px ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .key { display: block; padding: 12px; background: #ecebe6; color: #1a1d21; font: 600 15px ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 700px; }
     th, td { text-align: left; padding: 10px 8px 10px 0; border-bottom: 1px solid #d9d6cf; vertical-align: top; font-size: 14px; }

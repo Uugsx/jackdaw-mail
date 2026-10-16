@@ -112,8 +112,8 @@
   input {
     cursor: pointer;
     appearance: none;
-    background: #fff;
-    border: 1px solid var(--button-border);
+    background: var(--input-bg, #fff);
+    border: 1px solid var(--input-line, var(--button-border));
     width: 20px;
     height: 20px;
     min-width: 20px;
@@ -125,12 +125,12 @@
   }
   input:checked {
     border: none;
-    background-color: var(--selected-bg);
-    color: #fff;
+    background-color: var(--icon-primary);
+    color: var(--main-bg);
   }
   input.indetermined {
     border: none;
-    background-color: red;
+    background-color: var(--danger-fg, #b84e3b);
   }
 
   .knob-wrapper {
@@ -139,7 +139,13 @@
     width: 24px;
     min-width: 24px;
     border-radius: 100px;
-    background-color: lightgray;
+    background-color: color-mix(in srgb, var(--main-fg) 20%, transparent);
+  }
+  .on .knob-wrapper {
+    background-color: var(--icon-primary);
+  }
+  .off.allowIndetermined .knob-wrapper {
+    background-color: var(--danger-fg, #b84e3b);
   }
   .knob {
     position: absolute;
@@ -150,37 +156,30 @@
     border: none;
     cursor: pointer;
   }
+  /* Ручка переключателя — простой круг на цветной дорожке, без свечения. */
   .on .knob {
     right: 0px;
-    background-color: var(--selected-bg);
-    color: var(--selected-fg);
-    box-shadow:
-      0 0 8px 2px rgba(32, 174, 158, 0.6),
-      0 0 20px 6px rgba(32, 174, 158, 0.25),
-      inset 0 1px 2px rgba(255, 255, 255, 0.2);
+    background-color: var(--main-bg);
+    color: var(--main-fg);
+    box-shadow: inset 0 0 0 1px var(--icon-primary);
   }
   .off:not(.allowIndetermined) .knob {
     left: 0px;
-    background-color: var(--bg);
-    color: var(--fg);
-    box-shadow:
-      0 0 8px 2px rgba(135, 135, 135, 0.3);
+    background-color: var(--main-bg);
+    color: var(--main-fg);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--main-fg) 30%, transparent);
   }
   .indetermined .knob {
     left: 4px;
-    background-color: rgba(135, 135, 135, 0.3);
-    color: white;
-    box-shadow:
-      0 0 8px 2px rgba(135, 135, 135, 0.15);
+    background-color: var(--main-bg);
+    color: var(--main-fg);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--main-fg) 30%, transparent);
   }
   .off.allowIndetermined .knob {
     left: 0px;
-    background-color: red;
-    color: white;
-    box-shadow:
-      0 0 8px 2px rgba(255, 0, 0, 0.3),
-      0 0 20px 6px rgba(255, 0, 0, 0.25),
-      inset 0 1px 2px rgba(255, 255, 255, 0.2);
+    background-color: var(--main-bg);
+    color: var(--danger-fg, #b84e3b);
+    box-shadow: inset 0 0 0 1px var(--danger-fg, #b84e3b);
   }
   :global(.mobile) .checkbox {
     min-height: 32px;
@@ -205,7 +204,14 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    color: #fff;
+    color: var(--main-bg);
+  }
+  /* В переключателе значок лежит на светлой ручке, поэтому он тёмный. */
+  .toggle .state-icon-wrapper {
+    color: var(--main-fg);
+  }
+  .toggle.off.allowIndetermined .state-icon-wrapper {
+    color: var(--danger-fg, #b84e3b);
   }
   .toggle.on .state-icon-wrapper {
     left: 10px;

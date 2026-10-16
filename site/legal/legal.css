@@ -183,8 +183,8 @@ td {
 .callout {
   margin-top: 24px;
   padding: 16px 18px;
-  border-left: 3px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border: 1px solid var(--rule);
+  background: var(--surface);
 }
 
 .callout p {

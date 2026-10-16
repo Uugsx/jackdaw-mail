@@ -618,7 +618,7 @@
     margin-top: 14px;
     padding: 18px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
     box-shadow: none;
   }
@@ -640,9 +640,9 @@
   .live-control-kicker {
     margin: 0 0 4px;
     color: var(--reports-accent);
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
   .live-control h2 {
@@ -654,7 +654,7 @@
   .live-control-header p:not(.live-control-kicker) {
     max-width: 760px;
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 60%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     line-height: 1.45;
   }
@@ -666,11 +666,11 @@
     gap: 6px;
     min-height: 29px;
     border: 1px solid var(--button-border, var(--border));
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     padding: 5px 9px;
     background: var(--button-bg);
     color: var(--button-fg);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
   }
 
@@ -699,7 +699,7 @@
     max-width: 100%;
     padding: 9px 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
@@ -730,8 +730,8 @@
   .live-summary span {
     margin-top: 5px;
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 55%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -750,15 +750,15 @@
     max-width: 100%;
     padding: 5px 7px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--headerbar-bg);
   }
 
   .live-sort-label {
     flex: 0 0 auto;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 10px;
-    font-weight: 750;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .live-sort-controls {
@@ -775,8 +775,8 @@
     min-height: 25px;
     margin: 0;
     padding: 3px 6px;
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     white-space: nowrap;
   }
 
@@ -801,12 +801,12 @@
     justify-content: center;
     gap: 5px;
     border: 1px solid var(--button-border, var(--border));
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--button-bg);
     color: var(--button-fg);
     font: inherit;
-    font-size: 10px;
-    font-weight: 750;
+    font-size: 12px;
+    font-weight: 600;
     cursor: pointer;
     transition:
       background-color 150ms ease,
@@ -818,15 +818,15 @@
   .tracking-archive-toggle {
     flex: 0 0 auto;
     max-width: 100%;
-    min-height: 31px;
-    padding: 5px 8px;
+    min-height: 32px;
+    padding: 6px 10px;
     white-space: nowrap;
   }
 
   .tracking-archive-toggle strong {
     min-width: 1.25em;
-    padding: 1px 4px;
-    border-radius: 999px;
+    padding: 1px 5px;
+    border-radius: 4px;
     background: color-mix(in srgb, var(--main-fg) 9%, transparent);
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -869,8 +869,7 @@
     gap: 14px;
     padding: 10px 11px;
     border: 1px solid var(--border);
-    border-left: 3px solid var(--reports-teal);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
@@ -934,8 +933,8 @@
     flex-wrap: wrap;
     gap: 4px 7px;
     margin-top: 5px;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -957,8 +956,8 @@
     padding: 4px 8px;
     background: color-mix(in srgb, var(--reports-teal) 14%, transparent);
     color: var(--reports-teal);
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -970,12 +969,12 @@
 
   .live-status.waiting {
     background: color-mix(in srgb, var(--main-fg) 9%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .live-row-timer small {
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.3;
   }
 
@@ -1005,7 +1004,7 @@
     padding: 10px;
     border: 1px solid
       color-mix(in srgb, var(--reports-accent) 30%, var(--border));
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 3%, var(--main-bg));
   }
 
@@ -1017,8 +1016,8 @@
 
   .tracking-archive-heading p {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -1038,7 +1037,7 @@
     gap: 8px;
     padding: 7px 8px;
     border: 1px solid color-mix(in srgb, var(--border) 66%, transparent);
-    border-radius: 7px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-bg) 76%, transparent);
   }
 
@@ -1051,14 +1050,14 @@
   .tracking-archive-info strong {
     overflow: hidden;
     color: var(--main-fg);
-    font-size: 11px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .tracking-archive-info small {
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 9px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.3;
   }
 
@@ -1070,8 +1069,8 @@
 
   .tracking-archive-empty {
     margin-top: 8px;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .live-empty,
@@ -1083,8 +1082,8 @@
     min-height: 54px;
     padding: 12px;
     border: 1px dashed color-mix(in srgb, var(--border) 74%, transparent);
-    border-radius: 9px;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
+    border-radius: var(--border-radius);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -1104,7 +1103,7 @@
     background: transparent;
     color: var(--reports-accent);
     font: inherit;
-    font-weight: 750;
+    font-weight: 700;
     text-decoration: underline;
     cursor: pointer;
   }
@@ -1121,7 +1120,7 @@
 
   .live-skeleton-row {
     height: 33px;
-    border-radius: 7px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-fg) 8%, transparent);
     animation: live-pulse 1.2s ease-in-out infinite alternate;
   }
@@ -1129,12 +1128,12 @@
   .live-inline-error,
   .live-control-note {
     margin: 9px 0 0;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.4;
   }
 
   .live-control-note {
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .spinning {
@@ -1203,5 +1202,124 @@
       align-items: flex-start;
       flex-direction: column;
     }
+  }
+  /*
+   * Очередь как плотный список: без рамки панели, без плиток для цифр, без
+   * карточки на каждое письмо и без цветной «таблетки» вокруг срока.
+   */
+  .live-control {
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-control-kicker {
+    display: none;
+  }
+
+  .live-control h2 {
+    font-size: 15px;
+  }
+
+  .live-control-header p:not(.live-control-kicker) {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+  }
+
+  .live-refresh-button {
+    border-radius: var(--border-radius);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .live-summary {
+    gap: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .live-summary > div {
+    padding: 0 12px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-summary > div.alert {
+    border: 0;
+    background: transparent;
+  }
+
+  .live-summary strong {
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .live-summary span {
+    margin-top: 4px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 400;
+  }
+
+  .live-sort-bar {
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-sort-label {
+    font-size: 12px;
+  }
+
+  .live-list {
+    gap: 0;
+  }
+
+  .live-row {
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-row:hover {
+    border-color: var(--border);
+    background: transparent;
+  }
+
+  .live-email-link {
+    font-size: 13px;
+  }
+
+  .live-row-meta,
+  .live-row-timer small {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .live-status {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .live-status.overdue,
+  .live-status.waiting {
+    background: transparent;
+  }
+
+  .live-archive-button {
+    border-color: transparent;
+    background: transparent;
+    font-size: 12px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 </style>

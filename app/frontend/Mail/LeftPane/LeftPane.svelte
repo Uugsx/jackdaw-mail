@@ -388,7 +388,7 @@
   .folder-pane :global(.folder.selected) {
     background-color: var(--selected-bg);
     color: var(--selected-fg);
-    border-color: color-mix(in srgb, var(--icon-primary) 38%, transparent);
+    border-color: transparent;
   }
   .folder-pane :global(.folder.selected:hover) {
     background-color: var(--selected-hover-bg);

@@ -377,11 +377,12 @@
     min-height: 74px;
   }
   .widget-title {
+    display: block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 650;
+    font-weight: 600;
   }
   .header-btn {
     display: inline-flex;
@@ -470,13 +471,11 @@
       background-color 0.16s ease,
       border-color 0.16s ease,
       color 0.16s ease,
-      transform 0.18s cubic-bezier(0.34, 1.35, 0.64, 1);
+      transform 0.16s ease-out;
   }
   .rail-btn:hover {
     background: var(--glass-hover-bg);
     color: var(--appbar-fg);
-    border-color: var(--glass-border-subtle);
-    transform: translateY(-1px);
   }
   .rail-btn:active {
     transform: translateY(0) scale(0.96);
@@ -491,9 +490,8 @@
     }
   }
   .rail-btn.active {
-    background: color-mix(in srgb, var(--icon-primary) 14%, transparent);
+    background: var(--selected-bg);
     color: var(--icon-primary);
-    border-color: color-mix(in srgb, var(--icon-primary) 28%, transparent);
   }
   .rail-letter {
     font-size: 12px;
@@ -533,56 +531,29 @@
   .live-sla-ring-value.overdue {
     stroke: var(--danger-fg);
   }
-  .live-sla-rail-indicator.tracking::after {
-    content: "";
-    position: absolute;
-    inset: -2px;
-    border: 1px solid color-mix(in srgb, var(--icon-primary) 36%, transparent);
-    border-radius: 50%;
-    animation: live-sla-pulse 1.8s ease-in-out infinite;
-    pointer-events: none;
-  }
-  .live-sla-rail-indicator.overdue::after {
-    border-color: color-mix(in srgb, var(--danger-fg) 48%, transparent);
-  }
   .live-sla-badge {
     position: absolute;
     top: -4px;
     right: -7px;
-    min-width: 13px;
-    height: 13px;
-    padding: 0 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
     box-sizing: border-box;
-    border-radius: 7px;
+    border-radius: var(--border-radius);
     background: var(--icon-primary);
     color: var(--appbar-bg);
-    font-size: 8px;
-    font-weight: 800;
-    line-height: 13px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
   .live-sla-rail-indicator.overdue .live-sla-badge {
     background: var(--danger-fg);
   }
-  @keyframes live-sla-pulse {
-    0%,
-    100% {
-      opacity: 0.55;
-      transform: scale(0.94);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
   @media (prefers-reduced-motion: reduce) {
     .live-sla-ring-value {
       transition: stroke 0.16s ease;
-    }
-    .live-sla-rail-indicator.tracking::after {
-      animation: none;
-      opacity: 0.8;
     }
   }
 </style>

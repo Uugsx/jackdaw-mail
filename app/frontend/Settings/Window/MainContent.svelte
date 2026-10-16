@@ -1,7 +1,7 @@
 <Scroll>
   <vbox flex class="settings-content">
-    {#if category?.windowContent}
-      <svelte:component this={category.windowContent} account={$selectedAccount} />
+    {#if page}
+      <svelte:component this={page} account={$selectedAccount} />
     {/if}
   </vbox>
 </Scroll>
@@ -12,6 +12,11 @@
   import Scroll from "../../Shared/Scroll.svelte";
 
   export let category: SettingsCategory;
+
+  /* У раздела верхнего уровня вроде «Общие» нет своей страницы. Вместо пустого
+   * экрана показываем первый подраздел, у которого страница есть. */
+  $: page = category?.windowContent ??
+    category?.subCategories?.find(sub => !!sub.windowContent)?.windowContent;
 </script>
 
 <style>

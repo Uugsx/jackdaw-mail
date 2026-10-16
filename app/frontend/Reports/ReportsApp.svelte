@@ -1488,7 +1488,7 @@
 
   function reportForExport(): ReportData {
     if (!report) {
-      throw new Error("Отчёт ещё не построен");
+      throw new Error($t`The report has not been built yet.`);
     }
     const responseTimes = visibleResponseTimes.map((response) => ({
       ...response,
@@ -1542,10 +1542,10 @@
   }
 
   function formatBytes(bytes: number): string {
-    if (!bytes) return "0 Б";
     const units = getDateTimeLocale().startsWith("ru")
       ? ["Б", "КБ", "МБ", "ГБ", "ТБ"]
       : ["B", "KB", "MB", "GB", "TB"];
+    if (!bytes) return `0 ${units[0]}`;
     const index = Math.min(
       Math.floor(Math.log(bytes) / Math.log(1024)),
       units.length - 1,
@@ -1571,20 +1571,24 @@
     const hours = Math.floor((totalSeconds % 86_400) / 3_600);
     const minutes = Math.floor((totalSeconds % 3_600) / 60);
     const restSeconds = totalSeconds % 60;
+    const unitDays = $t`d *=> days, short unit`;
+    const unitHours = $t`h *=> hours, short unit`;
+    const unitMinutes = $t`min *=> minutes, short unit`;
+    const unitSeconds = $t`s *=> seconds, short unit`;
     if (days) {
-      return `${formatNumber(days)} д ${formatNumber(hours)} ч`;
+      return `${formatNumber(days)} ${unitDays} ${formatNumber(hours)} ${unitHours}`;
     }
     if (hours) {
       return minutes
-        ? `${formatNumber(hours)} ч ${formatNumber(minutes)} мин`
-        : `${formatNumber(hours)} ч`;
+        ? `${formatNumber(hours)} ${unitHours} ${formatNumber(minutes)} ${unitMinutes}`
+        : `${formatNumber(hours)} ${unitHours}`;
     }
     if (minutes) {
       return restSeconds
-        ? `${formatNumber(minutes)} мин ${formatNumber(restSeconds)} с`
-        : `${formatNumber(minutes)} мин`;
+        ? `${formatNumber(minutes)} ${unitMinutes} ${formatNumber(restSeconds)} ${unitSeconds}`
+        : `${formatNumber(minutes)} ${unitMinutes}`;
     }
-    return `${formatNumber(restSeconds)} с`;
+    return `${formatNumber(restSeconds)} ${unitSeconds}`;
   }
 
   function formatResponseDuration(response: {
@@ -2458,7 +2462,6 @@
           <article class="summary-card summary-primary">
             <div class="summary-card-heading">
               <span>{$t`Observed activity`}</span>
-              <ActivityIcon size="17px" />
             </div>
             <strong>{formatNumber(report.summary.activityCount)}</strong>
             <p>{$t`outgoing messages, events and file changes`}</p>
@@ -2466,7 +2469,6 @@
           <article class="summary-card">
             <div class="summary-card-heading">
               <span>{$t`Mail`}</span>
-              <MailIcon size="17px" />
             </div>
             <strong>{formatNumber(report.summary.mailMessages)}</strong>
             <p>
@@ -2491,7 +2493,6 @@
           <article class="summary-card">
             <div class="summary-card-heading">
               <span>{$t`Calendar`}</span>
-              <CalendarIcon size="17px" />
             </div>
             <strong>{formatHours(report.summary.calendarHours)}</strong>
             <p>
@@ -2505,7 +2506,6 @@
           <article class="summary-card">
             <div class="summary-card-heading">
               <span>{$t`Chat`}</span>
-              <ChatIcon size="17px" />
             </div>
             <strong>{formatNumber(report.summary.chatMessages)}</strong>
             <p>
@@ -2517,7 +2517,6 @@
           <article class="summary-card">
             <div class="summary-card-heading">
               <span>{$t`Files changed`}</span>
-              <FilesIcon size="17px" />
             </div>
             <strong>{formatNumber(report.summary.filesChanged)}</strong>
             <p>
@@ -5370,9 +5369,9 @@
   .panel-kicker {
     margin: 0 0 8px;
     color: var(--reports-accent);
-    font-size: 11px;
-    font-weight: 750;
-    letter-spacing: 0.14em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
   h1,
@@ -5436,7 +5435,7 @@
     gap: 8px;
     min-height: 34px;
     border: 1px solid var(--button-border, var(--border));
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     padding: 7px 12px;
     background: var(--button-bg);
     color: var(--button-fg);
@@ -5492,7 +5491,7 @@
   .summary-card,
   .state-panel {
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
     box-shadow: none;
   }
@@ -5511,7 +5510,7 @@
   .filter-heading p,
   .panel-header p {
     margin-bottom: 0;
-    color: color-mix(in srgb, var(--main-fg) 60%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 13px;
     line-height: 1.4;
   }
@@ -5532,7 +5531,7 @@
     min-height: 30px;
     padding: 5px 11px;
     border-color: var(--button-border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--button-bg);
     font-size: 12px;
   }
@@ -5568,16 +5567,16 @@
     display: grid;
     gap: 5px;
     color: color-mix(in srgb, var(--main-fg) 65%, transparent);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
   }
 
   input[type="date"] {
     min-height: 36px;
     box-sizing: border-box;
     border: 1px solid var(--input-line);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     padding: 7px 36px 7px 9px;
     background: var(--input-bg);
     color: var(--input-fg);
@@ -5590,7 +5589,7 @@
     min-height: 32px;
     box-sizing: border-box;
     border: 1px solid var(--input-line);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     padding: 6px 8px;
     background: var(--input-bg);
     color: var(--input-fg);
@@ -5610,7 +5609,7 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .date-picker-button:hover {
@@ -5628,7 +5627,7 @@
     min-height: 36px;
     box-sizing: border-box;
     border: 1px solid var(--input-line);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     padding: 7px 9px;
     background: var(--input-bg);
     color: var(--input-fg);
@@ -5653,7 +5652,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0;
@@ -5664,7 +5663,7 @@
     max-width: min(420px, 100%);
     box-sizing: border-box;
     border: 1px solid var(--input-line);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     padding: 7px 30px 7px 9px;
     background: var(--input-bg);
     color: var(--input-fg);
@@ -5707,7 +5706,7 @@
   .date-separator {
     align-self: end;
     padding-bottom: 9px;
-    color: color-mix(in srgb, var(--main-fg) 42%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .date-controls .primary-button {
@@ -5720,16 +5719,16 @@
     margin: 14px 0 0;
     padding: 11px 12px 12px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
   .report-filter-block legend {
     padding: 0 5px;
     color: color-mix(in srgb, var(--main-fg) 72%, transparent);
-    font-size: 11px;
-    font-weight: 750;
-    letter-spacing: 0.04em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
   }
 
   .filter-block-heading,
@@ -5747,9 +5746,9 @@
   }
 
   .filter-count {
-    color: color-mix(in srgb, var(--main-fg) 60%, transparent);
-    font-size: 11px;
-    font-weight: 650;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 600;
   }
 
   .inline-action {
@@ -5757,7 +5756,7 @@
     padding: 2px 0;
     background: transparent;
     color: var(--reports-accent);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -5791,10 +5790,10 @@
     box-sizing: border-box;
     padding: 6px 8px;
     border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
-    border-radius: 7px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-fg) 3%, transparent);
     color: color-mix(in srgb, var(--main-fg) 76%, transparent);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     letter-spacing: 0;
   }
@@ -5818,15 +5817,15 @@
 
   .category-option small {
     margin-left: auto;
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
   .filter-help {
     margin: 8px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -5838,7 +5837,7 @@
 
   .filter-scope-note {
     margin: 11px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     line-height: 1.4;
   }
@@ -5862,7 +5861,7 @@
     min-height: 46px;
     padding: 5px 7px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
@@ -5887,21 +5886,21 @@
     flex: 0 0 auto;
     align-items: center;
     gap: 5px;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     letter-spacing: 0;
   }
 
   .working-hours-separator {
     flex: 0 0 auto;
-    color: color-mix(in srgb, var(--main-fg) 44%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 13px;
   }
 
   .working-day-off {
     margin-left: auto;
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 600;
   }
 
@@ -5923,7 +5922,7 @@
     margin: 14px auto 0;
     padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
@@ -5934,7 +5933,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--selected-hover-bg);
     color: var(--reports-accent);
   }
@@ -5946,8 +5945,8 @@
 
   .live-control-launch p {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -5976,7 +5975,7 @@
   .privacy-note {
     gap: 7px;
     margin: 16px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6011,7 +6010,7 @@
     justify-content: center;
     width: 48px;
     height: 48px;
-    border-radius: 14px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 15%, transparent);
     color: var(--reports-accent);
   }
@@ -6024,10 +6023,10 @@
   .technical-error {
     overflow-wrap: anywhere;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--danger-fg, #b84e3b) 8%, transparent);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px !important;
+    font-size: 12px !important;
     text-align: left;
   }
 
@@ -6042,11 +6041,11 @@
   }
 
   .skeleton {
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: linear-gradient(
       90deg,
       color-mix(in srgb, var(--main-fg) 7%, transparent),
-      color-mix(in srgb, var(--main-fg) 14%, transparent),
+      color-mix(in srgb, var(--main-fg) 7%, transparent),
       color-mix(in srgb, var(--main-fg) 7%, transparent)
     );
     background-size: 200% 100%;
@@ -6088,7 +6087,7 @@
     gap: 8px;
     max-width: 1440px;
     margin: 0 auto 12px;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6169,7 +6168,7 @@
     overflow-x: auto;
     padding: 5px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--headerbar-bg);
     box-shadow: var(--glass-shadow);
   }
@@ -6177,13 +6176,13 @@
   .report-viewer-nav button {
     flex: 0 0 auto;
     border: 1px solid transparent;
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     padding: 6px 9px;
     background: transparent;
     color: color-mix(in srgb, var(--main-fg) 68%, transparent);
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 650;
+    font-size: 12px;
+    font-weight: 600;
     white-space: nowrap;
   }
 
@@ -6215,7 +6214,7 @@
     margin: 42px auto;
     padding: 24px;
     border: 1px solid var(--border);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius);
     background: var(--main-bg);
     box-shadow: none;
   }
@@ -6248,7 +6247,7 @@
     flex-wrap: wrap;
     gap: 8px;
     margin: 20px 0 14px;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6263,15 +6262,15 @@
     min-width: 0;
     padding: 11px 12px;
     border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-fg) 3%, transparent);
   }
 
   .report-ready-stats span {
     display: block;
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -6296,7 +6295,7 @@
   }
 
   .meta-divider {
-    color: color-mix(in srgb, var(--main-fg) 28%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .export-error {
@@ -6318,7 +6317,7 @@
     margin-left: 4px;
     color: var(--main-fg);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
   }
 
@@ -6343,13 +6342,9 @@
   .summary-card-heading {
     justify-content: space-between;
     gap: 8px;
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-  }
-
-  .summary-card-heading :global(svg) {
-    color: var(--reports-accent);
   }
 
   .summary-card strong {
@@ -6364,8 +6359,8 @@
   .summary-card p {
     min-height: 32px;
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.45;
   }
 
@@ -6405,8 +6400,8 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px 12px;
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .legend span {
@@ -6492,8 +6487,8 @@
   .timeline-label {
     align-self: end;
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -6507,9 +6502,9 @@
     flex-shrink: 0;
     gap: 7px;
     padding: 8px 10px;
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 10%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6531,8 +6526,8 @@
 
   .heat-hour,
   .heat-day {
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .heat-hour {
@@ -6567,8 +6562,8 @@
     justify-content: flex-end;
     gap: 5px;
     margin-top: 12px;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .scale-cell.low {
@@ -6591,9 +6586,9 @@
     align-items: center;
     gap: 7px;
     padding: 8px 10px;
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-teal) 11%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6618,7 +6613,7 @@
     min-width: 0;
     padding: 12px 13px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: var(--main-bg);
   }
 
@@ -6629,8 +6624,8 @@
 
   .response-metric > span {
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -6647,8 +6642,8 @@
 
   .response-metric > small {
     min-height: 29px;
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -6671,7 +6666,7 @@
   .response-time-note {
     margin: 7px 0 0;
     color: color-mix(in srgb, var(--reports-accent) 82%, var(--main-fg));
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -6695,7 +6690,7 @@
     max-height: min(52vh, 640px);
     overflow-y: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
   }
 
   .after-hours-response-block .table-wrap thead {
@@ -6745,9 +6740,9 @@
     gap: 7px;
     max-width: min(360px, 100%);
     padding: 8px 10px;
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 10%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -6801,7 +6796,7 @@
     width: 100%;
     min-width: 0;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     padding: 7px 8px;
     background: transparent;
     color: var(--main-fg);
@@ -6832,9 +6827,9 @@
   }
 
   .rhythm-rank-index {
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
-    font-size: 11px;
-    font-weight: 750;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
     text-align: center;
   }
 
@@ -6842,7 +6837,7 @@
     min-width: 0;
     overflow: hidden;
     font-size: 12px;
-    font-weight: 650;
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -6870,8 +6865,8 @@
   }
 
   .rhythm-rank-row small {
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     text-align: right;
   }
 
@@ -6903,7 +6898,7 @@
     min-width: 0;
     padding: 9px 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-bg) 88%, var(--reports-accent));
   }
 
@@ -6915,8 +6910,8 @@
 
   .rhythm-focus-stats span {
     overflow: hidden;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -6933,8 +6928,8 @@
 
   .rhythm-focus-stats small {
     min-height: 27px;
-    color: color-mix(in srgb, var(--main-fg) 48%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -7002,7 +6997,7 @@
 
   .rhythm-overview-table thead th {
     font-size: clamp(8px, 0.72cqw, 10px);
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
     line-height: 1.15;
     overflow-wrap: break-word;
     text-wrap: balance;
@@ -7073,8 +7068,8 @@
 
   .subpanel-heading p {
     margin: 0;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -7084,8 +7079,8 @@
     gap: 8px;
     padding: 15px 13px;
     border: 1px dashed color-mix(in srgb, var(--border) 72%, transparent);
-    border-radius: 10px;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
+    border-radius: var(--border-radius);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
   }
 
@@ -7101,7 +7096,7 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--danger-fg, #b84e3b) 12%, transparent);
     color: var(--danger-fg, #b84e3b);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     text-align: center;
   }
@@ -7113,7 +7108,7 @@
 
   .status-pill.outside-hours {
     background: color-mix(in srgb, var(--main-fg) 9%, transparent);
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .response-status-stack {
@@ -7129,7 +7124,7 @@
     align-items: center;
     gap: 4px;
     color: color-mix(in srgb, var(--reports-accent) 82%, var(--main-fg));
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1.2;
   }
@@ -7150,14 +7145,14 @@
     height: 8px;
     border-radius: 3px;
     background: color-mix(in srgb, var(--reports-accent) 25%, transparent);
-    box-shadow: inset 3px 0 0 var(--reports-accent);
+    border: 1px solid var(--reports-accent);
   }
 
   .layout-help {
     max-width: 1440px;
     margin: 0 auto 10px;
-    color: color-mix(in srgb, var(--main-fg) 58%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.45;
   }
 
@@ -7377,14 +7372,10 @@
     background: color-mix(in srgb, var(--reports-accent) 7%, transparent);
   }
 
-  .outside-hours-row td:first-child {
-    box-shadow: inset 3px 0 0 var(--reports-accent);
-  }
-
   .response-open-error {
     margin: 10px 0 0;
     color: var(--danger-fg, #b84e3b);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -7401,7 +7392,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
   }
 
   .response-detail-block .table-wrap thead {
@@ -7417,8 +7408,8 @@
     flex-wrap: wrap;
     gap: 8px;
     margin: 12px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.45;
   }
 
@@ -7440,8 +7431,8 @@
 
   .report-note {
     margin: 6px 0 0;
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.45;
   }
 
@@ -7478,11 +7469,10 @@
   }
 
   thead th {
-    color: color-mix(in srgb, var(--main-fg) 54%, transparent);
-    font-size: 10px;
-    font-weight: 750;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
     white-space: normal;
     word-break: normal;
     hyphens: none;
@@ -7501,7 +7491,7 @@
   tbody th {
     min-width: 0;
     color: var(--main-fg);
-    font-weight: 650;
+    font-weight: 600;
   }
 
   .numeric {
@@ -7511,13 +7501,13 @@
 
   .emphasized {
     color: var(--reports-teal);
-    font-weight: 750;
+    font-weight: 700;
   }
 
   .muted,
   .person-email,
   .table-rate {
-    color: color-mix(in srgb, var(--main-fg) 50%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
   }
 
   .person-name,
@@ -7528,7 +7518,7 @@
   .person-email {
     margin-top: 3px;
     overflow: hidden;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -7541,7 +7531,7 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--main-fg) 8%, transparent);
     color: color-mix(in srgb, var(--main-fg) 66%, transparent);
-    font-size: 11px;
+    font-size: 12px;
     text-align: center;
   }
 
@@ -7659,7 +7649,7 @@
 
   .empty-cell {
     padding: 24px 8px;
-    color: color-mix(in srgb, var(--main-fg) 50%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     text-align: center;
   }
 
@@ -7705,13 +7695,12 @@
 
     .responsive-report-table tbody td::before,
     .responsive-report-table tbody th::before {
-      color: color-mix(in srgb, var(--main-fg) 52%, transparent);
+      color: color-mix(in srgb, var(--main-fg) 64%, transparent);
       content: attr(data-label);
-      font-size: 9px;
-      font-weight: 750;
-      letter-spacing: 0.04em;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
       line-height: 1.35;
-      text-transform: uppercase;
     }
 
     .responsive-report-table tbody .numeric {
@@ -7803,13 +7792,12 @@
   .dashboard-item:not(.layout-full) .responsive-report-table tbody td::before,
   .dashboard-item:not(.layout-full) .responsive-report-table tbody th::before {
     min-width: 0;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     content: attr(data-label);
-    font-size: 9px;
-    font-weight: 750;
-    letter-spacing: 0.04em;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
     line-height: 1.35;
-    text-transform: uppercase;
     overflow-wrap: normal;
     word-break: normal;
     hyphens: none;
@@ -7916,8 +7904,8 @@
   .report-footnote {
     max-width: 1440px;
     margin: 4px auto 0;
-    color: color-mix(in srgb, var(--main-fg) 52%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     line-height: 1.5;
   }
 
@@ -8039,13 +8027,12 @@
 
     .dashboard-item:not(.layout-full) .response-detail-block tbody td::before,
     .dashboard-item:not(.layout-full) .response-detail-block tbody th::before {
-      color: color-mix(in srgb, var(--main-fg) 52%, transparent);
+      color: color-mix(in srgb, var(--main-fg) 64%, transparent);
       content: attr(data-label);
-      font-size: 9px;
-      font-weight: 750;
-      letter-spacing: 0.04em;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
       line-height: 1.35;
-      text-transform: uppercase;
     }
 
     .dashboard-item:not(.layout-full) .response-detail-block tbody .numeric {
@@ -8212,5 +8199,172 @@
     .working-day-off {
       margin-left: 0;
     }
+  }
+  /*
+   * Плоская подача страницы настройки отчёта: один уровень разделения —
+   * тонкая линия. Рамки внутри рамок, чипы и плитки с иконками убраны.
+   */
+  .eyebrow,
+  .panel-kicker,
+  .section-kicker {
+    display: none;
+  }
+
+  .filter-panel {
+    padding: 16px 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .preset-list {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 0;
+    margin: 14px 0;
+    overflow: hidden;
+    border: 1px solid var(--button-border);
+    border-radius: var(--border-radius);
+  }
+
+  .preset-button {
+    min-height: 32px;
+    border: 0;
+    border-inline-end: 1px solid var(--border);
+    border-radius: 0;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .preset-button:last-child {
+    border-inline-end: 0;
+  }
+
+  .report-filter-block {
+    margin: 24px 0 0;
+    padding: 16px 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  /* Заголовок группы внутри блока, а не врезанный в линию рамки. */
+  .report-filter-block legend {
+    float: left;
+    width: 100%;
+    padding: 0 0 10px;
+    color: var(--main-fg);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .report-filter-block legend + * {
+    clear: both;
+  }
+
+  .working-hours-list {
+    gap: 0 40px;
+    margin-top: 6px;
+  }
+
+  .working-hours-row {
+    min-height: 44px;
+    padding: 6px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .working-day-toggle {
+    color: var(--main-fg);
+    font-size: 13px;
+  }
+
+  .working-time-control {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .working-day-off {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .category-options {
+    gap: 0 32px;
+    max-height: 168px;
+    margin-top: 4px;
+  }
+
+  .category-option {
+    flex: 1 1 220px;
+    padding: 6px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--main-fg);
+    font-size: 13px;
+    font-weight: 400;
+  }
+
+  .category-option:hover {
+    border-color: var(--border);
+    background: transparent;
+  }
+
+  .category-option small {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .filter-help,
+  .filter-scope-note {
+    max-width: 76ch;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .inline-action {
+    font-size: 12px;
+  }
+
+  .filter-count {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+
+  .live-control-launch {
+    padding: 14px 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .live-control-launch-icon {
+    display: none;
+  }
+
+  .live-control-launch p {
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
+  }
+  .state-panel {
+    border-radius: var(--border-radius);
+  }
+
+  .state-icon {
+    display: none;
+  }
+  /* Подписи часов и дней в тесной сетке тепловой карты. */
+  .heat-hour,
+  .heat-day {
+    font-size: 11px;
   }
 </style>

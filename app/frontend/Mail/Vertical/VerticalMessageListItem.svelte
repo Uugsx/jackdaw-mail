@@ -3,6 +3,7 @@
 <vbox class="message"
   class:starred={$message.isStarred}
   class:unread={!$message.isRead}
+  class:show-account-color={$emailAccounts.length > 1}
   draggable="true" on:dragstart={(event) => catchErrors(() => onDragStartMail(event, message))}
   style="--account-color: {$message.folder.account.color};"
   on:contextmenu={contextMenu.onContextMenu}
@@ -84,6 +85,7 @@
 
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
+  import { appGlobal } from "../../../logic/app";
   import { personDisplayName } from "../../../logic/Abstract/PersonUID";
   import { onDragStartMail } from "../Message/drag";
   import { openEMailMessageFullscreen } from "../open";
@@ -173,6 +175,9 @@
   function onPopupClose() {
     popupOpen = false;
   }
+
+  /** Цвет аккаунта нужен только когда в программе больше одного аккаунта. */
+  const emailAccounts = appGlobal.emailAccounts;
 </script>
 
 <style>
@@ -186,14 +191,13 @@
     padding: 8px 12px 8px 12px !important;
   }
 
-  /* account color bar */
-  .message::before {
+  /* Цветная метка аккаунта: только если аккаунтов несколько. */
+  .message.show-account-color::before {
     position: absolute;
     top: 18%;
     content: "";
     height: 64%;
-    border-left: 3px solid var(--account-color);
-    border-radius: 10px;
+    border-left: 2px solid var(--account-color);
   }
 
   .top-row,
@@ -210,6 +214,7 @@
     align-items: center;
   }
   .contact {
+    display: block;
     font-weight: 500;
     min-width: 0;
     overflow: hidden;
@@ -219,7 +224,7 @@
   }
   .subject,
   .date {
-    font-weight: 300;
+    font-weight: 400;
   }
   .subject {
     color: color-mix(in srgb, var(--main-fg, var(--fg)) 76%, transparent);
@@ -230,7 +235,7 @@
     font-weight: 700;
   }
   .unread .subject {
-    color: var(--icon-primary);
+    color: var(--main-fg, var(--fg));
   }
   :global(.row.selected) .subject {
     color: inherit;
@@ -246,6 +251,7 @@
     white-space: nowrap;
   }
   .subject {
+    display: block;
     line-height: 1.3;
     flex: 0 1 auto;
     min-width: 0;

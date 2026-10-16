@@ -93,10 +93,10 @@
     margin-bottom: 6px;
     padding: 0 5px;
     border: 1px dashed color-mix(in srgb, var(--reports-accent) 38%, var(--border));
-    border-radius: 9px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--reports-accent) 6%, var(--main-bg));
-    color: color-mix(in srgb, var(--main-fg) 60%, transparent);
-    font-size: 11px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
   }
 
   .drag-handle {
@@ -150,8 +150,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: color-mix(in srgb, var(--main-fg) 56%, transparent);
-    font-size: 10px;
+    color: color-mix(in srgb, var(--main-fg) 64%, transparent);
+    font-size: 12px;
     font-weight: 600;
   }
 

@@ -81,17 +81,10 @@
   }
   .app-button:hover:not(.selected) {
     background: var(--glass-hover-bg);
-    border-color: var(--glass-border-subtle);
-    box-shadow:
-      var(--glass-highlight),
-      0 5px 14px rgba(var(--shadow-color), 0.1);
   }
   .app-button.selected {
-    background: var(--glass-selected-bg);
-    border-color: var(--glass-selected-border);
-    box-shadow:
-      var(--glass-highlight),
-      0 2px 8px rgba(var(--shadow-color), 0.08);
+    /* Выбранное приложение отмечено заливкой, без рамок, полос и теней. */
+    background: var(--selected-bg);
   }
   .app-button:active {
     transform: translateY(0) scale(var(--button-motion-press-scale));
@@ -116,9 +109,6 @@
     border-radius: var(--border-radius);
     transition: transform var(--button-motion-duration) var(--button-motion-ease);
   }
-  .app-button:hover .icon-wrap {
-    transform: translateY(-1px);
-  }
   .app-button:active .icon-wrap {
     transform: none;
   }
@@ -130,10 +120,10 @@
     min-height: 16px;
     padding: 0 4px;
     border-radius: 999px;
-    background-color: #dd3322;
-    color: white;
-    font-size: 9px;
-    font-weight: 700;
+    background-color: var(--danger-fg, #b84e3b);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
     line-height: 16px;
     justify-content: center;
     align-items: center;
@@ -164,14 +154,14 @@
   }
   .label {
     overflow: hidden;
-    text-overflow: clip;
+    text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 100%;
     margin-block-start: 2px;
     margin-inline: 1px;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 500;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
     line-height: 1.15;
     justify-content: center;
   }

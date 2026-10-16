@@ -34,7 +34,7 @@
     align-items: center;
     gap: 10px;
     padding: 10px 14px;
-    border-radius: 999px;
+    border-radius: var(--border-radius);
     background: color-mix(in srgb, var(--main-fg) 88%, black);
     color: var(--main-bg);
     box-shadow: 0 8px 28px rgb(0 0 0 / 28%);

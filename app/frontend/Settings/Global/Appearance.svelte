@@ -52,7 +52,7 @@
         </hbox>
         {#if language != getUILocalePref()}
           <Button
-            label="Save and restart"
+            label={$t`Save and restart`}
             icon={RestartIcon}
             onClick={onSaveLanguage}
             classes="restart"

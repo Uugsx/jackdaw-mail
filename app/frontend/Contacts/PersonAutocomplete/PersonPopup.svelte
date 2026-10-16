@@ -35,7 +35,7 @@
       <!--
       <vbox class="top-right buttons">
         <Button plain iconOnly iconSize="14px"
-          label="Save"
+          label={$t`Save`}
           icon={CheckIcon}
           onClick={onSave}
           />

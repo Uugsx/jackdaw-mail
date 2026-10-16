@@ -129,7 +129,7 @@
   .quick-folder.selected {
     background: var(--selected-bg);
     color: var(--selected-fg);
-    border-color: color-mix(in srgb, var(--icon-primary) 38%, transparent);
+    border-color: transparent;
   }
   .quick-folder.selected:hover {
     background: var(--selected-hover-bg);

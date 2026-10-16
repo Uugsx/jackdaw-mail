@@ -94,7 +94,7 @@
       {#if state.status == "not-activated"}
         <Button
           label={startingTrial ? $t`Starting 7-day trial…` : $t`Try Pro free for 7 days`}
-          classes="filled large"
+          classes={compact ? "filled" : "filled large"}
           disabled={startingTrial}
           onClick={startTrial}
           />
@@ -102,13 +102,13 @@
       <Button
         label={$t`View Pro plans`}
         icon={ExternalLinkIcon}
-        classes="large"
+        classes={compact ? "" : "large"}
         onClick={openPlans}
         />
       <Button
         label={retrying ? $t`Checking…` : $t`Check license again`}
         icon={RefreshIcon}
-        classes="large"
+        classes={compact ? "" : "large"}
         disabled={retrying}
         onClick={retry}
         />
@@ -136,7 +136,15 @@
   }
 
   .pro-gate.compact h1 {
-    font-size: clamp(22px, 3vw, 30px);
+    font-size: 17px;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .pro-gate.compact .gate-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
   }
 
   .pro-gate.loading {

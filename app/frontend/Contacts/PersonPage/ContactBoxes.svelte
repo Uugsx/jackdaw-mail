@@ -309,7 +309,7 @@
     min-height: 10em;
     background-color: var(--main-bg);
     color: var(--main-fg);
-    font-family: sans-serif;
+    font-family: inherit;
     border: 1px solid var(--border);
     padding: 8px;
   }
