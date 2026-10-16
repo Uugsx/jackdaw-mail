@@ -27,8 +27,6 @@
 
   /** Входящий звонок, когда окно Jackdaw не на переднем плане: всплывающее уведомление ОС. */
   let notifiedCallIDs = new Set<string>();
-  $: meeting instanceof JackdawCall && $meeting.state == MeetingState.IncomingCall &&
-    !notifiedCallIDs.has(meeting.callID) && notifyIncomingCall(meeting);
   function notifyIncomingCall(call: JackdawCall) {
     notifiedCallIDs.add(call.callID);
     if (document.hasFocus()) {
@@ -46,11 +44,16 @@
   }
 
   // HACK: Why are some ended meetings not removed? See `VideoConfMeeting.hangup()`
-  $: meetings = appGlobal.meetings.filterObservable(m => m.state != MeetingState.Ended);
+  // Константа, а не `$:`: от реактивных значений не зависит, а реактивная
+  // версия могла вычисляться позже `meeting = $meetings.first` — тогда
+  // `$meetings` был undefined и окно оставалось пустым при запуске.
+  const meetings = appGlobal.meetings.filterObservable(m => m.state != MeetingState.Ended);
 
   /** When a call comes in or is placed, open the meet app,
    * which will then open the Calling screen. */
   $: meeting = $meetings.first;
+  $: meeting instanceof JackdawCall && $meeting.state == MeetingState.IncomingCall &&
+    !notifiedCallIDs.has(meeting.callID) && notifyIncomingCall(meeting);
   $: meeting && openMeet();
   function openMeet() {
     if (meeting.state == MeetingState.OutgoingCallConfirm ||
