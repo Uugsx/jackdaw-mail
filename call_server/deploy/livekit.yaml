@@ -1,0 +1,31 @@
+# /etc/livekit/livekit.yaml — LiveKit SFU только для звонков Jackdaw ↔ Jackdaw.
+# Запуск: docker run -d --name livekit --restart unless-stopped --network host \
+#   -v /etc/livekit/livekit.yaml:/livekit.yaml livekit/livekit-server:v1.9 --config /livekit.yaml
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+# Ключ API: livekit-server generate-keys. Секрет — тот же, что в JACKDAW_LIVEKIT_API_SECRET_FILE.
+keys:
+  REPLACE_API_KEY: REPLACE_API_SECRET_AT_LEAST_32_CHARS
+room:
+  auto_create: true
+  # Звонки только 1:1. Комнаты пустеют и удаляются сами.
+  max_participants: 2
+  empty_timeout: 60
+  departure_timeout: 20
+turn:
+  enabled: true
+  domain: turn.jackdaw-mail.pro
+  # TLS-терминация TURN на 443/5349 обходит строгие корпоративные сети.
+  tls_port: 5349
+  udp_port: 3478
+  # Сертификат turn.jackdaw-mail.pro (например, от certbot)
+  cert_file: /etc/livekit/turn.crt
+  key_file: /etc/livekit/turn.key
+logging:
+  level: info

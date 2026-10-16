@@ -31,6 +31,7 @@ import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
 import About from "./About/About.svelte";
 import Billing from "./Billing/Billing.svelte";
+import JackdawCalls from "./Billing/JackdawCalls.svelte";
 // #if [MOBILE || !PRODUCTION]
 import Debug from "./About/Debug.svelte";
 // #endif
@@ -176,6 +177,9 @@ settingsCategories.add(about);
 
 const billing = new SettingsCategory("billing", gt`Jackdaw Pro`, Billing, true);
 billing.synonyms.addAll([gt`Pro`, gt`Subscription`, gt`Payment`]);
+const jackdawCalls = new SettingsCategory("jackdaw-calls", gt`Calls`, JackdawCalls);
+jackdawCalls.synonyms.addAll([gt`Video call`, gt`Audio call`, gt`Meet`]);
+billing.subCategories.add(jackdawCalls);
 settingsCategories.add(billing);
 
 // #if [MOBILE || !PRODUCTION]

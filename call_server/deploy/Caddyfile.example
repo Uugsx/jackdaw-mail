@@ -1,0 +1,13 @@
+# Фрагмент Caddyfile: TLS для сигналинга и SFU.
+license.jackdaw-mail.pro {
+	handle /v1/calls {
+		reverse_proxy 127.0.0.1:8091
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8090
+	}
+}
+
+calls.jackdaw-mail.pro {
+	reverse_proxy 127.0.0.1:7880
+}

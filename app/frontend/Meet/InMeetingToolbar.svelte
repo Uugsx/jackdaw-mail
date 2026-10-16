@@ -178,7 +178,8 @@
       return;
     }
     meInited = true;
-    me.cameraOn = cameraOnSetting.value;
+    // Аудиозвонок не включает камеру, даже если она включена по умолчанию.
+    me.cameraOn = cameraOnSetting.value && meeting.hasVideo;
     me.micOn = micOnSetting.value;
     await stream.setCameraMicOn(me.cameraOn, me.micOn, selectedCameraSetting.value, selectedMicSetting.value);
     await getDevices();

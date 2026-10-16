@@ -25,11 +25,13 @@ nsis:
   createDesktopShortcut: always
 mac:
   entitlementsInherit: build/entitlements.mac.plist
+  # Словарь, а не список: иначе ключи не попадают в Info.plist и macOS
+  # не может показать запрос доступа к камере и микрофону для звонков.
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    NSCameraUsageDescription: Application requests access to the device's camera.
+    NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: true
   target:
     - target: zip

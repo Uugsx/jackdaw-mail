@@ -5,6 +5,11 @@
       icon={CameraIcon}
       classes="large secondary action"
       onClick={() => startVideoCall(person)} />
+    <RoundButton
+      label={$t`Audio call`}
+      icon={CallIcon}
+      classes="large secondary action"
+      onClick={() => startAudioCall(person)} />
   {/if}
   {#if preferredPhoneNumber}
     <a href="tel:{preferredPhoneNumber}" class="phone-call">
@@ -33,7 +38,8 @@
 
 <script lang="ts">
   import type { Person } from "../../../logic/Abstract/Person";
-  import { startVideoCall } from "../../../logic/Meet/StartCall";
+  import { startVideoCall, startAudioCall, canStartCall } from "../../../logic/Meet/StartCall";
+  import { getJackdawCallClient } from "../../../logic/Meet/Jackdaw/JackdawCalls";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import MailIcon from '../../asset/icon/appBar/mail.svg?raw';
   import ChatIcon from '../../asset/icon/appBar/chat.svg?raw';
@@ -50,7 +56,9 @@
       $phoneNumbers.sortBy(p => p.preference).first?.value;
   $: preferredEmailAddress = $emailAddresses.isEmpty ? null :
       $emailAddresses.sortBy(p => p.preference).first?.value;
-  $: preferredVideoCall = null;
+  const callClient = getJackdawCallClient();
+  /** Звонок через WhatsApp или Jackdaw, только если он сейчас возможен */
+  $: preferredVideoCall = $callClient && $callClient.presenceVersion >= 0 && $emailAddresses && $chatAccounts && canStartCall(person);
   $: preferredChatAccount = $chatAccounts.isEmpty ? null :
       $chatAccounts.sortBy(p => p.preference).first?.value;
 </script>

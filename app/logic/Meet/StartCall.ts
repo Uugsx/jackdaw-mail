@@ -1,10 +1,11 @@
-import { MeetingState, VideoConfMeeting } from "./VideoConfMeeting";
-import { MeetingParticipant } from "./Participant";
+import type { VideoConfMeeting } from "./VideoConfMeeting";
 import type { MeetAccount } from "./MeetAccount";
 import { WhatsAppMeetAccount } from "./WhatsApp/WhatsAppMeetAccount";
 import { JID } from "../Chat/WhatsApp/Binary/JID";
 import { Person } from "../Abstract/Person";
 import type { Group } from "../Abstract/Group";
+import { PersonUID } from "../Abstract/PersonUID";
+import { canJackdawCall, startJackdawCall } from "./Jackdaw/JackdawCalls";
 /*
 import { Person, ContactEntry } from "../Abstract/Person";
 import { Group } from "../Abstract/Group";
@@ -17,22 +18,11 @@ import { appGlobal } from "../app";
 import { UserError, type URLString, assert } from "../util/util";
 import { gt } from "../../l10n/l10n";
 
-export async function startVideoCall(to: Person | Group): Promise<VideoConfMeeting> {
-  let whatsAppCall = startWhatsAppCall(to, true);
-  if (whatsAppCall) {
-    return whatsAppCall;
-  }
-  // TODO test code
-  let call = new VideoConfMeeting();
-  let callee = new MeetingParticipant();
-  callee.name = to.name;
-  if (to instanceof Person) {
-    callee.person = to; // picture etc. come from the linked Person
-  }
-  call.participants.add(callee);
-  call.state = MeetingState.OutgoingCallConfirm;
-  appGlobal.meetings.add(call);
-  return call;
+/** Кому можно звонить. `PersonUID` — собеседник по email, например в режиме чата почты. */
+export type CallRecipient = Person | Group | PersonUID;
+
+export async function startVideoCall(to: CallRecipient): Promise<VideoConfMeeting> {
+  return await startCall(to, true);
 }
 
 /*
@@ -128,27 +118,54 @@ function entryIsMatrix(contact: ContactEntry) {
 }
 */
 
-export async function startAudioCall(to: Person | Group): Promise<VideoConfMeeting> {
-  let whatsAppCall = startWhatsAppCall(to, false);
+export async function startAudioCall(to: CallRecipient): Promise<VideoConfMeeting> {
+  return await startCall(to, false);
+}
+
+/** Порядок способов: WhatsApp, затем звонок между пользователями Jackdaw по email. */
+async function startCall(to: CallRecipient, video: boolean): Promise<VideoConfMeeting> {
+  let person = to instanceof PersonUID ? to.findPerson() : to;
+  let whatsAppCall = person ? startWhatsAppCall(person, video) : null;
   if (whatsAppCall) {
     return whatsAppCall;
   }
-  throw new UserError(gt`Audio calls are not available yet. Try a video call.`);
+  if (to instanceof Person || to instanceof PersonUID) {
+    let jackdawCall = await startJackdawCall(to, video);
+    if (jackdawCall) {
+      return jackdawCall;
+    }
+  }
+  throw new UserError(gt`Calls to this contact are not available yet. Calls work with contacts who use Jackdaw Mail and are online, or have a linked WhatsApp account.`);
+}
+
+/** Есть ли сейчас способ позвонить. Кнопки звонка показываются только тогда.
+ * Для звонка через Jackdaw результат меняется вместе с `getJackdawCallClient().presenceVersion`. */
+export function canStartCall(to: CallRecipient | null | undefined): boolean {
+  if (!to) {
+    return false;
+  }
+  let person = to instanceof PersonUID ? to.findPerson() : to;
+  if (person instanceof Person && findWhatsAppCallTarget(person)) {
+    return true;
+  }
+  return (to instanceof Person || to instanceof PersonUID) && canJackdawCall(to);
+}
+
+function findWhatsAppCallTarget(to: Person): { account: WhatsAppMeetAccount, jid: string } | null {
+  let account = appGlobal.meetAccounts.find(acc => acc instanceof WhatsAppMeetAccount) as WhatsAppMeetAccount | undefined;
+  let entry = account ? to.chatAccounts.find(e => e.protocol == "whatsapp") : null;
+  return account && entry ? { account, jid: entry.value } : null;
 }
 
 /** If the contact has a WhatsApp ID and a WhatsApp Meet account exists, starts a
  * WhatsApp call to them. Returns null otherwise (so callers fall back). */
 function startWhatsAppCall(to: Person | Group, video: boolean): VideoConfMeeting | null {
-  let account = appGlobal.meetAccounts.find(acc => acc instanceof WhatsAppMeetAccount) as WhatsAppMeetAccount | undefined;
-  if (!account || !(to instanceof Person)) {
+  let target = to instanceof Person ? findWhatsAppCallTarget(to) : null;
+  if (!target) {
     return null;
   }
-  let entry = to.chatAccounts.find(e => e.protocol == "whatsapp");
-  if (!entry) {
-    return null;
-  }
-  let call = account.newMeeting();
-  call.prepareOutgoing(JID.parse(entry.value), video);
+  let call = target.account.newMeeting();
+  call.prepareOutgoing(JID.parse(target.jid), video);
   appGlobal.meetings.add(call);
   return call;
 }

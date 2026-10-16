@@ -549,6 +549,21 @@ export function hasProFeature(feature: ProFeatureKey): boolean {
   return true;
 }
 
+/** Учётные данные устройства для сервиса звонков. Сервис сам проверяет их по базе лицензий,
+ * поэтому подписанное entitlement ему не передаётся. null — Pro на устройстве не подключён. */
+export type ProCallCredential =
+  | { kind: "license"; licenseKey: string; deviceId: string }
+  | { kind: "trial"; deviceId: string };
+
+export function getProCallCredential(): ProCallCredential | null {
+  let stored = readStoredEntitlement();
+  if (!stored) return null;
+  if (isTrialCredential(stored)) {
+    return { kind: "trial", deviceId: getDeviceID() };
+  }
+  return stored.licenseKey ? { kind: "license", licenseKey: stored.licenseKey, deviceId: getDeviceID() } : null;
+}
+
 export function getSavedProLicenseKey(): string | null {
   let stored = readStoredEntitlement();
   return isTrialCredential(stored) ? null : stored?.licenseKey || null;
