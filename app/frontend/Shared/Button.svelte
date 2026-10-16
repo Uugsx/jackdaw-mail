@@ -146,7 +146,7 @@
     transform: translateY(var(--button-motion-lift));
   }
   button:active:not(.disabled) {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   button.button.selected:not(.disabled) {
     background-color: var(--selected-bg);

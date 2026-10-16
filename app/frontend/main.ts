@@ -1,4 +1,5 @@
 import './app.css';
+import './icon-motion.css';
 import { mount } from 'svelte';
 import MainWindow from './MainWindow/MainWindow.svelte';
 import StandaloneComposeWindow from './Mail/Composer/StandaloneComposeWindow.svelte';

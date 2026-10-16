@@ -87,7 +87,7 @@
     background: var(--selected-bg);
   }
   .app-button:active {
-    transform: translateY(0) scale(var(--button-motion-press-scale));
+    transform: translateY(var(--button-motion-press-shift)) scale(var(--button-motion-press-scale));
   }
   .app-button:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--appbar-fg) 55%, transparent);
