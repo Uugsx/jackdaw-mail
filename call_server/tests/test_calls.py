@@ -622,6 +622,9 @@ class StubHub:
         for index in range(self.flood):
             peer.send({"type": "flood", "index": index})
 
+    async def handle_async(self, peer, message):
+        self.handle(peer, message)
+
     def disconnected(self, peer):
         self.disconnected_peers.append(peer)
         if self.fail_disconnect:
