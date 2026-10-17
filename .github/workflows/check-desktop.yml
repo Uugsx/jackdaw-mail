@@ -40,9 +40,15 @@ jobs:
       - name: Регрессионные и интеграционные тесты
         run: npm run test:regression
         working-directory: app
+      # Сборка Vite держится около лимита кучи Node по умолчанию (~4 ГБ)
+      # и падает с OOM; у раннера 16 ГБ ОЗУ, поэтому даём запас.
       - name: Сборка frontend
         run: npm run build
         working-directory: app
+        env:
+          NODE_OPTIONS: '--max-old-space-size=6144'
       - name: Сборка desktop
         run: npm run build
         working-directory: desktop
+        env:
+          NODE_OPTIONS: '--max-old-space-size=6144'
