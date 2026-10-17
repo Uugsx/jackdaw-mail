@@ -55,11 +55,15 @@ class FakePeerConnection {
   remoteDescription: any = null;
   signalingState = "stable";
   connectionState = "new";
+  iceConnectionState = "new";
+  offerOptions: any[] = [];
+  failCandidates = false;
   addedCandidates: any[] = [];
   closed = false;
   onicecandidate: ((event: any) => void) | null = null;
   ontrack: ((event: any) => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
+  oniceconnectionstatechange: (() => void) | null = null;
   constructor(readonly configuration: any) {}
   addTransceiver(_kind: string, init: { direction: string }) {
     let transceiver = new FakeTransceiver(init.direction);
@@ -67,7 +71,10 @@ class FakePeerConnection {
     return transceiver;
   }
   getTransceivers() { return this.transceivers; }
-  async createOffer() { return { type: "offer", sdp: "v=0\r\noffer" }; }
+  async createOffer(options?: any) {
+    this.offerOptions.push(options);
+    return { type: "offer", sdp: options?.iceRestart ? `v=0\r\nrestart-${this.offerOptions.length}` : "v=0\r\noffer" };
+  }
   async createAnswer() { return { type: "answer", sdp: "v=0\r\nanswer" }; }
   async setLocalDescription(description: any) {
     this.localDescription = description;
@@ -82,11 +89,18 @@ class FakePeerConnection {
       this.signalingState = "stable";
     }
   }
-  async addIceCandidate(candidate: any) { this.addedCandidates.push(candidate); }
+  async addIceCandidate(candidate: any) {
+    if (this.failCandidates) throw new Error("Unknown ufrag");
+    this.addedCandidates.push(candidate);
+  }
   close() { this.closed = true; this.connectionState = "closed"; }
   changeState(state: string) {
     this.connectionState = state;
     this.onconnectionstatechange?.();
+  }
+  changeIceState(state: string) {
+    this.iceConnectionState = state;
+    this.oniceconnectionstatechange?.();
   }
 }
 
@@ -392,20 +406,172 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(endedMessages).toHaveLength(1);
   });
 
-  test("установленное соединение: таймаут не срабатывает, обрыв — понятное сообщение", async () => {
+  test("установленное соединение: таймаут не срабатывает, обрыв без восстановления — понятное сообщение", async () => {
     vi.useFakeTimers();
     let { call, connections } = makeCall();
     call.prepareIncoming(incoming);
     await call.answer();
     call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
     connections[0].changeState("connected");
-    connections[0].changeState("disconnected");
     await vi.advanceTimersByTimeAsync(60_000);
     expect(call.state).toBe(MeetingState.Ongoing);
+    expect(call.reconnecting).toBe(false);
+    // `failed` в разговоре не завершает звонок сразу: связь ещё может вернуться.
     connections[0].changeState("failed");
     await vi.advanceTimersByTimeAsync(0);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    expect(call.reconnecting).toBe(true);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(call.state).toBe(MeetingState.Ended);
+    expect(call.reconnecting).toBe(false);
     expect(endedMessages).toEqual([endReasonMessage("connection-lost", false)]);
+  });
+
+  test("смена сети у звонящего: «Переподключение…», перезапуск ICE, разговор продолжается", async () => {
+    vi.useFakeTimers();
+    let { call, client, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await vi.advanceTimersByTimeAsync(0);
+    call.onSignal({ type: "signal", callId: call.callID, kind: "answer", sdp: "v=0\r\nanswer" });
+    await vi.advanceTimersByTimeAsync(0);
+    let connection = connections[0];
+    connection.changeState("connected");
+    connection.changeIceState("connected");
+    let started = call.started;
+
+    connection.changeIceState("disconnected");
+    connection.changeState("disconnected");
+    expect(call.reconnecting).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    // Новое предложение с перезапуском ICE уходит через обычный сигнал.
+    expect(connection.offerOptions.at(-1)).toEqual({ iceRestart: true });
+    expect(client.signals("offer").at(-1)).toEqual({ type: "signal", callId: call.callID, kind: "offer", sdp: "v=0\r\nrestart-2" });
+    expect(client.signals("offer")).toHaveLength(2);
+
+    // Ответа нет — через несколько секунд следующая попытка.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(client.signals("offer")).toHaveLength(3);
+    call.onSignal({ type: "signal", callId: call.callID, kind: "answer", sdp: "v=0\r\nanswer-restart" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(connection.remoteDescription.sdp).toBe("v=0\r\nanswer-restart");
+    // Запоздавший кандидат прежнего сеанса ICE не обрывает разговор.
+    connection.failCandidates = true;
+    call.onSignal({ type: "signal", callId: call.callID, kind: "ice", candidate });
+    await vi.advanceTimersByTimeAsync(0);
+    connection.failCandidates = false;
+
+    connection.changeIceState("connected");
+    connection.changeState("connected");
+    expect(call.reconnecting).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    // Перезапуски прекратились, длительность разговора не сбросилась.
+    expect(client.signals("offer")).toHaveLength(3);
+    expect(call.started).toBe(started);
+    expect(endedMessages).toEqual([]);
+  });
+
+  test("вызываемый при обрыве ждёт новое предложение звонящего и отвечает на него", async () => {
+    vi.useFakeTimers();
+    let { call, client, connections } = makeCall();
+    call.prepareIncoming(incoming);
+    await call.answer();
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0\r\noffer" });
+    await vi.advanceTimersByTimeAsync(0);
+    let connection = connections[0];
+    connection.changeState("connected");
+    expect(client.signals("answer")).toHaveLength(1);
+
+    // Повтор первого предложения не пересогласует соединение.
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0\r\noffer" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.signals("answer")).toHaveLength(1);
+
+    connection.changeIceState("disconnected");
+    expect(call.reconnecting).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+    // Вызываемый сам предложений не делает: встречных перезапусков не бывает.
+    expect(client.signals("offer")).toHaveLength(0);
+    // Новое предложение и кандидат за ним применяются по порядку.
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0\r\nrestart" });
+    call.onSignal({ type: "signal", callId: "call-0001", kind: "ice", candidate });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(connection.remoteDescription).toEqual({ type: "offer", sdp: "v=0\r\nrestart" });
+    expect(client.signals("answer")).toHaveLength(2);
+    expect(connection.addedCandidates.at(-1)).toEqual(candidate);
+    connection.changeIceState("connected");
+    expect(call.reconnecting).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(call.state).toBe(MeetingState.Ongoing);
+  });
+
+  test("перезапуск ICE без связи с сервисом не завершает звонок, после переподключения повторяется сразу", async () => {
+    vi.useFakeTimers();
+    let { call, client, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await vi.advanceTimersByTimeAsync(0);
+    call.onSignal({ type: "signal", callId: call.callID, kind: "answer", sdp: "v=0\r\nanswer" });
+    await vi.advanceTimersByTimeAsync(0);
+    connections[0].changeState("connected");
+    client.online = false;
+    connections[0].changeIceState("disconnected");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    expect(client.signals("offer")).toHaveLength(1);
+    client.online = true;
+    call.onReconnected(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.signals("offer")).toHaveLength(2);
+    expect(call.state).toBe(MeetingState.Ongoing);
+  });
+
+  test("обрыв до первого соединения перезапуск не запускает: действует таймаут соединения", async () => {
+    vi.useFakeTimers();
+    let { call, client, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await vi.advanceTimersByTimeAsync(0);
+    connections[0].changeIceState("disconnected");
+    expect(call.reconnecting).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(client.signals("offer")).toHaveLength(1);
+  });
+
+  test("серверы ICE: свой список сервиса, к одному TURN добавляются публичные STUN", () => {
+    let turn = { urls: ["turn:turn.example.com:3478?transport=udp"], username: "1760000000:abc", credential: "secret" };
+    let stun = { urls: ["stun:stun.example.com:3478"] };
+    let first = makeCall();
+    first.call.prepareOutgoing("bob@example.com", "Bob", false);
+    first.call.state = MeetingState.OutgoingCall;
+    first.call.onSignal({ type: "accepted", callId: first.call.callID, iceServers: [stun, turn] });
+    expect(first.connections[0].configuration.iceServers).toEqual([stun, turn]);
+    let second = makeCall();
+    second.call.prepareOutgoing("bob@example.com", "Bob", false);
+    second.call.state = MeetingState.OutgoingCall;
+    second.call.onSignal({ type: "accepted", callId: second.call.callID, iceServers: [turn] });
+    expect(second.connections[0].configuration.iceServers).toEqual([...DEFAULT_ICE_SERVERS, turn]);
+  });
+
+  test("после завершения звонка обработчики соединения сняты, переподключение не висит", async () => {
+    vi.useFakeTimers();
+    let { call, connections } = makeCall();
+    call.prepareIncoming(incoming);
+    await call.answer();
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    connections[0].changeState("connected");
+    connections[0].changeIceState("disconnected");
+    expect(call.reconnecting).toBe(true);
+    await call.hangup();
+    expect(call.reconnecting).toBe(false);
+    expect(connections[0].oniceconnectionstatechange).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(endedMessages).toEqual([]);
   });
 
   test("отклонённый сервером сигнал не завершает звонок, потерянный звонок — завершает", async () => {

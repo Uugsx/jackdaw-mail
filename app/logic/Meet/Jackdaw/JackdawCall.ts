@@ -24,6 +24,12 @@ const CONNECT_TIMEOUT_MS = 30_000;
 /** Сколько звонить без ответа. Сервер сам завершает вызов через 45 с; этот запас — на случай,
  * если его сообщение потерялось вместе с соединением: экран вызова и рингтон не должны висеть вечно. */
 const RING_TIMEOUT_MS = 50_000;
+/** Сколько ждать восстановления оборванного разговора (смена сети, провал связи), прежде чем завершить звонок.
+ * Столько же сервер ждёт переподключения к сигналингу. */
+const RECONNECT_TIMEOUT_MS = 30_000;
+/** Как часто звонящий повторяет перезапуск ICE, пока связь не восстановилась:
+ * первая попытка могла уйти, пока новая сеть ещё не поднялась. */
+const ICE_RESTART_RETRY_MS = 8_000;
 
 /** Звонки Jackdaw ↔ Jackdaw: только голос, 1:1. Медиа идёт напрямую между клиентами (P2P WebRTC),
  * сигналинг — через `JackdawCallClient`.
@@ -72,6 +78,16 @@ export function setJackdawCallWarningHandler(handler: (call: JackdawCall, messag
   onJackdawCallWarning = handler;
 }
 
+/** Список серверов ICE от сервиса. Если в нём нет STUN (например, только TURN), добавляются публичные STUN:
+ * прямое соединение через них дешевле и быстрее ретрансляции. */
+function withStunServers(iceServers: JackdawIceServer[] | null): readonly JackdawIceServer[] {
+  if (!iceServers) {
+    return DEFAULT_ICE_SERVERS;
+  }
+  let hasStun = iceServers.some(server => server.urls.some(url => url.startsWith("stun")));
+  return hasStun ? iceServers : [...DEFAULT_ICE_SERVERS, ...iceServers];
+}
+
 export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTarget {
   declare account: JackdawCallAccount;
   mediaDeviceStreams: LocalMediaDeviceStreams;
@@ -103,6 +119,13 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   protected deviceChangeListener: (() => void) | null = null;
   /** Идёт переключение на другой микрофон: повторные события не запускают второе */
   protected switchingMic = false;
+  /** Срок восстановления оборванного разговора; по его истечении звонок завершается */
+  protected reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Следующая попытка перезапуска ICE у звонящего */
+  protected iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Описания сессии и кандидаты применяются строго по очереди: иначе кандидат нового сеанса ICE
+   * после перезапуска мог бы попасть в соединение раньше описания, к которому он относится. */
+  protected mediaQueue: Promise<void> = Promise.resolve();
 
   constructor(account: JackdawCallAccount) {
     super();
@@ -223,7 +246,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
         }
         break;
       case "signal":
-        this.runMediaStep(() => this.onMediaSignal(message));
+        this.queueMediaStep(() => this.onMediaSignal(message));
         break;
       case "call-ended":
         this.remoteEnded = true;
@@ -257,6 +280,10 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
     let ringing = this.state == MeetingState.OutgoingCall || this.state == MeetingState.IncomingCall;
     if (resumed && !ringing) {
+      // Сигналинг вернулся во время обрыва разговора: не ждём следующей попытки по таймеру.
+      if (this.reconnecting && this.outgoing) {
+        this.scheduleIceRestart(0);
+      }
       return;
     }
     this.remoteEnded = true;
@@ -317,7 +344,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     let peerConnection: RTCPeerConnection;
     try {
       peerConnection = this.createPeerConnection({
-        iceServers: (iceServers ?? DEFAULT_ICE_SERVERS).map(server => ({ ...server })),
+        iceServers: withStunServers(iceServers).map(server => ({ ...server })),
         bundlePolicy: "max-bundle",
         rtcpMuxPolicy: "require",
       });
@@ -329,6 +356,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     peerConnection.onicecandidate = event => this.sendCandidate(event.candidate);
     peerConnection.ontrack = event => this.addRemoteTrack(event.track);
     peerConnection.onconnectionstatechange = () => this.connectionStateChanged(peerConnection);
+    peerConnection.oniceconnectionstatechange = () => this.iceConnectionStateChanged(peerConnection);
     this.clearRingTimer();
     this.watchDeviceChanges();
     this.connectTimer = setTimeout(() => {
@@ -365,14 +393,16 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
         return;
       }
       if (peerConnection.remoteDescription) {
-        await peerConnection.addIceCandidate(message.candidate);
+        await this.addCandidate(peerConnection, message.candidate);
       } else {
         this.pendingCandidates.push(message.candidate);
       }
       return;
     }
     // Предложение делает только звонящий, ответ — только вызываемый; остальное — повтор или чужой сигнал.
-    if (message.kind == "offer" && !this.outgoing && !peerConnection.remoteDescription) {
+    if (message.kind == "offer" && !this.outgoing && peerConnection.remoteDescription) {
+      await this.answerRestartOffer(peerConnection, message.sdp);
+    } else if (message.kind == "offer" && !this.outgoing) {
       await peerConnection.setRemoteDescription({ type: "offer", sdp: message.sdp });
       this.audioTransceiver = peerConnection.getTransceivers().find(t => t.receiver.track?.kind == "audio") ?? null;
       if (this.audioTransceiver) {
@@ -392,8 +422,30 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     let candidates = this.pendingCandidates;
     this.pendingCandidates = [];
     for (let candidate of candidates) {
-      await peerConnection.addIceCandidate(candidate);
+      await this.addCandidate(peerConnection, candidate);
     }
+  }
+
+  protected async addCandidate(peerConnection: RTCPeerConnection, candidate: JackdawIceCandidate): Promise<void> {
+    try {
+      await peerConnection.addIceCandidate(candidate);
+    } catch (ex) {
+      // В идущем разговоре кандидат прежнего сеанса ICE, запоздавший после перезапуска, отвергается — это не ошибка звонка.
+      if (!this.mediaConnected) {
+        throw ex;
+      }
+    }
+  }
+
+  /** Звонящий перезапустил ICE (например, у одного из собеседников сменилась сеть): отвечаем на новое предложение.
+   * Повтор уже применённого предложения ничего не меняет. */
+  protected async answerRestartOffer(peerConnection: RTCPeerConnection, sdp: string): Promise<void> {
+    if (peerConnection.signalingState != "stable" || peerConnection.remoteDescription?.sdp == sdp) {
+      return;
+    }
+    await peerConnection.setRemoteDescription({ type: "offer", sdp });
+    await peerConnection.setLocalDescription(await peerConnection.createAnswer());
+    this.sendSignal({ kind: "answer", sdp: peerConnection.localDescription?.sdp });
   }
 
   protected sendCandidate(candidate: RTCIceCandidate | null): void {
@@ -455,15 +507,109 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       }
       this.mediaConnected = true;
       this.clearConnectTimer();
+      this.mediaRestored();
+    } else if (peerConnection.connectionState == "disconnected") {
+      this.mediaInterrupted();
     } else if (peerConnection.connectionState == "failed") {
-      // `disconnected` бывает при смене сети и восстанавливается сам; `failed` — нет.
+      // До первого соединения `failed` значит, что NAT не пропускает; в разговоре — что связь оборвалась.
+      if (this.mediaConnected) {
+        this.mediaInterrupted();
+      } else {
+        this.failMedia(null);
+      }
+    }
+  }
+
+  protected iceConnectionStateChanged(peerConnection: RTCPeerConnection): void {
+    if (peerConnection != this.peerConnection) {
+      return;
+    }
+    let state = peerConnection.iceConnectionState;
+    if (state == "connected" || state == "completed") {
+      this.mediaRestored();
+    } else if (state == "disconnected" || state == "failed") {
+      this.mediaInterrupted();
+    }
+  }
+
+  /** Связь в разговоре прервалась: показываем «Переподключение…», звонящий перезапускает ICE.
+   * Звонок завершается, только если связь не вернулась за `RECONNECT_TIMEOUT_MS`. */
+  protected mediaInterrupted(): void {
+    // До первого соединения действует свой таймаут (`connectTimer`).
+    if (!this.mediaConnected || this.reconnecting || this.state == MeetingState.Ended) {
+      return;
+    }
+    this.reconnecting = true;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.failMedia(null);
+    }, RECONNECT_TIMEOUT_MS);
+    // Новое предложение делает только звонящий, как и в начале разговора: встречных предложений не бывает.
+    if (this.outgoing) {
+      this.scheduleIceRestart(0);
+    }
+  }
+
+  protected mediaRestored(): void {
+    if (!this.reconnecting) {
+      return;
+    }
+    this.reconnecting = false;
+    this.clearReconnectTimers();
+  }
+
+  protected scheduleIceRestart(delay: number): void {
+    this.clearIceRestartTimer();
+    this.iceRestartTimer = setTimeout(() => {
+      this.iceRestartTimer = null;
+      if (!this.reconnecting) {
+        return;
+      }
+      this.restartIce();
+      this.scheduleIceRestart(ICE_RESTART_RETRY_MS);
+    }, delay);
+  }
+
+  /** Новое предложение SDP с перезапуском ICE: собеседники заново ищут путь друг к другу (новая сеть, TURN). */
+  protected restartIce(): void {
+    let peerConnection = this.peerConnection;
+    if (!peerConnection) {
+      return;
+    }
+    this.mediaQueue = this.mediaQueue.then(async () => {
+      if (peerConnection != this.peerConnection || !this.reconnecting) {
+        return;
+      }
+      await peerConnection.setLocalDescription(await peerConnection.createOffer({ iceRestart: true }));
+      this.sendSignal({ kind: "offer", sdp: peerConnection.localDescription?.sdp });
+    }).catch(() => {
+      // Нет связи с сервисом или сеть ещё не поднялась: следующая попытка — по таймеру, конец звонка — по таймауту.
+    });
+  }
+
+  protected clearIceRestartTimer(): void {
+    if (this.iceRestartTimer != null) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
+  }
+
+  protected clearReconnectTimers(): void {
+    this.clearIceRestartTimer();
+    if (this.reconnectTimer != null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
   }
 
   /** Ошибка в шаге установки соединения завершает звонок с понятным сообщением. */
   protected runMediaStep(step: () => Promise<void>): void {
     step().catch(ex => this.failMedia(ex));
+  }
+
+  /** Как `runMediaStep()`, но строго после предыдущих шагов очереди. */
+  protected queueMediaStep(step: () => Promise<void>): void {
+    this.mediaQueue = this.mediaQueue.then(step).catch(ex => this.failMedia(ex));
   }
 
   protected failMedia(ex: unknown): void {
@@ -492,6 +638,8 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   protected closeMedia(): void {
     this.clearConnectTimer();
     this.clearRingTimer();
+    this.clearReconnectTimers();
+    this.reconnecting = false;
     this.unwatchDeviceChanges();
     this.pendingCandidates = [];
     let peerConnection = this.peerConnection;
@@ -501,6 +649,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       peerConnection.onicecandidate = null;
       peerConnection.ontrack = null;
       peerConnection.onconnectionstatechange = null;
+      peerConnection.oniceconnectionstatechange = null;
       peerConnection.close();
     }
     let remoteStreams = this.videos.contents.filter(v => !v.isMe);

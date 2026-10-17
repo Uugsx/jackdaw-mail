@@ -23,6 +23,7 @@ import calls  # noqa: E402
 LICENSE_KEY = "JACKDAW-PRO-AAAA-BBBB-CCCC-DDDD"
 OTHER_KEY = "JACKDAW-PRO-EEEE-FFFF-GGGG-HHHH"
 LIVEKIT_SECRET = "s" * 40
+TURN_SECRET = "t" * 48
 
 
 def iso(value: datetime) -> str:
@@ -464,6 +465,39 @@ class P2PCallTests(HubTestCase):
         self.start_call()
         self.assertEqual(self.last(self.alice, "accepted")["iceServers"], [{"urls": ["stun:stun.example.test:3478"]}])
 
+    def test_turn_credentials_are_sent_to_both_participants(self):
+        self.hub.stun_urls = calls.validate_stun_urls(["stun:turn.example.test:3478"])
+        clock = lambda: 1_800_000_000.0
+        self.hub.turn = calls.TurnCredentialIssuer(["turn:turn.example.test:3478?transport=udp", "turns:turn.example.test:5349"], TURN_SECRET, clock)
+        self.start_call()
+        accepted = self.last(self.alice, "accepted")["iceServers"]
+        joined = self.last(self.bob_desk, "joined")["iceServers"]
+        self.assertEqual(accepted[0], {"urls": ["stun:turn.example.test:3478"]})
+        usernames = set()
+        for servers in (accepted, joined):
+            turn = servers[-1]
+            self.assertEqual(turn["urls"], ["turn:turn.example.test:3478?transport=udp", "turns:turn.example.test:5349"])
+            expires, _, opaque = turn["username"].partition(":")
+            self.assertEqual(int(expires), 1_800_000_000 + calls.TURN_CREDENTIAL_TTL_SECONDS)
+            self.assertGreaterEqual(int(expires) - 1_800_000_000, calls.MAX_CALL_DURATION_SECONDS)
+            # Ни адреса, ни лицензии в имени для TURN.
+            self.assertNotIn("@", turn["username"])
+            self.assertRegex(opaque, r"^[0-9a-f]{16}$")
+            # Так же пароль проверяет coturn с `use-auth-secret`.
+            expected = base64.b64encode(hmac.new(TURN_SECRET.encode(), turn["username"].encode(), hashlib.sha1).digest()).decode()
+            self.assertEqual(turn["credential"], expected)
+            usernames.add(turn["username"])
+        self.assertEqual(len(usernames), 2)
+        # Другие устройства вызываемого учётных данных не получают.
+        self.assertIsNone(self.last(self.bob_laptop, "joined"))
+
+    def test_turn_without_stun_is_sent_alone(self):
+        self.hub.turn = calls.TurnCredentialIssuer(["turn:turn.example.test:3478"], TURN_SECRET)
+        self.start_call()
+        servers = self.last(self.alice, "accepted")["iceServers"]
+        self.assertEqual(len(servers), 1)
+        self.assertEqual(servers[0]["urls"], ["turn:turn.example.test:3478"])
+
     def test_offer_answer_and_candidates_reach_only_the_other_participant(self):
         self.start_call()
         self.signal(self.alice, "offer", sdp=SDP_OFFER)
@@ -663,6 +697,35 @@ class ConfigurationTests(unittest.TestCase):
             "JACKDAW_LIVEKIT_API_SECRET": LIVEKIT_SECRET,
         })
         self.assertEqual(calls.build_livekit_from_environment().url, "wss://lk.example.test")
+
+    def test_turn_is_optional(self):
+        self.assertIsNone(calls.build_turn_from_environment())
+
+    def test_partial_turn_configuration_is_an_error(self):
+        for variables in ({"JACKDAW_CALLS_TURN_URLS": "turn:turn.example.test:3478"}, {"JACKDAW_CALLS_TURN_SECRET": TURN_SECRET}):
+            with mock.patch.dict(calls.os.environ, variables):
+                with self.assertRaises(RuntimeError):
+                    calls.build_turn_from_environment()
+
+    def test_full_turn_configuration_is_used(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_file = Path(directory) / "turn-secret"
+            secret_file.write_text(TURN_SECRET + "\n", encoding="utf-8")
+            with mock.patch.dict(calls.os.environ, {
+                "JACKDAW_CALLS_TURN_URLS": "turn:turn.example.test:3478?transport=udp, turn:turn.example.test:3478?transport=tcp",
+                "JACKDAW_CALLS_TURN_SECRET_FILE": str(secret_file),
+            }):
+                turn = calls.build_turn_from_environment()
+        self.assertEqual(turn.urls, ("turn:turn.example.test:3478?transport=udp", "turn:turn.example.test:3478?transport=tcp"))
+
+    def test_turn_urls_and_secret_are_validated(self):
+        for bad in (["stun:turn.example.test"], ["turn:evil host"], ["turn:a?transport=sctp"], ["turn:a"] * (calls.MAX_TURN_URLS + 1)):
+            with self.assertRaises(RuntimeError):
+                calls.validate_turn_urls(bad)
+        with self.assertRaises(RuntimeError):
+            calls.TurnCredentialIssuer(["turn:turn.example.test:3478"], "short")
+        with self.assertRaises(RuntimeError):
+            calls.TurnCredentialIssuer([], TURN_SECRET)
 
     def test_stun_urls_are_validated(self):
         self.assertEqual(calls.validate_stun_urls(["", " stun:stun.l.google.com:19302 ", "stuns:stun.example.test"]),

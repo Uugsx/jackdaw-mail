@@ -3,11 +3,18 @@
     hasRight={person && width > 600}
     initialRightRatio={0.4}
     name="phone-contact-history-during-call">
-    <hbox class="left" slot="left" flex>
+    <vbox class="left" slot="left" flex>
+      <!-- Область объявлений есть всегда: экранный диктор читает изменения только уже существующей области. -->
+      <hbox class="reconnecting font-normal" role="status" aria-live="polite">
+        {#if $meeting.reconnecting}
+          <hbox class="pulse" aria-hidden="true" />
+          {$t`Reconnecting…`}
+        {/if}
+      </hbox>
       {#if $showDialPad}
         <DialPad on:digit={ev => catchErrors(() => onSendSTMF(ev.detail))} />
       {/if}
-    </hbox>
+    </vbox>
     <Scroll slot="right">
       <vbox class="contact-history" flex>
         <ContactHistory {person} colorInherit={true} />
@@ -27,6 +34,7 @@
   import DialPad from "./DialPad.svelte";
   import { catchErrors } from "../../../Util/error";
   import { assert } from "../../../../logic/util/util";
+  import { t } from "../../../../l10n/l10n";
 
   export let showParticipant: MeetingParticipant;
   export let meeting: VideoConfMeeting;
@@ -47,5 +55,26 @@
     align-items: center;
     justify-content: center;
     padding: 32px;
+  }
+  .reconnecting {
+    align-items: center;
+    gap: 8px;
+  }
+  .pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: currentColor;
+    animation: pulse 1s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+  }
+  @keyframes pulse {
+    to {
+      opacity: 0.25;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+    }
   }
 </style>

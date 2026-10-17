@@ -46,6 +46,9 @@ export class VideoConfMeeting extends Observable {
   hasVideo = true;
   /** Разговор 1:1 только голосом (не телефонная линия): интерфейс показывает вид телефонного звонка. */
   readonly voiceOnly: boolean = false;
+  /** Медиасоединение прервалось (например, сменилась сеть) и восстанавливается: интерфейс показывает «Переподключение…». */
+  @notifyChangedProperty
+  reconnecting = false;
 
   /** Subclass constructor must set `this.mediaDeviceStreams` and then call this function. */
   protected listenStreamChanges() {
