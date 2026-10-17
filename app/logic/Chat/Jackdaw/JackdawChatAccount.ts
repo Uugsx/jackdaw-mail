@@ -12,6 +12,7 @@ import type { ChatMessage } from "../ChatMessage";
 import { PersonUID } from "../../Abstract/PersonUID";
 import type { Person } from "../../Abstract/Person";
 import { JackdawChatRoom } from "./JackdawChatRoom";
+import { JackdawChatMessage } from "./JackdawChatMessage";
 import {
   decryptMessage,
   deviceKeysFromJSON,
@@ -39,6 +40,8 @@ const BLOB_CHUNK_BYTES = 64 * 1024;
 const BLOB_TIMEOUT_MS = 30_000;
 /** Сообщение не расшифровалось: просим сервер больше его не присылать, но не теряем молча */
 const UNDECRYPTABLE_TEXT = () => gt`This message could not be decrypted. Ask the sender to send it again.`;
+/** Сколько удалённых групп помним, чтобы их не создало снова старое сообщение администратора */
+const MAX_DELETED_GROUPS = 500;
 /** Подтверждения (chat-ack) отправляются пачкой не чаще этого: сервер принимает 120 ack в минуту */
 const ACK_MIN_INTERVAL_MS = 500;
 
@@ -67,6 +70,9 @@ export class JackdawChatAccount extends ChatAccount {
   /** email → deviceId → открытый ключ, известный нам. Новое устройство или смена ключа
    * принимаются, но показываются предупреждением (как «код безопасности изменился» в Signal). */
   protected pinnedKeys: Record<string, Record<string, string>> = {};
+  /** id групп, которые мы удалили у себя. Создать такую группу снова может только
+   * новое объявление состава от администратора, где мы есть (он пригласил нас снова). */
+  protected deletedGroups: string[] = [];
   /** Адреса, для которых устройство зарегистрировано на сервере */
   @notifyChangedProperty
   registeredEmails: string[] = [];
@@ -190,11 +196,15 @@ export class JackdawChatAccount extends ChatAccount {
     super.fromConfigJSON(json);
     let pinned = json?.pinnedKeys;
     this.pinnedKeys = pinned && typeof pinned == "object" && !Array.isArray(pinned) ? pinned : {};
+    this.deletedGroups = Array.isArray(json?.deletedGroups)
+      ? json.deletedGroups.filter((id: unknown) => typeof id == "string").slice(-MAX_DELETED_GROUPS)
+      : [];
   }
 
   toConfigJSON(): any {
     let json = super.toConfigJSON();
     json.pinnedKeys = this.pinnedKeys;
+    json.deletedGroups = this.deletedGroups;
     return json;
   }
 
@@ -300,7 +310,8 @@ export class JackdawChatAccount extends ChatAccount {
     }
   }
 
-  protected requireOnline(): JackdawCallClient {
+  /** Соединение с сервером для запроса. Нет связи или чат не подключён — понятная ошибка. */
+  requireOnline(): JackdawCallClient {
     if (!this.client?.isOnline) {
       // Лицензию отклонили — переподключение не поможет, говорим почему
       if (this.client?.status == "rejected" && this.client.lastError) {
@@ -517,24 +528,30 @@ export class JackdawChatAccount extends ChatAccount {
 
   protected async applyPayload(payload: ChatPayload, from: string, sentAt: Date, fromMe = this.isOwnEmail(from)): Promise<void> {
     // Отметка о прочтении относится к уже существующему чату и новый не создаёт
-    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind != "read");
+    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind != "read", payload.kind == "group");
     if (!room) return;
     switch (payload.kind) {
       case "message":
         await room.addIncoming(payload, from, fromMe, sentAt);
         break;
       case "read":
-        room.markSeen(payload.ids, fromMe);
+        room.markSeen(payload.ids, fromMe, from);
         break;
       case "group":
-        // Метаданные группы уже применены в roomForPayload()
+        // Метаданные группы от администратора уже применены в roomForPayload()
+        if (payload.leave) {
+          await room.memberLeft(from);
+        }
         break;
     }
   }
 
   /** Находит или создаёт комнату. Состав группы меняет только её администратор.
-   * @param create false — только существующая комната */
-  protected async roomForPayload(ref: ChatRoomRef, from: string, fromMe: boolean, create = true): Promise<JackdawChatRoom | null> {
+   * Вышедшего или убранного участника возвращает в группу только объявление состава (`announcement`):
+   * устаревший состав в обычном сообщении администратора (гонка, старая версия) его не возвращает.
+   * @param create false — только существующая комната
+   * @param announcement Сообщение — объявление состава группы (kind "group") */
+  protected async roomForPayload(ref: ChatRoomRef, from: string, fromMe: boolean, create = true, announcement = false): Promise<JackdawChatRoom | null> {
     if (ref.type == "direct") {
       let peer = fromMe ? ref.peer : from;
       if (!peer || this.isOwnEmail(peer)) return null;
@@ -547,8 +564,11 @@ export class JackdawChatAccount extends ChatAccount {
     }
     let room = this.findRoomByID(`group:${ref.id}`);
     if (room) {
-      if (from == room.admin) {
+      if (from == room.admin && (room.isMember || announcement)) {
         await room.applyGroupInfo(ref);
+      }
+      if (!room.isMember) {
+        return null; // мы не в группе: её сообщения нам больше не нужны
       }
       if (!room.memberEmails.includes(from) && from != room.admin && !fromMe) {
         return null; // посторонний не может писать в чужую группу
@@ -557,6 +577,16 @@ export class JackdawChatAccount extends ChatAccount {
     }
     if (from != ref.admin || !create) {
       return null; // группу может создать только её администратор
+    }
+    if (!ref.members.some(email => this.isOwnEmail(email))) {
+      return null; // нас в ней нет (например, нас из неё убрали)
+    }
+    if (this.deletedGroups.includes(ref.id)) {
+      if (!announcement) {
+        return null; // удалили у себя; устаревшее сообщение администратора её не возвращает
+      }
+      this.deletedGroups = this.deletedGroups.filter(id => id != ref.id); // пригласили снова
+      await this.save();
     }
     room = this.newRoom(true) as JackdawChatRoom;
     room.id = `group:${ref.id}`;
@@ -620,12 +650,21 @@ export class JackdawChatAccount extends ChatAccount {
     return room;
   }
 
-  /** Создаёт группу. Мы — администратор. */
+  /** Создаёт группу. Мы — администратор.
+   * Адреса без чата Jackdaw в группу не попадают: сообщения до них не дошли бы.
+   * Интерфейс предупреждает о них заранее (`emailsWithoutChat`). */
   async createGroup(name: string, emails: string[]): Promise<JackdawChatRoom> {
     this.requireOnline();
-    let members = [...new Set(emails.map(normalizeCallEmail).filter((e): e is string => !!e && !this.isOwnEmail(e)))];
-    if (!members.length) {
+    let wanted = [...new Set(emails.map(normalizeCallEmail).filter((e): e is string => !!e && !this.isOwnEmail(e)))];
+    if (!wanted.length) {
       throw new UserError(gt`Add at least one member to the group.`);
+    }
+    let withoutChat = await this.emailsWithoutChat(wanted);
+    let members = wanted.filter(email => !withoutChat.includes(email));
+    if (!members.length) {
+      throw new UserError(withoutChat.length == 1
+        ? gt`${withoutChat[0]} does not use Jackdaw chat yet. Add someone who uses Jackdaw Mail.`
+        : gt`None of these contacts use Jackdaw chat yet. Add someone who uses Jackdaw Mail.`);
     }
     if (members.length > MAX_GROUP_MEMBERS) {
       throw new UserError(gt`A group can have at most ${MAX_GROUP_MEMBERS} members.`);
@@ -643,6 +682,43 @@ export class JackdawChatAccount extends ChatAccount {
     await room.save();
     await room.announceGroup();
     return room;
+  }
+
+  /** Адреса, у которых нет ни одного устройства с чатом Jackdaw. Один запрос на все адреса. */
+  async emailsWithoutChat(emailAddresses: string[]): Promise<string[]> {
+    let emails = [...new Set(emailAddresses.map(normalizeCallEmail).filter((e): e is string => !!e))];
+    if (!emails.length) {
+      return [];
+    }
+    let devices = await this.devicesFor(emails);
+    return emails.filter(email => !(devices.get(email) ?? []).length);
+  }
+
+  /** Удаляет чат и его историю только у нас. Из группы сначала выходим:
+   * иначе сообщение администратора создало бы её снова, а участники считали бы нас в ней. */
+  async deleteRoom(room: JackdawChatRoom): Promise<void> {
+    if (room.isGroup && room.isMember) {
+      await room.leaveGroup();
+    }
+    if (room.dbID) {
+      // Файлы вложений лежат на диске отдельно от базы: удаляем и их
+      await room.listMessages();
+      for (let msg of room.messages.contents) {
+        if (!(msg instanceof JackdawChatMessage)) continue;
+        for (let attachment of msg.attachments) {
+          if (attachment.filepathLocal) {
+            await this.storage.deleteAttachment(attachment).catch(this.errorCallback);
+          }
+        }
+      }
+      await this.storage.deleteRoom(room);
+    }
+    this.rooms.remove(room);
+    if (room.isGroup) {
+      let id = room.id.slice("group:".length);
+      this.deletedGroups = [...this.deletedGroups.filter(known => known != id), id].slice(-MAX_DELETED_GROUPS);
+      await this.save();
+    }
   }
 
   /** Есть ли у адреса устройства для чата. Для кнопки «Написать». */

@@ -13,7 +13,27 @@
       </vbox>
     {/if}
     {#if messages && $selectedRoom }
-      <PersonHeader person={$selectedRoom.contact} />
+      {#if jackdawRoom}
+        <!-- Чат Jackdaw: состав группы, выход и удаление — в меню справа -->
+        <hbox class="room-header">
+          <hbox flex class="room-header-person">
+            <PersonHeader person={$selectedRoom.contact} />
+          </hbox>
+          {#key jackdawRoom}
+            <JackdawRoomActions room={jackdawRoom} bind:showGroup={showJackdawGroup} bind:confirmDelete={confirmJackdawDelete} />
+          {/key}
+        </hbox>
+      {:else}
+        <PersonHeader person={$selectedRoom.contact} />
+      {/if}
+    {/if}
+    {#if messages && $selectedRoom && jackdawRoom && showJackdawGroup}
+      {#key jackdawRoom}
+        <vbox flex class="group-pane">
+          <JackdawGroupDialog room={jackdawRoom} bind:open={showJackdawGroup} />
+        </vbox>
+      {/key}
+    {:else if messages && $selectedRoom }
       <vbox flex class="messages">
         <MessageList {messages}>
           <svelte:fragment slot="message" let:message let:previousMessage>
@@ -25,9 +45,18 @@
             </svelte:fragment>
         </MessageList>
       </vbox>
-      <vbox class="editor">
-        <MsgEditor to={$selectedRoom} />
-      </vbox>
+      {#if jackdawRoom && !$jackdawRoom.isMember}
+        <!-- Нас убрали из группы или мы вышли: писать нельзя, историю можно удалить -->
+        <hbox class="left-group" role="status">
+          <span>{$t`You are no longer a member of this group.`}</span>
+          <RoundButton label={$t`Delete chat`} icon={DeleteIcon} classes="secondary"
+            onClick={() => confirmJackdawDelete = true} />
+        </hbox>
+      {:else}
+        <vbox class="editor">
+          <MsgEditor to={$selectedRoom} />
+        </vbox>
+      {/if}
     {/if}
   </vbox>
 </Splitter>
@@ -51,6 +80,11 @@
   import PersonHeader from "./PersonHeader.svelte";
   import RoomList from "./RoomList.svelte";
   import ContactStartPane from "./ContactStartPane.svelte";
+  import JackdawRoomActions from "./JackdawRoomActions.svelte";
+  import JackdawGroupDialog from "./JackdawGroupDialog.svelte";
+  import RoundButton from "../Shared/RoundButton.svelte";
+  import DeleteIcon from "lucide-svelte/icons/trash-2";
+  import { JackdawChatRoom } from "../../logic/Chat/Jackdaw/JackdawChatRoom";
   import { t } from "../../l10n/l10n";
   import Splitter from "../Shared/Splitter.svelte";
   import { catchErrors } from "../Util/error";
@@ -59,6 +93,17 @@
 
   /** Контакт без чата, выбранный в результатах поиска */
   let selectedContact: Person | null = null;
+
+  /** Открытый чат Jackdaw: у него есть меню действий и диалог группы */
+  $: jackdawRoom = $selectedRoom instanceof JackdawChatRoom ? $selectedRoom : null;
+  let showJackdawGroup = false;
+  let confirmJackdawDelete = false;
+  $: jackdawRoom, resetJackdawRoomUI();
+  /** Другой чат — закрываем диалог группы и вопрос об удалении предыдущего */
+  function resetJackdawRoomUI() {
+    showJackdawGroup = false;
+    confirmJackdawDelete = false;
+  }
 
   $: accounts = appGlobal.chatAccounts.filterObservable(acc => acc.workspace == $selectedWorkspace || !$selectedWorkspace);
   $: rooms = $selectedAccount ? $selectedAccount.rooms : mergeColls(accounts.map(a => a.rooms));
@@ -145,6 +190,28 @@
     margin: 0;
     line-height: 1.45;
     opacity: 0.75;
+  }
+  .room-header {
+    align-items: center;
+    padding-inline-end: 12px;
+    min-width: 0;
+  }
+  .room-header-person {
+    min-width: 0;
+  }
+  .group-pane {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .left-group {
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    background: var(--main-bg);
   }
   .editor {
     flex: 0 0 auto;

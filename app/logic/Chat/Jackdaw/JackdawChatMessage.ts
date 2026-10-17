@@ -35,6 +35,8 @@ export class JackdawChatMessage extends ChatMessage {
   /** Имя файла вложения → где оно лежит на сервере и чем зашифровано.
    * Нужно, чтобы докачать файл после перезапуска и не загружать его повторно при повторной отправке. */
   attachmentRefs: Record<string, ChatAttachmentRef> = {};
+  /** Группа: кто из участников прочитал наше сообщение */
+  readBy: string[] = [];
 
   /** Ответы и пересылка в чате Jackdaw пока не поддерживаются */
   get canReply(): boolean {
@@ -48,7 +50,7 @@ export class JackdawChatMessage extends ChatMessage {
     return true;
   }
 
-  /** Прочитали входящее — сообщаем собеседнику (в личном чате) и своим устройствам */
+  /** Прочитали входящее — сообщаем собеседнику (в группе — участникам) и своим устройствам */
   async markRead(read = true): Promise<void> {
     let wasRead = this.isRead;
     await super.markRead(read);
@@ -71,7 +73,8 @@ export class JackdawChatMessage extends ChatMessage {
 
   toExtraJSON(): any {
     // Статус доставки базовый класс не сохраняет, а для чата он виден пользователю.
-    return { ...super.toExtraJSON(), deliveryStatus: this.deliveryStatus, isRead: this.isRead, attachmentRefs: this.attachmentRefs };
+    return { ...super.toExtraJSON(), deliveryStatus: this.deliveryStatus, isRead: this.isRead, attachmentRefs: this.attachmentRefs,
+      ...(this.readBy.length ? { readBy: this.readBy } : {}) };
   }
 
   fromExtraJSON(json: any): void {
@@ -80,6 +83,7 @@ export class JackdawChatMessage extends ChatMessage {
       this.deliveryStatus = json.deliveryStatus;
     }
     this.isRead = sanitize.boolean(json?.isRead, this.outgoing);
+    this.readBy = Array.isArray(json?.readBy) ? json.readBy.filter((e: unknown) => typeof e == "string") : [];
     let refs = json?.attachmentRefs;
     this.attachmentRefs = {};
     if (refs && typeof refs == "object" && !Array.isArray(refs)) {

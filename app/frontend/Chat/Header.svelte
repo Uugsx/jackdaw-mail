@@ -102,32 +102,13 @@
     <label for="new-group-name">{$t`Group name`}</label>
     <input id="new-group-name" type="text" bind:value={groupName} maxlength="120" placeholder={$t`Team`} />
     <label for="new-group-members">{$t`Members`}</label>
-    <PersonAutocomplete skipPersons={groupMembers} skipPersonFunc={skipPersonWithoutEmail} onAddPerson={addGroupMember} />
-    {#if $groupMembers.length}
-      <ul class="group-members">
-        {#each $groupMembers.contents as member (member.emailAddress)}
-          <li>
-            <span class="member-name">{member.name || member.emailAddress}</span>
-            <span class="member-email">{member.emailAddress}</span>
-            <RoundButton
-              label={$t`Remove`}
-              icon={XIcon}
-              iconSize="12px"
-              padding="2px"
-              onClick={() => groupMembers.remove(member)}
-              />
-          </li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="hint">{$t`Add the Jackdaw Mail users who should be in the group.`}</p>
-    {/if}
+    <GroupMembersInput account={selectedAccount} members={groupMembers} bind:withoutChat={groupWithoutChat} bind:isChecking={groupChecking} />
     <hbox class="buttons">
       <RoundButton
         label={$t`Create group`}
         icon={OpenIcon}
         classes="create"
-        disabled={!$groupMembers.length}
+        disabled={!$groupMembers.length || groupChecking || $groupMembers.length <= groupWithoutChat.length}
         onClick={createGroup}
         />
     </hbox>
@@ -141,6 +122,7 @@
   import type { PersonUID } from "../../logic/Abstract/PersonUID";
   import AccountSelectorRound from "../Shared/AccountSelectorRound.svelte";
   import PersonAutocomplete from "../Contacts/PersonAutocomplete/PersonAutocomplete.svelte";
+  import GroupMembersInput from "./GroupMembersInput.svelte";
   import ButtonMenu from "../Shared/Menu/ButtonMenu.svelte";
   import MenuItem from "../Shared/Menu/MenuItem.svelte";
   import RoundButton from "../Shared/RoundButton.svelte";
@@ -235,11 +217,9 @@
   }
   let groupName = "";
   const groupMembers = new ArrayColl<PersonUID>();
-  function addGroupMember(person: PersonUID) {
-    if (!groupMembers.find(member => member.emailAddress == person.emailAddress)) {
-      groupMembers.add(person);
-    }
-  }
+  /** Выбранные участники без чата Jackdaw: в группу не попадут, диалог предупреждает о них */
+  let groupWithoutChat: string[] = [];
+  let groupChecking = false;
   async function createGroup() {
     if (!(selectedAccount instanceof JackdawChatAccount) || groupMembers.isEmpty) {
       return;
@@ -247,6 +227,7 @@
     $selectedRoom = await selectedAccount.createGroup(groupName, groupMembers.contents.map(member => member.emailAddress));
     groupName = "";
     groupMembers.clear();
+    groupWithoutChat = [];
     dialogNewChatRoom = false;
   }
 
@@ -301,39 +282,6 @@
   .new-group input:focus-visible {
     outline: 2px solid var(--icon-primary);
     outline-offset: 1px;
-  }
-  .group-members {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .group-members li {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-  .member-name {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .member-email {
-    flex: 1;
-    font-size: 12px;
-    color: color-mix(in srgb, var(--main-fg) 65%, transparent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .hint {
-    margin: 0;
-    font-size: 12px;
-    color: color-mix(in srgb, var(--main-fg) 65%, transparent);
   }
   .new-group .buttons {
     justify-content: end;
