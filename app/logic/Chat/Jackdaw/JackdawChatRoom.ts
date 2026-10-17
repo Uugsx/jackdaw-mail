@@ -6,10 +6,12 @@ import { SQLChatMessage, uniqueAttachmentFilename } from "../SQL/SQLChatMessage"
 import { JackdawChatAttachment, JackdawChatMessage } from "./JackdawChatMessage";
 import type { JackdawChatAccount } from "./JackdawChatAccount";
 import { decryptFile, encryptFile } from "./JackdawChatCrypto";
-import { CHAT_PAYLOAD_VERSION, MAX_ACK_IDS, MAX_ATTACHMENTS, MAX_TEXT_LENGTH, type ChatAttachmentRef, type ChatPayload, type ChatRoomRef } from "./JackdawChatProtocol";
+import { CHAT_PAYLOAD_VERSION, MAX_ACK_IDS, MAX_ATTACHMENTS, MAX_GROUP_MEMBERS, MAX_TEXT_LENGTH, type ChatAttachmentRef, type ChatPayload, type ChatRoomRef } from "./JackdawChatProtocol";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { UserError } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
+import { notifyChangedProperty } from "../../util/Observable";
+import { normalizeCallEmail } from "../../Meet/Jackdaw/JackdawCallProtocol";
 
 /** Совпадает с MAX_BLOB_BYTES на сервере */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024 - 1024;
@@ -24,7 +26,8 @@ export class JackdawChatRoom extends ChatRoom {
   readonly isGroup: boolean;
   /** Группа: адрес администратора. Только он меняет состав и название. */
   admin: string | null = null;
-  /** Группа: все участники, включая нас */
+  /** Группа: все участники, включая нас. Интерфейс следит за ним: от него зависит `isMember`. */
+  @notifyChangedProperty
   memberEmails: string[] = [];
   /** Личный чат: наш адрес, под которым нас знает собеседник. С него и отправляем. */
   ownEmail: string | null = null;
@@ -41,6 +44,12 @@ export class JackdawChatRoom extends ChatRoom {
   /** Адрес собеседника в личном чате */
   get peerEmail(): string | null {
     return this.isGroup ? null : this.id?.startsWith("direct:") ? this.id.slice("direct:".length) : null;
+  }
+
+  /** Группа: мы ещё в ней. Вышли или нас убрал администратор — писать в неё нельзя.
+   * Личный чат — всегда. */
+  get isMember(): boolean {
+    return !this.isGroup || this.memberEmails.some(email => this.account.isOwnEmail(email));
   }
 
   async listMembers(): Promise<void> {
@@ -90,7 +99,7 @@ export class JackdawChatRoom extends ChatRoom {
   }
 
   /** Отмечает прочитанными все входящие: комната открыта и окно в фокусе.
-   * Собеседник получает отметку о прочтении одним сообщением (в личном чате). */
+   * Собеседник (в группе — все участники) получает отметку о прочтении одним сообщением. */
   async markAllRead(): Promise<void> {
     await this.listMessages();
     let unread = this.messages.contents
@@ -161,6 +170,9 @@ export class JackdawChatRoom extends ChatRoom {
   // --- отправка -------------------------------------------------------------
 
   async sendMessage(message: ChatMessage): Promise<void> {
+    if (!this.isMember) {
+      throw new UserError(gt`You are no longer a member of this group.`);
+    }
     if (message.isEdit) {
       throw new UserError(gt`Editing sent messages is not supported in Jackdaw chat yet.`);
     }
@@ -297,9 +309,10 @@ export class JackdawChatRoom extends ChatRoom {
     }
   }
 
-  /** Рассылает участникам состав и название группы */
-  async announceGroup(): Promise<void> {
-    await this.account.sendPayload(this.recipients(), {
+  /** Рассылает участникам состав и название группы
+   * @param alsoTo Кому ещё: убранным из группы, чтобы они узнали об этом */
+  async announceGroup(alsoTo: string[] = []): Promise<void> {
+    await this.account.sendPayload([...new Set([...this.recipients(), ...alsoTo])], {
       v: CHAT_PAYLOAD_VERSION,
       kind: "group",
       id: crypto.randomUUID(),
@@ -307,9 +320,9 @@ export class JackdawChatRoom extends ChatRoom {
     });
   }
 
-  /** Сообщает собеседнику, что мы прочитали его сообщения. Только в личных чатах. */
+  /** Сообщает собеседнику (в группе — всем участникам), что мы прочитали его сообщения */
   async sendReadReceipt(ids: string[]): Promise<void> {
-    if (this.isGroup || !ids.length || !this.account.isOnline) {
+    if (!ids.length || !this.account.isOnline || !this.isMember || !this.recipients().length) {
       return;
     }
     await this.account.sendPayload(this.recipients(), {
@@ -425,16 +438,23 @@ export class JackdawChatRoom extends ChatRoom {
     }
   }
 
-  /** Отметки о прочтении: от собеседника — для наших сообщений, от наших устройств — для входящих */
-  markSeen(ids: string[], fromMe: boolean): void {
+  /** Отметки о прочтении: от собеседника — для наших сообщений, от наших устройств — для входящих.
+   * В группе наше сообщение «прочитано», когда его прочитали все участники.
+   * @param from Кто прочитал. Нужен для групп. */
+  markSeen(ids: string[], fromMe: boolean, from?: string): void {
     let readChanged = false;
     for (let msg of this.messages.contents) {
       if (!(msg instanceof JackdawChatMessage) || !ids.includes(msg.id)) continue;
       if (fromMe && !msg.outgoing) {
         readChanged ||= !msg.isRead;
         msg.isRead = true;
-      } else if (!fromMe && msg.outgoing) {
+      } else if (!fromMe && msg.outgoing && !this.isGroup) {
         msg.deliveryStatus = DeliveryStatus.Seen;
+      } else if (!fromMe && msg.outgoing && from && !msg.readBy.includes(from)) {
+        msg.readBy = [...msg.readBy, from];
+        if (this.recipients().every(email => msg.readBy.includes(email))) {
+          msg.deliveryStatus = DeliveryStatus.Seen;
+        }
       } else {
         continue;
       }
@@ -462,6 +482,70 @@ export class JackdawChatRoom extends ChatRoom {
     if (save) {
       await this.save();
     }
+  }
+
+  /** Администратор меняет название и состав группы и рассылает их участникам,
+   * в том числе убранным: так они узнают, что больше не в группе.
+   * Новые участники без чата Jackdaw не добавляются: сообщения до них не дошли бы.
+   * @returns Адреса, которые не добавлены, потому что не пользуются чатом Jackdaw */
+  async updateGroup(name: string, emails: string[]): Promise<string[]> {
+    if (!this.isGroup || !this.isAdmin) {
+      throw new UserError(gt`Only the group admin can change the group.`);
+    }
+    this.account.requireOnline();
+    let wanted = [...new Set(emails.map(normalizeCallEmail)
+      .filter((email): email is string => !!email && !this.account.isOwnEmail(email)))];
+    let added = wanted.filter(email => !this.memberEmails.includes(email));
+    let withoutChat = await this.account.emailsWithoutChat(added);
+    let members = wanted.filter(email => !withoutChat.includes(email));
+    if (!members.length) {
+      throw new UserError(gt`Add at least one member to the group.`);
+    }
+    if (members.length > MAX_GROUP_MEMBERS) {
+      throw new UserError(gt`A group can have at most ${MAX_GROUP_MEMBERS} members.`);
+    }
+    let removed = this.recipients().filter(email => !members.includes(email));
+    let admin = (this.senderEmail() ?? this.admin)!;
+    await this.applyGroupInfo({
+      ...this.roomRef() as Extract<ChatRoomRef, { type: "group" }>,
+      name: name.trim() || gt`Group`,
+      admin,
+      members: [admin, ...members],
+    });
+    await this.announceGroup(removed);
+    return withoutChat;
+  }
+
+  /** Выходим из группы. История остаётся у нас, писать в группу больше нельзя.
+   * Администратор передаёт группу следующему участнику — это понимают и старые версии.
+   * Остальные участники сообщают о выходе всем, и все убирают их из состава у себя. */
+  async leaveGroup(): Promise<void> {
+    if (!this.isGroup || !this.isMember) {
+      return;
+    }
+    let others = this.recipients();
+    let me = this.senderEmail();
+    let ref = this.roomRef() as Extract<ChatRoomRef, { type: "group" }>;
+    let remaining = ref.members.filter(email => !this.account.isOwnEmail(email));
+    if (others.length) {
+      let payload: ChatPayload = this.isAdmin
+        ? { v: CHAT_PAYLOAD_VERSION, kind: "group", id: crypto.randomUUID(), room: { ...ref, admin: remaining[0], members: remaining } }
+        : { v: CHAT_PAYLOAD_VERSION, kind: "group", id: crypto.randomUUID(), room: ref, leave: true };
+      await this.account.sendPayload(others, payload, false, me);
+    }
+    await this.applyGroupInfo({ ...ref, admin: this.isAdmin && remaining.length ? remaining[0] : ref.admin, members: remaining });
+  }
+
+  /** Участник сообщил, что вышел. Принимается только от него самого (адрес отправителя
+   * подтверждён сервером), поэтому чужой выход подделать нельзя. */
+  async memberLeft(email: string): Promise<void> {
+    if (!this.isGroup || email == this.admin || !this.memberEmails.includes(email)) {
+      return;
+    }
+    await this.applyGroupInfo({
+      ...this.roomRef() as Extract<ChatRoomRef, { type: "group" }>,
+      members: this.memberEmails.filter(member => member != email),
+    });
   }
 
   toExtraJSON(): any {

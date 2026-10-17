@@ -643,3 +643,186 @@ describe("надёжность чата", () => {
     await expect(alice.account.devicesFor(["bob@example.com"], true)).rejects.toThrow(/Confirm your address/);
   });
 });
+
+describe("управление группой", () => {
+  let server: FakeServer;
+  beforeAll(async () => {
+    await setupChatTestEnv();
+  });
+  beforeEach(() => {
+    server = new FakeServer();
+    memoryStorage.clear();
+  });
+
+  async function threeMembers() {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let carol = await makeAccount(server, "carol@example.com");
+    let group = await alice.account.createGroup("Команда", ["bob@example.com", "carol@example.com"]);
+    await settle();
+    return { alice, bob, carol, group };
+  }
+
+  async function send(room: JackdawChatRoom, text: string) {
+    let msg = room.newMessage();
+    msg.text = text;
+    await room.sendMessage(msg);
+    await settle();
+    return msg;
+  }
+
+  test("участники без чата Jackdaw не попадают в группу; все без чата — понятная ошибка", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    expect(await alice.account.emailsWithoutChat(["Bob@example.com", "nobody@example.com", "bad"])).toEqual(["nobody@example.com"]);
+    let group = await alice.account.createGroup("Команда", ["bob@example.com", "nobody@example.com"]);
+    expect(group.memberEmails).toEqual(["alice@example.com", "bob@example.com"]);
+    await expect(alice.account.createGroup("Пусто", ["nobody@example.com"])).rejects.toThrow(/does not use Jackdaw chat/);
+  });
+
+  test("администратор переименовывает, добавляет и убирает участников", async () => {
+    let { bob, carol, group } = await threeMembers();
+    let dave = await makeAccount(server, "dave@example.com");
+    let skipped = await group.updateGroup("Новая команда", ["bob@example.com", "dave@example.com", "nobody@example.com"]);
+    await settle();
+    expect(skipped).toEqual(["nobody@example.com"]);
+    expect(group.name).toBe("Новая команда");
+    expect(group.memberEmails).toEqual(["alice@example.com", "bob@example.com", "dave@example.com"]);
+
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    expect(bobGroup.name).toBe("Новая команда");
+    expect(bobGroup.memberEmails).toEqual(group.memberEmails);
+    // Новый участник получил группу, убранный узнал, что его в ней нет
+    let daveGroup = dave.account.findRoomByID(group.id)!;
+    expect(daveGroup.memberEmails).toEqual(group.memberEmails);
+    let carolGroup = carol.account.findRoomByID(group.id)!;
+    expect(carolGroup.isMember).toBe(false);
+    let msg = carolGroup.newMessage();
+    msg.text = "я ещё здесь?";
+    await expect(carolGroup.sendMessage(msg)).rejects.toThrow(/no longer a member/);
+
+    await send(daveGroup, "привет от Дейва");
+    expect((group.messages.first as any).text).toBe("привет от Дейва");
+    expect(carolGroup.messages.contents.some((m: any) => m.text == "привет от Дейва")).toBe(false);
+  });
+
+  test("менять группу может только администратор", async () => {
+    let { bob, group } = await threeMembers();
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    await expect(bobGroup.updateGroup("Захват", ["bob@example.com"])).rejects.toThrow(/Only the group admin/);
+    expect(bobGroup.name).toBe("Команда");
+  });
+
+  test("участник выходит: остальные убирают его, сообщения группы до него больше не идут", async () => {
+    let { alice, bob, carol, group } = await threeMembers();
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    await bobGroup.leaveGroup();
+    await settle();
+    expect(bobGroup.isMember).toBe(false);
+    expect(group.memberEmails).toEqual(["alice@example.com", "carol@example.com"]);
+    expect(carol.account.findRoomByID(group.id)!.memberEmails).toEqual(["alice@example.com", "carol@example.com"]);
+    await send(group, "без Боба");
+    expect(bobGroup.messages.contents.some((m: any) => m.text == "без Боба")).toBe(false);
+    expect(alice.account.findRoomByID(group.id)).toBe(group);
+  });
+
+  test("чужой выход подделать нельзя: выход убирает только самого отправителя", async () => {
+    let { bob, carol, group } = await threeMembers();
+    // Боб шлёт «выход» с составом, где нет Кэрол: убрать он может только себя
+    let ref = group.roomRef() as any;
+    await bob.account.sendPayload(["alice@example.com", "carol@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "group", id: crypto.randomUUID(),
+      room: { ...ref, members: ["alice@example.com", "bob@example.com"] }, leave: true,
+    });
+    await settle();
+    expect(group.memberEmails).toEqual(["alice@example.com", "carol@example.com"]);
+    expect(carol.account.findRoomByID(group.id)!.isMember).toBe(true);
+  });
+
+  test("администратор выходит — группа переходит к следующему участнику", async () => {
+    let { bob, carol, group } = await threeMembers();
+    await group.leaveGroup();
+    await settle();
+    expect(group.isMember).toBe(false);
+    expect(group.isAdmin).toBe(false);
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    expect(bobGroup.admin).toBe("bob@example.com");
+    expect(bobGroup.isAdmin).toBe(true);
+    expect(bobGroup.memberEmails).toEqual(["bob@example.com", "carol@example.com"]);
+    await bobGroup.updateGroup("Команда Боба", ["carol@example.com"]);
+    await settle();
+    expect(carol.account.findRoomByID(group.id)!.name).toBe("Команда Боба");
+  });
+
+  test("удалить чат у себя: из группы при этом выходим, и она не возвращается", async () => {
+    let { alice, bob, group } = await threeMembers();
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    await bob.account.deleteRoom(bobGroup);
+    await settle();
+    expect(bob.account.findRoomByID(group.id)).toBeNull();
+    expect(group.memberEmails).not.toContain("bob@example.com");
+    await send(group, "после удаления");
+    expect(bob.account.findRoomByID(group.id)).toBeNull();
+
+    let direct = await alice.account.getDirectRoom("bob@example.com");
+    await alice.account.deleteRoom(direct);
+    expect(alice.account.findRoomByID("direct:bob@example.com")).toBeNull();
+  });
+
+  test("отметки о прочтении в группе: «прочитано», когда прочитали все", async () => {
+    let { bob, carol, group } = await threeMembers();
+    let msg = await send(group, "прочитайте") as any;
+    let bobMsg = bob.account.findRoomByID(group.id)!.messages.first as any;
+    await bobMsg.markRead(true);
+    await settle();
+    expect(msg.readBy).toEqual(["bob@example.com"]);
+    expect(msg.deliveryStatus).not.toBe(DeliveryStatus.Seen);
+    await carol.account.findRoomByID(group.id)!.markAllRead();
+    await settle();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Seen);
+    expect(msg.toExtraJSON().readBy.sort()).toEqual(["bob@example.com", "carol@example.com"]);
+  });
+
+  test("устаревший состав в сообщении администратора не возвращает вышедшего и удалённую группу", async () => {
+    let { alice, bob, group } = await threeMembers();
+    let staleRef = { ...group.roomRef() as any }; // ещё с Бобом: так пишет старая версия или гонка
+    let staleMessage = () => alice.account.sendPayload(["bob@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "message", id: crypto.randomUUID(), room: staleRef,
+      text: "старый состав", html: null, inReplyTo: null, attachments: [],
+    }, false, "alice@example.com");
+    let bobGroup = bob.account.findRoomByID(group.id)!;
+    await bobGroup.leaveGroup();
+    await settle();
+    await staleMessage();
+    await settle();
+    expect(bobGroup.isMember).toBe(false);
+    expect(bobGroup.messages.contents.some((m: any) => m.text == "старый состав")).toBe(false);
+
+    await bob.account.deleteRoom(bobGroup);
+    await staleMessage();
+    await settle();
+    expect(bob.account.findRoomByID(group.id)).toBeNull();
+    // Администратор пригласил снова — группа появляется
+    await group.updateGroup("Команда", ["bob@example.com", "carol@example.com"]);
+    await settle();
+    expect(bob.account.findRoomByID(group.id)!.isMember).toBe(true);
+  });
+
+  test("объявление группы без нас не создаёт у нас комнату", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    await makeAccount(server, "carol@example.com");
+    await alice.account.sendPayload(["bob@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "group", id: crypto.randomUUID(),
+      room: { type: "group", id: "group-00000001", name: "Без Боба", admin: "alice@example.com", members: ["alice@example.com", "carol@example.com"] },
+    });
+    await settle();
+    expect(bob.account.findRoomByID("group:group-00000001")).toBeNull();
+  });
+
+  test("формат: выход из группы разбирается, мусор в leave игнорируется", () => {
+    let room = { type: "group", id: "group-0001", name: "x", admin: "a@x.com", members: ["b@x.com"] };
+    expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: true })).toMatchObject({ leave: true });
+    expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: "yes" })).not.toHaveProperty("leave");
+  });
+});

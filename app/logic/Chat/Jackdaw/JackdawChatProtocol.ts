@@ -36,7 +36,9 @@ export interface ChatAttachmentRef {
 export type ChatPayload =
   | { v: 1; kind: "message"; id: string; room: ChatRoomRef; text: string; html: string | null; inReplyTo: string | null; attachments: ChatAttachmentRef[] }
   | { v: 1; kind: "read"; id: string; room: ChatRoomRef; ids: string[] }
-  | { v: 1; kind: "group"; id: string; room: ChatRoomRef };
+  /** Состав и название группы от администратора. `leave` — участник сообщает, что вышел.
+   * Старые версии не знают `leave` и просто игнорируют такое сообщение не от администратора. */
+  | { v: 1; kind: "group"; id: string; room: ChatRoomRef; leave?: true };
 
 function id(value: unknown): string | null {
   return typeof value == "string" && ID_PATTERN.test(value) ? value : null;
@@ -109,7 +111,8 @@ export function parseChatPayload(value: unknown): ChatPayload | null {
       return ids.length ? { v: 1, kind: "read", id: messageId, room, ids } : null;
     }
     case "group":
-      return room.type == "group" ? { v: 1, kind: "group", id: messageId, room } : null;
+      if (room.type != "group") return null;
+      return data.leave === true ? { v: 1, kind: "group", id: messageId, room, leave: true } : { v: 1, kind: "group", id: messageId, room };
     default:
       return null;
   }
