@@ -586,7 +586,8 @@
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
   let defaultLineHeightSetting = getLocalStorage("mail.compose.defaultLineHeight", composeDefaultLineHeight);
   let defaultTextColorSetting = getLocalStorage("mail.compose.defaultTextColor", composeDefaultTextColor);
-  $: sendAsHtml = formatSetting.value === "html";
+  // `$formatSetting`, иначе значение вычислялось один раз и кнопка не переключалась обратно
+  $: sendAsHtml = $formatSetting.value === "html";
   function toggleSendFormat() {
     formatSetting.value = sendAsHtml ? "plaintext" : "html";
   }
@@ -1250,12 +1251,18 @@
     max-width: 9em;
   }
   .ribbon-select.font-size {
-    min-width: 3.5em;
-    max-width: 4em;
+    min-width: 5em;
+    max-width: 6em;
   }
   .ribbon-select.line-height {
-    min-width: 3.5em;
-    max-width: 4em;
+    min-width: 5em;
+    max-width: 6em;
+  }
+  /* Глобальный стиль select резервирует 32px под стрелку: в узком поле размера
+   * оставалось ~4px, и вместо «11» и «1,15» было видно «1.» и «1,» */
+  select.ribbon-select {
+    padding-inline-end: 18px !important;
+    background-position: right 4px center !important;
   }
   .color-tool {
     position: relative;

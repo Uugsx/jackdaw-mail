@@ -18,7 +18,8 @@ import { ArrayColl, type Collection } from "svelte-collections";
 import { addSenderToCC } from "./composeRecipients";
 import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
 import { normalizeSignatureHTML } from "./SignatureHTML";
-import { hasProFeature } from "../Billing/ProEntitlement";
+import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
+import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -41,22 +42,9 @@ export class ComposeActions {
 
   /** Split user reply from quoted original (header + blockquote). */
   protected splitReplyAndQuote(html: string): { reply: string; quote: string } {
-    let body = html ?? "";
-    let headerMatch = body.match(/<p\b[^>]*\bclass=(["'])quote-header\1[^>]*>[\s\S]*$/i);
-    if (headerMatch?.index != null) {
-      return {
-        reply: body.slice(0, headerMatch.index),
-        quote: body.slice(headerMatch.index),
-      };
-    }
-    let blockquoteMatch = body.match(/<blockquote\b[\s\S]*$/i);
-    if (blockquoteMatch?.index != null) {
-      return {
-        reply: body.slice(0, blockquoteMatch.index),
-        quote: body.slice(blockquoteMatch.index),
-      };
-    }
-    return { reply: body, quote: "" };
+    // Та же точка разреза, что и в редакторе (учитывает пересылку и самый ранний маркер)
+    let { editable, quote } = splitComposeQuote(html);
+    return { reply: editable, quote };
   }
 
   protected stripSignatureFooters(html: string): string {
@@ -469,6 +457,11 @@ export class ComposeActions {
       return reply + quote;
     }
     let footer = `<footer class="signature">${sig}</footer>`;
+    // Без пустого абзаца перед подписью курсор нового письма попадал внутрь неё:
+    // текст печатался шрифтом подписи и пропадал при смене отправителя
+    if (!reply.trim()) {
+      reply = "<p></p>";
+    }
 
     let quoteSetting = getLocalStorage("mail.send.quote", "below").value;
     if (quoteSetting == "below" && quote) {
@@ -552,11 +545,17 @@ export class ComposeActions {
     }
     let account = fromIdentity.account;
 
+    // Пока статус Pro ещё «проверяется» (первые секунды после запуска, отдельное окно),
+    // hasProFeature() даёт false, и подпись была бы вырезана из отправляемого письма.
+    if (proEntitlement.value.status == "checking") {
+      await refreshProEntitlement().catch(() => null);
+    }
     // Добавляем подпись, если её нет, и сохраняем правки внутри существующего
     // footer. Бесплатный аккаунт не должен отправить управляемую подпись из
     // старого черновика или импортированного письма.
     if (hasProFeature("signatures")) {
-      if (!this.hasSignatureFooter(this.email.rawHTMLDangerous)) {
+      // Подпись, которую пользователь сам удалил из этого письма, не возвращаем
+      if (!this.hasSignatureFooter(this.email.rawHTMLDangerous) && !this.email.signatureRemovedByUser) {
         this.applySignature();
       }
     } else {
@@ -586,6 +585,9 @@ export class ComposeActions {
       this.email.folder = account.getSpecialFolder(SpecialFolder.Sent);
     }
     this.email.isDraft = false;
+    // Протоколы берут `mime ??=`: после сохранения черновика в «Отправленные»
+    // попала бы старая версия письма. Собираем MIME заново из текущего тела.
+    this.email.mime = undefined;
 
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
     await account.send(mail);
@@ -618,6 +620,10 @@ export class ComposeActions {
       throw new UserError(gt`Encrypted drafts cannot be saved yet. Send the message or close it without saving.`);
     }
 
+    // Иначе повторное сохранение и правка открытого черновика сохраняли прежний
+    // MIME (`mime ??=` в протоколах), и все новые правки терялись
+    this.email.mime = undefined;
+    this.email.regenerateTextFromHTML();
     await draftFolder.addMessage(this.email);
 
     await this.deleteDrafts(previousDrafts);

@@ -1,7 +1,7 @@
 <hbox class="switcher">
   <IslandSwitcher {large}>
     <Button
-      label={$t`Chat-like mail view`}
+      label={$t`Mail as conversations by person`}
       icon={ChatIcon}
       iconOnly={!large}
       iconSize="16px"
@@ -31,7 +31,8 @@
   import { getLocalStorage } from "../../Util/LocalStorage";
   import IslandSwitcher from "../../Shared/IslandSwitcher.svelte";
   import Button from "../../Shared/Button.svelte";
-  import ChatIcon from "lucide-svelte/icons/message-square";
+  // Иконка конверта, а не «облачко» чата Jackdaw Pro — чтобы режимы не путали
+  import ChatIcon from "lucide-svelte/icons/mail-open";
   import ThreePaneIcon from "lucide-svelte/icons/layout-panel-left";
   import WideTableIcon from "lucide-svelte/icons/columns-4";
   import { t } from "../../../l10n/l10n";

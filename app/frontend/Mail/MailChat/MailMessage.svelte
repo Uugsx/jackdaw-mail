@@ -10,6 +10,8 @@
       {previousMessage}
       wideBubble={true}
       showReactions={false}
+      showActionBar={false}
+      openMenuOnMessageHover={true}
       renderHTML={false}
       outgoingOverride={displayOutgoing}
       previousOutgoingOverride={previousDisplayOutgoing}
@@ -34,7 +36,7 @@
     {:catch ex}
       <span class="body-state">{ex.message ?? ex + ""}</span>
     {:then}
-      {@html stripMailChatQuote($message.html)}
+      {@html displayHtml(stripMailChatQuote($message.html), darkTheme)}
     {/await}
   </svelte:fragment>
   <svelte:fragment slot="menu">
@@ -53,6 +55,8 @@
   import MessageBubble from "../../Chat/MessageView/Message.svelte";
   import Toolbar from "./MailChatToolbar.svelte";
   import { t } from "../../../l10n/l10n";
+  import { adaptEmailHtmlForDarkMode } from "../Message/emailDarkMode";
+  import { getLocalStorage } from "../../Util/LocalStorage";
 
   export let message: EMail;
   export let previousMessage: Message;
@@ -64,6 +68,16 @@
     : null;
   $: allRecipients = message.to.concat(message.cc).concat(message.bcc);
   $: recipientsLine = allRecipients.contents.map(person => person.name).join(", ");
+
+  // Как в обычном просмотре: тёмно-синий текст подписи и т. п. в тёмной теме
+  // осветляется, иначе он не читается на тёмном пузыре
+  let themeSetting = getLocalStorage("appearance.theme", "system");
+  let systemDark = typeof window != "undefined" &&
+    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  $: darkTheme = $themeSetting.value == "dark" || ($themeSetting.value == "system" && systemDark);
+  function displayHtml(html: string, dark: boolean): string {
+    return dark ? adaptEmailHtmlForDarkMode(html) : html;
+  }
 
   async function loadMailChatMessage(mail: EMail): Promise<void> {
     await mail.loadForDisplay();
@@ -117,5 +131,15 @@
     max-width: 75%;
     margin: 0 12px;
     max-height: 1.5em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: block;
+  }
+  /* Панель действий письма — внутри пузыря, справа сверху, а не поверх строки «кому» */
+  .mail-message-card :global(.bubble > .menu) {
+    top: 6px !important;
+    right: 12px !important;
+    height: 32px !important;
+    max-height: 32px !important;
   }
 </style>

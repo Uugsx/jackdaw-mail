@@ -50,13 +50,13 @@
     plain
     />
 </hbox>
-<hbox class="open">
+<hbox class="copy">
   <Button
-    icon={OpenIcon}
-    iconSize="20px"
+    icon={hasCopied ? CheckIcon : CopyIcon}
+    iconSize="18px"
     iconOnly
-    label={$t`Open this message alone`}
-    onClick={openMessageAlone}
+    label={$t`Copy`}
+    onClick={onCopy}
     plain
     />
 </hbox>
@@ -80,6 +80,9 @@
   import ReplyIcon from "lucide-svelte/icons/reply";
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
   import OpenIcon from "lucide-svelte/icons/maximize-2";
+  import CopyIcon from "lucide-svelte/icons/copy";
+  import CheckIcon from "lucide-svelte/icons/check";
+  import { sleep } from "../../../logic/util/util";
   import { selectedMessage } from "../Selected";
   import { getMessageContentRenderingSetting } from "../Message/messageViewerAppearance";
   import { t } from "../../../l10n/l10n";
@@ -125,6 +128,16 @@
     $selectedMessage = message;
     let modeSetting = getMessageContentRenderingSetting(message.folder?.account);
     modeSetting.value = "html";
+  }
+
+  // Копирование текста письма — раньше было в общей панели чата, которую здесь не показываем
+  let hasCopied = false;
+  async function onCopy() {
+    await message.loadBody();
+    await navigator.clipboard.writeText(message.text ?? "");
+    hasCopied = true;
+    await sleep(1);
+    hasCopied = false;
   }
 
   let isMenuOpen = false;

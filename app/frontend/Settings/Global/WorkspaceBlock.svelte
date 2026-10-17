@@ -14,12 +14,12 @@
   <vbox class="content">
     <grid class="name">
       <label for="name">{$t`Name`}</label>
-      <input type="email"
+      <input type="text"
         bind:value={workspace.name}
         on:change
         required
         autofocus={!$workspace.name}
-        name="name" class="name" />
+        id="name" name="name" class="name" />
       <input type="color"
         bind:value={workspace.color}
         on:change
@@ -46,6 +46,7 @@
 <script lang="ts">
   import { Workspace, accountColors, saveWorkspaces } from "../../../logic/Abstract/Workspace";
   import { appGlobal } from "../../../logic/app";
+  import { getAllAccounts } from "../../../logic/Abstract/Account";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
@@ -61,11 +62,19 @@
 
   async function onDelete() {
     assert(workspaces.length > 1, $t`Cannot remove the last workspace`);
+    if (!confirm($t`Delete the workspace ${workspace.name}? Its accounts will stay, but without a workspace.`)) {
+      return;
+    }
     if ($selectedWorkspace == workspace) {
       selectWorkspace(null);
     }
     workspaces.remove(workspace);
     await saveWorkspaces();
+    // Иначе аккаунты ссылались на удалённое пространство и пропадали из списков
+    for (let account of getAllAccounts().contents.filter(account => account.workspace == workspace)) {
+      account.workspace = null;
+      await account.save();
+    }
   }
 </script>
 

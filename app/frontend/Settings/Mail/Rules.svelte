@@ -112,6 +112,13 @@
     rule.name = "-";
   }
 
+  function hasAnyCriterion(rule: FilterRuleAction): boolean {
+    const kNotCriteria = ["accountID", "tagsMatchAny"];
+    return Object.entries(rule.criteria.toJSON()).some(([key, value]) =>
+      !kNotCriteria.includes(key) && value != null && value !== "" &&
+      !(Array.isArray(value) && !value.length));
+  }
+
   async function onDelete() {
     if (rule.name && !confirm($t`Do you want to delete the rule '${rule.name}'?`)) {
       return;
@@ -123,6 +130,12 @@
   }
 
   async function onSave() {
+    // Пустые условия подходят под любое письмо: правило «В корзину» без условий
+    // удаляло бы всю входящую почту
+    if (!hasAnyCriterion(rule) &&
+        !confirm($t`This rule has no conditions and will apply to every incoming message. Save it anyway?`)) {
+      return;
+    }
     if (!rule.account.filterRuleActions.contains(rule)) {
       rule.account.filterRuleActions.add(rule);
     }

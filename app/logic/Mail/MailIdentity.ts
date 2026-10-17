@@ -80,7 +80,9 @@ export class MailIdentity extends Observable {
     let thiss = new MailIdentity(account);
     thiss.id = sanitize.nonemptystring(config.id) as any;
     thiss.realname = sanitize.label(config.realname);
-    sanitize.emailAddress(config.emailAddress.replace("*", ""));
+    // Та же подстановка, что при сохранении в настройках: `*@domain` → `any@domain`.
+    // С пустой локальной частью catch-all отправитель не загружался после перезапуска.
+    sanitize.emailAddress(config.emailAddress.replace("*", "any"));
     thiss.emailAddress = config.emailAddress;
     thiss.replyTo = sanitize.emailAddress(config.replyTo, null);
     thiss.organisation = sanitize.label(config.organisation, null);

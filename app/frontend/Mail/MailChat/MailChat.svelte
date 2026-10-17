@@ -15,6 +15,11 @@
   <vbox class="right-pane" slot="right">
     {#if chatMessages && selectedPerson && chatRoom}
       <Header person={selectedPerson as any} />
+      <!-- Это почта, а не чат Jackdaw Pro: подсказываем, куда уйдёт ответ -->
+      <hbox class="mode-note font-smallest" role="note">
+        <MailOpenIcon size="14px" />
+        <span>{$t`Emails with this person, shown as a conversation. Your reply is sent as a regular email.`}</span>
+      </hbox>
       <vbox flex class="messages background-pattern">
         <MessageList messages={chatMessages}>
           <svelte:fragment slot="message" let:message let:previousMessage>
@@ -25,6 +30,12 @@
       </vbox>
       <vbox class="editor">
         <MsgEditor to={chatRoom} />
+      </vbox>
+    {:else}
+      <vbox flex class="empty-state">
+        <MailOpenIcon size="32px" />
+        <h3>{$t`Mail conversations`}</h3>
+        <p>{$t`Pick a person on the left to see all emails with them as one conversation. For instant messages between app users, use Jackdaw Chat.`}</p>
       </vbox>
     {/if}
   </vbox>
@@ -50,6 +61,8 @@
   import Splitter from "../../Shared/Splitter.svelte";
   import { ArrayColl, Collection, mergeColls } from 'svelte-collections';
   import { onDestroy } from "svelte";
+  import MailOpenIcon from "lucide-svelte/icons/mail-open";
+  import { t } from "../../../l10n/l10n";
 
   export let accounts: Collection<MailAccount>; /** in */
 
@@ -206,5 +219,30 @@
   }
   .spacer {
     min-width: 8px;
+  }
+  .mode-note {
+    align-items: center;
+    gap: 6px;
+    padding: 4px 20px;
+    color: var(--fg);
+    opacity: 0.75;
+    border-block-end: 1px solid var(--border);
+  }
+  .empty-state {
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px;
+    text-align: center;
+    color: var(--fg);
+    opacity: 0.8;
+  }
+  .empty-state h3 {
+    margin: 0;
+  }
+  .empty-state p {
+    max-width: 28em;
+    margin: 0;
+    line-height: 1.4;
   }
 </style>
