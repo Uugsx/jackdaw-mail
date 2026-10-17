@@ -1,0 +1,42 @@
+[Unit]
+Description=Jackdaw Mail feedback relay (email, Telegram, GitHub issues)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Отдельный системный пользователь без доступа к базе лицензий и секретам других сервисов.
+User=jackdaw-feedback
+Group=jackdaw-feedback
+WorkingDirectory=/opt/jackdaw-feedback
+EnvironmentFile=/etc/jackdaw-feedback/feedback.env
+ExecStart=/usr/bin/python3 /opt/jackdaw-feedback/feedback.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+UMask=0077
+CapabilityBoundingSet=
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+TasksMax=64
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

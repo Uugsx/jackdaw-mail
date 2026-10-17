@@ -30,6 +30,7 @@ import AccountXMPPServer from "./Chat/AccountXMPPServer.svelte";
 import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
 import About from "./About/About.svelte";
+import Feedback from "./About/Feedback.svelte";
 import Billing from "./Billing/Billing.svelte";
 import JackdawCalls from "./Billing/JackdawCalls.svelte";
 // #if [MOBILE || !PRODUCTION]
@@ -173,6 +174,9 @@ accountSettings.add(new AccSetting(WebDAVAccount, "webdav-server", gt`Server`, A
 settingsCategories.add(filesSettings);
 
 const about = new SettingsCategory("about", gt`About`, About, true);
+const feedback = new SettingsCategory("feedback", gt`Feedback`, Feedback);
+feedback.synonyms.addAll([gt`Bug`, gt`Suggestion`, gt`Support`]);
+about.subCategories.add(feedback);
 settingsCategories.add(about);
 
 const billing = new SettingsCategory("billing", gt`Jackdaw Pro`, Billing, true);
