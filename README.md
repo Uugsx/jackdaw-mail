@@ -56,6 +56,8 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 - **Отчёты и SLA** — интерактивный дашборд, рабочий календарь по дням недели, живой таймер ответа и настраиваемые напоминания
 - **Календарь и контакты** — события, приглашения, онлайн-встречи, личные адресные книги, группы и глобальные адресные списки
 - **Файлы и коммуникации** — локальное файловое хранилище, WebDAV/Nextcloud/OpenCloud, чаты и видеовстречи с поддерживаемыми аккаунтами
+- **Звонки и чат Jackdaw** (Pro) — аудиозвонки напрямую между пользователями Jackdaw Mail по email-адресу и чат со сквозным шифрованием; адрес подтверждается кодом из письма или ответным письмом со своего ящика (DKIM/SPF) — для корпоративной почты; сервер: [`call_server/`](call_server/README.md)
+- **Обратная связь** — форма в «Настройки → О программе»: письмо разработчикам, Telegram и задача в GitHub для ошибок (без адреса пользователя); сервер: [`feedback_server/`](feedback_server/README.md)
 - **Обновлённый UI** — адаптивные layout'ы почты, ribbon, тёмная тема писем, масштабирование и сохранение пользовательских настроек
 - **Desktop OTA** — автообновление через GitHub Releases (Mac + Windows); см. [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
 - **Roadmap** — [jackdaw-mail.pro](https://jackdaw-mail.pro), дальнейшие OWA-фичи
@@ -75,8 +77,8 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 | **Календарь** | Локальные и серверные календари, представления дня/недели/месяца, события, приглашения, вложения, напоминания и онлайн-встречи | готово; зависит от протокола |
 | **Контакты** | Личная адресная книга, GAL, группы, поиск, история взаимодействия, PGP/S/MIME-ключи; EWS, OWA, ActiveSync, CardDAV и JMAP | готово; зависит от протокола |
 | **Файлы** | Локальное хранилище, WebDAV, Nextcloud и OpenCloud; каталоги, теги, поиск, таблица/галерея, загрузка, скачивание и предпросмотр | готово; зависит от сервера |
-| **Чаты** | XMPP, Matrix, WhatsApp, Signal и MS Graph (beta); комнаты, поиск, вложения, emoji/GIF/stickers и реакции | готово; зависит от протокола |
-| **Meet** | Аудио/видео, участники, микрофон/камера, демонстрация экрана и приглашения; LiveKit, M3, SIP и WhatsApp backends | зависит от backend, proprietary |
+| **Чаты** | XMPP, Matrix, WhatsApp, Signal и MS Graph (beta); комнаты, поиск, вложения, emoji/GIF/stickers и реакции. **Чат Jackdaw** между пользователями приложения: сквозное шифрование (X25519 + XChaCha20-Poly1305), личные чаты и группы до 50 человек, файлы до 25 МБ | готово; зависит от протокола; чат Jackdaw — Pro |
+| **Meet** | Аудио/видео, участники, микрофон/камера, демонстрация экрана и приглашения; LiveKit, M3, SIP и WhatsApp backends. **Аудиозвонки Jackdaw** между пользователями приложения — напрямую (P2P WebRTC), без медиасервера | зависит от backend, proprietary; звонки Jackdaw — Pro |
 | **Web Apps** | Каталог и личный список встроенных web-приложений, запуск рядом с почтой и сохранение выбранных приложений | готово; зависит от каталога |
 | **Темы** | Дерево и граф рабочих тем с вложенными подтемами | зависит от рабочей области |
 | **Desktop / mobile** | Electron для macOS, Windows и Linux; Capacitor для iOS и Android; OTA для desktop | desktop готово, mobile в работе |
@@ -107,7 +109,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 ### Jackdaw Mail Pro
 
-Jackdaw Mail Pro включает рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр, HTML-экспорт, несколько почтовых аккаунтов и форматированные HTML-подписи с ссылками и изображениями. Публичные цены Pro — **$9.99 / month** или **$79.99 / year**. Для международного запуска выбран внешний checkout Lemon Squeezy; платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. Первый почтовый аккаунт остаётся бесплатным, а существующие аккаунты не удаляются при окончании Pro. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
+Jackdaw Mail Pro включает рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр, HTML-экспорт, несколько почтовых аккаунтов, форматированные HTML-подписи с ссылками и изображениями, а также аудиозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail. Публичные цены Pro — **$9.99 / month** или **$79.99 / year**. Для международного запуска выбран внешний checkout Lemon Squeezy; платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. Первый почтовый аккаунт остаётся бесплатным, а существующие аккаунты не удаляются при окончании Pro. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
 
 ### Платформы
 
@@ -188,6 +190,8 @@ The standalone native Android client for Jackdaw Mail is developed by **[SpliffR
 - **Reports & SLA** — interactive dashboard, per-weekday working calendar, live response timers and configurable reminders
 - **Calendar & contacts** — events, invitations, online meetings, personal address books, groups and global address lists
 - **Files & communication** — local file storage, WebDAV/Nextcloud/OpenCloud, chats and video meetings with supported accounts
+- **Jackdaw calls & chat** (Pro) — direct audio calls between Jackdaw Mail users by email address and end-to-end encrypted chat; the address is confirmed with an emailed code or, for company mail, with a reply sent from your own mailbox (DKIM/SPF); server: [`call_server/`](call_server/README.md)
+- **Feedback** — a form in Settings → About: email to the developers, Telegram, and a GitHub issue for bug reports (without the user's address); server: [`feedback_server/`](feedback_server/README.md)
 - **Updated UI** — responsive mail layouts, ribbon, dark-mode email rendering, zoom and persisted user preferences
 - **Desktop OTA** — auto-update via GitHub Releases (Mac + Windows); see [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
 - **Roadmap** — [jackdaw-mail.pro](https://jackdaw-mail.pro), more OWA work
@@ -207,8 +211,8 @@ Before an account is connected, the available features depend on its protocol, p
 | **Calendar** | Local and server calendars, day/week/month views, events, invitations, attachments, reminders and online meetings | ready; depends on the protocol |
 | **Contacts** | Personal address books, GAL, groups, search, contact history, PGP/S/MIME keys; EWS, OWA, ActiveSync, CardDAV and JMAP | ready; depends on the protocol |
 | **Files** | Local storage, WebDAV, Nextcloud and OpenCloud; directories, tags, search, table/gallery views, upload, download and preview | ready; depends on the server |
-| **Chat** | XMPP, Matrix, WhatsApp, Signal and MS Graph (beta); rooms, search, attachments, emoji/GIF/stickers and reactions | ready; depends on the protocol |
-| **Meet** | Audio/video, participants, microphone/camera, screen sharing and invitations; LiveKit, M3, SIP and WhatsApp backends | зависит от backend, proprietary |
+| **Chat** | XMPP, Matrix, WhatsApp, Signal and MS Graph (beta); rooms, search, attachments, emoji/GIF/stickers and reactions. **Jackdaw chat** between app users: end-to-end encryption (X25519 + XChaCha20-Poly1305), direct chats and groups of up to 50 people, files up to 25 MB | ready; depends on the protocol; Jackdaw chat — Pro |
+| **Meet** | Audio/video, participants, microphone/camera, screen sharing and invitations; LiveKit, M3, SIP and WhatsApp backends. **Jackdaw audio calls** between app users — direct (P2P WebRTC), no media server | depends on the backend, proprietary; Jackdaw calls — Pro |
 | **Web Apps** | Catalog and personal list of embedded web apps, launch beside mail and persisted app selection | ready; depends on the catalog |
 | **Topics** | Tree and graph of work topics with nested subtopics | depends on the workspace |
 | **Desktop / mobile** | Electron for macOS, Windows and Linux; Capacitor for iOS and Android; desktop OTA updates | desktop готово, mobile в работе |
@@ -239,7 +243,7 @@ Live-control settings are persisted per mailbox. The queue refreshes immediately
 
 ### Jackdaw Mail Pro
 
-Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view, HTML export, multiple mail accounts and formatted HTML signatures with links and images. Public Pro pricing is **$9.99 / month** or **$79.99 / year**. The first mail account remains free and existing accounts are preserved after Pro expires. Lemon Squeezy is the selected hosted checkout for an international launch; payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
+Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view, HTML export, multiple mail accounts, formatted HTML signatures with links and images, and audio calls and end-to-end encrypted chat between Jackdaw Mail users. Public Pro pricing is **$9.99 / month** or **$79.99 / year**. The first mail account remains free and existing accounts are preserved after Pro expires. Lemon Squeezy is the selected hosted checkout for an international launch; payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
 
 ### Platforms
 

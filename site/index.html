@@ -175,6 +175,10 @@
             <dd data-i18n="features.signatures.text">HTML-подписи со ссылками и картинками.</dd>
           </div>
           <div class="feature-row">
+            <dt data-i18n="features.calls.title">Звонки и чат · Pro</dt>
+            <dd data-i18n="features.calls.text">Аудиозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail по адресу почты. Голос идёт напрямую между компьютерами, текст и файлы чата шифруются на устройстве. Адрес подтверждается кодом из письма или ответным письмом со своего ящика — так работает и корпоративная почта.</dd>
+          </div>
+          <div class="feature-row">
             <dt data-i18n="features.related.title">Связанные письма</dt>
             <dd data-i18n="features.related.text">Кнопка в заголовке письма находит письма с тем же номером обращения, из той же переписки или с похожей темой. Поиск запускается только по нажатию и не тормозит открытие письма.</dd>
           </div>
@@ -237,6 +241,26 @@
                   <td data-i18n="data.license.when">При активации Pro или пробного периода, затем каждые 15 минут</td>
                 </tr>
                 <tr>
+                  <th scope="row"><code>license.jackdaw-mail.pro</code> <span data-i18n="data.calls.label">(звонки и чат)</span></th>
+                  <td data-i18n="data.calls.what">Подтверждённые адреса почты, имя для показа, сигналы установки звонка и зашифрованные сообщения и файлы чата. Текст сообщений и имена файлов сервер не видит; недоставленное хранится до 30 дней</td>
+                  <td data-i18n="data.calls.when">Если вы подтвердили адрес для звонков и чата (Pro или пробный период)</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>verify.jackdaw-mail.pro</code></th>
+                  <td data-i18n="data.verify.what">Короткое письмо с вашего ящика — для подтверждения адреса</td>
+                  <td data-i18n="data.verify.when">Только если вы нажали «Подтвердить письмом»</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>stun.l.google.com</code>, <code>stun.cloudflare.com</code></th>
+                  <td data-i18n="data.stun.what">Ваш IP-адрес — чтобы соединить звонок напрямую. Собеседник тоже видит ваш IP-адрес</td>
+                  <td data-i18n="data.stun.when">Во время аудиозвонка Jackdaw</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>license.jackdaw-mail.pro</code> <span data-i18n="data.feedback.label">(обратная связь)</span></th>
+                  <td data-i18n="data.feedback.what">Текст отзыва, адрес для ответа (если указали), версия программы, платформа и язык (если разрешили), обезличенный отпечаток устройства. Отзыв об ошибке становится задачей в GitHub — без вашего адреса</td>
+                  <td data-i18n="data.feedback.when">Только когда вы отправляете отзыв</td>
+                </tr>
+                <tr>
                   <th scope="row"><code>errorlog.jackdaw.app</code></th>
                   <td data-i18n="data.errors.what">Отчёт об ошибке: текст ошибки и технические подробности сбоя</td>
                   <td data-i18n="data.errors.when">Когда в программе происходит ошибка</td>
@@ -255,7 +279,7 @@
             </table>
           </div>
           <p class="note" data-i18n="data.storage">Письма, аккаунты, календари и контакты хранятся в локальных базах SQLite в папке данных программы. Между программой и почтовым сервером посредников нет, отчёты и сроки ответа считаются на вашем компьютере.</p>
-          <p class="note" data-i18n="data.hidden">Модули видеовстреч и чатов по умолчанию скрыты. Если их включить, они подключаются к серверам выбранного сервиса.</p>
+          <p class="note" data-i18n="data.hidden">Модули видеовстреч и сторонних чатов по умолчанию скрыты. Если их включить, они подключаются к серверам выбранного сервиса. Чат и звонки Jackdaw появляются после подтверждения адреса.</p>
         </div>
       </div>
     </section>

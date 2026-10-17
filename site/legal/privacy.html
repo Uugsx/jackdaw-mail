@@ -17,7 +17,7 @@
 
     <main class="legal-content">
       <h1>Privacy Policy</h1>
-      <p class="legal-meta">Effective date: October 16, 2026</p>
+      <p class="legal-meta">Effective date: October 17, 2026</p>
 
       <div class="callout">
         <p>Jackdaw Mail is designed so that mail content, account passwords and local mail databases stay between the application, the user’s computer and the user’s selected mail provider. The license service does not need access to the user’s messages or addresses.</p>
@@ -27,7 +27,7 @@
       <p>Jackdaw Mail is an independent software project maintained by <a href="https://github.com/Uugsx">Uugsx</a>. Questions about this policy or a privacy request can be sent through the <a href="https://github.com/Uugsx/jackdaw-mail/issues">Jackdaw Mail issue tracker</a>. Please do not publish passwords, mail contents or license keys in a public issue.</p>
 
       <h2>2. What this policy covers</h2>
-      <p>This policy covers the Jackdaw Mail product website, the desktop application, the Jackdaw Mail license service and the Pro activation flow. Lemon Squeezy operates the hosted checkout and processes payment information under its own <a href="https://www.lemonsqueezy.com/privacy">Privacy Policy</a>.</p>
+      <p>This policy covers the Jackdaw Mail product website, the desktop application, the Jackdaw Mail license service, the Pro activation flow, the Jackdaw calls and chat service and the in-app feedback form. Lemon Squeezy operates the hosted checkout and processes payment information under its own <a href="https://www.lemonsqueezy.com/privacy">Privacy Policy</a>.</p>
 
       <h2>3. Data processed by the desktop application</h2>
       <table>
@@ -52,6 +52,22 @@
             <td>The website stores the selected language and theme in browser local storage. The desktop application stores its own settings locally.</td>
           </tr>
           <tr>
+            <th scope="row">Jackdaw calls and chat (Pro or trial)</th>
+            <td>If the user confirms an email address for calls and chat, the Jackdaw calls service processes the confirmed addresses, the display name, presence while the app is connected, call setup signals (session descriptions and network candidates) and end-to-end encrypted chat messages and files. Chat content is encrypted on the device; the service stores only ciphertext and cannot read message text, file names or group names. It does see which addresses and devices communicate, message sizes and times. Undelivered messages and files are kept for up to 30 days. Presence and call state are kept only in memory.</td>
+          </tr>
+          <tr>
+            <th scope="row">Address confirmation</th>
+            <td>To confirm an address, the service sends a one-time code to it by email, or — if the user chooses “Confirm by email” — the app sends a short email from the user’s mailbox to a one-time address at <code>verify.jackdaw-mail.pro</code>. The service checks the sender domain’s DKIM signature or SPF record and does not store the email. A confirmation proof is signed for the user’s license or trial and is valid for 90 days.</td>
+          </tr>
+          <tr>
+            <th scope="row">Direct audio calls</th>
+            <td>Audio calls connect directly between the two computers (WebRTC). To find a direct route, the app contacts public STUN servers operated by Google (<code>stun.l.google.com</code>) and Cloudflare (<code>stun.cloudflare.com</code>), which see the user’s IP address. The other participant’s app also sees the user’s IP address. Voice is not recorded or stored by Jackdaw Mail.</td>
+          </tr>
+          <tr>
+            <th scope="row">Feedback form</th>
+            <td>When the user sends feedback, the service receives the message, an optional reply address, optional app version, platform and language, and an anonymised device fingerprint (a SHA-256 hash, not the device identifier) used for rate limiting. The feedback is forwarded to the developer by email and Telegram and is not stored on the server. A bug report also becomes an issue in the public GitHub repository with the description, app version and platform, but without the reply address or IP address. Do not include passwords or private data in feedback.</td>
+          </tr>
+          <tr>
             <th scope="row">Technical error reports</th>
             <td>Production errors may be sent to the Jackdaw Mail error-reporting endpoint with technical information such as an error message, stack trace, app version and environment details. The application is designed not to include mail bodies, passwords or account names in these reports.</td>
           </tr>
@@ -71,7 +87,7 @@
       <p>The public billing configuration endpoint may also receive a normal HTTPS request from the browser, including the IP address and user-agent recorded by the hosting or reverse-proxy infrastructure. It returns only public product configuration.</p>
 
       <h2>5. What we do not receive through the license service</h2>
-      <p>The license service does not receive the user’s mail passwords, message bodies, attachments, contact books, calendars or local SQLite databases. It does not provide an account-based mail inbox. The payment provider does not receive the user’s mail content as part of the Jackdaw Mail checkout.</p>
+      <p>The license, calls and feedback services do not receive the user’s mail passwords, mail message bodies, mail attachments, contact books, calendars or local SQLite databases. It does not provide an account-based mail inbox. The payment provider does not receive the user’s mail content as part of the Jackdaw Mail checkout.</p>
 
       <h2>6. Purposes and legal basis</h2>
       <p>Data is used to deliver and protect the product: to activate and refresh licenses, prevent duplicate trial claims and abuse, process subscription events, provide support, maintain security, diagnose technical failures and comply with legal or accounting obligations. Depending on the situation, the basis may be performance of a contract, legitimate interests in security and service operation, consent where required, or a legal obligation.</p>
@@ -80,13 +96,16 @@
       <ul>
         <li><strong>Lemon Squeezy:</strong> hosted checkout, payment processing, tax handling, subscription management and license-key delivery. See its <a href="https://www.lemonsqueezy.com/privacy">privacy notice</a> and <a href="https://www.lemonsqueezy.com/buyer-terms">buyer terms</a>.</li>
         <li><strong>Mail, calendar and identity providers:</strong> the providers selected by the user, such as an Exchange/OWA, IMAP, Google, Microsoft or other supported service. Their own terms and privacy notices apply.</li>
-        <li><strong>GitHub:</strong> source code, releases, issue-based support and update downloads. GitHub’s terms and privacy statement apply to those services.</li>
+        <li><strong>GitHub:</strong> source code, releases, issue-based support, update downloads and public issues created from bug reports. GitHub’s terms and privacy statement apply to those services.</li>
+        <li><strong>Resend:</strong> delivery of address-confirmation codes and feedback emails. It processes the recipient address and the email content.</li>
+        <li><strong>Telegram:</strong> delivery of feedback to the developer’s private Telegram group.</li>
+        <li><strong>Google and Cloudflare STUN servers:</strong> help establish direct audio calls and see the caller’s IP address.</li>
         <li><strong>Hosting and infrastructure providers:</strong> the website, license service and error-reporting endpoint may generate ordinary security and access logs.</li>
       </ul>
       <p>We do not sell mail content, passwords or license data. We disclose information only to the providers needed for the functions described above, to protect the service, or when required by law.</p>
 
       <h2>8. Retention</h2>
-      <p>License and subscription records are kept while needed to provide access, handle renewals, refunds, disputes, support and legal obligations. Device activation records and trial records are kept for license enforcement and abuse prevention. Technical logs and error reports are retained for operational and security purposes and removed or anonymized when they are no longer needed, subject to backup and legal retention limits.</p>
+      <p>License and subscription records are kept while needed to provide access, handle renewals, refunds, disputes, support and legal obligations. Device activation records and trial records are kept for license enforcement and abuse prevention. Encrypted chat messages are deleted after delivery to all recipient devices and in any case after 30 days; encrypted chat files are deleted after 30 days. Feedback is not stored on the server after it is forwarded; GitHub issues created from bug reports remain public until closed or deleted. Technical logs and error reports are retained for operational and security purposes and removed or anonymized when they are no longer needed, subject to backup and legal retention limits.</p>
 
       <h2>9. Security</h2>
       <p>License keys and device identifiers are hashed in the license database. Entitlements are signed by a private server-side Ed25519 key and verified by the client. The license service validates input, applies rate limits and uses HTTPS in its public deployment. No internet transmission or storage system can be guaranteed to be completely secure, so users should keep their operating system, mail provider and backups protected.</p>
