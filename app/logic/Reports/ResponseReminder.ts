@@ -135,6 +135,27 @@ export function isResponseReminderRequestAfterActivation(
   return enabledSince == null || request.receivedAt.getTime() >= enabledSince;
 }
 
+/**
+ * Проверяет, входит ли ящик в область живого контроля.
+ *
+ * Напоминания и счётчики относятся только к ящику, выбранному в живом
+ * контроле: включённый когда-то SLA другого ящика или отчёт по нему не
+ * расширяют область. Без выбранного ящика область пуста — так же, как
+ * её показывает панель живого контроля.
+ */
+export function isResponseReminderAccountInLiveScope(
+  accountId: number,
+  liveAccountId: unknown,
+): boolean {
+  const selected = Number(liveAccountId);
+  return (
+    liveAccountId != null &&
+    Number.isInteger(selected) &&
+    selected > 0 &&
+    accountId == selected
+  );
+}
+
 export function responseReminderKey(request: PendingResponseRequest): string {
   return `${request.accountId}:${request.folderId}:${request.emailId}`;
 }

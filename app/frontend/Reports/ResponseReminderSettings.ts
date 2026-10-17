@@ -7,6 +7,8 @@ import {
 
 export const RESPONSE_REMINDER_CONFIG_STORAGE_KEY =
   "reports.response-reminders.v1";
+/** Ящик, выбранный в живом контроле: только он входит в область напоминаний. */
+export const LIVE_SLA_ACCOUNT_STORAGE_KEY = "reports.live-sla.account.v1";
 
 const responseReminderSetting = getLocalStorage<unknown>(
   RESPONSE_REMINDER_CONFIG_STORAGE_KEY,
