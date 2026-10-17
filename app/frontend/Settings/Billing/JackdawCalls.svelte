@@ -98,6 +98,39 @@
   </HeaderGroupBox>
 </vbox>
 
+<script context="module" lang="ts">
+  /** Код из письма действует 10 минут (как на сервере). Пока он действует,
+   * поле для кода остаётся открытым, даже если пользователь ушёл в почту
+   * и вернулся или перезапустил приложение. Сам код здесь не хранится. */
+  const kCodeTTLMS = 10 * 60 * 1000;
+  const kPendingKey = "jackdaw.calls.pendingVerification";
+
+  function loadPending(): { address: string, sentAt: number } | null {
+    try {
+      let pending = JSON.parse(localStorage.getItem(kPendingKey) ?? "null");
+      if (typeof pending?.address == "string" && typeof pending?.sentAt == "number" &&
+          Date.now() - pending.sentAt < kCodeTTLMS) {
+        return pending;
+      }
+    } catch {
+      // Нет доступа к хранилищу — поле просто не восстановится.
+    }
+    return null;
+  }
+
+  function savePending(address: string | null) {
+    try {
+      if (address) {
+        localStorage.setItem(kPendingKey, JSON.stringify({ address, sentAt: Date.now() }));
+      } else {
+        localStorage.removeItem(kPendingKey);
+      }
+    } catch {
+      // Нет доступа к хранилищу — состояние живёт только до ухода со страницы.
+    }
+  }
+</script>
+
 <script lang="ts">
   import { getJackdawCallClient } from "../../../logic/Meet/Jackdaw/JackdawCalls";
   import type { JackdawCallStatus } from "../../../logic/Meet/Jackdaw/JackdawCallClient";
@@ -113,7 +146,7 @@
   const client = getJackdawCallClient();
   const emailAccounts = appGlobal.emailAccounts;
 
-  let codeSentTo: string | null = null;
+  let codeSentTo: string | null = loadPending()?.address ?? null;
   let code = "";
   let busyAddress: string | null = null;
   let feedback: string | null = null;
@@ -146,6 +179,7 @@
     try {
       await client.startVerification(address);
       codeSentTo = address;
+      savePending(address);
       code = "";
       showFeedback(address, $t`We sent a code to ${address}. Check the inbox in Jackdaw.`, "success");
     } catch (ex) {
@@ -162,6 +196,7 @@
     try {
       await client.finishVerification(address, code);
       codeSentTo = null;
+      savePending(null);
       code = "";
       showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
     } catch (ex) {

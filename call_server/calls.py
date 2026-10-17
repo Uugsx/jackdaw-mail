@@ -946,8 +946,12 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
 
         def finished(result: "asyncio.Future[None]") -> None:
             error = result.exception()
+            # В журнал — только домен получателя: по нему видно, куда не доходят письма.
+            domain = email.rsplit("@", 1)[-1]
             if error is not None:
-                print(f"SMTP error for verification mail: {type(error).__name__}", flush=True)
+                print(f"SMTP error for verification mail to *@{domain}: {type(error).__name__}", flush=True)
+            else:
+                print(f"Verification mail accepted by SMTP for *@{domain}", flush=True)
             done(error)
 
         future.add_done_callback(finished)
