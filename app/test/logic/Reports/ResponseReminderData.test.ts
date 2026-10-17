@@ -491,4 +491,63 @@ describe("ResponseReminderData", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test("не считает служебные письма запросами, ждущими ответа", async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), "response-reminder-"));
+    const database = new InProcessSQLiteDatabase(path.join(tempDir, "mail.db"));
+    const now = new Date("2026-10-17T15:00:00.000Z");
+    try {
+      await database.migrate(mailDatabaseSchema, createReportReplyIndexes);
+      database.run(sql`
+        INSERT INTO emailAccount (id, idStr, protocol)
+        VALUES (1, ${"account-1"}, ${"imap"})
+      `);
+      database.run(sql`
+        INSERT INTO folder (id, accountID, name, path, specialUse)
+        VALUES (101, 1, ${"Inbox"}, ${"INBOX"}, ${"inbox"})
+      `);
+      const senders: [number, string, string][] = [
+        [1, "noreply@jackdaw-mail.pro", "Jackdaw Mail"],
+        [2, "MAILER-DAEMON@mx.example.com", "Mail Delivery System"],
+        [3, "", "Mail Delivery Subsystem"],
+        [4, "no-reply@accounts.example.com", "Accounts"],
+        [5, "do_not_reply@bank.example.com", "Bank"],
+        [6, "DoNotReply@service.example.com", "Service"],
+        [7, "postmaster@example.com", "Postmaster"],
+        [8, "noreply-alerts@example.com", "Alerts"],
+        [20, "customer@example.com", "Customer"],
+        // Похожие, но обычные адреса остаются в очереди.
+        [21, "reply@example.com", "Reply desk"],
+        [22, "info@noreply-domain.example", "Info"],
+      ];
+      for (const [id, contactEmail, contactName] of senders) {
+        insertEmail(database, {
+          id,
+          folderID: 101,
+          messageID: `<request-${id}>`,
+          parentMsgID: null,
+          threadID: `<thread-${id}>`,
+          date: seconds("2026-10-17T14:00:00.000Z") + id,
+          outgoing: 0,
+          isReplied: 0,
+          subject: `Request ${id}`,
+          contactEmail,
+          contactName,
+        });
+      }
+
+      const requests = await loadPendingResponseRequests(
+        1,
+        null,
+        now,
+        database,
+        101,
+      );
+
+      expect(requests.map((request) => request.emailId)).toEqual([20, 21, 22]);
+    } finally {
+      database.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
