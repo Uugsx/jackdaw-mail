@@ -70,6 +70,14 @@ SIGNAL_KINDS = frozenset({"offer", "answer", "ice"})
 # Публичные STUN-серверы, которые сервис может сообщить клиентам. TURN сюда не входит: у него есть секреты.
 STUN_URL_RE = re.compile(r"^stuns?:[A-Za-z0-9.-]{1,253}(?::\d{1,5})?$")
 MAX_STUN_URLS = 8
+# Свой TURN (coturn с `use-auth-secret`): ретранслирует медиа, когда напрямую соединиться нельзя
+# (симметричный NAT, корпоративный фаервол). Адрес — только хост и порт, транспорт — udp или tcp.
+TURN_URL_RE = re.compile(r"^turns?:[A-Za-z0-9.-]{1,253}(?::\d{1,5})?(?:\?transport=(?:udp|tcp))?$")
+MAX_TURN_URLS = 4
+MIN_TURN_SECRET_LENGTH = 32
+# Учётные данные TURN проверяются и при продлении выделенного адреса, поэтому живут не меньше самого
+# длинного разговора — с запасом на гудки и перезапуски ICE.
+TURN_CREDENTIAL_TTL_SECONDS = MAX_CALL_DURATION_SECONDS + 15 * 60
 RATE_WINDOW_SECONDS = 60
 RATE_LIMITS = {
     "hello": 10,
@@ -388,6 +396,34 @@ class LiveKitTokenIssuer:
         return f"{signing_input}.{base64url_encode(signature)}"
 
 
+class TurnCredentialIssuer:
+    """Временные учётные данные TURN по REST API coturn (`use-auth-secret`, `static-auth-secret`):
+    имя — `<срок действия>:<случайный идентификатор>`, пароль — base64(HMAC-SHA1(секрет, имя)).
+    Адрес, лицензия и устройство в имя не попадают: журнал TURN не связывает ретрансляцию с человеком."""
+
+    def __init__(self, urls: Iterable[str], secret: str, clock: Callable[[], float] = time.time):
+        self.urls = validate_turn_urls(urls)
+        if not self.urls:
+            raise RuntimeError("JACKDAW_CALLS_TURN_URLS: не задан ни один адрес turn:")
+        if len(secret) < MIN_TURN_SECRET_LENGTH:
+            raise RuntimeError(f"JACKDAW_CALLS_TURN_SECRET: нужен секрет не короче {MIN_TURN_SECRET_LENGTH} символов")
+        self._secret = secret.encode("utf-8")
+        self._clock = clock
+
+    def issue(self) -> dict[str, Any]:
+        expires = int(self._clock()) + TURN_CREDENTIAL_TTL_SECONDS
+        username = f"{expires}:{secrets.token_hex(8)}"
+        digest = hmac.new(self._secret, username.encode("ascii"), hashlib.sha1).digest()
+        return {"urls": list(self.urls), "username": username, "credential": base64.b64encode(digest).decode("ascii")}
+
+
+def validate_turn_urls(values: Iterable[str]) -> tuple[str, ...]:
+    urls = tuple(value.strip() for value in values if value and value.strip())
+    if len(urls) > MAX_TURN_URLS or any(not TURN_URL_RE.fullmatch(url) for url in urls):
+        raise RuntimeError("JACKDAW_CALLS_TURN_URLS: нужен список адресов вида turn:host:port?transport=udp через запятую")
+    return urls
+
+
 # ---------------------------------------------------------------------------
 # Отправка кода подтверждения
 
@@ -569,6 +605,7 @@ class CallHub:
         stun_urls: Iterable[str] = (),
         reverse: Any = None,
         verified_store: Any = None,
+        turn: TurnCredentialIssuer | None = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -576,6 +613,8 @@ class CallHub:
         self.livekit = livekit
         # Пустой список — клиент использует свои публичные STUN-серверы
         self.stun_urls = validate_stun_urls(stun_urls)
+        # None — TURN не настроен: за симметричным NAT соединения не будет
+        self.turn = turn
         self.mailer = mailer
         self.scheduler = scheduler or Scheduler()
         self._clock = clock
@@ -1001,8 +1040,14 @@ class CallHub:
     def _media_details(self, call: Call, email: str, name: str) -> dict[str, Any]:
         """Как участнику подключить медиа: всегда P2P, токен LiveKit — только если он настроен."""
         details: dict[str, Any] = {"media": "p2p"}
+        ice_servers: list[dict[str, Any]] = []
         if self.stun_urls:
-            details["iceServers"] = [{"urls": list(self.stun_urls)}]
+            ice_servers.append({"urls": list(self.stun_urls)})
+        if self.turn is not None:
+            # Свои учётные данные каждому участнику: срок у них короткий, отозвать их можно сменой секрета.
+            ice_servers.append(self.turn.issue())
+        if ice_servers:
+            details["iceServers"] = ice_servers
         if self.livekit is not None:
             details["livekitURL"] = self.livekit.url
             details["token"] = self.livekit.issue(call.room, f"{email}#{secrets.token_hex(4)}", name)
@@ -1109,6 +1154,7 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     proof_secret = read_secret("JACKDAW_CALLS_PROOF_SECRET")
     livekit = build_livekit_from_environment()
     stun_urls = os.getenv("JACKDAW_CALLS_STUN_URLS", "").split(",")
+    turn = build_turn_from_environment()
     mailer = Mailer(
         os.getenv("JACKDAW_CALLS_SMTP_HOST", "").strip(),
         int(os.getenv("JACKDAW_CALLS_SMTP_PORT", "587")),
@@ -1147,9 +1193,11 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
         send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
-        verified_store=chat.store,
+        verified_store=chat.store, turn=turn,
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"
+    if turn is not None:
+        mode += " + TURN"
     print(f"Jackdaw calls media mode: {mode}", flush=True)
     return hub, host, port
 
@@ -1162,6 +1210,15 @@ def build_livekit_from_environment() -> LiveKitTokenIssuer | None:
     if not url and not api_key and not api_secret:
         return None
     return LiveKitTokenIssuer(url, api_key, api_secret)
+
+
+def build_turn_from_environment() -> TurnCredentialIssuer | None:
+    """TURN необязателен. Адреса без секрета или секрет без адресов — ошибка конфигурации."""
+    urls = [url for url in os.getenv("JACKDAW_CALLS_TURN_URLS", "").split(",") if url.strip()]
+    secret = read_secret("JACKDAW_CALLS_TURN_SECRET")
+    if not urls and not secret:
+        return None
+    return TurnCredentialIssuer(urls, secret)
 
 
 def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:

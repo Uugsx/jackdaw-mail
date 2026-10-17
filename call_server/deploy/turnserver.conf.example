@@ -1,0 +1,48 @@
+# /etc/turnserver.conf — coturn для звонков Jackdaw Mail. Права 0640, владелец root:turnserver.
+# Ретранслирует голос, только когда собеседники не могут соединиться напрямую (симметричный NAT,
+# корпоративный фаервол). Пускает только по временным учётным данным, которые сервис звонков
+# выдаёт участникам принятого звонка (REST API coturn, `use-auth-secret`).
+
+listening-port=3478
+# Внешний адрес VPS: его клиенты получают в relay-кандидатах.
+external-ip=82.22.187.238
+realm=jackdaw-mail.pro
+
+# Тот же секрет, что в /etc/jackdaw-calls/turn.secret (JACKDAW_CALLS_TURN_SECRET_FILE):
+# openssl rand -hex 32
+use-auth-secret
+static-auth-secret=ЗАМЕНИТЬ_НА_СЕКРЕТ
+fingerprint
+
+# Порты ретрансляции: каждый участник звонка через TURN занимает один. Открыть в фаерволе (UDP).
+min-port=49160
+max-port=49359
+
+# Нагрузка: голос Opus — десятки килобит в секунду; лимиты не дают превратить сервер в общий прокси.
+max-bps=64000
+user-quota=4
+total-quota=200
+stale-nonce=600
+
+# Ретрансляция только в интернет: к loopback, частным сетям и метаданным облака — нельзя (SSRF).
+no-multicast-peers
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=240.0.0.0-255.255.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# Без TLS на этом этапе: голос и так зашифрован DTLS-SRTP между клиентами, TURN его не видит.
+no-tls
+no-dtls
+no-cli
+syslog
+simple-log
