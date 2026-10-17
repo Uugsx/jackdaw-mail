@@ -20,6 +20,7 @@ import {
   isResponseRequestExcluded,
   isResponseRequestTakenInWork,
   isResponseRequestSuppressedUntilTakenInWork,
+  isResponseReminderAccountInLiveScope,
   isResponseReminderRequestAfterActivation,
   normalizeResponseReminderIntervals,
   responseReminderKey,
@@ -35,6 +36,7 @@ import {
 } from "../../logic/Reports/ReportsPresentation";
 import {
   getResponseReminderConfig,
+  LIVE_SLA_ACCOUNT_STORAGE_KEY,
   RESPONSE_REMINDER_CONFIG_STORAGE_KEY,
   setResponseReminderConfig,
 } from "../Reports/ResponseReminderSettings";
@@ -102,6 +104,10 @@ const responseReminderTargetSetting = getLocalStorage<unknown>(
 const responseReminderFolderSetting = getLocalStorage<unknown>(
   "reports.live-sla.folders.v1",
   {},
+);
+const responseReminderLiveAccountSetting = getLocalStorage<unknown>(
+  LIVE_SLA_ACCOUNT_STORAGE_KEY,
+  null,
 );
 const responderAttributionSetting = getLocalStorage<unknown>(
   "reports.responder-attribution.v1",
@@ -262,6 +268,7 @@ export function startResponseReminderWatcher(): void {
   responseReminderConfigSetting.subscribe(() => scheduleEvaluation());
   responseReminderTargetSetting.subscribe(() => scheduleEvaluation());
   responseReminderFolderSetting.subscribe(() => scheduleEvaluation());
+  responseReminderLiveAccountSetting.subscribe(() => scheduleEvaluation());
   subscribeWorkingHoursSettings(() => scheduleEvaluation());
   responderAttributionSetting.subscribe(() => scheduleEvaluation());
   responseTrackingArchiveSetting.subscribe(() => scheduleEvaluation());
@@ -315,6 +322,7 @@ async function evaluateResponseReminders(): Promise<void> {
     let stateChanged = pruneState(state, now);
     const jobs: ReminderNotificationJob[] = [];
     const eventJobs: ResponseEventNotificationJob[] = [];
+    const liveAccountId = readStoredLiveAccountId();
 
     for (const account of appGlobal.emailAccounts.contents) {
       if (!(account instanceof MailAccount)) {
@@ -322,6 +330,13 @@ async function evaluateResponseReminders(): Promise<void> {
       }
       const accountId = numericId(account.dbID);
       if (accountId == null) {
+        continue;
+      }
+      if (
+        !isResponseReminderAccountInLiveScope(accountId, liveAccountId)
+      ) {
+        // Ящик вне области живого контроля. Настройки и состояние не трогаем:
+        // при возврате ящика в область уже показанные напоминания не повторятся.
         continue;
       }
       if (!hasProFeature("reminders")) {
@@ -702,6 +717,10 @@ function isCurrentResponseReminderCandidate(
   const config = getResponseReminderConfig(candidate.accountId);
   if (
     !config.enabled ||
+    !isResponseReminderAccountInLiveScope(
+      candidate.accountId,
+      readStoredLiveAccountId(),
+    ) ||
     isResponseRequestExcluded(candidate, config.excludedCategoryNames) ||
     isResponseTrackingArchived(candidate, getResponseTrackingArchive())
   ) {
@@ -728,6 +747,14 @@ function readStoredTargetMinutes(accountId: number): number {
   return normalizeResponseTargetMinutes(
     typeof stored == "number" ? stored : undefined,
   );
+}
+
+function readStoredLiveAccountId(): unknown {
+  try {
+    return responseReminderLiveAccountSetting.value;
+  } catch {
+    return null;
+  }
 }
 
 function readStoredFolderId(accountId: number): number | null {
