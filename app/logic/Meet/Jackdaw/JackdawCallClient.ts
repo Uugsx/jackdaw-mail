@@ -430,15 +430,18 @@ export class JackdawCallClient extends Observable {
     return { token: ready.token, address: ready.address, mailSubject: ready.mailSubject, expiresIn: ready.expiresIn };
   }
 
-  /** true — адрес подтверждён (доказательство уже сохранено), false — письмо ещё не пришло. */
-  async checkReverseVerification(token: string): Promise<boolean> {
+  /**
+   * Подтверждённый адрес (доказательство уже сохранено) или null, если письмо ещё не пришло.
+   * Адрес может отличаться от запрошенного: подтверждается фактический отправитель письма.
+   */
+  async checkReverseVerification(token: string): Promise<string | null> {
     let reply = this.waitFor(message =>
       message.type == "verify-reverse-pending" && message.token == token ||
       message.type == "verified" ||
       message.type == "error" && message.requestType == "verify-reverse-check");
     this.send({ type: "verify-reverse-check", token });
     let message = await reply;
-    return message.type == "verified";
+    return message.type == "verified" ? message.email : null;
   }
 
   /** Отключает адрес от звонков на этом устройстве. */

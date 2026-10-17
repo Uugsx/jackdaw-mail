@@ -49,7 +49,8 @@ export type JackdawServerMessage =
   | { type: "server-hello"; protocol: number }
   | { type: "welcome"; emails: string[]; resumedCalls: string[] }
   | { type: "verify-sent"; email: string }
-  | { type: "verified"; email: string; proof: string }
+  /** `requestedEmail` — если почтовый сервер отправил письмо от другого адреса ящика, и подтверждён он */
+  | { type: "verified"; email: string; proof: string; requestedEmail?: string }
   /** Обратное подтверждение: письмо нужно отправить с адреса `email` на `address` */
   | { type: "verify-reverse-ready"; email: string; token: string; address: string; mailSubject: string; expiresIn: number }
   | { type: "verify-reverse-pending"; email: string; token: string }
@@ -199,7 +200,7 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
     case "verified": {
       let email = normalizeCallEmail(data.email);
       return email && typeof data.proof == "string" && data.proof.length <= 1024
-        ? { type: "verified", email, proof: data.proof }
+        ? { type: "verified", email, proof: data.proof, ...(normalizeCallEmail(data.requestedEmail) ? { requestedEmail: normalizeCallEmail(data.requestedEmail)! } : {}) }
         : null;
     }
     case "verify-reverse-ready": {

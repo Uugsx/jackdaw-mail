@@ -281,11 +281,17 @@ describe("клиент сигналинга", () => {
     let pending = client.checkReverseVerification(ready.token);
     expect(socket().last()).toEqual({ type: "verify-reverse-check", token: "abcdefghijklmnop" });
     socket().receive({ type: "verify-reverse-pending", email: "alice@corp.example", token: "abcdefghijklmnop" });
-    expect(await pending).toBe(false);
+    expect(await pending).toBeNull();
 
     socket().receive({ type: "verified", email: "alice@corp.example", proof: "proof-reverse" });
     expect(client.verifiedEmails).toEqual(["alice@corp.example"]);
     expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "alice@corp.example": "proof-reverse" });
+
+    // Exchange отправил от основного адреса ящика — подтверждён он
+    let again = client.checkReverseVerification(ready.token);
+    socket().receive({ type: "verified", email: "primary@corp.example", proof: "proof-primary", requestedEmail: "alice@corp.example" });
+    expect(await again).toBe("primary@corp.example");
+    expect(client.verifiedEmails).toContain("primary@corp.example");
   });
 
   test("обратное подтверждение не отправит письмо на чужой домен", async () => {

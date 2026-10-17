@@ -18,7 +18,12 @@
   токеном — сервис не может работать открытым релеем;
 - размер письма ограничен, таймауты соединения, лимит писем с одного IP;
 - токен одноразовый, живёт 15 минут, привязан к лицензии/пробному периоду
-  того, кто его запросил; адрес в From должен совпасть с подтверждаемым.
+  того, кто его запросил.
+
+Подтверждается адрес из From — именно его доказывает подпись домена. Он может
+отличаться от запрошенного: Exchange отправляет от основного адреса ящика, даже
+если пользователь подключил псевдоним. Тогда подтверждается основной адрес,
+а клиент показывает, какой именно.
 """
 
 from __future__ import annotations
@@ -58,6 +63,8 @@ class PendingReverse:
     subject: str
     expires_at: float
     proof: str | None = None
+    # Адрес, который запрашивал пользователь; `email` после подтверждения — фактический отправитель
+    requested_email: str = ""
 
 
 class ReverseVerification:
@@ -82,7 +89,8 @@ class ReverseVerification:
         by_email.append(current)
         by_subject.append(current)
         token = "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz234567") for _ in range(16))
-        self._pending[token] = PendingReverse(email_address, subject, current + REVERSE_TTL_SECONDS)
+        self._pending[token] = PendingReverse(email_address, subject, current + REVERSE_TTL_SECONDS,
+                                              requested_email=email_address)
         return {
             "token": token,
             "address": f"verify+{token}@{self.domain}",
@@ -99,9 +107,8 @@ class ReverseVerification:
         pending = self._pending.get(token)
         if pending is None or pending.expires_at <= self._clock() or pending.proof is not None:
             raise ReverseVerificationError("code_expired", "Адрес для подтверждения устарел.")
-        if from_email != pending.email:
-            raise ReverseVerificationError("sender_mismatch", "Письмо отправлено не с подтверждаемого адреса.")
-        pending.proof = self._issue_proof(pending.email, pending.subject)
+        pending.email = from_email
+        pending.proof = self._issue_proof(from_email, pending.subject)
         return pending
 
     def check(self, token: str, subject: str) -> PendingReverse | None:
@@ -288,7 +295,7 @@ class InboundHandler:
             return "550 5.7.1 Sender domain not authenticated (DKIM/SPF)"
         if not self.on_verified(token, from_email):
             self.log(f"Reverse verification for *@{domain} did not match a pending request")
-            return "550 5.7.1 Verification address does not match the sender"
+            return "550 5.7.1 Verification address expired"
         self.log(f"Reverse verification passed for *@{domain} via {method}")
         return "250 OK: address confirmed"
 

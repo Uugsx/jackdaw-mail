@@ -760,7 +760,7 @@ class CallHub:
         if pending.proof is None:
             peer.send({"type": "verify-reverse-pending", "token": token, "email": pending.email})
             return
-        self._deliver_proof(peer, pending.email, pending.proof)
+        self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
 
     def reverse_verified(self, token: str, from_email: str) -> bool:
         """Письмо прошло DKIM/SPF (вызывается из SMTP-приёма). Рассылаем подтверждение."""
@@ -771,13 +771,17 @@ class CallHub:
         except (ReverseVerificationError, CallError):
             return False
         for peer in list(self.peers_by_subject.get(pending.subject, ())):
-            self._deliver_proof(peer, pending.email, pending.proof)
+            self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
         return True
 
-    def _deliver_proof(self, peer: Peer, email: str, proof: str) -> None:
+    def _deliver_proof(self, peer: Peer, email: str, proof: str, requested_email: str = "") -> None:
         if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
             self._register(peer, email)
-        peer.send({"type": "verified", "email": email, "proof": proof})
+        message = {"type": "verified", "email": email, "proof": proof}
+        if requested_email and requested_email != email:
+            # Почтовый сервер отправил письмо от другого адреса ящика — подтверждён он.
+            message["requestedEmail"] = requested_email
+        peer.send(message)
 
     def _verify_finish(self, peer: Peer, message: dict[str, Any]) -> None:
         email = normalize_email(message.get("email"))

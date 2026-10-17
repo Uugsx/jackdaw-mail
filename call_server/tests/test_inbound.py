@@ -41,11 +41,16 @@ class ReverseVerificationTests(unittest.TestCase):
         self.assertIn(ready["token"], ready["mailSubject"])
         self.assertTrue(self.reverse.accepts(ready["token"]))
 
-    def test_complete_requires_same_sender_and_is_single_use(self):
+    def test_complete_confirms_actual_sender(self):
+        # Exchange отправляет от основного адреса ящика, а не от псевдонима
+        token = self.reverse.start("alias@corp.example", "license:1")["token"]
+        pending = self.reverse.complete(token, "primary@corp.example")
+        self.assertEqual(pending.email, "primary@corp.example")
+        self.assertEqual(pending.requested_email, "alias@corp.example")
+        self.assertEqual(pending.proof, "proof:primary@corp.example:license:1")
+
+    def test_complete_is_single_use(self):
         token = self.reverse.start("alice@corp.example", "license:1")["token"]
-        with self.assertRaises(inbound.ReverseVerificationError) as error:
-            self.reverse.complete(token, "mallory@corp.example")
-        self.assertEqual(error.exception.code, "sender_mismatch")
         pending = self.reverse.complete(token, "alice@corp.example")
         self.assertEqual(pending.proof, "proof:alice@corp.example:license:1")
         self.assertFalse(self.reverse.accepts(token))
@@ -224,12 +229,23 @@ class HubReverseTests(HubTestCase):
         self.assertEqual(self.last(trial, "error")["code"], "code_expired")
         self.assertIsNone(self.last(trial, "verified"))
 
-    def test_wrong_sender_is_rejected(self):
+    def test_actual_sender_is_confirmed_and_reported(self):
+        peer = self.connect()
+        self.hub.handle(peer, {"type": "verify-reverse-start", "email": "alias@corp.example"})
+        token = self.last(peer, "verify-reverse-ready")["token"]
+        self.assertTrue(self.hub.reverse_verified(token, "Primary@Corp.Example"))
+        verified = self.last(peer, "verified")
+        self.assertEqual(verified["email"], "primary@corp.example")
+        self.assertEqual(verified["requestedEmail"], "alias@corp.example")
+        self.assertEqual(self.signer.verify(verified["proof"], "license:1"), "primary@corp.example")
+        self.assertNotIn("alias@corp.example", self.hub.peers_by_email)
+
+    def test_used_token_is_rejected(self):
         peer = self.connect()
         self.hub.handle(peer, {"type": "verify-reverse-start", "email": "alice@corp.example"})
         token = self.last(peer, "verify-reverse-ready")["token"]
-        self.assertFalse(self.hub.reverse_verified(token, "boss@corp.example"))
-        self.assertIsNone(self.last(peer, "verified"))
+        self.assertTrue(self.hub.reverse_verified(token, "alice@corp.example"))
+        self.assertFalse(self.hub.reverse_verified(token, "alice@corp.example"))
 
     def test_disabled_without_configuration(self):
         self.hub.reverse = None

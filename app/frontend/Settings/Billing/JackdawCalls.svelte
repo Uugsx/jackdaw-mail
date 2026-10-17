@@ -202,9 +202,14 @@
   }
   onDestroy(stopReverseChecks);
 
-  $: myAddresses = [...new Set($emailAccounts.contents
-    .map(account => normalizeCallEmail(account.emailAddress))
-    .filter((email): email is string => !!email))];
+  // Плюс уже подтверждённые адреса: при подтверждении письмом почтовый сервер
+  // может отправить от основного адреса ящика, которого нет среди аккаунтов.
+  $: myAddresses = [...new Set([
+    ...$emailAccounts.contents
+      .map(account => normalizeCallEmail(account.emailAddress))
+      .filter((email): email is string => !!email),
+    ...$client.verifiedEmails,
+  ])];
 
   function statusLabel(status: JackdawCallStatus): string {
     switch (status) {
@@ -296,18 +301,23 @@
     }
     if (!client.isOnline) return;
     try {
-      if (await client.checkReverseVerification(pending.token)) {
-        reverseConfirmed(pending.address);
+      let confirmed = await client.checkReverseVerification(pending.token);
+      if (confirmed) {
+        reverseConfirmed(pending.address, confirmed);
       }
     } catch {
       // Сеть или сервер недоступны — попробуем при следующей проверке.
     }
   }
 
-  function reverseConfirmed(address: string) {
+  function reverseConfirmed(address: string, confirmedEmail = address) {
     reverse = null;
     saveReverse(null);
-    showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
+    if (confirmedEmail == address) {
+      showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
+    } else {
+      showFeedback(confirmedEmail, $t`Your mail server sent the email from ${confirmedEmail}, so this address is confirmed. Other Jackdaw users can call you on it. To confirm ${address} too, use the code from the email.`, "success");
+    }
   }
 
   function disconnect(address: string) {
