@@ -12,6 +12,7 @@ import { logError, showError } from "../Util/error";
 import { CollectionObserver, type ArrayColl } from "svelte-collections";
 import type { Account } from "../../logic/Abstract/Account";
 import { syncMailTaskbarBadge } from "./mailUnreadCounts";
+import { gt } from "../../l10n/l10n";
 import {
   getMailAccountNotificationSetting,
   getMailNotificationSound,
@@ -101,7 +102,7 @@ export async function showNewMail(messages: EMail[]) {
   notification.updatesTaskbarBadge = false;
   notification.onClick = () => openMessage(firstMsg);
   notification.onReply = replyText => reply(firstMsg, replyText);
-  notification.replyPlaceholder = "Reply…";
+  notification.replyPlaceholder = gt`Reply…`;
   await notification.show();
   syncMailTaskbarBadge();
 }

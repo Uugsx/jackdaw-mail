@@ -112,6 +112,10 @@
   $: duration = $event.duration;
   $: startTime, timezone, duration, updateDateUI();
   function updateDateUI() {
+    if (frequency == Frequency.None) {
+      // Повтор выключен: правило с частотой NONE строить нельзя
+      return;
+    }
     master.startEditing();
     master.startTime = event.startTime;
     master.timezone = event.timezone;
@@ -125,7 +129,8 @@
     monthWeekOptions = [{ label: $t`On ${localStartTime.toLocaleDateString(getDateTimeLocale(), { day: "numeric", timeZone: "UTC" })}. of every month`, value: 0 }];
 
     let weekday = localStartTime.toLocaleDateString(getDateTimeLocale(), { weekday: "long", timeZone: "UTC" });
-    let weekno = Math.ceil(localStartTime.getUTCDay() / 7);
+    // Номер недели месяца считается по числу месяца, а не по дню недели
+    let weekno = Math.ceil(localStartTime.getUTCDate() / 7);
     if (weekno < 5) {
       let weekname = [
         $t`first *=> as in: On the first Wednesday in July`,
@@ -208,6 +213,8 @@
     } else if (frequency != master.recurrenceRule?.frequency) {
       master.startEditing();
       master.newRecurrenceRule(frequency, interval, week, weekdays);
+      // Пока повтор был выключен, варианты не пересчитывались — обновляем их
+      updateDateUI();
     }
   }
 </script>

@@ -79,20 +79,31 @@
   }
 
   function checkDirty() {
-    // If there's no meaningful body text beyond the quote, close without offering save
-    let text = notQuote().body.textContent ?? "";
-    text = text.replace(/\s+/g, "").trim();
-    // Ignore short attribution / signature crumbs before a quote
-    if (text.length < 20) {
-      isMenuOpen = false;
-      dispatchEvent("close");
+    if (isComposeDirty()) {
+      return;
     }
+    // Ни своего текста, ни вложений, ни темы — закрываем без вопроса
+    isMenuOpen = false;
+    dispatchEvent("close");
+  }
+
+  function isComposeDirty(): boolean {
+    if (mail.attachments?.hasItems) {
+      return true;
+    }
+    if (!mail.composeSource && (!!mail.subject?.trim() || mail.to?.hasItems)) {
+      return true;
+    }
+    // Любой свой текст (даже короткий «Да, согласен») считается изменением.
+    // Цитата, строка «X написал:» и подпись своим текстом не считаются.
+    let text = notQuote().body.textContent ?? "";
+    return text.replace(/\s+/g, "").length > 0;
   }
 
   function notQuote(): Document {
-    let doc = new DOMParser().parseFromString(mail.html, "text/html");
-    for (let blockquote of doc.body.querySelectorAll("blockquote")) {
-      blockquote.remove();
+    let doc = new DOMParser().parseFromString(mail.html ?? "", "text/html");
+    for (let element of doc.body.querySelectorAll("blockquote, .quote-header, footer")) {
+      element.remove();
     }
     return doc;
   }

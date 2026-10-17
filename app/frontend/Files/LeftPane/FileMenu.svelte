@@ -6,6 +6,7 @@
 <MenuDivider />
 
 <script lang="ts">
+  import { confirmDeleteFileOrFolder } from "../confirmDelete";
   import { File } from '../../../logic/Files/File';
   import { selectedFile } from '../selected';
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
@@ -16,6 +17,9 @@
   export let file: File;
 
   async function deleteFile() {
+    if (!confirmDeleteFileOrFolder(file)) {
+      return;
+    }
     await file.deleteIt();
 
     if ($selectedFile == file) {

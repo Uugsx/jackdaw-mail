@@ -193,8 +193,13 @@
 
   function onStartTimeChanged(newTime: Date) {
     let duration = event.duration;
+    // Напоминание хранится абсолютным временем — переносим его вместе с началом
+    let alarmOffset = event.alarm ? event.startTime.getTime() - event.alarm.getTime() : null;
     event.startTime = newTime;
     event.duration = duration;
+    if (alarmOffset != null) {
+      event.alarm = new Date(newTime.getTime() - alarmOffset);
+    }
   }
 
   function checkEndTime() {

@@ -37,6 +37,7 @@
 {/if}
 
 <script lang="ts">
+  import { confirmDeleteFileOrFolder } from "../confirmDelete";
   import type { FileOrDirectory } from "../../../logic/Files/FileOrDirectory";
   import { Directory } from "../../../logic/Files/Directory";
   import { selectedFile, selectedFolder } from "../selected";
@@ -64,6 +65,9 @@
   function onOpenMoveMenu() {
   }
   async function onDelete() {
+    if (!confirmDeleteFileOrFolder(file)) {
+      return;
+    }
     await file.deleteIt();
 
     if ($selectedFile == file) {

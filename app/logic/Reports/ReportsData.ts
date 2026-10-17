@@ -447,8 +447,9 @@ export function buildResponseTimeStats(
   return {
     answered: durations.length,
     averageSeconds: totalSeconds / durations.length,
-    minimumSeconds: Math.min(...durations),
-    maximumSeconds: Math.max(...durations),
+    // Не через Math.min(...durations): на сотнях тысяч ответов spread переполняет стек
+    minimumSeconds: durations.reduce((min, duration) => Math.min(min, duration), Infinity),
+    maximumSeconds: durations.reduce((max, duration) => Math.max(max, duration), -Infinity),
     withinTarget,
     overTarget: durations.length - withinTarget,
   };

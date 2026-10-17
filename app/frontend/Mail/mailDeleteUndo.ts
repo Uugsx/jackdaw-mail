@@ -5,6 +5,7 @@ import { DeleteStrategy } from "../../logic/Mail/MailAccount";
 import { openEMailMessage } from "./open";
 import { throwFirstBulkActionError, uniqueMailMessages } from "./mailBulkActions";
 import { gt } from "../../l10n/l10n";
+import { UserError } from "../../logic/util/util";
 import { ArrayColl } from "svelte-collections";
 
 type DeletedEntry = {
@@ -58,7 +59,37 @@ export async function deleteMessagesWithUndo(
   }));
   beforeDelete?.();
   await deleteMailMessages(list);
+  // При немедленном удалении копии в Корзине нет — отменять нечего
+  // (`deleteStrategy` есть только у протоколов, где её можно настроить)
+  if (entries.every(entry => (entry.sourceFolder.account as { deleteStrategy?: DeleteStrategy })
+    ?.deleteStrategy == DeleteStrategy.DeleteImmediately)) {
+    return;
+  }
   showDeleteUndoToast(entries);
+}
+
+/**
+ * Находит письмо, которое удаление перенесло в Корзину.
+ * OWA переносит сам объект (меняет `message.folder`), а IMAP, EWS, JMAP и Graph
+ * создают в Корзине новую копию с другим ID — её ищем по Message-ID.
+ */
+async function findDeletedMessage(entry: DeletedEntry): Promise<EMail | null> {
+  let message = entry.message;
+  if (message.folder && message.folder !== entry.sourceFolder) {
+    return message;
+  }
+  let trash = entry.sourceFolder.account?.getSpecialFolder(SpecialFolder.Trash);
+  if (!trash || trash === entry.sourceFolder || !message.messageID) {
+    return null;
+  }
+  let findCopy = () => trash.messages.contents.find(candidate =>
+    candidate !== message && !candidate.isDeleted && candidate.messageID == message.messageID) ?? null;
+  let copy = findCopy();
+  if (!copy) {
+    await trash.fetchNewMailQuick();
+    copy = findCopy();
+  }
+  return copy;
 }
 
 function showDeleteUndoToast(entries: DeletedEntry[]) {
@@ -75,18 +106,26 @@ function showDeleteUndoToast(entries: DeletedEntry[]) {
     label,
     undo: async () => {
       let last: EMail | null = null;
-      for (let entry of entries) {
-        let message = entry.message;
-        if (!message.folder || message.folder === entry.sourceFolder) {
-          continue;
+      let notFound = 0;
+      try {
+        for (let entry of entries) {
+          let message = await findDeletedMessage(entry);
+          if (!message) {
+            notFound++;
+            continue;
+          }
+          await entry.sourceFolder.moveMessageHere(message);
+          last = message;
         }
-        await entry.sourceFolder.moveMessageHere(message);
-        last = message;
+        if (last) {
+          await openEMailMessage(last);
+        }
+      } finally {
+        mailUndoToast.update(state => state?.id == id ? null : state);
       }
-      if (last) {
-        await openEMailMessage(last);
+      if (notFound) {
+        throw new UserError(gt`Could not restore the deleted message from Trash. Open Trash and move it back manually.`);
       }
-      mailUndoToast.update(state => state?.id == id ? null : state);
     },
   });
   dismissTimer = setTimeout(() => {

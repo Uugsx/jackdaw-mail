@@ -473,7 +473,13 @@ export class IMAPAccount extends MailAccount {
       await this.login(true);
     }
     await this.outgoing.send(email);
-    await this.saveSent(email);
+    // Письмо уже ушло по SMTP. Ошибку сохранения в «Отправленные» нельзя пробрасывать:
+    // окно останется открытым, и повторное «Отправить» продублирует письмо получателям.
+    try {
+      await this.saveSent(email);
+    } catch (ex) {
+      this.errorCallback(ex);
+    }
   };
 
   protected async saveSent(email: EMail): Promise<void> {

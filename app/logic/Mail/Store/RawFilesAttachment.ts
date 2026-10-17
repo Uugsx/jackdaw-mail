@@ -99,13 +99,28 @@ export class RawFilesAttachment implements MailContentStorage {
 
   async deleteAttachment(attachment: Attachment): Promise<void> {
     if (attachment.filepathLocal) {
-      await appGlobal.remoteApp.deleteFile(attachment.filepathLocal);
+      let dir = attachment.filepathLocal.replace(/[\\/][^\\/]*$/, "");
+      let hasDir = !!dir && dir != attachment.filepathLocal;
+      if (hasDir) {
+        // Каталог письма только для чтения (см. messageFinished())
+        await appGlobal.remoteApp.fs.chmod(dir, 0o700);
+      }
+      try {
+        await appGlobal.remoteApp.deleteFile(attachment.filepathLocal);
+      } finally {
+        if (hasDir) {
+          await appGlobal.remoteApp.fs.chmod(dir, 0o500);
+        }
+      }
     }
   }
   supportsAttachments = true;
 
   static async rmdirWithFiles(dir: string) {
     try {
+      // messageFinished() делает каталог только для чтения (0o500), а удалить файл
+      // из такого каталога нельзя (EACCES) — вложения оставались бы на диске
+      await appGlobal.remoteApp.fs.chmod(dir, 0o700);
       let files = await appGlobal.remoteApp.fs.readdir(dir);
       for (let file of files) {
         await appGlobal.remoteApp.fs.rm(dir + "/" + file);

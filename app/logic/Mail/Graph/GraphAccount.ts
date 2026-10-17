@@ -137,7 +137,8 @@ export class GraphAccount extends ExchangeMailAccount {
     let allResults = new ArrayColl<T>();
     let firstResults = await this.graphGet<T>(path, args, options);
     allResults.addAll(firstResults);
-    let deltaURL: URLString;
+    // graphGet() кладёт ссылки в `.nextURL`/`.deltaURL` (а не `nextLink`/`deltaLink`)
+    let deltaURL: URLString = (firstResults as any).deltaURL;
     let i = 0;
     let nextURL = (firstResults as any).nextURL;
     while (nextURL) {
@@ -147,8 +148,8 @@ export class GraphAccount extends ExchangeMailAccount {
       // nextURL already includes the $select. And ky searchParams would overwrite the skip token.
       let nextResults = await this.graphGet<T>(nextURL);
       allResults.addAll(nextResults);
-      nextURL = (nextResults as any).nextLink;
-      deltaURL = (nextResults as any).deltaLink;
+      nextURL = (nextResults as any).nextURL;
+      deltaURL = (nextResults as any).deltaURL ?? deltaURL;
     }
     let array = allResults.contents;
     (array as any).deltaURL = deltaURL;
