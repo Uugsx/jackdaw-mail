@@ -21,8 +21,15 @@
   import type { Collection } from "svelte-collections";
 
   export let rooms: Collection<ChatRoom>;
-  export let selectedRoom: ChatRoom;
+  /** null по умолчанию: при undefined PersonsList подставил бы своего человека */
+  export let selectedRoom: ChatRoom = null;
   export let doSearch = false;
+
+  /* PersonsList общий с «Контактами» и по умолчанию выбирает текущего человека
+   * ($selectedPerson). Здесь выбор — всегда комната чата, иначе null. */
+  $: if (selectedRoom != null && !(selectedRoom instanceof ChatRoom)) {
+    selectedRoom = null;
+  }
 </script>
 
 <style>

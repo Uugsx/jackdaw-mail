@@ -55,12 +55,17 @@
 
   $: $selectedRoom && catchErrors(loadMessages)
   async function loadMessages() {
-    await $selectedRoom?.listMembers();
-    await $selectedRoom?.listMessages();
+    let room = $selectedRoom;
+    if (!(room instanceof ChatRoom)) {
+      return;
+    }
+    await room.listMembers();
+    await room.listMessages();
   }
 
   onMount(() => {
-    $selectedRoom = $selectedPerson && rooms.find(room => roomMatchesPerson(room, $selectedPerson));
+    // null, а не undefined: иначе список комнат подставит своё значение по умолчанию (человека).
+    $selectedRoom = ($selectedPerson && rooms.find(room => roomMatchesPerson(room, $selectedPerson))) || null;
   });
   function roomMatchesPerson(room: ChatRoom, person: Person): boolean {
     return room.contact instanceof ChatPersonUID && room.contact.matchesPerson(person);
@@ -80,7 +85,7 @@
   $: $rooms, clearSelectedChat()
   function clearSelectedChat() {
     if (!rooms.contains($selectedRoom)) {
-      $selectedRoom = rooms.last;
+      $selectedRoom = rooms.last ?? null;
     }
   }
 </script>
