@@ -21,6 +21,9 @@ import { gt } from "../../../l10n/l10n";
 
 /** Сколько ждать соединения P2P после ответа на звонок. Дольше обычно значит, что NAT не пропускает. */
 const CONNECT_TIMEOUT_MS = 30_000;
+/** Сколько звонить без ответа. Сервер сам завершает вызов через 45 с; этот запас — на случай,
+ * если его сообщение потерялось вместе с соединением: экран вызова и рингтон не должны висеть вечно. */
+const RING_TIMEOUT_MS = 50_000;
 
 /** Звонки Jackdaw ↔ Jackdaw: только голос, 1:1. Медиа идёт напрямую между клиентами (P2P WebRTC),
  * сигналинг — через `JackdawCallClient`.
@@ -63,6 +66,12 @@ export function setJackdawCallEndedHandler(handler: (call: JackdawCall, message:
   onJackdawCallEnded = handler;
 }
 
+/** Предупреждение во время разговора, которое не завершает звонок: например, отключился микрофон. */
+export let onJackdawCallWarning: (call: JackdawCall, message: string) => void = () => {};
+export function setJackdawCallWarningHandler(handler: (call: JackdawCall, message: string) => void): void {
+  onJackdawCallWarning = handler;
+}
+
 export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTarget {
   declare account: JackdawCallAccount;
   mediaDeviceStreams: LocalMediaDeviceStreams;
@@ -86,6 +95,14 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   protected connectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Соединение P2P хотя бы раз установилось: для текста ошибки при обрыве */
   protected mediaConnected = false;
+  /** Таймаут гудков у звонящего и вызова у вызываемого */
+  protected ringTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Имя, которое звонящий указал о себе сам. Пусто, если собеседник есть в контактах. */
+  protected statedName = "";
+  /** Слушатель смены аудиоустройств во время разговора */
+  protected deviceChangeListener: (() => void) | null = null;
+  /** Идёт переключение на другой микрофон: повторные события не запускают второе */
+  protected switchingMic = false;
 
   constructor(account: JackdawCallAccount) {
     super();
@@ -120,8 +137,34 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     this.remoteEmail = message.from;
     this.title = message.fromName || message.from;
     this.addRemotePlaceholder(message.from, message.fromName, person);
+    this.statedName = person ? "" : message.fromName;
     this.client.register(this);
     this.state = MeetingState.IncomingCall;
+    this.startRingTimer();
+  }
+
+  /** Имя звонящего не из контактов, а из его собственных настроек: им можно назваться кем угодно. */
+  get remoteNameUnverified(): boolean {
+    return !this.outgoing && !!this.statedName && this.statedName != this.remoteEmail && !this.remoteParticipant?.person;
+  }
+
+  /** Кто звонит — для уведомлений: имя (с пометкой, если его указал сам звонящий) и адрес. */
+  get remoteLabel(): string {
+    let name = this.remoteParticipant?.name || this.remoteEmail;
+    if (this.remoteNameUnverified) {
+      name = gt`${name} (unverified)`;
+    }
+    return name == this.remoteEmail ? name : `${name} · ${this.remoteEmail}`;
+  }
+
+  /** Входящий звонок закончился без ответа на этом устройстве: пропущенный. */
+  get missed(): boolean {
+    return !this.outgoing && !this.answered &&
+      (this.endReason == "cancelled" || this.endReason == "no-answer" || this.endReason == "busy");
+  }
+
+  protected missedCallMessage(): string {
+    return gt`Missed call from ${this.remoteLabel}`;
   }
 
   protected addRemotePlaceholder(email: string, name: string, person?: Person | null): void {
@@ -149,6 +192,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       await this.endLocally();
       throw ex;
     }
+    this.startRingTimer();
   }
 
   async answer(): Promise<void> {
@@ -156,7 +200,13 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       return;
     }
     this.answered = true;
-    this.client.send({ type: "accept", callId: this.callID });
+    try {
+      this.client.send({ type: "accept", callId: this.callID });
+    } catch (ex) {
+      // Ответ не ушёл: кнопка «Принять» должна снова работать.
+      this.answered = false;
+      throw ex;
+    }
     // Дальше — `joined` и предложение SDP от звонящего в `onSignal()`.
   }
 
@@ -178,7 +228,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       case "call-ended":
         this.remoteEnded = true;
         this.endReason = message.reason;
-        this.reportEnd(endReasonMessage(message.reason, this.outgoing));
+        this.reportEnd(this.missed ? this.missedCallMessage() : endReasonMessage(message.reason, this.outgoing));
         void this.endLocally();
         break;
       case "error":
@@ -197,6 +247,58 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     if (message) {
       onJackdawCallEnded(this, message);
     }
+  }
+
+  /** Соединение с сервисом восстановилось. Вызов (гудки, входящий) после обрыва на сервере уже отменён,
+   * а идущий разговор, которого сервер не вернул, там уже закончен: без этого экран звонка завис бы. */
+  onReconnected(resumed: boolean): void {
+    if (this.state == MeetingState.Ended) {
+      return;
+    }
+    let ringing = this.state == MeetingState.OutgoingCall || this.state == MeetingState.IncomingCall;
+    if (resumed && !ringing) {
+      return;
+    }
+    this.remoteEnded = true;
+    this.endReason = "connection-lost";
+    this.reportEnd(endReasonMessage("connection-lost", this.outgoing));
+    void this.endLocally();
+  }
+
+  protected startRingTimer(): void {
+    this.clearRingTimer();
+    this.ringTimer = setTimeout(() => this.ringTimedOut(), RING_TIMEOUT_MS);
+  }
+
+  protected clearRingTimer(): void {
+    if (this.ringTimer != null) {
+      clearTimeout(this.ringTimer);
+      this.ringTimer = null;
+    }
+  }
+
+  /** Сервер не сообщил о конце вызова вовремя: завершаем сами. */
+  protected ringTimedOut(): void {
+    this.ringTimer = null;
+    if (this.state != MeetingState.OutgoingCall && this.state != MeetingState.IncomingCall) {
+      return;
+    }
+    if (this.answered) {
+      // Ответ ушёл, но разговор так и не начался.
+      this.reportEnd(this.connectFailedMessage());
+    } else {
+      this.endReason = "no-answer";
+      this.reportEnd(this.missed ? this.missedCallMessage() : endReasonMessage("no-answer", this.outgoing));
+      if (!this.outgoing) {
+        // Вызов на сервере уже завершён по его таймауту; отклонение сбросило бы звонок и на других устройствах.
+        this.remoteEnded = true;
+      }
+    }
+    void this.hangup();
+  }
+
+  protected connectFailedMessage(): string {
+    return gt`Could not connect the call.` + " " + gt`Check your internet connection. A firewall or VPN may be blocking calls.`;
   }
 
   // --- медиа P2P ---------------------------------------------------------
@@ -227,6 +329,8 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     peerConnection.onicecandidate = event => this.sendCandidate(event.candidate);
     peerConnection.ontrack = event => this.addRemoteTrack(event.track);
     peerConnection.onconnectionstatechange = () => this.connectionStateChanged(peerConnection);
+    this.clearRingTimer();
+    this.watchDeviceChanges();
     this.connectTimer = setTimeout(() => {
       if (!this.mediaConnected) {
         this.failMedia(null);
@@ -297,10 +401,15 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     if (!candidate?.candidate) {
       return;
     }
-    this.sendSignal({
-      kind: "ice",
-      candidate: { candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMLineIndex },
-    });
+    try {
+      this.sendSignal({
+        kind: "ice",
+        candidate: { candidate: candidate.candidate, sdpMid: candidate.sdpMid, sdpMLineIndex: candidate.sdpMLineIndex },
+      });
+    } catch {
+      // Вызов из события WebRTC: исключение осталось бы неперехваченным. Без связи с сервисом
+      // кандидат всё равно не доставить, а судьбу звонка решит переподключение (`onReconnected()`).
+    }
   }
 
   protected sendSignal(signal: Record<string, unknown>): void {
@@ -340,6 +449,10 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       return;
     }
     if (peerConnection.connectionState == "connected") {
+      if (!this.mediaConnected) {
+        // Длительность разговора — с момента, когда собеседников стало слышно.
+        this.startNow();
+      }
       this.mediaConnected = true;
       this.clearConnectTimer();
     } else if (peerConnection.connectionState == "failed") {
@@ -360,8 +473,11 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     if (this.mediaConnected) {
       this.reportEnd(endReasonMessage("connection-lost", this.outgoing));
     } else {
-      let detail = ex ? (ex as Error)?.message ?? String(ex) : null;
-      this.reportEnd(gt`Could not connect the call.` + (detail ? ` (${detail})` : ""));
+      // Технический текст WebRTC пользователю ничего не скажет: он остаётся в журнале.
+      if (ex) {
+        this.errorCallback(ex as Error);
+      }
+      this.reportEnd(this.connectFailedMessage());
     }
     void this.hangup();
   }
@@ -375,6 +491,8 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
 
   protected closeMedia(): void {
     this.clearConnectTimer();
+    this.clearRingTimer();
+    this.unwatchDeviceChanges();
     this.pendingCandidates = [];
     let peerConnection = this.peerConnection;
     this.peerConnection = null;
@@ -396,7 +514,59 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
 
   async startCameraMic(mediaStream: MediaStream): Promise<void> {
     await super.startCameraMic(mediaStream);
+    for (let track of mediaStream.getAudioTracks()) {
+      // Гарнитуру отключили: дорожка заканчивается навсегда, собеседник перестал бы нас слышать.
+      track.addEventListener?.("ended", () => this.localAudioEnded(track));
+    }
     await this.attachLocalAudio();
+  }
+
+  protected watchDeviceChanges(): void {
+    let mediaDevices = globalThis.navigator?.mediaDevices;
+    if (this.deviceChangeListener || !mediaDevices?.addEventListener) {
+      return;
+    }
+    // Не каждая система завершает дорожку при отключении устройства: проверяем и по смене списка устройств.
+    this.deviceChangeListener = () => {
+      let track = this.mediaDeviceStreams.cameraMicStream?.getAudioTracks()[0];
+      if (track?.readyState == "ended") {
+        this.localAudioEnded(track);
+      }
+    };
+    mediaDevices.addEventListener("devicechange", this.deviceChangeListener);
+  }
+
+  protected unwatchDeviceChanges(): void {
+    if (this.deviceChangeListener) {
+      globalThis.navigator?.mediaDevices?.removeEventListener?.("devicechange", this.deviceChangeListener);
+      this.deviceChangeListener = null;
+    }
+  }
+
+  /** Микрофон пропал посреди разговора: переходим на системный микрофон по умолчанию.
+   * Новая дорожка подменяется в соединении через `startCameraMic()` → `attachLocalAudio()`. */
+  protected localAudioEnded(track: MediaStreamTrack): void {
+    let current = this.mediaDeviceStreams.cameraMicStream?.getAudioTracks()[0];
+    if (this.state == MeetingState.Ended || this.switchingMic || current != track) {
+      return;
+    }
+    this.switchingMic = true;
+    // Сначала закрываем мёртвую дорожку, затем открываем микрофон заново: пустой идентификатор — устройство по умолчанию.
+    this.mediaDeviceStreams.setCameraMicOn(false, false)
+      .then(() => this.mediaDeviceStreams.setCameraMicOn(false, true, undefined, ""))
+      .then(() => onJackdawCallWarning(this, gt`The microphone was disconnected. Switched to the default microphone.`))
+      .catch(async () => {
+        if (this.myParticipant) {
+          this.myParticipant.micOn = false;
+        }
+        await this.mediaDeviceStreams.setCameraMicOn(false, false).catch(() => {
+          // Устройство уже освобождено.
+        });
+        onJackdawCallWarning(this, gt`The microphone was disconnected. Connect a microphone and turn it on again.`);
+      })
+      .finally(() => {
+        this.switchingMic = false;
+      });
   }
 
   async stopCameraMic(oldStream?: MediaStream): Promise<void> {
@@ -445,6 +615,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
 
   /** Отвечает «занято», не показывая звонок: пользователь уже в другой встрече. */
   rejectAsBusy(): void {
+    this.clearRingTimer();
     try {
       this.client.send({ type: "reject", callId: this.callID, reason: "busy" });
     } catch {
@@ -452,6 +623,9 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
     this.remoteEnded = true;
     this.client.unregister(this);
+    // Звонок не показывали — но пользователь должен узнать, что ему звонили.
+    this.endReason = "busy";
+    this.reportEnd(this.missedCallMessage());
   }
 
   protected async endLocally(): Promise<void> {

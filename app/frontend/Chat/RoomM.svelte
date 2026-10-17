@@ -15,6 +15,11 @@
     <vbox class="editor">
       <MsgEditor to={room} />
     </vbox>
+  {:else if !room}
+    <vbox class="empty" role="status">
+      <h2>{$t`No chat selected`}</h2>
+      <p>{$t`Choose a chat on the left, or type a name in the search field to find a contact and write to them.`}</p>
+    </vbox>
   {/if}
 </vbox>
 {#if $appGlobal.isMobile}
@@ -34,6 +39,7 @@
   import PersonHeader from "./PersonHeader.svelte";
   import RoomBarM from "./RoomBarM.svelte";
   import { catchErrors } from "../Util/error";
+  import { t } from "../../l10n/l10n";
 
   export let room: ChatRoom;
 
@@ -57,6 +63,19 @@
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
+  }
+  .empty {
+    margin: auto;
+    padding: 24px;
+    text-align: center;
+  }
+  .empty h2 {
+    margin: 0 0 8px;
+    font-size: 16px;
+  }
+  .empty p {
+    margin: 0;
+    opacity: 0.75;
   }
   .editor {
     flex: 0 0 auto;

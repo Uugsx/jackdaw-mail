@@ -47,6 +47,10 @@ export class ChatRoom extends Observable {
    * Calculating this would be very slow. */
   @notifyChangedProperty
   lastMessage: ChatMessage = null;
+  /** Сколько входящих сообщений пользователь ещё не прочитал.
+   * Ведут только протоколы, которые это отслеживают; у остальных 0. */
+  @notifyChangedProperty
+  unreadCount = 0;
 
   /** Our user is admin in this chat room.
    * Allows e.g. to delete other people's messages,

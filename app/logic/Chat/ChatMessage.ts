@@ -49,6 +49,19 @@ export class ChatMessage extends Message {
   }
   /** Whether we can react to this message with an emoji, using `setMyReaction()` */
   canReact = false;
+  /** Предлагать ли в интерфейсе «Ответить». Протоколы без ответов возвращают false. */
+  get canReply(): boolean {
+    return true;
+  }
+  /** Предлагать ли в интерфейсе «Переслать». Протоколы без пересылки возвращают false. */
+  get canForward(): boolean {
+    return true;
+  }
+  /** «Удалить» убирает сообщение только у нас, у собеседников оно остаётся.
+   * Интерфейс тогда говорит об этом и спрашивает подтверждение. */
+  get deletesOnlyLocally(): boolean {
+    return false;
+  }
 
   /**
    * If a string is set, then this message is an edit of another
@@ -165,4 +178,6 @@ export enum DeliveryStatus {
   Server = "server",
   User = "user",
   Seen = "seen",
+  /** Не отправлено. Сообщение сохранено, его можно отправить повторно. */
+  Failed = "failed",
 }

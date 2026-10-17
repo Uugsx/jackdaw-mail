@@ -1,10 +1,15 @@
-<!-- Чат Jackdaw ↔ Jackdaw: показывает приложение «Чат», уведомляет о новых сообщениях и о смене ключей собеседников. -->
+<!-- Чат Jackdaw ↔ Jackdaw: показывает приложение «Чат», уведомляет о новых сообщениях и о смене ключей собеседников,
+  отмечает прочитанным открытый чат, пока окно в фокусе. -->
+<svelte:window on:focus={onFocusChange} on:blur={onFocusChange} />
+<svelte:document on:visibilitychange={onFocusChange} />
+
 <script lang="ts">
   import { appGlobal } from "../../logic/app";
   import { JackdawChatAccount, JACKDAW_CHAT_PROTOCOL } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
-  import type { JackdawChatRoom } from "../../logic/Chat/Jackdaw/JackdawChatRoom";
+  import { JackdawChatRoom } from "../../logic/Chat/Jackdaw/JackdawChatRoom";
   import type { ChatMessage } from "../../logic/Chat/ChatMessage";
-  import { apps, bringAppToFront } from "../AppsBar/selectedApp";
+  import { apps, bringAppToFront, selectedApp } from "../AppsBar/selectedApp";
+  import { selectedRoom } from "./selected";
   import { chatApp } from "./ChatJackdawApp";
   import { mailApp } from "../Mail/MailJackdawApp";
   import { openChatRoomFromOtherApp } from "./open";
@@ -20,6 +25,27 @@
 
   let unsubscribeWarnings: (() => void) | null = null;
   let shownWarnings = new Set<string>();
+  let isFocused = hasFocus();
+
+  /** Чат, который пользователь сейчас видит: открыто приложение «Чат» и в нём этот чат */
+  $: openRoom = $selectedApp == chatApp && $selectedRoom instanceof JackdawChatRoom ? $selectedRoom : null;
+  $: openRoom && isFocused && markRead(openRoom);
+
+  function hasFocus(): boolean {
+    return document.hasFocus() && document.visibilityState != "hidden";
+  }
+
+  function onFocusChange() {
+    isFocused = hasFocus();
+  }
+
+  function isSeenNow(room: JackdawChatRoom): boolean {
+    return room == openRoom && hasFocus();
+  }
+
+  function markRead(room: JackdawChatRoom) {
+    room.markAllRead().catch(backgroundError);
+  }
 
   function setUp(chat: JackdawChatAccount) {
     showChatApp();
@@ -38,7 +64,8 @@
   }
 
   function notifyIncoming(room: JackdawChatRoom, message: ChatMessage) {
-    if (document.hasFocus()) {
+    if (isSeenNow(room)) {
+      markRead(room); // пользователь видит это сообщение — оно прочитано, собеседник получит отметку
       return;
     }
     let notification = new SystemNotification(

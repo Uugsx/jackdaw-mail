@@ -18,7 +18,7 @@
         icon={SearchIcon}
         iconSize="24px"
         iconOnly
-        label={$t`Search messages`}
+        label={$t`Search chats and contacts`}
         onClick={goToSearch}
         plain
         />

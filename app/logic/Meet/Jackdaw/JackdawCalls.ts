@@ -3,14 +3,16 @@
  */
 import { JackdawCallClient } from "./JackdawCallClient";
 import { JackdawCall, JackdawCallAccount } from "./JackdawCall";
-import { callServiceURL, normalizeCallEmail } from "./JackdawCallProtocol";
+import { callServiceURL, normalizeCallEmail, type JackdawServerMessage } from "./JackdawCallProtocol";
 import { getProCallCredential, proEntitlement, refreshProEntitlement } from "../../Billing/ProEntitlement";
 import { BILLING_LICENSE_API_URL } from "../../Billing/Billing";
 import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
-import { MeetingState } from "../VideoConfMeeting";
+import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
 import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
+import { UserError } from "../../util/util";
+import { gt } from "../../../l10n/l10n";
 
 /** Статусы entitlement, при которых сервис звонков примет устройство */
 const CALL_ENTITLEMENT_STATUSES = new Set(["active", "trial", "past_due", "offline"]);
@@ -36,19 +38,52 @@ export function getJackdawCallClient(): JackdawCallClient {
     getCredential: () => CALL_ENTITLEMENT_STATUSES.has(proEntitlement.value.status) ? getProCallCredential() : null,
     getDisplayName: myDisplayName,
     storage: storage(),
-    onIncoming: message => {
-      let call = getJackdawCallAccount().newMeeting();
-      let person = findPersonByEmail(message.from);
-      call.prepareIncoming(message, person);
-      let busy = appGlobal.meetings.some(m => m.state != MeetingState.Ended);
-      if (busy) {
-        call.rejectAsBusy();
-        return;
-      }
-      appGlobal.meetings.add(call);
-    },
+    onIncoming: message => handleIncomingJackdawCall(message),
   });
   return client;
+}
+
+/** Встреча действительно идёт или звонит. Брошенный экран «Позвонить?» — ещё нет: по нему никто не соединён. */
+function isActiveMeeting(meeting: VideoConfMeeting): boolean {
+  return meeting.state != MeetingState.Ended && meeting.state != MeetingState.OutgoingCallConfirm;
+}
+
+/** Закрывает неподтверждённые экраны исходящего звонка: они ничего не отправляли на сервер. */
+function closeUnconfirmedCalls(): void {
+  for (let meeting of appGlobal.meetings.contents.filter(m => m.state == MeetingState.OutgoingCallConfirm)) {
+    meeting.hangup().catch(() => {
+      // Экран всё равно уходит из списка встреч в `hangup()` базового класса.
+    });
+  }
+}
+
+/** Проверка перед новым звонком: второй разговор поверх идущего не начинается.
+ * @throws UserError, если уже идёт звонок или встреча */
+export function assertNoActiveCall(): void {
+  if (appGlobal.meetings.some(isActiveMeeting)) {
+    throw new UserError(gt`Finish the current call before starting a new one.`);
+  }
+}
+
+/** Входящий звонок от сервиса.
+ * «Занято» отвечаем, только если действительно идёт другая встреча.
+ * Сервер на `reject` с `busy` завершает вызов на всех устройствах вызываемого, поэтому
+ * неподтверждённый экран исходящего звонка занятостью не считается: он закрывается, входящий показывается.
+ * @param callAccount для тестов */
+export function handleIncomingJackdawCall(
+  message: Extract<JackdawServerMessage, { type: "incoming" }>,
+  callAccount: JackdawCallAccount = getJackdawCallAccount(),
+): JackdawCall {
+  let call = callAccount.newMeeting();
+  let person = findPersonByEmail(message.from);
+  call.prepareIncoming(message, person);
+  if (appGlobal.meetings.some(isActiveMeeting)) {
+    call.rejectAsBusy();
+    return call;
+  }
+  closeUnconfirmedCalls();
+  appGlobal.meetings.add(call);
+  return call;
 }
 
 export function getJackdawCallAccount(): JackdawCallAccount {
@@ -137,8 +172,10 @@ function findPersonByEmail(email: string): Person | null {
  * Создаёт голосовой звонок, если собеседник доступен в Jackdaw. Показывает экран подтверждения вызова.
  * Видеозвонков между пользователями Jackdaw нет: `_video` оставлен для совместимости вызова.
  * @returns null, если звонок через Jackdaw невозможен (тогда вызывающий выбирает другой способ)
+ * @throws UserError, если уже идёт другой звонок
  */
 export async function startJackdawCall(target: CallTarget, _video = false): Promise<JackdawCall | null> {
+  assertNoActiveCall();
   let callClient = getJackdawCallClient();
   if (!callClient.isOnline || !callClient.verifiedEmails.length) return null;
   let emails = callTargetEmails(target);
@@ -148,6 +185,9 @@ export async function startJackdawCall(target: CallTarget, _video = false): Prom
     email = emails.find(e => fresh[e]);
   }
   if (!email) return null;
+  // Пока шёл запрос справочника, мог начаться другой звонок.
+  assertNoActiveCall();
+  closeUnconfirmedCalls();
   let person = target instanceof Person ? target : target.findPerson();
   let call = getJackdawCallAccount().newMeeting();
   call.prepareOutgoing(email, person?.name || target.name || "", false, person);

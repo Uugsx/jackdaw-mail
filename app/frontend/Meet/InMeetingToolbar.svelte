@@ -157,7 +157,8 @@
   import DialPadIcon from "lucide-svelte/icons/grip";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { catchErrors, showError } from "../Util/error";
-  import { t } from "../../l10n/l10n";
+  import { gt, t } from "../../l10n/l10n";
+  import { getOSName } from "../Util/util";
   import { onDestroy, tick } from "svelte";
 
   export let meeting: VideoConfMeeting;
@@ -179,10 +180,36 @@
     }
     meInited = true;
     // Аудиозвонок не включает камеру, даже если она включена по умолчанию.
-    me.cameraOn = cameraOnSetting.value && meeting.hasVideo;
-    me.micOn = micOnSetting.value;
-    await stream.setCameraMicOn(me.cameraOn, me.micOn, selectedCameraSetting.value, selectedMicSetting.value);
+    let cameraOn = cameraOnSetting.value && meeting.hasVideo;
+    // Голосовой звонок всегда начинается со включённым микрофоном: «выключен» из прошлого
+    // разговора легко не заметить, и собеседник не услышит ни слова.
+    let micOn = meeting.voiceOnly || micOnSetting.value;
+    try {
+      await stream.setCameraMicOn(cameraOn, micOn, selectedCameraSetting.value, selectedMicSetting.value);
+      me.cameraOn = cameraOn;
+      me.micOn = micOn;
+    } catch (ex) {
+      // Кнопки показывают то, что действительно включено.
+      me.cameraOn = false;
+      me.micOn = false;
+      await getDevices();
+      throw micStartError(ex);
+    }
     await getDevices();
+  }
+
+  /** Доступ к микрофону запрещён в системе: объясняем, где его разрешить. */
+  function micStartError(ex: Error): Error {
+    let denied = ex?.name == "NotAllowedError" || ex?.name == "SecurityError" ||
+      ex?.message == gt`Microphone access denied`;
+    if (!denied) {
+      return ex;
+    }
+    let os = getOSName();
+    return new Error(
+      os == "macintosh" ? gt`Jackdaw Mail has no access to the microphone. Allow it in System Settings → Privacy & Security → Microphone, then turn the microphone on again.` :
+      os == "windows" ? gt`Jackdaw Mail has no access to the microphone. Allow it in Settings → Privacy → Microphone, then turn the microphone on again.` :
+      gt`Jackdaw Mail has no access to the microphone. Allow microphone access in your system settings, then turn the microphone on again.`);
   }
 
   let devices: MediaDeviceInfo[];
@@ -215,9 +242,14 @@
   }
 
   async function changeMicOn(on: boolean) {
+    // Состояние кнопки меняется только после того, как микрофон действительно включился или выключился.
+    try {
+      await stream.setMicOn(on, selectedMicSetting.value);
+    } catch (ex) {
+      throw micStartError(ex);
+    }
     me.micOn = on;
     micOnSetting.value = me.micOn;
-    await stream.setMicOn(me.micOn, selectedMicSetting.value);
   }
 
   async function changeMicSelected(deviceID: string) {

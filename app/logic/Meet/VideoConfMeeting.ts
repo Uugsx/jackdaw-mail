@@ -266,3 +266,12 @@ export enum MeetingState {
   /** Call is over. */
   Ended = "ended",
 }
+
+/** Запускает ли Enter на экране вызова кнопку «Позвонить»/«Начать».
+ * Входящий звонок Enter не принимает: нажатие, предназначенное другому окну или полю ввода,
+ * не должно соединять с собеседником. Во время гудков принимать нечего. */
+export function enterStartsCall(state: MeetingState): boolean {
+  return state == MeetingState.OutgoingCallConfirm ||
+    state == MeetingState.Init ||
+    state == MeetingState.JoinConference;
+}

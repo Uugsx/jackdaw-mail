@@ -56,6 +56,18 @@
         <slot name="inner-bottom" />
       </vbox>
     {/if}
+    {#if isFailed}
+      <hbox class="send-failed font-smallest" role="status">
+        <hbox class="send-failed-label">{$t`Not sent`}</hbox>
+        <Button
+          label={$t`Retry`}
+          icon={RetryIcon}
+          iconSize="14px"
+          plain
+          onClick={onRetry}
+          />
+      </hbox>
+    {/if}
     {#if showReactions && $reactions.length > 0}
       <hbox class="reactions" class:cloak={showActions}>
         {#each [...$reactions.entries()] as [sender, emoji]}
@@ -63,7 +75,7 @@
         {/each}
       </hbox>
     {/if}
-    {#if showReactions && showActions}
+    {#if showReactions && showActions && canReact}
       <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length}>
         <vbox class="hover-after-msg">
           <ReactionBar {message} bind:isOpen={showActions} />
@@ -75,6 +87,7 @@
 
 <script lang="ts">
   import type { Message } from "../../../logic/Abstract/Message";
+  import { assert } from "../../../logic/util/util";
   import { ChatMessage, DeliveryStatus } from "../../../logic/Chat/ChatMessage";
   import { Group } from "../../../logic/Abstract/Group";
   import { Person } from "../../../logic/Abstract/Person";
@@ -88,6 +101,9 @@
   import WebView from "../../Shared/WebView.svelte";
   import Attachments from "./Attachments.svelte";
   import { getDateTimeString } from "../../Util/date";
+  import Button from "../../Shared/Button.svelte";
+  import RetryIcon from "lucide-svelte/icons/rotate-cw";
+  import { t } from "../../../l10n/l10n";
 
   export let message: Message;
   export let previousMessage: Message = null;
@@ -113,6 +129,15 @@
   $: fastFollowup = followup &&
     $message.sent.getTime() - previousMessage.sent.getTime() < 5 * 60 * 1000; // < 5 mins apart
   $: reactions = $message.reactions;
+  /** Своё сообщение не дошло до сервера: показываем это и даём отправить снова */
+  $: isFailed = displayOutgoing && $message instanceof ChatMessage && $message.deliveryStatus == DeliveryStatus.Failed;
+  /** Панель реакций — только где протокол их поддерживает (у писем — как раньше) */
+  $: canReact = !($message instanceof ChatMessage) || $message.canReact;
+
+  async function onRetry() {
+    assert(message instanceof ChatMessage, "Only chat messages can be sent again");
+    await message.to.sendMessage(message);
+  }
 
   $: headHTML = `<style>\n${cssBody}\n${cssContent}\n</style>`;
 
@@ -352,5 +377,13 @@
 
   .outgoing[deliveryStatus=sending] {
     opacity: 70%;
+  }
+  .send-failed {
+    align-self: flex-end;
+    align-items: center;
+    gap: 4px;
+    margin-block-start: 2px;
+    margin-inline-end: 10px;
+    color: var(--error-fg, #b00020);
   }
 </style>

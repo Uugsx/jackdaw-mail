@@ -1,6 +1,6 @@
 <vbox flex class="pane">
   <Header bind:selectedAccount={$selectedAccount} {accounts} />
-  <RoomList {rooms} bind:selectedRoom {doSearch} />
+  <RoomList {rooms} bind:selectedRoom bind:selectedContact {doSearch} />
 </vbox>
 {#if $appGlobal.isMobile}
   <RoomsBarM />
@@ -16,6 +16,12 @@
   import RoomList from "./RoomList.svelte";
   import RoomsBarM from "./RoomsBarM.svelte";
   import { mergeColls } from "svelte-collections";
+  import type { Person } from "../../logic/Abstract/Person";
+  import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
+  import { callTargetEmails } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import { catchErrors } from "../Util/error";
+  import { UserError } from "../../logic/util/util";
+  import { gt } from "../../l10n/l10n";
 
   export let doSearch = false;
 
@@ -25,6 +31,24 @@
   let selectedRoom: ChatRoom = null;
 
   $: selectedRoom instanceof ChatRoom && openChatRoomFromOtherApp(selectedRoom);
+
+  /** Контакт без чата из результатов поиска: открываем чат Jackdaw с ним или объясняем, почему нельзя */
+  let selectedContact: Person | null = null;
+  $: selectedContact && catchErrors(() => openContactChat(selectedContact));
+  async function openContactChat(contact: Person) {
+    let account = appGlobal.chatAccounts.find(acc => acc.protocol == JACKDAW_CHAT_PROTOCOL) as JackdawChatAccount | undefined;
+    if (!account?.isOnline) {
+      throw new UserError(gt`Jackdaw chat is not connected on this device. Confirm your address for calls and chat in the settings.`);
+    }
+    let emails = callTargetEmails(contact);
+    for (let email of emails) {
+      if (await account.canChatWith(email)) {
+        openChatRoomFromOtherApp(await account.getDirectRoom(email));
+        return;
+      }
+    }
+    throw new UserError(gt`${contact.name} does not use Jackdaw chat yet, or has not confirmed this address. You can send an email.`);
+  }
 </script>
 
 <style>

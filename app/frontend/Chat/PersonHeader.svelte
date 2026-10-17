@@ -16,7 +16,7 @@
       <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
         disabled={callUnavailableReason} />
     {/if}
-    {#if chatEmail}
+    {#if chatEmail && showChatButton}
       <RoundButton label={$t`Message in Jackdaw chat`} icon={ChatIcon} classes="secondary large"
         onClick={openJackdawChat} />
     {/if}
@@ -34,7 +34,7 @@
   import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { callTargetEmails } from "../../logic/Meet/Jackdaw/JackdawCalls";
-  import { normalizeCallEmail } from "../../logic/Meet/Jackdaw/JackdawCallProtocol";
+  import { jackdawCallUnavailableReason } from "../Shared/callUnavailable";
   import { appGlobal } from "../../logic/app";
   import { openChatRoomFromOtherApp } from "./open";
   import ChatIcon from "lucide-svelte/icons/message-square-text";
@@ -45,6 +45,10 @@
   import { t } from "../../l10n/l10n";
 
   export let person: ChatContact | Person;
+  /** Кнопка «Написать в чат Jackdaw». false — когда её роль выполняет окружающая панель. */
+  export let showChatButton = true;
+  /** Показывать неактивную кнопку звонка с объяснением и вне чата Jackdaw (контакт из поиска) */
+  export let explainCall = false;
 
   /** Calls a real `Person`/`Group` for now, or the email `PersonUID` in the mail chat mode.
    * TODO Later, we should prefer calling via Chat. */
@@ -58,21 +62,9 @@
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
    * null — не чат Jackdaw или звонок возможен. */
-  $: callUnavailableReason = inJackdawChat && !canCall && $callClient
-    ? callUnavailableText(person as ChatPersonUID)
+  $: callUnavailableReason = (inJackdawChat || explainCall) && !canCall && $callClient && !(person instanceof Group)
+    ? jackdawCallUnavailableReason(callTargetEmails(callTarget as Person | PersonUID))
     : null;
-  function callUnavailableText(contact: ChatPersonUID): string {
-    if (!callClient.isOnline) {
-      return $t`No connection to the Jackdaw server. Calls will be available when it is restored.`;
-    }
-    if (!callClient.verifiedEmails.length) {
-      return $t`Confirm your email address in Settings → Jackdaw Pro → Calls and chat to make calls.`;
-    }
-    if (callClient.verifiedEmails.includes(normalizeCallEmail(contact.emailAddress) ?? "")) {
-      return $t`This is your own address.`;
-    }
-    return $t`You can call when the contact is online in Jackdaw Mail.`;
-  }
 
   /** «Написать» в чат Jackdaw — из почты и других мест, где собеседник ещё не в чате Jackdaw */
   const chatAccounts = appGlobal.chatAccounts;

@@ -37,6 +37,8 @@ MAX_DEVICES_PER_EMAIL = 10
 MAX_KEY_FETCH_EMAILS = 100
 PENDING_BATCH = 200
 MAX_PENDING_PER_DEVICE = 5000
+# Недоставленные сообщения одной лицензии/пробного периода: без лимита отправитель заполнит диск сервера.
+MAX_STORED_MESSAGES_PER_SUBJECT = 20000
 MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60
 DEVICE_TTL_SECONDS = 90 * 24 * 60 * 60
 BLOB_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -45,7 +47,9 @@ MAX_BLOB_BYTES = 25 * 1024 * 1024
 MAX_BLOB_CHUNKS = MAX_BLOB_BYTES // BLOB_CHUNK_BYTES + 1
 BLOB_QUOTA_BYTES = 1024 * 1024 * 1024
 CLEANUP_INTERVAL_SECONDS = 60 * 60
-MIGRATIONS = ((1, "001_chat.sql"), (2, "002_verified_emails.sql"))
+# Незавершённая загрузка файла держит резерв квоты; брошенная загрузка удаляется через час.
+INCOMPLETE_BLOB_TTL_SECONDS = 60 * 60
+MIGRATIONS = ((1, "001_chat.sql"), (2, "002_verified_emails.sql"), (3, "003_message_sender_subject.sql"))
 
 
 def decode_b64(value: Any, max_bytes: int, code: str = "invalid_payload") -> bytes:
@@ -197,15 +201,27 @@ class ChatStore:
 
     # --- сообщения ------------------------------------------------------------
 
-    def store_message(self, message_id: str, sender_email: str, sender_device: str, ciphertext: bytes, keys: dict[str, bytes]) -> bool:
-        """@returns False, если сообщение с этим id уже было (повторная отправка после обрыва)."""
+    def store_message(self, message_id: str, sender_email: str, sender_device: str, ciphertext: bytes, keys: dict[str, bytes],
+                      sender_subject: str | None = None) -> bool:
+        """@returns False, если сообщение с этим id уже было (повторная отправка после обрыва).
+
+        `sender_subject` — лицензия отправителя: по ней считается квота недоставленных сообщений.
+        """
         now = int(self._clock())
         with self._transaction() as connection:
             if connection.execute("SELECT 1 FROM chat_messages WHERE message_id = ?", (message_id,)).fetchone():
                 return False
+            if sender_subject is not None:
+                stored = connection.execute(
+                    "SELECT COUNT(*) AS count FROM chat_messages WHERE sender_subject = ?", (sender_subject,),
+                ).fetchone()["count"]
+                if stored >= MAX_STORED_MESSAGES_PER_SUBJECT:
+                    raise CallError("quota_exceeded", "Слишком много недоставленных сообщений. "
+                                                      "Они удаляются после доставки или через 30 дней.")
             connection.execute(
-                "INSERT INTO chat_messages (message_id, sender_email, sender_device, ciphertext, created_at) VALUES (?, ?, ?, ?, ?)",
-                (message_id, sender_email, sender_device, ciphertext, now),
+                "INSERT INTO chat_messages (message_id, sender_email, sender_device, ciphertext, created_at, sender_subject) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (message_id, sender_email, sender_device, ciphertext, now, sender_subject),
             )
             for device_id, wrapped in keys.items():
                 pending = connection.execute("SELECT COUNT(*) AS count FROM chat_deliveries WHERE device_id = ?", (device_id,)).fetchone()["count"]
@@ -276,10 +292,14 @@ class ChatStore:
             if index == 0:
                 if row is not None:
                     raise CallError("invalid_blob", "Файл с таким идентификатором уже есть.")
+                # Незавершённая загрузка занимает квоту полным заявленным размером с первой части:
+                # иначе параллельные загрузки обходят квоту, пока ни одна не закончена.
                 used = connection.execute(
-                    "SELECT COALESCE(SUM(size), 0) AS used FROM chat_blobs WHERE subject = ?", (subject,),
+                    """SELECT COALESCE(SUM(CASE WHEN complete THEN size ELSE MIN(chunks * ?, ?) END), 0) AS used
+                       FROM chat_blobs WHERE subject = ?""",
+                    (BLOB_CHUNK_BYTES, MAX_BLOB_BYTES, subject),
                 ).fetchone()["used"]
-                if used + total * BLOB_CHUNK_BYTES > BLOB_QUOTA_BYTES:
+                if used + min(total * BLOB_CHUNK_BYTES, MAX_BLOB_BYTES) > BLOB_QUOTA_BYTES:
                     raise CallError("quota_exceeded", "Превышен объём файлов. Старые файлы удаляются через 30 дней.")
                 connection.execute(
                     "INSERT INTO chat_blobs (blob_id, subject, uploader_device, size, chunks, complete, created_at) VALUES (?, ?, ?, 0, ?, 0, ?)",
@@ -340,7 +360,8 @@ class ChatStore:
             connection.execute("DELETE FROM chat_devices WHERE last_seen_at < ?", (int(now) - DEVICE_TTL_SECONDS,))
             connection.execute("DELETE FROM verified_emails WHERE expires_at <= ?", (int(now),))
             expired = [row["blob_id"] for row in connection.execute(
-                "SELECT blob_id FROM chat_blobs WHERE created_at < ?", (int(now) - BLOB_TTL_SECONDS,),
+                "SELECT blob_id FROM chat_blobs WHERE created_at < ? OR (complete = 0 AND created_at < ?)",
+                (int(now) - BLOB_TTL_SECONDS, int(now) - INCOMPLETE_BLOB_TTL_SECONDS),
             )]
             connection.executemany("DELETE FROM chat_blobs WHERE blob_id = ?", [(blob_id,) for blob_id in expired])
         for blob_id in expired:
@@ -443,6 +464,9 @@ class ChatService:
         # Отправлять можно только устройствам получателей и своим другим устройствам.
         owners = self.store.device_emails(keys.keys())
         keys = {target: wrapped for target, wrapped in keys.items() if owners.get(target, set()) & allowed_emails}
+        if not keys:
+            # Сообщение без ключей никто не прочитает: не храним его и сообщаем отправителю.
+            raise CallError("no_recipients", "У получателя нет устройств с чатом Jackdaw.")
         ephemeral = message.get("ephemeral") is True
         delivered = 0
         if ephemeral:
@@ -456,7 +480,8 @@ class ChatService:
                     delivered += 1
             peer.send({"type": "chat-sent", "messageId": message_id, "queued": 0, "delivered": delivered})
             return
-        stored = self.store.store_message(message_id, sender_email, device_id, ciphertext, keys)
+        assert peer.credential is not None
+        stored = self.store.store_message(message_id, sender_email, device_id, ciphertext, keys, peer.credential.subject)
         if stored:
             created = {"message_id": message_id, "sender_email": sender_email, "sender_device": device_id,
                        "ciphertext": ciphertext, "created_at": int(self.store.now())}
@@ -490,6 +515,9 @@ class ChatService:
         if not isinstance(index, int) or not isinstance(total, int):
             raise CallError("invalid_blob", "Некорректная часть файла.")
         data = decode_b64(message.get("data"), BLOB_CHUNK_BYTES, "invalid_blob")
+        if index == 0:
+            # Брошенные загрузки освобождают резерв квоты и на долгом соединении (не чаще раза в час).
+            self.store.cleanup()
         complete = self.store.put_blob_chunk(blob_id, peer.credential.subject, device_id, index, total, data)
         peer.send({"type": "blob-stored", "blobId": blob_id, "index": index, "complete": complete})
 

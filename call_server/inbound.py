@@ -13,6 +13,11 @@
   совпадает с доменом в From или является его родителем.
 Если ни одно не прошло, письмо отклоняется с кодом 550.
 
+Защита от повтора чужого письма: подпись DKIM действительна и у старого письма,
+поэтому токен из конверта (RCPT TO) сам по себе ничего не доказывает. Токен
+должен быть в заголовке Subject или To, который входит в подпись (h=); для пути
+SPF — хотя бы присутствовать в письме. Дата письма (Date) должна быть свежей.
+
 Защита приёма:
 - принимается только один получатель вида verify+<токен>@<домен> с живым
   токеном — сервис не может работать открытым релеем;
@@ -30,14 +35,17 @@ from __future__ import annotations
 
 import asyncio
 import email.policy
+import functools
 import re
 import secrets
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import timezone
 from email import message_from_bytes
+from email.header import decode_header, make_header
 from email.headerregistry import Address
-from email.utils import getaddresses
+from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any, Callable
 
 REVERSE_TTL_SECONDS = 15 * 60
@@ -48,6 +56,11 @@ MAX_INBOUND_MESSAGE_BYTES = 512 * 1024
 INBOUND_PER_IP_PER_HOUR = 30
 SMTP_TIMEOUT_SECONDS = 60
 MAX_PENDING = 4096
+# Письмо подтверждения отправляется сразу; старое письмо — признак повтора чужого письма.
+MAX_MESSAGE_AGE_SECONDS = 20 * 60
+# Допустимое расхождение часов почтового сервера отправителя
+MAX_MESSAGE_CLOCK_SKEW_SECONDS = 5 * 60
+IP_SWEEP_INTERVAL_SECONDS = 3600
 
 
 class ReverseVerificationError(Exception):
@@ -72,7 +85,8 @@ class PendingReverse:
 class ReverseVerification:
     """Одноразовые адреса для обратного подтверждения. Логика без сети — тестируется напрямую."""
 
-    def __init__(self, issue_proof: Callable[[str, str], str], domain: str, clock: Callable[[], float] = time.time):
+    def __init__(self, issue_proof: Callable[[str, str], str], domain: str, clock: Callable[[], float] = time.monotonic):
+        """`clock` — монотонные часы для сроков токенов и лимитов: перевод системного времени их не сдвигает."""
         if not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,63}", domain):
             raise ValueError("Некорректный домен для обратного подтверждения")
         self.domain = domain
@@ -195,6 +209,63 @@ def dkim_signature_domains(raw: bytes) -> list[str]:
     return domains
 
 
+DKIM_HEADERS_RE = re.compile(rb"(?:^|;)\s*h\s*=\s*([^;]*)")
+
+
+def dkim_signed_headers(raw: bytes) -> list[set[str]]:
+    """Имена заголовков из тега h= каждой подписи DKIM, в том же порядке, что и `dkim_signature_domains`."""
+    message = message_from_bytes(raw, policy=email.policy.compat32)
+    result = []
+    for header in message.get_all("DKIM-Signature") or []:
+        value = re.sub(r"\s+", "", str(header)).encode()
+        match = DKIM_HEADERS_RE.search(value)
+        names = match.group(1).decode("ascii", "replace").lower().split(":") if match else []
+        result.append({name for name in names if name})
+    return result
+
+
+def _decoded_header(value: Any) -> str:
+    """Заголовок с RFC 2047 (тема клиента на русском приходит как =?UTF-8?B?...?=)."""
+    try:
+        return str(make_header(decode_header(str(value))))
+    except Exception:  # noqa: BLE001 — нераскодированный заголовок проверяется как есть
+        return str(value)
+
+
+def token_headers(raw: bytes, token: str, domain: str) -> set[str]:
+    """Заголовки Subject и To, которые содержат токен (клиент кладёт его в тему `mailSubject` и в адрес). Повторяющийся заголовок не учитывается:
+    подпись DKIM покрывает только нижний экземпляр, а верхний можно дописать к чужому письму."""
+    message = message_from_bytes(raw, policy=email.policy.compat32)
+    found: set[str] = set()
+    subjects = message.get_all("Subject") or []
+    if len(subjects) == 1 and token in _decoded_header(subjects[0]).lower():
+        found.add("subject")
+    recipients = message.get_all("To") or []
+    if len(recipients) == 1 and any(parse_recipient_token(address, domain) == token
+                                    for _, address in getaddresses([_decoded_header(recipients[0])])):
+        found.add("to")
+    return found
+
+
+def message_date_fresh(raw: bytes, now: float) -> bool:
+    """Ровно один заголовок Date, не старше MAX_MESSAGE_AGE_SECONDS и не из будущего."""
+    message = message_from_bytes(raw, policy=email.policy.compat32)
+    dates = message.get_all("Date") or []
+    if len(dates) != 1:
+        return False
+    try:
+        sent = parsedate_to_datetime(str(dates[0]))
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return False
+    if sent is None:
+        return False
+    if sent.tzinfo is None:
+        # «-0000» по RFC 5322 — время UTC без указания местного пояса
+        sent = sent.replace(tzinfo=timezone.utc)
+    age = now - sent.timestamp()
+    return -MAX_MESSAGE_CLOCK_SKEW_SECONDS <= age <= MAX_MESSAGE_AGE_SECONDS
+
+
 def default_dkim_verify(raw: bytes, index: int, dnsfunc: Callable[..., Any] | None = None) -> bool:
     import dkim  # dkimpy
 
@@ -218,10 +289,20 @@ def authenticate_sender(
     helo: str,
     dkim_verify: Callable[[bytes, int], bool] = default_dkim_verify,
     spf_check: Callable[[str, str, str], str] = default_spf_check,
+    token: str | None = None,
+    token_domain: str = "",
 ) -> str | None:
-    """Возвращает 'dkim' или 'spf', если домен отправителя подтверждён, иначе None."""
+    """Возвращает 'dkim' или 'spf', если домен отправителя подтверждён, иначе None.
+
+    С `token` письмо должно быть привязано к токену: подпись DKIM засчитывается, только если
+    её h= покрывает заголовок с токеном; путь SPF — только если такой заголовок есть в письме.
+    """
     from_domain = from_email.rpartition("@")[2]
+    bound = token_headers(raw, token, token_domain) if token is not None else set()
+    signed_headers = dkim_signed_headers(raw)
     for index, signing_domain in enumerate(dkim_signature_domains(raw)):
+        if token is not None and not bound & signed_headers[index]:
+            continue
         if signing_domain and aligned(from_domain, signing_domain):
             try:
                 if dkim_verify(raw, index):
@@ -229,6 +310,8 @@ def authenticate_sender(
             except Exception:  # noqa: BLE001 — сломанная подпись = не подтверждено
                 continue
     envelope_domain = mail_from.rpartition("@")[2]
+    if token is not None and not bound:
+        return None
     if envelope_domain and aligned(from_domain, envelope_domain):
         try:
             if spf_check(peer_ip, mail_from, helo) == "pass":
@@ -249,14 +332,18 @@ class InboundHandler:
                  on_failed: Callable[[str, str], None] = lambda token, reason: None,
                  authenticate: Callable[..., str | None] = authenticate_sender,
                  log: Callable[[str], None] = lambda line: print(line, flush=True),
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 wall_clock: Callable[[], float] = time.time):
         self.reverse = reverse
         self.on_verified = on_verified
         self.on_failed = on_failed
         self.authenticate = authenticate
         self.log = log
         self._clock = clock
+        # Системное время — только для сравнения с заголовком Date письма
+        self._wall_clock = wall_clock
         self._per_ip: dict[str, deque[float]] = {}
+        self._last_ip_sweep = clock()
 
     def _ip_allowed(self, ip: str) -> bool:
         now = self._clock()
@@ -266,10 +353,15 @@ class InboundHandler:
         if len(hits) >= INBOUND_PER_IP_PER_HOUR:
             return False
         hits.append(now)
-        if len(self._per_ip) > MAX_PENDING:
-            for key in [k for k, v in self._per_ip.items() if not v]:
-                self._per_ip.pop(key, None)
+        if len(self._per_ip) > MAX_PENDING or now - self._last_ip_sweep >= IP_SWEEP_INTERVAL_SECONDS:
+            self._sweep_ips(now)
         return True
+
+    def _sweep_ips(self, now: float) -> None:
+        """Забывает адреса без писем за последний час: иначе словарь растёт с каждым новым IP."""
+        self._last_ip_sweep = now
+        for key in [k for k, v in self._per_ip.items() if not v or now - v[-1] >= 3600]:
+            self._per_ip.pop(key, None)
 
     async def handle_MAIL(self, server: Any, session: Any, envelope: Any, address: str, mail_options: list[str]) -> str:
         ip = session.peer[0] if session.peer else ""
@@ -297,11 +389,21 @@ class InboundHandler:
         if token is None or from_email is None:
             return "550 5.7.1 Message rejected"
         ip = session.peer[0] if session.peer else ""
-        method = await asyncio.get_running_loop().run_in_executor(
-            None, self.authenticate, raw, from_email, ip, envelope.mail_from or "", session.host_name or "")
         domain = from_email.rpartition("@")[2]
+        if not token_headers(raw, token, self.reverse.domain):
+            # Токен только в конверте: так можно повторить чужое подписанное письмо на свой адрес.
+            self.log(f"Reverse verification rejected for *@{domain}: token not in Subject/To")
+            self.on_failed(token, "sender_not_authenticated")
+            return "550 5.7.1 Verification token must be in the message Subject"
+        if not message_date_fresh(raw, self._wall_clock()):
+            self.log(f"Reverse verification rejected for *@{domain}: Date missing or not fresh")
+            self.on_failed(token, "sender_not_authenticated")
+            return "550 5.7.1 Message Date is missing, too old or in the future"
+        method = await asyncio.get_running_loop().run_in_executor(
+            None, functools.partial(self.authenticate, raw, from_email, ip, envelope.mail_from or "",
+                                    session.host_name or "", token=token, token_domain=self.reverse.domain))
         if method is None:
-            self.log(f"Reverse verification rejected for *@{domain}: DKIM/SPF not aligned")
+            self.log(f"Reverse verification rejected for *@{domain}: DKIM/SPF not aligned or token header not signed")
             self.on_failed(token, "sender_not_authenticated")
             return "550 5.7.1 Sender domain not authenticated (DKIM/SPF)"
         if not self.on_verified(token, from_email):

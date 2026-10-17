@@ -2,7 +2,7 @@
   <AccountSelectorRound bind:selectedAccount {accounts} iconDefault={ChatIcon} />
   <hbox flex />
   <hbox class="buttons">
-    {#if !$selectedAccount?.isLoggedIn}
+    {#if selectedAccount && !$selectedAccount.isLoggedIn}
       <RoundButton
         label={$t`Login`}
         icon={LoginIcon}
@@ -25,14 +25,18 @@
         label={$t`Chat with person`}
         onClick={() => dialogOpenPerson = true}
         />
-      <MenuItem
-        label={$t`Open existing chat room`}
-        onClick={() => dialogOpenChatRoom = true}
-        />
-      <MenuItem
-        label={$t`Create new chat room`}
-        onClick={() => dialogNewChatRoom = true}
-        />
+      <!-- Комнаты по ID и новые комнаты есть не у всех протоколов: в чате Jackdaw — только группа -->
+      {#if !isJackdaw}
+        <MenuItem
+          label={$t`Open existing chat room`}
+          onClick={() => dialogOpenChatRoom = true}
+          />
+      {:else}
+        <MenuItem
+          label={$t`New group`}
+          onClick={() => dialogNewChatRoom = true}
+          />
+      {/if}
     </ButtonMenu>
   </hbox>
 </hbox>
@@ -42,17 +46,17 @@
       {$t`Chat with`}
       <AccountDropDown accounts={appGlobal.chatAccounts} bind:selectedAccount filterByWorkspace={true} />
       <RoundButton
-        label={$t`Open`}
+        label={$t`Close`}
         onClick={() => dialogOpenPerson = false}
         icon={XIcon}
         iconSize="16px"
         padding="2px"
         />
     </hbox>
-    <PersonAutocomplete skipPersonFunc={filterPerson} onAddPerson={openChatWithPerson} />
-    <hbox class="label or">{$t`or enter chat ID`}</hbox>
+    <PersonAutocomplete skipPersonFunc={filterPerson} onAddPerson={person => catchErrors(() => openChatWithPerson(person))} />
+    <hbox class="label or">{isJackdaw ? $t`or enter an email address` : $t`or enter chat ID`}</hbox>
     <hbox>
-      <input type="text" bind:value={chatID} />
+      <input type="text" bind:value={chatID} placeholder={isJackdaw ? "name@example.com" : ""} />
       <RoundButton
         label={$t`Open`}
         onClick={onOpenChatID}
@@ -66,14 +70,14 @@
       {$t`Open chat room`}
       <AccountDropDown accounts={appGlobal.chatAccounts} bind:selectedAccount filterByWorkspace={true} />
       <RoundButton
-        label={$t`Open`}
+        label={$t`Close`}
         onClick={() => dialogOpenChatRoom = false}
         icon={XIcon}
         iconSize="16px"
         padding="2px"
         />
     </hbox>
-    <input type="text" bind:value={chatID} />
+    <input type="text" bind:value={chatRoomID} />
     <hbox class="buttons">
       <RoundButton
         label={$t`Open`}
@@ -153,16 +157,22 @@
   import { selectedRoom } from "./selected";
   import { catchErrors } from "../Util/error";
   import { ArrayColl } from "svelte-collections";
+  import { UserError } from "../../logic/util/util";
+  import { gt } from "../../l10n/l10n";
 
   export let accounts: Collection<ChatAccount>;
   export let selectedAccount: ChatAccount;
 
   let isButtonMenuOpen = false;
+  $: isJackdaw = selectedAccount instanceof JackdawChatAccount;
   let dialogOpenPerson = false;
   let dialogOpenChatRoom = false;
   let dialogNewChatRoom = false;
 
   function filterPerson(person: PersonUID): boolean {
+    if (!selectedAccount) {
+      return false;
+    }
     if (selectedAccount instanceof JackdawChatAccount) {
       return skipPersonWithoutEmail(person);
     }
@@ -176,13 +186,30 @@
     return !person.emailAddress?.includes("@");
   }
 
-  /** Личный чат Jackdaw создаётся и сохраняется сразу, чтобы появиться в списке */
+  /** Личный чат Jackdaw создаётся и сохраняется сразу, чтобы появиться в списке.
+   * Только с тем, кто пользуется чатом Jackdaw: иначе получился бы чат, в который нельзя написать. */
   async function openJackdawChat(account: JackdawChatAccount, email: string) {
-    $selectedRoom = await account.getDirectRoom(email);
+    let address = email?.trim();
+    if (!address) {
+      return;
+    }
+    let existing = account.findRoomByID(`direct:${address.toLowerCase()}`);
+    if (!existing && !account.isOnline) {
+      throw new UserError(gt`Jackdaw chat is not connected on this device. Confirm your address for calls and chat in the settings.`);
+    }
+    if (!existing && !await account.canChatWith(address)) {
+      throw new UserError(account.isOwnEmail(address.toLowerCase())
+        ? gt`This is your own address. To chat, choose another contact.`
+        : gt`${address} does not use Jackdaw chat yet, or has not confirmed this address. You can send an email instead.`);
+    }
+    $selectedRoom = existing ?? await account.getDirectRoom(address);
     dialogOpenPerson = false;
   }
 
   async function openChatWithPerson(person: PersonUID) {
+    if (!selectedAccount) {
+      return;
+    }
     if (selectedAccount instanceof JackdawChatAccount) {
       await openJackdawChat(selectedAccount, person.emailAddress);
       return;
@@ -195,6 +222,9 @@
 
   let chatID: string;
   async function onOpenChatID() {
+    if (!selectedAccount || !chatID?.trim()) {
+      return;
+    }
     if (selectedAccount instanceof JackdawChatAccount) {
       await openJackdawChat(selectedAccount, chatID);
       return;
@@ -222,6 +252,9 @@
 
   let chatRoomID: string;
   function onOpenChatRoom() {
+    if (!selectedAccount || !chatRoomID?.trim()) {
+      return;
+    }
     let room = selectedAccount.newRoom(false);
     room.contact = selectedAccount.getPersonUID(chatRoomID); // TODO which contact for group?;
     selectedAccount.rooms.add(room);

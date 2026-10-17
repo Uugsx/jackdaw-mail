@@ -36,6 +36,9 @@
   import { onDestroy, onMount, tick } from "svelte";
 
   export let withVideo = true;
+  /** Открывать микрофон и камеру сразу. false — только кнопки выбора: например, у входящего звонка
+   * микрофон не открывается до ответа. Когда значение станет true, устройства откроются. */
+  export let openDevices = true;
 
   let devices: MediaDeviceInfo[];
 
@@ -64,7 +67,7 @@
   }
 
   async function stopCamMic() {
-    await deviceStream.setCameraMicOn(false, false);
+    await deviceStream?.setCameraMicOn(false, false);
   }
 
   async function getDevices() {
@@ -97,7 +100,17 @@
     ex = error;
   }
 
-  onMount(async () => catchErrors(startCamMic));
+  let mounted = false;
+  onMount(async () => {
+    mounted = true;
+    if (openDevices) {
+      catchErrors(startCamMic);
+    } else {
+      // Без открытого устройства названия скрыты, но список нужен для выбора.
+      catchErrors(getDevices, showErrorInline);
+    }
+  });
+  $: mounted && openDevices && !deviceStream && catchErrors(startCamMic);
   onDestroy(async () => catchErrors(stopCamMic));
 </script>
 

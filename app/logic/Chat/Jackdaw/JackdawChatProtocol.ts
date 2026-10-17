@@ -8,6 +8,12 @@ export const CHAT_PAYLOAD_VERSION = 1;
 export const MAX_GROUP_MEMBERS = 50;
 export const MAX_ATTACHMENTS = 10;
 export const MAX_TEXT_LENGTH = 20_000;
+/** Совпадает с MAX_CIPHERTEXT_BYTES на сервере */
+export const MAX_CIPHERTEXT_BYTES = 96 * 1024;
+/** Сколько шифрование добавляет к содержимому: nonce XChaCha20 (24) и тег Poly1305 (16) */
+const CIPHERTEXT_OVERHEAD_BYTES = 24 + 16;
+/** Сколько id принимает сервер в одном chat-ack (PENDING_BATCH на сервере) */
+export const MAX_ACK_IDS = 200;
 const MAX_NAME_LENGTH = 120;
 const ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
@@ -60,7 +66,7 @@ function parseRoom(value: any): ChatRoomRef | null {
   return null;
 }
 
-function parseAttachment(value: any): ChatAttachmentRef | null {
+export function parseAttachment(value: any): ChatAttachmentRef | null {
   if (!value || typeof value != "object") return null;
   let size = value.size;
   if (typeof value.blobId != "string" || !BLOB_ID_PATTERN.test(value.blobId) ||
@@ -71,6 +77,11 @@ function parseAttachment(value: any): ChatAttachmentRef | null {
   }
   let mime = typeof value.mime == "string" && MIME_PATTERN.test(value.mime) ? value.mime.toLowerCase() : "application/octet-stream";
   return { blobId: value.blobId, key: value.key, sha256: value.sha256, name: cleanName(value.name), mime, size };
+}
+
+/** Размер шифротекста, который получится из этого содержимого. Проверяется до шифрования. */
+export function ciphertextBytes(payload: ChatPayload): number {
+  return new TextEncoder().encode(JSON.stringify(payload)).length + CIPHERTEXT_OVERHEAD_BYTES;
 }
 
 /** @returns null, если содержимое не соответствует формату */

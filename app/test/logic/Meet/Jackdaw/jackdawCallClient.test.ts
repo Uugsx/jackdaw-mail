@@ -276,6 +276,26 @@ describe("клиент сигналинга", () => {
     expect(socket().last("hello")).toBeTruthy();
   });
 
+  test("после переподключения звонки узнают, какие из них сервер вернул", () => {
+    connectOnline();
+    let reconnected: [string, boolean][] = [];
+    let target = (callID: string) => ({
+      callID,
+      onSignal: () => {},
+      onReconnected: (resumed: boolean) => reconnected.push([callID, resumed]),
+    });
+    client.register(target("call-0001"));
+    client.register(target("call-0002"));
+    // Звонок без обработчика переподключения не мешает остальным.
+    client.register({ callID: "call-0003", onSignal: () => {} });
+    socket().drop();
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    socket().open();
+    expect(socket().last("hello").activeCalls).toEqual(["call-0001", "call-0002", "call-0003"]);
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: ["call-0002"] });
+    expect(reconnected).toEqual([["call-0001", false], ["call-0002", true]]);
+  });
+
   test("stop() не переподключается", () => {
     connectOnline();
     client.stop();

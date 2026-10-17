@@ -5,7 +5,7 @@ import { JID } from "../Chat/WhatsApp/Binary/JID";
 import { Person } from "../Abstract/Person";
 import type { Group } from "../Abstract/Group";
 import { PersonUID } from "../Abstract/PersonUID";
-import { canJackdawCall, startJackdawCall } from "./Jackdaw/JackdawCalls";
+import { assertNoActiveCall, canJackdawCall, startJackdawCall } from "./Jackdaw/JackdawCalls";
 /*
 import { Person, ContactEntry } from "../Abstract/Person";
 import { Group } from "../Abstract/Group";
@@ -125,6 +125,8 @@ export async function startAudioCall(to: CallRecipient): Promise<VideoConfMeetin
 /** Порядок способов: WhatsApp, затем звонок между пользователями Jackdaw по email.
  * Звонок Jackdaw — только голосовой, даже если просили видео. */
 async function startCall(to: CallRecipient, video: boolean): Promise<VideoConfMeeting> {
+  // Второй звонок поверх идущего разговора не начинаем.
+  assertNoActiveCall();
   let person = to instanceof PersonUID ? to.findPerson() : to;
   let whatsAppCall = person ? startWhatsAppCall(person, video) : null;
   if (whatsAppCall) {

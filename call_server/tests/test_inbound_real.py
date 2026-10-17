@@ -4,6 +4,7 @@ import smtplib
 import sys
 import threading
 import unittest
+from email.utils import formatdate
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -37,15 +38,15 @@ class RealSMTPTests(unittest.TestCase):
     def dnsfunc(self, name, timeout=5):
         return self.dns_record if name == b"sel._domainkey.corp.example." else None
 
-    def authenticate(self, raw, from_email, ip, mail_from, helo):
+    def authenticate(self, raw, from_email, ip, mail_from, helo, **kwargs):
         return inbound.authenticate_sender(raw, from_email, ip, mail_from, helo,
                                            dkim_verify=lambda r, i: inbound.default_dkim_verify(r, i, self.dnsfunc),
-                                           spf_check=lambda *a: "none")
+                                           spf_check=lambda *a: "none", **kwargs)
 
-    def signed_message(self, sender, to):
-        body = (f"From: Alice <{sender}>\r\nTo: <{to}>\r\nSubject: Jackdaw\r\n"
+    def signed_message(self, sender, to, include_headers=(b"from", b"to", b"subject", b"date")):
+        body = (f"From: Alice <{sender}>\r\nTo: <{to}>\r\nSubject: Jackdaw\r\nDate: {formatdate()}\r\n"
                 "Message-ID: <1@corp.example>\r\n\r\nПодтверждаю адрес.\r\n").encode()
-        signature = dkim.sign(body, b"sel", b"corp.example", self.private_pem, include_headers=[b"from", b"to", b"subject"])
+        signature = dkim.sign(body, b"sel", b"corp.example", self.private_pem, include_headers=list(include_headers))
         return signature + body
 
     def send(self, message, to, sender="alice@corp.example"):
@@ -71,11 +72,46 @@ class RealSMTPTests(unittest.TestCase):
         self.send(self.signed_message("alice@corp.example", ready["address"]), ready["address"])
         self.assertEqual(self.verified, [(ready["token"], "alice@corp.example")])
 
+    def test_exchange_style_signature_over_russian_subject(self):
+        # Exchange Online подписывает From:Date:Subject:Message-ID, но не To; тема клиента — в RFC 2047
+        from email.message import EmailMessage
+
+        ready = self.reverse.start("alice@corp.example", "license:1")
+        message = EmailMessage()
+        message["From"] = "Alice <alice@corp.example>"
+        message["To"] = f"Jackdaw Mail <{ready['address']}>"
+        message["Subject"] = ready["mailSubject"]
+        message["Date"] = formatdate(localtime=True)
+        message["Message-ID"] = "<2@corp.example>"
+        message.set_content("Подтверждаю адрес.")
+        body = message.as_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        signature = dkim.sign(body, b"sel", b"corp.example", self.private_pem,
+                              include_headers=[b"from", b"date", b"subject", b"message-id"])
+        self.send(signature + body, ready["address"])
+        self.assertEqual(self.verified, [(ready["token"], "alice@corp.example")])
+
     def test_tampered_message_is_rejected(self):
         ready = self.reverse.start("alice@corp.example", "license:1")
         tampered = self.signed_message("alice@corp.example", ready["address"]).replace(b"Subject: Jackdaw", b"Subject: Hacked")
         with self.assertRaises(smtplib.SMTPDataError) as error:
             self.send(tampered, ready["address"])
+        self.assertEqual(error.exception.smtp_code, 550)
+        self.assertEqual(self.verified, [])
+
+    def test_replayed_signed_message_does_not_confirm_other_token(self):
+        # Настоящее подписанное письмо для одного токена, пересланное в конверте на другой токен
+        victim = self.reverse.start("alice@corp.example", "license:1")
+        attacker = self.reverse.start("alice@corp.example", "license:2")
+        with self.assertRaises(smtplib.SMTPDataError) as error:
+            self.send(self.signed_message("alice@corp.example", victim["address"]), attacker["address"])
+        self.assertEqual(error.exception.smtp_code, 550)
+        self.assertEqual(self.verified, [])
+
+    def test_signature_without_token_header_is_rejected(self):
+        ready = self.reverse.start("alice@corp.example", "license:1")
+        with self.assertRaises(smtplib.SMTPDataError) as error:
+            self.send(self.signed_message("alice@corp.example", ready["address"], include_headers=(b"from", b"date")),
+                      ready["address"])
         self.assertEqual(error.exception.smtp_code, 550)
         self.assertEqual(self.verified, [])
 

@@ -146,6 +146,49 @@ class ChatFlowTests(ChatTestCase):
         self.assertNotIn("chat-bob-0001", self.hub.chat.peers_by_device)
 
 
+class ChatLimitTests(ChatTestCase):
+    def setUp(self):
+        super().setUp()
+        self.alice = self.chat_peer("device-alice-1", "alice@example.com", "chat-alice-1", KEY_A)
+        self.bob = self.chat_peer("device-bob-0001", "bob@example.com", "chat-bob-0001", KEY_B)
+
+    def stored_messages(self):
+        connection = sqlite3.connect(self.chat_dir / "chat.sqlite3")
+        try:
+            return connection.execute("SELECT message_id, sender_subject FROM chat_messages").fetchall()
+        finally:
+            connection.close()
+
+    def test_message_without_recipient_devices_is_not_stored(self):
+        for ephemeral in (False, True):
+            self.send(self.alice, f"msg-empty-{int(ephemeral)}", ["bob@example.com"],
+                      {"chat-alice-1": b64(b"own"), "chat-nobody-01": b64(b"x")}, ephemeral=ephemeral)
+            error = self.last(self.alice)
+            self.assertEqual(error["code"], "no_recipients")
+            self.assertEqual(error["messageId"], f"msg-empty-{int(ephemeral)}")
+        self.assertEqual(self.stored_messages(), [])
+
+    def test_stored_messages_per_sender_are_limited(self):
+        original = chat.MAX_STORED_MESSAGES_PER_SUBJECT
+        chat.MAX_STORED_MESSAGES_PER_SUBJECT = 2
+        try:
+            for index in range(2):
+                self.send(self.alice, f"msg-quota-{index}", ["bob@example.com"], {"chat-bob-0001": b64(b"k")})
+                self.assertEqual(self.last(self.alice)["type"], "chat-sent")
+            self.send(self.alice, "msg-quota-2", ["bob@example.com"], {"chat-bob-0001": b64(b"k")})
+            self.assertEqual(self.last(self.alice)["code"], "quota_exceeded")
+            # Повтор уже сохранённого сообщения после обрыва квоту не тратит
+            self.send(self.alice, "msg-quota-0", ["bob@example.com"], {"chat-bob-0001": b64(b"k")})
+            self.assertEqual(self.last(self.alice)["type"], "chat-sent")
+            # Доставленные сообщения освобождают квоту
+            self.hub.handle(self.bob, {"type": "chat-ack", "messageIds": ["msg-quota-0"]})
+            self.send(self.alice, "msg-quota-2", ["bob@example.com"], {"chat-bob-0001": b64(b"k")})
+            self.assertEqual(self.last(self.alice)["type"], "chat-sent")
+            self.assertEqual({subject for _, subject in self.stored_messages()}, {"license:1"})
+        finally:
+            chat.MAX_STORED_MESSAGES_PER_SUBJECT = original
+
+
 class BlobTests(ChatTestCase):
     def setUp(self):
         super().setUp()
@@ -187,6 +230,34 @@ class BlobTests(ChatTestCase):
         finally:
             chat.BLOB_QUOTA_BYTES = original
 
+    def test_unfinished_upload_reserves_quota_until_abandoned(self):
+        original = chat.BLOB_QUOTA_BYTES
+        chat.BLOB_QUOTA_BYTES = 3 * chat.BLOB_CHUNK_BYTES
+        try:
+            # Начата загрузка на 3 части: резерв — весь заявленный размер, а не первая часть
+            self.assertEqual(self.put(self.alice, "7" * 32, 0, 3, b"x" * chat.BLOB_CHUNK_BYTES)["complete"], False)
+            self.assertEqual(self.put(self.alice, "8" * 32, 0, 1, b"x")["code"], "quota_exceeded")
+            self.clock.value += chat.INCOMPLETE_BLOB_TTL_SECONDS + 1
+            self.store.cleanup(force=True)
+            self.assertFalse((self.chat_dir / "blobs" / ("7" * 32 + ".part")).exists())
+            self.assertEqual(self.put(self.alice, "8" * 32, 0, 1, b"x")["complete"], True)
+        finally:
+            chat.BLOB_QUOTA_BYTES = original
+
+    def test_reservation_is_capped_by_max_blob_size(self):
+        original = chat.BLOB_QUOTA_BYTES
+        chat.BLOB_QUOTA_BYTES = chat.MAX_BLOB_BYTES + chat.BLOB_CHUNK_BYTES
+        try:
+            self.put(self.alice, "9" * 32, 0, chat.MAX_BLOB_CHUNKS, b"x" * chat.BLOB_CHUNK_BYTES)
+            self.assertEqual(self.put(self.alice, "a" * 32, 0, 1, b"x")["complete"], True)
+        finally:
+            chat.BLOB_QUOTA_BYTES = original
+
+    def test_recent_unfinished_upload_survives_cleanup(self):
+        self.put(self.alice, "b" * 32, 0, 2, b"x" * chat.BLOB_CHUNK_BYTES)
+        self.store.cleanup(force=True)
+        self.assertEqual(self.put(self.alice, "b" * 32, 1, 2, b"y")["complete"], True)
+
     def test_expired_blobs_are_deleted(self):
         blob_id = "6" * 32
         self.put(self.alice, blob_id, 0, 1, b"data")
@@ -205,6 +276,8 @@ class MigrationTests(unittest.TestCase):
             try:
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertTrue({"chat_devices", "chat_messages", "chat_deliveries", "chat_blobs", "verified_emails"} <= tables)
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(chat_messages)")}
+                self.assertIn("sender_subject", columns)
                 # Откат — в обратном порядке миграций
                 for _, filename in reversed(chat.MIGRATIONS):
                     rollback = (Path(chat.__file__).with_name("migrations") / filename.replace(".sql", ".rollback.sql")).read_text()

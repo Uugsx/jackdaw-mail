@@ -112,6 +112,16 @@ export class SQLChatMessage {
   }
 
   protected static async saveAttachments(msg: RoomMessage) {
+    // Строка вложения ищется по (messageID, filename), и это же — UNIQUE в схеме.
+    // Два файла с одинаковым именем в одном сообщении слились бы в одну строку,
+    // поэтому повторное имя получает суффикс «-2», «-3»… Без миграции схемы.
+    let taken = new Set<string>();
+    for (let a of msg.attachments) {
+      if (a.filename && taken.has(a.filename)) {
+        a.filename = uniqueAttachmentFilename(a.filename, taken);
+      }
+      taken.add(a.filename);
+    }
     for (let a of msg.attachments) {
       let existing = await (await getDatabase()).get(sql`
         SELECT id FROM chatAttachment
@@ -253,6 +263,62 @@ export class SQLChatMessage {
       `);
   }
 
+  /** Самое новое сообщение комнаты (не событие), без чтения всей истории.
+   * Для превью и порядка в списке чатов сразу после запуска. */
+  static async readLast(chat: ChatRoom): Promise<ChatMessage | null> {
+    let rows = await (await getDatabase()).all(sql`
+      SELECT
+        id,
+        outgoing, fromPersonID, inReplyToIDStr,
+        dateSent, dateReceived,
+        plaintext, html, reactionsJSON,
+        chatID, idStr, json
+      FROM message
+      WHERE chatID = ${chat.dbID}
+      ORDER BY dateSent DESC, id DESC
+      LIMIT ${LAST_MESSAGE_CANDIDATES}
+      `) as any[];
+    for (let row of rows) {
+      let msg = SQLChatMessage.newRoomMessage(chat, sanitize.string(row.json, null));
+      if (!(msg instanceof ChatMessage)) {
+        continue; // событие комнаты (вход, звонок…) превью не бывает
+      }
+      await SQLChatMessage.read(row.id, msg, row);
+      return msg;
+    }
+    return null;
+  }
+
+  /** Число входящих, не отмеченных прочитанными (`isRead` в json-колонке). */
+  static async countUnread(chat: ChatRoom): Promise<number> {
+    let row = await (await getDatabase()).get(sql`
+      SELECT COUNT(*) AS count
+      FROM message
+      WHERE
+        chatID = ${chat.dbID} AND
+        outgoing = 0 AND
+        json_extract(json, '$.isRead') = 0
+      `) as any;
+    return sanitize.integer(row?.count, 0);
+  }
+
+  /** Есть ли исходящие с одним из этих статусов доставки (`deliveryStatus` в json-колонке). */
+  static async hasOutgoingWithStatus(chat: ChatRoom, statuses: string[]): Promise<boolean> {
+    if (!statuses.length) { // `IN ()` — синтаксическая ошибка SQLite
+      return false;
+    }
+    let row = await (await getDatabase()).get(sql`
+      SELECT id
+      FROM message
+      WHERE
+        chatID = ${chat.dbID} AND
+        outgoing = 1 AND
+        json_extract(json, '$.deliveryStatus') IN ${statuses}
+      LIMIT 1
+      `) as any;
+    return !!row?.id;
+  }
+
   static async readAll(chat: ChatRoom): Promise<void> {
     let rows = await (await getDatabase()).all(sql`
       SELECT
@@ -306,6 +372,26 @@ export class SQLChatMessage {
       }
     }
     chat.messages.addAll(newMsgs);
+  }
+}
+
+/** Сколько последних строк просмотреть в поиске последнего сообщения: среди них могут быть события комнаты */
+const LAST_MESSAGE_CANDIDATES = 20;
+
+/** Имя, которого ещё нет среди `taken`: «photo.png» → «photo-2.png».
+ * Без скобок и пробелов: имя проходит `sanitize.filename()` у получателя без изменений. */
+export function uniqueAttachmentFilename(filename: string, taken: Set<string>): string {
+  if (!taken.has(filename)) {
+    return filename;
+  }
+  let dot = filename.lastIndexOf(".");
+  let base = dot > 0 ? filename.slice(0, dot) : filename;
+  let ext = dot > 0 ? filename.slice(dot) : "";
+  for (let i = 2; ; i++) {
+    let candidate = `${base}-${i}${ext}`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
   }
 }
 

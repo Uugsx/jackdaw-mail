@@ -11,6 +11,11 @@
       <hbox class="image-menu">
         <AttachmentMenu {attachment} />
       </hbox>
+    {:else if downloadError}
+      <hbox class="loading download-error font-smallest" role="alert">
+        <ErrorMessageInline ex={downloadError} />
+        <Button label={$t`Retry`} icon={RetryIcon} iconSize="14px" plain onClick={onRetryDownload} />
+      </hbox>
     {:else}
       <hbox class="loading font-smallest">
         {#await attachment.read()}
@@ -37,7 +42,10 @@
         </hbox>
         <hbox class="bottom-row font-smallest">
           <hbox class="size">
-            {#if $attachment.size}
+            {#if downloadError}
+              <hbox class="download-error" role="alert" title={downloadError.message}>{$t`Download failed`}</hbox>
+              <Button label={$t`Retry`} icon={RetryIcon} iconSize="14px" iconOnly plain onClick={onRetryDownload} />
+            {:else if $attachment.size}
               {fileSize($attachment.size)}
             {:else}
               {$t`Downloading…`}
@@ -59,11 +67,23 @@
   import FileIcon from "../../Files/Thumbnail/FileIcon.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
+  import Button from "../../Shared/Button.svelte";
+  import RetryIcon from "lucide-svelte/icons/rotate-cw";
+  import { JackdawChatAttachment } from "../../../logic/Chat/Jackdaw/JackdawChatMessage";
   import { t } from "../../../l10n/l10n";
 
   export let attachment: Attachment;
 
   $: isImage = $attachment.mimeType?.startsWith("image/");
+  /** Файл чата Jackdaw не скачался: показываем ошибку с повтором вместо вечного «Downloading…» */
+  $: downloadError = $attachment instanceof JackdawChatAttachment && !$attachment.content ? $attachment.downloadError : null;
+
+  async function onRetryDownload(event?: Event) {
+    event?.stopPropagation(); // не открывать файл по клику на «Повторить»
+    if (attachment instanceof JackdawChatAttachment) {
+      await attachment.retryDownload();
+    }
+  }
 
   async function onOpen() {
     if (!attachment.content) {
@@ -124,6 +144,11 @@
   .loading {
     padding: 24px;
     color: #888888;
+  }
+  .download-error {
+    align-items: center;
+    gap: 4px;
+    color: var(--error-fg, #b00020);
   }
   .file {
     height: 40px;

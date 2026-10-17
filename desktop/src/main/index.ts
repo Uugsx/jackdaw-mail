@@ -1,5 +1,5 @@
 import { setMainWindow, startupBackend, shutdownBackend, startupArgs, updateState, checkForUpdateAndNotify, createJPCSecret, isQuittingForUpdate, prepareUpdaterAuth } from '../../backend/backend';
-import { app, shell, BrowserWindow, session, Menu, MenuItemConstructorOptions, type ContextMenuParams, type WebContents } from 'electron'
+import { app, shell, BrowserWindow, dialog, session, Menu, MenuItemConstructorOptions, type ContextMenuParams, type WebContents } from 'electron'
 import { ipcMain } from 'electron/main';
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -660,6 +660,31 @@ async function createWindow(): Promise<void> {
         }
       });
     }
+
+    // Во время звонка renderer отменяет `beforeunload` (MeetBackground.svelte). Без этого обработчика
+    // Electron молча не закрыл бы окно; здесь спрашиваем пользователя, завершить ли звонок.
+    mainWindow.webContents.on('will-prevent-unload', event => {
+      if (isQuittingForUpdate()) {
+        // Установку обновления запустил сам пользователь: не мешаем выходу.
+        event.preventDefault();
+        return;
+      }
+      // В основном процессе нет локализации интерфейса: язык — по системе, как в backend.ts
+      const russian = app.getLocale().toLowerCase().startsWith('ru');
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: russian ? ['Завершить звонок и закрыть', 'Остаться в звонке'] : ['End call and close', 'Stay in call'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Jackdaw Mail',
+        message: russian ? 'Идёт звонок.' : 'A call is in progress.',
+        detail: russian ? 'Если закрыть окно, звонок завершится.' : 'Closing the window will end the call.',
+      });
+      if (choice === 0) {
+        // preventDefault() здесь разрешает закрытие, вопреки отмене в renderer.
+        event.preventDefault();
+      }
+    });
 
     mainWindow.on('closed', () => {
       failPendingComposeWindowSends("Main window is unavailable");

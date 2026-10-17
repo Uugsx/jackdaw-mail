@@ -91,7 +91,10 @@ RATE_LIMITS = {
     "default": 120,
 }
 # Отправка кода на один адрес ограничена отдельно от соединения: иначе можно засыпать чужой ящик письмами.
+# Лимит считается на пару (адрес, лицензия): чужая лицензия не исчерпает его за владельца адреса.
 VERIFY_EMAIL_PER_HOUR = 3
+# Общий лимит писем на адрес от всех лицензий вместе: много лицензий не засыплют ящик.
+VERIFY_EMAIL_TOTAL_PER_HOUR = 10
 # И на одну лицензию: иначе её владелец мог бы рассылать письма с кодом на произвольные адреса.
 VERIFY_SUBJECT_PER_HOUR = 10
 
@@ -430,23 +433,28 @@ class PendingVerification:
 
 
 class EmailVerification:
-    def __init__(self, signer: EmailProofSigner, clock: Callable[[], float] = time.time):
+    def __init__(self, signer: EmailProofSigner, clock: Callable[[], float] = time.monotonic):
+        """`clock` — монотонные часы для сроков кодов и лимитов; срок подтверждений (exp) — по системному времени в signer."""
         self.signer = signer
         self._clock = clock
-        self._pending: dict[str, PendingVerification] = {}
+        # Ключ — (адрес, лицензия): запрос кода с чужой лицензии не заменяет код владельца адреса.
+        self._pending: dict[tuple[str, str], PendingVerification] = {}
         self._sent: dict[str, deque[float]] = {}
 
     def start(self, email: str, subject: str) -> str:
-        """Возвращает код для отправки. Повторный запрос заменяет прежний код."""
+        """Возвращает код для отправки. Повторный запрос той же лицензии заменяет её прежний код."""
         current = self._clock()
-        by_email = self._recent(f"email:{email}", current)
+        by_email = self._recent(f"email:{email}|{subject}", current)
+        by_email_total = self._recent(f"email-total:{email}", current)
         by_subject = self._recent(f"subject:{subject}", current)
-        if len(by_email) >= VERIFY_EMAIL_PER_HOUR or len(by_subject) >= VERIFY_SUBJECT_PER_HOUR:
+        if len(by_email) >= VERIFY_EMAIL_PER_HOUR or len(by_subject) >= VERIFY_SUBJECT_PER_HOUR \
+                or len(by_email_total) >= VERIFY_EMAIL_TOTAL_PER_HOUR:
             raise CallError("rate_limited", "Слишком много запросов кода. Попробуйте через час.")
         by_email.append(current)
+        by_email_total.append(current)
         by_subject.append(current)
         code = f"{secrets.randbelow(1_000_000):06d}"
-        self._pending[email] = PendingVerification(
+        self._pending[(email, subject)] = PendingVerification(
             code_hash=sha256_hex(f"{email}:{code}"),
             subject=subject,
             expires_at=current + VERIFICATION_CODE_TTL_SECONDS,
@@ -461,23 +469,24 @@ class EmailVerification:
         return sent
 
     def finish(self, email: str, code: Any, subject: str) -> str:
-        pending = self._pending.get(email)
+        key = (email, subject)
+        pending = self._pending.get(key)
         current = self._clock()
         if pending is None or pending.subject != subject or pending.expires_at <= current:
             raise CallError("code_expired", "Код устарел. Запросите новый.")
         pending.attempts += 1
         if not isinstance(code, str) or not hmac.compare_digest(pending.code_hash, sha256_hex(f"{email}:{code.strip()}")):
             if pending.attempts >= VERIFICATION_MAX_ATTEMPTS:
-                self._pending.pop(email, None)
+                self._pending.pop(key, None)
                 raise CallError("code_expired", "Слишком много неверных попыток. Запросите новый код.")
             raise CallError("code_invalid", "Неверный код.")
-        self._pending.pop(email, None)
+        self._pending.pop(key, None)
         return self.signer.issue(email, subject)
 
     def _cleanup(self, current: float) -> None:
         if len(self._pending) >= 4096:
-            for email in [key for key, value in self._pending.items() if value.expires_at <= current]:
-                self._pending.pop(email, None)
+            for pending_key in [key for key, value in self._pending.items() if value.expires_at <= current]:
+                self._pending.pop(pending_key, None)
         if len(self._sent) >= 4096:
             for key in [key for key, value in self._sent.items() if not value or current - value[-1] >= 3600]:
                 self._sent.pop(key, None)
@@ -529,6 +538,8 @@ class Call:
     timers: list[Any] = field(default_factory=list)
     # peer_id → момент обрыва соединения участника идущего звонка
     disconnected: dict[str, float] = field(default_factory=dict)
+    # peer_id устройств вызываемого, ответивших «занято»: остальные его устройства продолжают звонить
+    busy_peers: set[str] = field(default_factory=set)
 
 
 class Scheduler:
@@ -676,6 +687,8 @@ class CallHub:
                 self._unregister(peer, email)
             if self.chat is not None:
                 self.chat.credential_lost(peer)
+            # До обнуления credential: по нему соединение находится в peers_by_subject.
+            self._forget_subject(peer)
             peer.credential = None
             peer.send({"type": "error", "code": error.code, "message": error.message, "requestType": "hello"})
             peer.close()
@@ -833,7 +846,8 @@ class CallHub:
         if pending is None:
             raise CallError("code_expired", "Подтверждение устарело. Начните заново.")
         if pending.failed:
-            raise CallError(pending.failed, "Письмо пришло, но почтовый сервер отправителя его не подписал (DKIM/SPF).")
+            raise CallError(pending.failed, "Письмо пришло, но не прошло проверку: почтовый сервер отправителя его не подписал "
+                                            "(DKIM/SPF), в подписи нет темы с кодом или письмо устарело.")
         if pending.proof is None:
             peer.send({"type": "verify-reverse-pending", "token": token, "email": pending.email})
             return
@@ -1019,8 +1033,16 @@ class CallHub:
         call = self._call_for(message)
         if call.state != CallState.RINGING or call.callee_email not in peer.emails:
             raise CallError("call_not_found", "Звонок уже завершён.")
-        # «Занято» отвечает клиент, у которого уже идёт другая встреча.
-        self._end(call, "busy" if message.get("reason") == "busy" else "declined", skip=peer)
+        # «Занято» отвечает клиент, у которого уже идёт другая встреча. Звонок на другие устройства
+        # того же адреса продолжается: «занято» для звонящего — только когда заняты все.
+        if message.get("reason") == "busy":
+            call.busy_peers.add(peer.peer_id)
+            ringing = [p for p in self.peers_by_email.get(call.callee_email, ()) if p is not call.caller]
+            if any(p.peer_id not in call.busy_peers for p in ringing):
+                return
+            self._end(call, "busy", skip=peer)
+            return
+        self._end(call, "declined", skip=peer)
 
     def _cancel(self, peer: Peer, message: dict[str, Any]) -> None:
         call = self._call_for(message)
@@ -1142,8 +1164,8 @@ def build_livekit_from_environment() -> LiveKitTokenIssuer | None:
     return LiveKitTokenIssuer(url, api_key, api_secret)
 
 
-async def serve(hub: CallHub, host: str, port: int) -> None:
-    from websockets.asyncio.server import serve as websocket_serve
+def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
+    """Обработчик одного WebSocket-соединения. Отдельно от `serve`, чтобы тестировать без сети."""
     from websockets.exceptions import ConnectionClosed
 
     async def connection_handler(websocket: Any) -> None:
@@ -1151,8 +1173,11 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
             await websocket.close(code=1008, reason="not found")
             return
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
+        closing = False
 
         def send(message: dict[str, Any]) -> None:
+            if closing:
+                return
             try:
                 queue.put_nowait(message)
             except asyncio.QueueFull:
@@ -1160,6 +1185,11 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
                 close()
 
         def close() -> None:
+            nonlocal closing
+            # Повторные вызовы (каждый следующий send при полной очереди) не создают новых задач закрытия.
+            if closing:
+                return
+            closing = True
             try:
                 queue.put_nowait(None)
             except asyncio.QueueFull:
@@ -1187,15 +1217,31 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
                     continue
                 try:
                     message = json.loads(raw)
-                except json.JSONDecodeError:
+                except (ValueError, RecursionError):
+                    # JSONDecodeError — подкласс ValueError; RecursionError — слишком глубокая вложенность.
                     peer.send({"type": "error", "code": "invalid_message", "message": "Некорректное сообщение."})
                     continue
                 hub.handle(peer, message)
         except ConnectionClosed:
             pass
         finally:
-            hub.disconnected(peer)
-            writer_task.cancel()
+            # Сначала останавливаем отправку, затем убираем соединение из хаба; сбой одного не мешает другому.
+            try:
+                writer_task.cancel()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+            try:
+                hub.disconnected(peer)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+    return connection_handler
+
+
+async def serve(hub: CallHub, host: str, port: int) -> None:
+    from websockets.asyncio.server import serve as websocket_serve
+
+    connection_handler = make_connection_handler(hub)
 
     async with websocket_serve(
         connection_handler,

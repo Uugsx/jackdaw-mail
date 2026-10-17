@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { JackdawCall, JackdawCallAccount, setJackdawCallEndedHandler } from "../../../../logic/Meet/Jackdaw/JackdawCall";
-import { MeetingState } from "../../../../logic/Meet/VideoConfMeeting";
+import { MeetingState, enterStartsCall } from "../../../../logic/Meet/VideoConfMeeting";
+import { assertNoActiveCall, handleIncomingJackdawCall } from "../../../../logic/Meet/Jackdaw/JackdawCalls";
 import { ParticipantRole } from "../../../../logic/Meet/Participant";
 import { DEFAULT_ICE_SERVERS, endReasonMessage } from "../../../../logic/Meet/Jackdaw/JackdawCallProtocol";
 import { appGlobal } from "../../../../logic/app";
@@ -356,7 +357,10 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
     await flush();
     expect(call.state).toBe(MeetingState.Ended);
-    expect(endedMessages[0]).toContain("WebRTC disabled");
+    // Технический текст WebRTC пользователю не показывается — только понятная причина.
+    expect(endedMessages[0]).not.toContain("WebRTC disabled");
+    expect(endedMessages[0]).toContain("Could not connect the call.");
+    expect(endedMessages[0]).toContain("firewall");
     // Звонок уже принят на сервере: отклонять поздно, только завершать.
     expect(client.last()).toEqual({ type: "hangup", callId: "call-0001" });
   });
@@ -428,6 +432,139 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(endedMessages).toHaveLength(1);
   });
 
+  test("переподключение: вызов без ответа завершается, сервер его уже отменил", async () => {
+    let outgoing = makeCall();
+    outgoing.call.prepareOutgoing("bob@example.com", "Bob", false);
+    await outgoing.call.call();
+    let incomingCall = makeCall();
+    incomingCall.call.prepareIncoming(incoming);
+    let count = outgoing.client.sent.length;
+
+    outgoing.call.onReconnected(false);
+    incomingCall.call.onReconnected(false);
+    await flush();
+    for (let { call, client } of [outgoing, incomingCall]) {
+      expect(call.state).toBe(MeetingState.Ended);
+      expect(call.endReason).toBe("connection-lost");
+      expect(client.registered.size).toBe(0);
+    }
+    expect(endedMessages).toEqual([
+      endReasonMessage("connection-lost", true),
+      endReasonMessage("connection-lost", false),
+    ]);
+    // Звонка на сервере уже нет: отмену не отправляем.
+    expect(outgoing.client.sent).toHaveLength(count);
+  });
+
+  test("переподключение: возвращённый сервером разговор продолжается, потерянный — завершается", async () => {
+    let resumed = makeCall();
+    resumed.call.prepareIncoming(incoming);
+    await resumed.call.answer();
+    resumed.call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    resumed.call.onReconnected(true);
+    expect(resumed.call.state).toBe(MeetingState.Ongoing);
+
+    let lost = makeCall();
+    lost.call.prepareOutgoing("bob@example.com", "Bob", false);
+    await lost.call.call();
+    lost.call.onSignal({ type: "accepted", callId: lost.call.callID, iceServers: null });
+    lost.call.onReconnected(false);
+    await flush();
+    expect(lost.call.state).toBe(MeetingState.Ended);
+    expect(lost.connections[0].closed).toBe(true);
+    expect(endedMessages).toEqual([endReasonMessage("connection-lost", true)]);
+    await resumed.call.hangup();
+  });
+
+  test("гудки без ответа: клиент сам завершает вызов, если сервер промолчал", async () => {
+    vi.useFakeTimers();
+    let { call, client } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(call.state).toBe(MeetingState.OutgoingCall);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(call.endReason).toBe("no-answer");
+    expect(client.last()).toEqual({ type: "cancel", callId: call.callID });
+    expect(endedMessages).toEqual([endReasonMessage("no-answer", true)]);
+  });
+
+  test("входящий без ответа: экран закрывается, звонок пропущен, отказ не отправляется", async () => {
+    vi.useFakeTimers();
+    let { call, client } = makeCall();
+    call.prepareIncoming(incoming);
+    await vi.advanceTimersByTimeAsync(55_000);
+    expect(call.state).toBe(MeetingState.Ended);
+    expect(call.missed).toBe(true);
+    // Отказ сбросил бы вызов и на других устройствах.
+    expect(client.sent).toHaveLength(0);
+    expect(endedMessages).toHaveLength(1);
+    expect(endedMessages[0]).toContain("bob@example.com");
+  });
+
+  test("принятый звонок: таймер гудков не срабатывает", async () => {
+    vi.useFakeTimers();
+    let { call, connections } = makeCall();
+    call.prepareIncoming(incoming);
+    await call.answer();
+    call.onSignal({ type: "joined", callId: "call-0001", iceServers: null });
+    connections[0].changeState("connected");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(call.state).toBe(MeetingState.Ongoing);
+    await call.hangup();
+  });
+
+  test("ответ не ушёл — «Принять» можно нажать снова", async () => {
+    let { call, client } = makeCall();
+    call.prepareIncoming(incoming);
+    client.online = false;
+    await expect(call.answer()).rejects.toThrow();
+    expect(call.state).toBe(MeetingState.IncomingCall);
+    client.online = true;
+    await call.answer();
+    expect(client.sent).toEqual([{ type: "accept", callId: "call-0001" }]);
+    await call.hangup();
+  });
+
+  test("кандидат ICE без связи с сервисом не даёт неперехваченной ошибки", async () => {
+    let { call, client, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await flush();
+    client.online = false;
+    expect(() => connections[0].onicecandidate({ candidate: { ...candidate } })).not.toThrow();
+    expect(call.state).toBe(MeetingState.Ongoing);
+    await call.hangup();
+  });
+
+  test("время разговора отсчитывается с установления соединения", async () => {
+    vi.useFakeTimers();
+    let { call, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", false);
+    await call.call();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await vi.advanceTimersByTimeAsync(5_000);
+    connections[0].changeState("connected");
+    expect(call.started.getTime()).toBe(Date.now());
+    await call.hangup();
+  });
+
+  test("имя звонящего не из контактов помечено, адрес показан всегда", () => {
+    let { call } = makeCall();
+    call.prepareIncoming({ ...incoming, fromName: "Bank Support" });
+    expect(call.remoteNameUnverified).toBe(true);
+    expect(call.remoteLabel).toContain("Bank Support");
+    expect(call.remoteLabel).toContain("(unverified)");
+    expect(call.remoteLabel).toContain("bob@example.com");
+
+    let { call: noName } = makeCall();
+    noName.prepareIncoming({ ...incoming, fromName: "" });
+    expect(noName.remoteNameUnverified).toBe(false);
+    expect(noName.remoteLabel).toBe("bob@example.com");
+  });
+
   test("комнату нельзя создать в обход сервиса звонков", async () => {
     let { call } = makeCall();
     await expect(call.start()).rejects.toBeInstanceOf(UserError);
@@ -453,5 +590,72 @@ describe("выбор способа звонка", () => {
     await expect(startVideoCall(new PersonUID("bob@example.com", "Bob"))).rejects.toBeInstanceOf(UserError);
     await expect(startAudioCall(new PersonUID("bob@example.com", "Bob"))).rejects.toBeInstanceOf(UserError);
     expect(appGlobal.meetings.length).toBe(before);
+  });
+});
+
+describe("занятость и второй звонок", () => {
+  let endedMessages: string[];
+
+  beforeEach(() => {
+    endedMessages = [];
+    setJackdawCallEndedHandler((_call, message) => endedMessages.push(message));
+  });
+
+  afterEach(() => {
+    appGlobal.meetings.clear();
+  });
+
+  test("брошенный экран «Позвонить?» не занятость: входящий показывается, экран закрывается", async () => {
+    let { call: unconfirmed } = makeCall();
+    unconfirmed.prepareOutgoing("carol@example.com", "Carol", false);
+    let client = new FakeClient();
+    let call = handleIncomingJackdawCall(incoming, new JackdawCallAccount(client as any));
+    await flush();
+    expect(client.sent).toHaveLength(0);
+    expect(call.state).toBe(MeetingState.IncomingCall);
+    expect(appGlobal.meetings.contents).toContain(call);
+    expect(unconfirmed.state).toBe(MeetingState.Ended);
+    expect(appGlobal.meetings.contents).not.toContain(unconfirmed);
+    await call.hangup();
+  });
+
+  test("идёт разговор — входящий отклоняется как «занято» и виден как пропущенный", async () => {
+    let { call: ongoing } = makeCall();
+    ongoing.prepareOutgoing("carol@example.com", "Carol", false);
+    await ongoing.call();
+    let client = new FakeClient();
+    let call = handleIncomingJackdawCall(incoming, new JackdawCallAccount(client as any));
+    expect(client.last()).toEqual({ type: "reject", callId: "call-0001", reason: "busy" });
+    expect(appGlobal.meetings.contents).not.toContain(call);
+    expect(call.missed).toBe(true);
+    expect(endedMessages).toHaveLength(1);
+    expect(endedMessages[0]).toContain("bob@example.com");
+    await ongoing.hangup();
+  });
+
+  test("второй звонок поверх идущего не начинается", async () => {
+    let { call: ongoing } = makeCall();
+    ongoing.prepareOutgoing("carol@example.com", "Carol", false);
+    expect(() => assertNoActiveCall()).not.toThrow();
+    await ongoing.call();
+    expect(() => assertNoActiveCall()).toThrow(UserError);
+    await expect(startAudioCall(new PersonUID("bob@example.com", "Bob"))).rejects.toThrow("Finish the current call");
+    await ongoing.hangup();
+    expect(() => assertNoActiveCall()).not.toThrow();
+  });
+});
+
+describe("клавиша Enter на экране вызова", () => {
+  test("не принимает входящий и ничего не делает во время гудков", () => {
+    expect(enterStartsCall(MeetingState.IncomingCall)).toBe(false);
+    expect(enterStartsCall(MeetingState.OutgoingCall)).toBe(false);
+    expect(enterStartsCall(MeetingState.Ongoing)).toBe(false);
+    expect(enterStartsCall(MeetingState.Ended)).toBe(false);
+  });
+
+  test("подтверждает исходящий звонок и вход во встречу", () => {
+    expect(enterStartsCall(MeetingState.OutgoingCallConfirm)).toBe(true);
+    expect(enterStartsCall(MeetingState.Init)).toBe(true);
+    expect(enterStartsCall(MeetingState.JoinConference)).toBe(true);
   });
 });

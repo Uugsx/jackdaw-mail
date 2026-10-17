@@ -46,10 +46,12 @@
   /** focus the search field when this component loads -- in */
   export let doSearch = false;
   export let sortBy = (person: PersonOrGroup) => person.name.toLowerCase();
+  /** Своя выдача поиска — in. null: поиск по адресным книгам (как в «Контактах»). */
+  export let search: ((term: string) => Collection<PersonOrGroup>) | null = null;
 
   let searchAddressbooks = appGlobal.addressbooks.merge(appGlobal.searchOnlyAddressbooks);
   $: filteredPersons = searchTerm
-    ? mergeColls(searchAddressbooks.map(ab => ab.quickSearch(searchTerm, true)))
+    ? (search ? search(searchTerm) : mergeColls(searchAddressbooks.map(ab => ab.quickSearch(searchTerm, true))))
     : persons;
   $: sortedPersons = filteredPersons.sortBy(sortBy);
 

@@ -67,6 +67,7 @@
 
 <script lang="ts">
   import type { ChatRoom } from "../../logic/Chat/ChatRoom";
+  import { type ChatMessage, DeliveryStatus } from "../../logic/Chat/ChatMessage";
   import { insertImage, removeImageForAttachment, removeOrphanedInlineAttachments } from "../Shared/Editor/InsertImage";
   import type { Attachment } from "../../logic/Abstract/Attachment";
   import { selectedDraft, selectedEditor } from "./selected";
@@ -84,7 +85,6 @@
   import EmojiIcon from "lucide-svelte/icons/smile";
   import { onKeyEnter } from "../Util/util";
   import { catchErrors } from "../Util/error";
-  import { assert } from "../../logic/util/util";
   import type { Editor } from '@tiptap/core';
   import { t } from "../../l10n/l10n";
 
@@ -100,19 +100,44 @@
   let showEmojis = false;
 
   async function send() {
-    assert(to.draftMessage.hasHTML || to.draftMessage.attachments.hasItems, "Message is empty");
-    let msg = to.draftMessage;
+    let room = to;
+    let msg = room.draftMessage;
+    if (!msg.hasHTML && !msg.attachments.hasItems) {
+      return; // второй Enter сразу после отправки: черновик уже новый и пустой
+    }
     msg.outgoing = true;
     msg.text; // Generate to keep in sync
-    msg.contact = to.contact;
+    msg.contact = room.contact;
     msg.sent = new Date();
-    await to.sendMessage(msg);
+    // Отправляемое сообщение отделяем от редактора до первого await: новый текст и файлы
+    // попадают в новый черновик, а не в сообщение, которое ещё загружается.
     reset();
+    try {
+      await room.sendMessage(msg);
+    } catch (ex) {
+      restoreDraft(room, msg);
+      throw ex;
+    }
   }
 
   function reset() {
     to.draftMessage = to.newMessage();
     editor.commands.setContent(""); // TODO fix HTMLEditor to listen to `html`
+  }
+
+  /** Не отправилось. Если протокол показывает сообщение как «Не отправлено» с повтором,
+   * оно остаётся в чате. Иначе возвращаем его в редактор, если там ничего нового не набрано. */
+  function restoreDraft(room: ChatRoom, msg: ChatMessage) {
+    let shownAsFailed = msg.deliveryStatus == DeliveryStatus.Failed && room.messages.contents.includes(msg);
+    let draft = room.draftMessage;
+    if (shownAsFailed || draft?.hasHTML || draft?.attachments.hasItems) {
+      return;
+    }
+    room.draftMessage = msg;
+    if (room == to) {
+      to = to; // обновить привязку редактора к черновику
+      editor?.commands.setContent(msg.rawHTMLDangerous ?? "");
+    }
   }
 
   function onAddAttachment(event: CustomEvent) {

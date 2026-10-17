@@ -1,6 +1,9 @@
 import asyncio
 import sys
+import time
 import unittest
+from email.message import EmailMessage
+from email.utils import formatdate
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +22,21 @@ def make_message(from_header="Alice <alice@corp.example>", dkim_domain=None, ext
     if dkim_domain is not None:
         lines.insert(0, f"DKIM-Signature: v=1; a=rsa-sha256; d={dkim_domain}; s=sel; h=from; bh=x; b=y")
     return ("\r\n".join(lines) + extra + "\r\n\r\nbody\r\n").encode()
+
+
+def client_message(ready, sender="Alice <alice@corp.example>", date=None, subject=None, to=None):
+    """Письмо как его собирает клиент (ReverseVerification.ts): To — одноразовый адрес, Subject — `mailSubject`."""
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = to if to is not None else f"Jackdaw Mail <{ready['address']}>"
+    message["Subject"] = subject if subject is not None else ready["mailSubject"]
+    message["Date"] = formatdate(date if date is not None else time.time())
+    message.set_content("Подтверждаю адрес.")
+    return message.as_bytes()
+
+
+def with_dkim(raw, headers="from:to:subject:date", domain="corp.example"):
+    return f"DKIM-Signature: v=1; a=rsa-sha256; d={domain}; s=sel;\r\n h={headers}; bh=x; b=y\r\n".encode() + raw
 
 
 class Clock:
@@ -130,6 +148,58 @@ class AuthenticationTests(unittest.TestCase):
                                                       dkim_verify=broken, spf_check=lambda *a: "pass"))
 
 
+class TokenBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.reverse = inbound.ReverseVerification(lambda email, subject: "proof", DOMAIN)
+        self.ready = self.reverse.start("alice@corp.example", "license:1")
+        self.token = self.ready["token"]
+
+    def test_client_subject_contains_token(self):
+        # Тема на русском уходит в RFC 2047 (base64): токен ищется в раскодированной теме
+        raw = client_message(self.ready, to="Jackdaw <verify@other.test>")
+        self.assertNotIn(self.token.encode(), raw.split(b"\n\n", 1)[0].split(b"Subject:")[1].split(b"\n")[0])
+        self.assertEqual(inbound.token_headers(raw, self.token, DOMAIN), {"subject"})
+        self.assertEqual(inbound.token_headers(client_message(self.ready), self.token, DOMAIN), {"subject", "to"})
+
+    def test_other_token_or_duplicate_header_does_not_count(self):
+        self.assertEqual(inbound.token_headers(client_message(self.ready), "abcdefghijklmnop", DOMAIN), set())
+        doubled = b"Subject: " + self.token.encode() + b"\r\n" + client_message(self.ready, subject="old", to="x@other.test")
+        self.assertEqual(inbound.token_headers(doubled, self.token, DOMAIN), set())
+
+    def test_dkim_must_sign_header_with_token(self):
+        def auth(raw, **kwargs):
+            return inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
+                                               dkim_verify=lambda r, i: True, spf_check=lambda *a: "fail",
+                                               token=self.token, token_domain=DOMAIN, **kwargs)
+        raw = client_message(self.ready)
+        self.assertEqual(auth(with_dkim(raw, "from:subject")), "dkim")
+        self.assertEqual(auth(with_dkim(raw, "From : To")), "dkim")
+        self.assertIsNone(auth(with_dkim(raw, "from:date")))
+        self.assertEqual(inbound.dkim_signed_headers(with_dkim(raw, "From:Subject")), [{"from", "subject"}])
+
+    def test_spf_requires_header_with_token(self):
+        def auth(raw):
+            return inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
+                                               dkim_verify=lambda r, i: False, spf_check=lambda *a: "pass",
+                                               token=self.token, token_domain=DOMAIN)
+        self.assertEqual(auth(client_message(self.ready)), "spf")
+        self.assertIsNone(auth(client_message(self.ready, subject="test", to="verify@other.test")))
+
+    def test_message_date_freshness(self):
+        now = time.time()
+        self.assertTrue(inbound.message_date_fresh(client_message(self.ready, date=now - 60), now))
+        self.assertTrue(inbound.message_date_fresh(client_message(self.ready, date=now + 60), now))
+        self.assertFalse(inbound.message_date_fresh(client_message(self.ready, date=now - 21 * 60), now))
+        self.assertFalse(inbound.message_date_fresh(client_message(self.ready, date=now + 6 * 60), now))
+        self.assertFalse(inbound.message_date_fresh(make_message(), now))
+        self.assertFalse(inbound.message_date_fresh(make_message(extra="\r\nDate: garbage"), now))
+        doubled = f"Date: {formatdate(now)}\r\n".encode() + client_message(self.ready, date=now)
+        self.assertFalse(inbound.message_date_fresh(doubled, now))
+
+    def test_default_clock_is_monotonic(self):
+        self.assertIs(inbound.ReverseVerification(lambda e, s: "", DOMAIN)._clock, time.monotonic)
+
+
 class HandlerTests(unittest.TestCase):
     def setUp(self):
         self.reverse = inbound.ReverseVerification(lambda email, subject: "proof", DOMAIN)
@@ -140,9 +210,14 @@ class HandlerTests(unittest.TestCase):
             self.reverse,
             lambda token, sender: self.verified.append((token, sender)) or True,
             lambda token, reason: self.failed.append((token, reason)),
-            authenticate=lambda *args: self.auth_result,
+            authenticate=self.authenticate,
             log=lambda line: None,
         )
+        self.auth_calls = []
+
+    def authenticate(self, *args, **kwargs):
+        self.auth_calls.append(kwargs)
+        return self.auth_result
 
     def session(self):
         return SimpleNamespace(peer=("1.2.3.4", 1234), host_name="mx.corp.example")
@@ -164,9 +239,44 @@ class HandlerTests(unittest.TestCase):
 
     def test_accepts_authenticated_message(self):
         ready = self.reverse.start("alice@corp.example", "license:1")
-        reply = self.run_flow(ready["address"], make_message())
+        reply = self.run_flow(ready["address"], client_message(ready))
         self.assertTrue(reply.startswith("250"), reply)
         self.assertEqual(self.verified, [(ready["token"], "alice@corp.example")])
+        # Проверке подписи передаётся токен: подпись должна покрывать заголовок с ним
+        self.assertEqual(self.auth_calls, [{"token": ready["token"], "token_domain": DOMAIN}])
+
+    def test_replayed_message_without_token_in_headers_is_rejected(self):
+        # Чужое подписанное письмо, пересланное на свой одноразовый адрес: токен только в конверте
+        ready = self.reverse.start("boss@corp.example", "license:2")
+        old = {"address": f"verify+abcdefghijklmnop@{DOMAIN}", "mailSubject": "Jackdaw Mail: подтверждение адреса abcdefghijklmnop"}
+        reply = self.run_flow(ready["address"], client_message(old, sender="Boss <boss@corp.example>"))
+        self.assertTrue(reply.startswith("550"), reply)
+        self.assertEqual(self.verified, [])
+        self.assertEqual(self.auth_calls, [])
+        self.assertEqual(self.failed, [(ready["token"], "sender_not_authenticated")])
+
+    def test_token_only_in_to_is_accepted(self):
+        # Тема могла быть изменена, но адрес получателя с токеном в заголовке остался
+        ready = self.reverse.start("alice@corp.example", "license:1")
+        reply = self.run_flow(ready["address"], client_message(ready, subject="Jackdaw"))
+        self.assertTrue(reply.startswith("250"), reply)
+
+    def test_stale_or_future_date_is_rejected(self):
+        for date in (time.time() - inbound.MAX_MESSAGE_AGE_SECONDS - 60, time.time() + inbound.MAX_MESSAGE_CLOCK_SKEW_SECONDS + 60):
+            ready = self.reverse.start("alice@corp.example", "license:1")
+            reply = self.run_flow(ready["address"], client_message(ready, date=date))
+            self.assertTrue(reply.startswith("550"), reply)
+            self.assertEqual(self.failed[-1], (ready["token"], "sender_not_authenticated"))
+        self.assertEqual(self.verified, [])
+
+    def test_stale_ip_entries_are_forgotten(self):
+        clock = Clock()
+        handler = inbound.InboundHandler(self.reverse, lambda t, s: True, clock=clock, log=lambda line: None)
+        self.assertTrue(handler._ip_allowed("1.1.1.1"))
+        self.assertTrue(handler._ip_allowed("2.2.2.2"))
+        clock.value += 3600
+        self.assertTrue(handler._ip_allowed("3.3.3.3"))
+        self.assertEqual(set(handler._per_ip), {"3.3.3.3"})
 
     def test_rejects_unknown_recipient_no_open_relay(self):
         self.assertTrue(self.run_flow("someone@gmail.com", make_message()).startswith("550"))
@@ -176,7 +286,7 @@ class HandlerTests(unittest.TestCase):
     def test_rejects_unauthenticated_sender(self):
         ready = self.reverse.start("alice@corp.example", "license:1")
         self.auth_result = None
-        self.assertTrue(self.run_flow(ready["address"], make_message()).startswith("550"))
+        self.assertTrue(self.run_flow(ready["address"], client_message(ready)).startswith("550"))
         self.assertEqual(self.verified, [])
         self.assertEqual(self.failed, [(ready["token"], "sender_not_authenticated")])
 

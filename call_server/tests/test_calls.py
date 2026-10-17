@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import contextlib
 import hashlib
@@ -184,6 +185,10 @@ class CredentialTests(HubTestCase):
         self.hub.handle(peer, {"type": "lookup", "emails": ["bob@example.com"]})
         self.assertEqual(peer.closed, [True])
         self.assertNotIn("alice@example.com", self.hub.peers_by_email)
+        # Соединение с отозванной лицензией не остаётся в списке устройств лицензии
+        self.assertNotIn("license:1", self.hub.peers_by_subject)
+        self.hub.disconnected(peer)
+        self.assertNotIn("license:1", self.hub.peers_by_subject)
 
 
 class EmailProofTests(HubTestCase):
@@ -258,6 +263,40 @@ class EmailProofTests(HubTestCase):
         self.clock.value += 3600
         self.hub.handle(peer, {"type": "verify-start", "email": "one-more@example.com"})
         self.assertEqual(self.last(peer)["type"], "verify-sent")
+
+    def test_other_license_does_not_replace_pending_code(self):
+        # Чужая лицензия запрашивает код на тот же адрес: код владельца продолжает действовать
+        alice = self.connect()
+        self.hub.handle(alice, {"type": "verify-start", "email": "x@example.com"})
+        code = self.mail_outbox[-1][1]
+        trial = self.connect(device="device-trial-01", kind="trial")
+        self.hub.handle(trial, {"type": "verify-start", "email": "x@example.com"})
+        self.assertEqual(self.last(trial)["type"], "verify-sent")
+        self.hub.handle(alice, {"type": "verify-finish", "email": "x@example.com", "code": code})
+        self.assertEqual(self.last(alice, "verified")["email"], "x@example.com")
+
+    def test_other_license_does_not_use_up_address_limit(self):
+        verification = calls.EmailVerification(self.signer, clock=self.clock)
+        for _ in range(calls.VERIFY_EMAIL_PER_HOUR):
+            verification.start("a@example.com", "license:2")
+        with self.assertRaises(calls.CallError):
+            verification.start("a@example.com", "license:2")
+        verification.start("a@example.com", "license:1")
+
+    def test_total_codes_per_address_are_limited(self):
+        verification = calls.EmailVerification(self.signer, clock=self.clock)
+        for index in range(calls.VERIFY_EMAIL_TOTAL_PER_HOUR):
+            verification.start("a@example.com", f"license:{index}")
+        with self.assertRaises(calls.CallError) as error:
+            verification.start("a@example.com", "license:new")
+        self.assertEqual(error.exception.code, "rate_limited")
+        verification.start("b@example.com", "license:new")
+        self.clock.value += 3600
+        verification.start("a@example.com", "license:new")
+
+    def test_default_clock_is_monotonic(self):
+        # Перевод системного времени не продлевает коды и не сбрасывает лимиты
+        self.assertIs(calls.EmailVerification(self.signer)._clock, time.monotonic)
 
     def test_verification_without_smtp_is_reported(self):
         self.hub.mailer = calls.Mailer("", 587, "", "", "")
@@ -505,6 +544,96 @@ class P2PCallTests(HubTestCase):
         self.assertEqual(self.last(alice_again, "signal")["candidate"], CANDIDATE)
 
 
+try:
+    import websockets.exceptions  # noqa: F401
+    HAVE_WEBSOCKETS = True
+except ImportError:  # pragma: no cover - зависит от окружения
+    HAVE_WEBSOCKETS = False
+
+
+class FakeWebSocket:
+    def __init__(self, messages, path="/v1/calls", block_send=False):
+        self.request = type("Request", (), {"path": path})()
+        self.messages = messages
+        self.block_send = block_send
+        self.sent = []
+        self.closes = []
+
+    async def __aiter__(self):
+        for message in self.messages:
+            yield message
+            await asyncio.sleep(0)
+
+    async def send(self, data):
+        if self.block_send:
+            await asyncio.Event().wait()
+        self.sent.append(json.loads(data))
+
+    async def close(self, code=1000, reason=""):
+        self.closes.append((code, reason))
+
+
+class StubHub:
+    def __init__(self, flood=0, fail_disconnect=False):
+        self.flood = flood
+        self.fail_disconnect = fail_disconnect
+        self.handled = []
+        self.disconnected_peers = []
+
+    def connected(self, peer):
+        peer.send({"type": "server-hello"})
+
+    def handle(self, peer, message):
+        self.handled.append(message)
+        for index in range(self.flood):
+            peer.send({"type": "flood", "index": index})
+
+    def disconnected(self, peer):
+        self.disconnected_peers.append(peer)
+        if self.fail_disconnect:
+            raise RuntimeError("сбой")
+
+
+@unittest.skipUnless(HAVE_WEBSOCKETS, "websockets не установлен")
+class ConnectionHandlerTests(unittest.IsolatedAsyncioTestCase):
+    async def run_handler(self, hub, websocket):
+        await calls.make_connection_handler(hub)(websocket)
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+    async def test_bad_json_is_reported_and_connection_continues(self):
+        hub = StubHub()
+        websocket = FakeWebSocket(["[" * 100_000, "deep", "not json", '{"type": "ping"}'])
+        original_loads = json.loads
+
+        def loads(raw, *args, **kwargs):
+            # Глубина, на которой json падает с RecursionError, зависит от версии Python
+            if raw == "deep":
+                raise RecursionError("maximum recursion depth exceeded")
+            return original_loads(raw, *args, **kwargs)
+
+        with mock.patch.object(calls.json, "loads", loads), contextlib.redirect_stderr(io.StringIO()):
+            await self.run_handler(hub, websocket)
+        self.assertEqual([m["code"] for m in websocket.sent if m["type"] == "error"], ["invalid_message"] * 3)
+        self.assertEqual(hub.handled, [{"type": "ping"}])
+        self.assertEqual(len(hub.disconnected_peers), 1)
+
+    async def test_disconnect_failure_does_not_break_cleanup(self):
+        hub = StubHub(fail_disconnect=True)
+        tasks_before = asyncio.all_tasks()
+        with contextlib.redirect_stderr(io.StringIO()):
+            await self.run_handler(hub, FakeWebSocket(['{"type": "ping"}']))
+        self.assertEqual(len(hub.disconnected_peers), 1)
+        # Задача отправки отменена, хотя hub.disconnected упал
+        self.assertEqual({task for task in asyncio.all_tasks() - tasks_before if not task.done()}, set())
+
+    async def test_slow_consumer_is_closed_once(self):
+        hub = StubHub(flood=3000)
+        websocket = FakeWebSocket(['{"type": "ping"}'], block_send=True)
+        await self.run_handler(hub, websocket)
+        self.assertEqual(websocket.closes, [(1008, "slow consumer")])
+
+
 class ConfigurationTests(unittest.TestCase):
     def setUp(self):
         self.saved = {name: calls.os.environ.pop(name, None) for name in (
@@ -549,6 +678,20 @@ class CallFlowTests(HubTestCase):
 
     def invite(self, call_id="call-0001", video=True):
         self.hub.handle(self.alice, {"type": "invite", "callId": call_id, "to": "bob@example.com", "video": video})
+
+    def test_busy_on_one_device_keeps_ringing_on_others(self):
+        self.invite()
+        self.hub.handle(self.bob_desk, {"type": "reject", "callId": "call-0001", "reason": "busy"})
+        self.assertIsNone(self.last(self.alice, "call-ended"))
+        self.assertIsNone(self.last(self.bob_laptop, "call-ended"))
+        self.hub.handle(self.bob_laptop, {"type": "accept", "callId": "call-0001"})
+        self.assertEqual(self.last(self.alice)["type"], "accepted")
+
+    def test_busy_on_all_devices_ends_with_busy(self):
+        self.invite()
+        self.hub.handle(self.bob_desk, {"type": "reject", "callId": "call-0001", "reason": "busy"})
+        self.hub.handle(self.bob_laptop, {"type": "reject", "callId": "call-0001", "reason": "busy"})
+        self.assertEqual(self.last(self.alice, "call-ended")["reason"], "busy")
 
     def test_invite_rings_all_callee_devices(self):
         self.invite()

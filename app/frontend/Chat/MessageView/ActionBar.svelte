@@ -37,6 +37,14 @@
         onClick={onDeleteForOthers}
         />
     </ButtonMenu>
+  {:else if message instanceof ChatMessage && message.deletesOnlyLocally}
+    <RoundButton
+      label={$t`Delete for myself`}
+      icon={TrashIcon}
+      onClick={onDeleteLocalOnly}
+      border={false} classes="plain"
+      padding="4px"
+      />
   {:else}
     <RoundButton
       label={$t`Delete`}
@@ -46,20 +54,24 @@
       padding="4px"
       />
   {/if}
-  <RoundButton
-    label={$t`Reply`}
-    icon={ReplyIcon}
-    onClick={onReply}
-    border={false} classes="plain"
-    padding="4px"
-    />
-  <RoundButton
-    label={$t`Forward *=> Send this message to somebody else`}
-    icon={ForwardIcon}
-    onClick={onForward}
-    border={false} classes="plain"
-    padding="4px"
-    />
+  {#if !(message instanceof ChatMessage) || message.canReply}
+    <RoundButton
+      label={$t`Reply`}
+      icon={ReplyIcon}
+      onClick={onReply}
+      border={false} classes="plain"
+      padding="4px"
+      />
+  {/if}
+  {#if !(message instanceof ChatMessage) || message.canForward}
+    <RoundButton
+      label={$t`Forward *=> Send this message to somebody else`}
+      icon={ForwardIcon}
+      onClick={onForward}
+      border={false} classes="plain"
+      padding="4px"
+      />
+  {/if}
 </hbox>
 
 <script lang="ts">
@@ -83,6 +95,13 @@
 
   let isDeleteMenuOpen = false;
   async function onDelete() {
+    await message.deleteMessage();
+  }
+  /** Протокол не умеет удалять у собеседников: говорим об этом и спрашиваем */
+  async function onDeleteLocalOnly() {
+    if (!confirm($t`Delete this message only for yourself? The other participants will still see it.`)) {
+      return;
+    }
     await message.deleteMessage();
   }
   async function onDeleteForOthers() {

@@ -20,7 +20,10 @@
                 {/if}
               </hbox>
               <hbox class="who">
-                {#if $participants.length == 1}
+                {#if $participants.length == 1 && meeting instanceof JackdawCall && meeting.remoteNameUnverified}
+                  <!-- Имя не из контактов: звонящий указал его сам, рядом всегда его адрес -->
+                  {$t`${participants.first.name} (unverified)`}
+                {:else if $participants.length == 1}
                   {participants.first.name}
                 {:else if $participants.length > 1}
                   {meeting.event?.title}
@@ -74,7 +77,7 @@
               </hbox>
               <hbox flex />
               <hbox class="mic-setup">
-                <DeviceSetup withVideo={false} />
+                <DeviceSetup withVideo={false} openDevices={!(meeting instanceof JackdawCall && meeting.state == MeetingState.IncomingCall)} />
               </hbox>
               <hbox flex />
               <hbox class="buttons">
@@ -141,7 +144,7 @@
   </SplitterBidirectional>
 </vbox>
 
-<svelte:window on:keydown={ev => catchErrors(() => onKeyEnter(ev, accept))} />
+<svelte:window on:keydown={ev => enterStartsCall($meeting.state) && catchErrors(() => onKeyEnter(ev, accept))} />
 
 {#if $meeting.state == MeetingState.IncomingCall || $meeting.state == MeetingState.OutgoingCall }
   <audio src="sound/ringtone1.mp3" loop autoplay />
@@ -161,7 +164,8 @@
 {/if}
 
 <script lang="ts">
-  import { MeetingState, type VideoConfMeeting } from "../../../logic/Meet/VideoConfMeeting";
+  import { MeetingState, enterStartsCall, type VideoConfMeeting } from "../../../logic/Meet/VideoConfMeeting";
+  import { JackdawCall } from "../../../logic/Meet/Jackdaw/JackdawCall";
   import { appGlobal } from "../../../logic/app";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";

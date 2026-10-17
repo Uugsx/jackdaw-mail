@@ -41,6 +41,9 @@ export interface CallSocket {
 export interface JackdawCallSignalTarget {
   readonly callID: string;
   onSignal(message: JackdawServerMessage): void;
+  /** Соединение с сервисом восстановлено после обрыва.
+   * @param resumed сервер вернул этот звонок соединению (идущий разговор продолжается) */
+  onReconnected?(resumed: boolean): void;
 }
 
 export interface JackdawCallClientOptions {
@@ -270,6 +273,7 @@ export class JackdawCallClient extends Observable {
         this.presenceVersion++;
         this.scheduleHeartbeat();
         this.flushLookups();
+        this.notifyCallsReconnected(message.resumedCalls);
         break;
       case "verified":
         this.saveProof(message.email, message.proof);
@@ -395,6 +399,18 @@ export class JackdawCallClient extends Observable {
   unregister(call: JackdawCallSignalTarget): void {
     if (this.calls.get(call.callID) == call) {
       this.calls.delete(call.callID);
+    }
+  }
+
+  /** После входа: звонки, которые сервер не вернул соединению, на сервере уже потеряны.
+   * Копия списка: звонок может отписаться прямо в обработчике. */
+  protected notifyCallsReconnected(resumedCalls: string[]): void {
+    for (let call of [...this.calls.values()]) {
+      try {
+        call.onReconnected?.(resumedCalls.includes(call.callID));
+      } catch (ex) {
+        console.error(ex);
+      }
     }
   }
 
