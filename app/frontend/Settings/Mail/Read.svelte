@@ -22,7 +22,7 @@
       <label class="radio">
         <input type="radio" value={readSeconds} bind:group={readAfter.value} />
         <T msg={$t`After displaying for # seconds`}>
-          <input type="number" bind:value={readSeconds} min={1} max={20} maxlength={2} on:change={onReadSecondsChanged} />
+          <input type="number" bind:value={readSeconds} min={kMinReadSeconds} max={kMaxReadSeconds} maxlength={2} on:change={onReadSecondsChanged} />
         </T>
       </label>
 
@@ -43,8 +43,17 @@
   let readAfter = getLocalStorage("mail.read.after", 0);
   let readSeconds = readAfter.value > 0 ? readAfter.value : 5;
 
+  const kMinReadSeconds = 1;
+  const kMaxReadSeconds = 20;
+  const kDefaultReadSeconds = 5;
   function onReadSecondsChanged() {
-    readAfter.value = readSeconds;
+    // min/max браузер при вводе не применяет: 0 означал бы «Сразу», а -3 — «Вручную»
+    readSeconds = Math.min(kMaxReadSeconds, Math.max(kMinReadSeconds,
+      Math.round(Number(readSeconds) || kDefaultReadSeconds)));
+    // Ввод числа не должен сам переключать режим «Вручную» / «Сразу»
+    if (readAfter.value > 0) {
+      readAfter.value = readSeconds;
+    }
   }
 </script>
 

@@ -12,13 +12,13 @@
   <vbox class="content">
     <grid>
       <label for="realname">{$t`Your name`}</label>
-      <input type="text" bind:value={identity.realname} name="realname" />
+      <input type="text" bind:value={identity.realname} id="realname" name="realname" />
 
       <label for="emailaddress">{$t`Your email address`}</label>
       <input type="email" bind:value={identity.emailAddress} required
         bind:this={emailInput}
         autofocus={!$identity.emailAddress}
-        name="emailaddress" class="emailaddress" />
+        id="emailaddress" name="emailaddress" class="emailaddress" />
 
       {#if identity.isCatchAll}
         <hbox />
@@ -35,13 +35,26 @@
 
       {#if showReplyTo}
         <label for="replyto" class="reply-to">{$t`Reply-to address`}</label>
-        <input type="email" bind:value={identity.replyTo} name="replyto" class="reply-to" />
+        <input type="email" bind:value={identity.replyTo} id="replyto" name="replyto" class="reply-to" />
       {/if}
 
       {#if showOrganisation}
         <label for="organisation">{$t`Company`}</label>
-        <input type="text" bind:value={identity.organisation} name="organisation" />
+        <input type="text" bind:value={identity.organisation} id="organisation" name="organisation" />
       {/if}
+
+      <!-- Как автоматическая копия в Outlook: например, общий ящик отдела -->
+      <label for="always-cc">{$t`Always CC`}</label>
+      <input type="text" id="always-cc" name="always-cc"
+        value={$identity.sendCC.contents.join(", ")}
+        placeholder="team@example.com"
+        on:change={event => catchErrors(() => onDefaultRecipientsChange(identity.sendCC, event))} />
+
+      <label for="always-bcc">{$t`Always BCC`}</label>
+      <input type="text" id="always-bcc" name="always-bcc"
+        value={$identity.sendBCC.contents.join(", ")}
+        placeholder="archive@example.com"
+        on:change={event => catchErrors(() => onDefaultRecipientsChange(identity.sendBCC, event))} />
     </grid>
 
     {#if signatureEnabled && showSignature}
@@ -115,6 +128,8 @@
   import { checkInputField } from "../../../Util/util";
   import { catchErrors } from "../../../Util/error";
   import { sanitize } from "../../../../../lib/util/sanitizeDatatypes";
+  import { UserError } from "../../../../logic/util/util";
+  import type { ArrayColl } from "svelte-collections";
   import { t } from "../../../../l10n/l10n";
   import { hasProFeature, proEntitlement } from "../../../../logic/Billing/ProEntitlement";
   import { createEventDispatcher } from 'svelte';
@@ -161,11 +176,28 @@
   }
   $: $identity.emailAddress && checkInputField(() => sanitize.emailAddress($identity.emailAddress.replace("*", "any")), emailInput);
 
+  /** Адреса через запятую, точку с запятой или пробел. Сохраняются кнопкой Save. */
+  function onDefaultRecipientsChange(target: ArrayColl<string>, event: Event) {
+    let input = event.currentTarget as HTMLInputElement;
+    let addresses = input.value.split(/[\s,;]+/).filter(Boolean);
+    for (let address of addresses) {
+      if (!sanitize.emailAddress(address, null)) {
+        throw new UserError($t`Not a valid email address: ${address}`);
+      }
+    }
+    target.replaceAll(addresses);
+    input.value = addresses.join(", ");
+  }
+
   function addEcryption() {
     showEncryptionOverride = true;
   }
 
   function onDelete() {
+    // Вместе с отправителем сразу и безвозвратно удаляются его подпись и ключи
+    if (!confirm($t`Delete the sender ${identity.emailAddress || identity.realname || "-"} together with its signature and encryption keys?`)) {
+      return;
+    }
     dispatchEvent("delete", identity);
   }
 

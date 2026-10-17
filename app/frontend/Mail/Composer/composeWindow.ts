@@ -139,6 +139,7 @@ export async function serializeComposeMail(
     importanceLevel: mail.importanceLevel,
     requestReadReceipt: !!mail.requestReadReceipt,
     requestDeliveryReceipt: !!mail.requestDeliveryReceipt,
+    signatureRemovedByUser: !!mail.signatureRemovedByUser,
     isDraft: !!mail.isDraft,
     isDeleted: !!mail.isDeleted,
     shouldEncrypt: !!mail.shouldEncrypt,
@@ -219,6 +220,7 @@ export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail)
   mail.importanceLevel = payload.importanceLevel;
   mail.requestReadReceipt = payload.requestReadReceipt;
   mail.requestDeliveryReceipt = payload.requestDeliveryReceipt;
+  mail.signatureRemovedByUser = payload.signatureRemovedByUser === true;
   mail.isDraft = payload.isDraft;
   mail.isDeleted = payload.isDeleted;
   mail.shouldEncrypt = payload.shouldEncrypt;

@@ -183,9 +183,15 @@
   </hbox>
   <vbox class="composition-settings">
     <hbox class="composition">
-      <input type="checkbox" bind:checked={spellcheckEnabledSetting.value} name="spellcheck" />
+      <input type="checkbox" bind:checked={spellcheckEnabledSetting.value} id="spellcheck" name="spellcheck" />
       <label class="spellcheck" for="spellcheck">
         {$t`Spell check`}
+      </label>
+    </hbox>
+    <hbox class="composition">
+      <input type="checkbox" bind:checked={warnMissingAttachmentSetting.value} id="warn-missing-attachment" name="warn-missing-attachment" />
+      <label class="spellcheck" for="warn-missing-attachment">
+        {$t`Warn when the text mentions an attachment, but no file is attached`}
       </label>
     </hbox>
     {#if !webMail}
@@ -232,6 +238,7 @@
   let quoteSetting = getLocalStorage("mail.send.quote", "below");
   let quoteAttributionSetting = getLocalStorage("mail.send.quote.attribution", false);
   let spellcheckEnabledSetting = getLocalStorage("mail.send.spellcheck.enabled", false);
+  let warnMissingAttachmentSetting = getLocalStorage("mail.send.warnMissingAttachment", true);
   let presentationSetting = getLocalStorage("mail.compose.presentation", "fullscreen");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);

@@ -67,6 +67,8 @@ export class EMail extends Message {
   /** Compose/send importance (Exchange High / Normal / Low). */
   @notifyChangedProperty
   importanceLevel: MailImportanceLevel = "normal";
+  /** Пользователь удалил подпись в редакторе: при отправке её не возвращаем. */
+  signatureRemovedByUser = false;
   /** Request a read receipt when sending (OWA/EWS + MDN header). */
   @notifyChangedProperty
   requestReadReceipt = false;
