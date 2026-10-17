@@ -50,6 +50,9 @@ export type JackdawServerMessage =
   | { type: "welcome"; emails: string[]; resumedCalls: string[] }
   | { type: "verify-sent"; email: string }
   | { type: "verified"; email: string; proof: string }
+  /** Обратное подтверждение: письмо нужно отправить с адреса `email` на `address` */
+  | { type: "verify-reverse-ready"; email: string; token: string; address: string; mailSubject: string; expiresIn: number }
+  | { type: "verify-reverse-pending"; email: string; token: string }
   | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean> }
   | { type: "ringing"; callId: string }
   | { type: "incoming"; callId: string; from: string; fromName: string; to: string; video: boolean }
@@ -75,6 +78,7 @@ const CALL_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
+const REVERSE_TOKEN_PATTERN = /^[a-z2-7]{16}$/;
 /** Совпадает с ограничениями сервера (call_server/calls.py) */
 const MAX_SDP_LENGTH = 16 * 1024;
 const MAX_ICE_CANDIDATE_LENGTH = 1024;
@@ -82,6 +86,25 @@ const MAX_ICE_MID_LENGTH = 64;
 const MAX_ICE_MLINE_INDEX = 64;
 const MAX_ICE_SERVERS = 8;
 const ICE_URL_PATTERN = /^(stuns?|turns?):[^\s]{1,300}$/;
+
+/**
+ * Адрес для обратного подтверждения допустим только на домене самого сервиса
+ * (тот же базовый домен, что у сервиса звонков). Так даже ответ подменённого
+ * сервера не заставит приложение отправить письмо пользователя на чужой адрес.
+ */
+export function isTrustedReverseAddress(address: string, serviceURL: string | null): boolean {
+  if (!serviceURL) return false;
+  let host: string;
+  try {
+    host = new URL(serviceURL).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  let baseDomain = host.split(".").slice(-2).join(".");
+  let match = /^verify\+[a-z2-7]{16}@([a-z0-9.-]+)$/.exec(address.toLowerCase());
+  if (!match || !baseDomain.includes(".")) return false;
+  return match[1] == baseDomain || match[1].endsWith("." + baseDomain);
+}
 
 export function normalizeCallEmail(value: unknown): string | null {
   if (typeof value != "string") return null;
@@ -178,6 +201,20 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
       return email && typeof data.proof == "string" && data.proof.length <= 1024
         ? { type: "verified", email, proof: data.proof }
         : null;
+    }
+    case "verify-reverse-ready": {
+      let email = normalizeCallEmail(data.email);
+      let token = typeof data.token == "string" && REVERSE_TOKEN_PATTERN.test(data.token) ? data.token : null;
+      let address = typeof data.address == "string" ? data.address.toLowerCase() : "";
+      let mailSubject = optionalText(data.mailSubject);
+      if (!email || !token || !mailSubject || !address.startsWith(`verify+${token}@`)) return null;
+      let expiresIn = typeof data.expiresIn == "number" && data.expiresIn > 0 ? Math.min(data.expiresIn, 3600) : 900;
+      return { type: "verify-reverse-ready", email, token, address, mailSubject, expiresIn };
+    }
+    case "verify-reverse-pending": {
+      let email = normalizeCallEmail(data.email);
+      let token = typeof data.token == "string" && REVERSE_TOKEN_PATTERN.test(data.token) ? data.token : null;
+      return email && token ? { type: "verify-reverse-pending", email, token } : null;
     }
     case "lookup-result": {
       let reachable: Record<string, boolean> = {};

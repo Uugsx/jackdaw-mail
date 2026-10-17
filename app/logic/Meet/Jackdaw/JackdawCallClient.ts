@@ -8,6 +8,7 @@
 import { Observable, notifyChangedProperty } from "../../util/Observable";
 import type { ProCallCredential } from "../../Billing/ProEntitlement";
 import {
+  isTrustedReverseAddress,
   normalizeCallEmail,
   parseServerMessage,
   reconnectDelay,
@@ -410,6 +411,34 @@ export class JackdawCallClient extends Observable {
       message.type == "error" && message.requestType == "verify-finish" && (message.email == email || !message.email));
     this.send({ type: "verify-finish", email, code: code.replace(/\s/g, "") });
     await reply;
+  }
+
+  /**
+   * Обратное подтверждение: сервер выдаёт одноразовый адрес, на который нужно
+   * отправить письмо с подтверждаемого ящика. Адрес проверяется: только домен сервиса.
+   */
+  async startReverseVerification(emailAddress: string): Promise<{ token: string, address: string, mailSubject: string, expiresIn: number }> {
+    let email = this.requireEmail(emailAddress);
+    let reply = this.waitFor<Extract<JackdawServerMessage, { type: "verify-reverse-ready" }>>(message =>
+      message.type == "verify-reverse-ready" && message.email == email ||
+      message.type == "error" && message.requestType == "verify-reverse-start" && (message.email == email || !message.email));
+    this.send({ type: "verify-reverse-start", email });
+    let ready = await reply;
+    if (!isTrustedReverseAddress(ready.address, this.options.url)) {
+      throw new JackdawCallServiceError("service_unavailable");
+    }
+    return { token: ready.token, address: ready.address, mailSubject: ready.mailSubject, expiresIn: ready.expiresIn };
+  }
+
+  /** true — адрес подтверждён (доказательство уже сохранено), false — письмо ещё не пришло. */
+  async checkReverseVerification(token: string): Promise<boolean> {
+    let reply = this.waitFor(message =>
+      message.type == "verify-reverse-pending" && message.token == token ||
+      message.type == "verified" ||
+      message.type == "error" && message.requestType == "verify-reverse-check");
+    this.send({ type: "verify-reverse-check", token });
+    let message = await reply;
+    return message.type == "verified";
   }
 
   /** Отключает адрес от звонков на этом устройстве. */

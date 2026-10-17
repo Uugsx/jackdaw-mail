@@ -2276,5 +2276,11 @@
   "9uJI/l": "The feedback service is busy. Please try again later.",
   "sywQpT": "The message could not be sent. Please try again later.",
   "cOWt8W": "Feedback is not available in this app build.",
-  "0WXCHO": "No connection to the feedback service. Check your internet connection and try again."
+  "0WXCHO": "No connection to the feedback service. Check your internet connection and try again.",
+  "B+9jVK": "Waiting for the email…",
+  "6GmXUk": "Confirm by email",
+  "YrhdA8": "Jackdaw sends a short email from this address to the Jackdaw server. Use this if the code does not arrive, for example with company mail.",
+  "nHZ8q7": "We sent a short confirmation email from {0}. The address will be confirmed automatically within a few minutes.",
+  "+CR/zM": "The confirmation email did not arrive in time. Please try again.",
+  "5FYH3s": "This message confirms that this email address belongs to me, for calls and chat in Jackdaw Mail. It was sent automatically by the Jackdaw Mail app."
 }

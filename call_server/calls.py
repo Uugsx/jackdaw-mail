@@ -75,6 +75,8 @@ RATE_LIMITS = {
     "invite": 10,
     "verify-start": 3,
     "verify-finish": 10,
+    "verify-reverse-start": 3,
+    "verify-reverse-check": 12,
     # Кандидатов ICE в одном звонке обычно до двух десятков с каждой стороны.
     "signal": 240,
     "chat-register": 10,
@@ -544,6 +546,7 @@ class CallHub:
         send_mail: Callable[[str, str, Callable[[BaseException | None], None]], None] | None = None,
         chat: Any = None,
         stun_urls: Iterable[str] = (),
+        reverse: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -558,7 +561,12 @@ class CallHub:
         # ChatService из chat.py; None — сервис работает только для звонков
         self.chat = chat
         self.peers_by_email: dict[str, set[Peer]] = {}
+        # Все соединения одной лицензии/пробного периода: обратное подтверждение
+        # приходит письмом и должно дойти до любого из них.
+        self.peers_by_subject: dict[str, set[Peer]] = {}
         self.calls: dict[str, Call] = {}
+        # ReverseVerification из inbound.py; None — обратное подтверждение выключено
+        self.reverse = reverse
 
     # --- соединения ---------------------------------------------------
 
@@ -566,6 +574,7 @@ class CallHub:
         peer.send({"type": "server-hello", "protocol": PROTOCOL_VERSION})
 
     def disconnected(self, peer: Peer) -> None:
+        self._forget_subject(peer)
         if self.chat is not None:
             self.chat.disconnected(peer)
         for email in list(peer.emails):
@@ -601,6 +610,8 @@ class CallHub:
             handler = {
                 "verify-start": self._verify_start,
                 "verify-finish": self._verify_finish,
+                "verify-reverse-start": self._verify_reverse_start,
+                "verify-reverse-check": self._verify_reverse_check,
                 "lookup": self._lookup,
                 "invite": self._invite,
                 "accept": self._accept,
@@ -660,7 +671,9 @@ class CallHub:
         if self.chat is not None:
             # Адреса могли измениться: клиент регистрирует устройство чата заново после `welcome`.
             self.chat.credential_lost(peer)
+        self._forget_subject(peer)
         peer.credential = credential
+        self.peers_by_subject.setdefault(credential.subject, set()).add(peer)
         peer.credential_payload = message.get("credential")
         peer.credential_checked_at = self._clock()
         peer.display_name = normalize_display_name(message.get("name"))
@@ -711,6 +724,60 @@ class CallHub:
                            "requestType": "verify-start", "email": email})
 
         self._send_mail(email, code, sent)
+
+    def _forget_subject(self, peer: Peer) -> None:
+        if peer.credential is None:
+            return
+        peers = self.peers_by_subject.get(peer.credential.subject)
+        if peers is not None:
+            peers.discard(peer)
+            if not peers:
+                self.peers_by_subject.pop(peer.credential.subject, None)
+
+    # --- обратное подтверждение: пользователь пишет письмо нам -----------
+
+    def _verify_reverse_start(self, peer: Peer, message: dict[str, Any]) -> None:
+        email = normalize_email(message.get("email"))
+        if self.reverse is None:
+            raise CallError("verification_unavailable", "Подтверждение письмом на сервере не настроено.")
+        assert peer.credential is not None
+        from inbound import ReverseVerificationError
+
+        try:
+            ready = self.reverse.start(email, peer.credential.subject)
+        except ReverseVerificationError as error:
+            raise CallError(error.code, error.message) from error
+        peer.send({"type": "verify-reverse-ready", "email": email, **ready})
+
+    def _verify_reverse_check(self, peer: Peer, message: dict[str, Any]) -> None:
+        token = message.get("token")
+        if self.reverse is None or not isinstance(token, str) or len(token) > 64:
+            raise CallError("code_expired", "Подтверждение устарело. Начните заново.")
+        assert peer.credential is not None
+        pending = self.reverse.check(token, peer.credential.subject)
+        if pending is None:
+            raise CallError("code_expired", "Подтверждение устарело. Начните заново.")
+        if pending.proof is None:
+            peer.send({"type": "verify-reverse-pending", "token": token, "email": pending.email})
+            return
+        self._deliver_proof(peer, pending.email, pending.proof)
+
+    def reverse_verified(self, token: str, from_email: str) -> bool:
+        """Письмо прошло DKIM/SPF (вызывается из SMTP-приёма). Рассылаем подтверждение."""
+        from inbound import ReverseVerificationError
+
+        try:
+            pending = self.reverse.complete(token, normalize_email(from_email))
+        except (ReverseVerificationError, CallError):
+            return False
+        for peer in list(self.peers_by_subject.get(pending.subject, ())):
+            self._deliver_proof(peer, pending.email, pending.proof)
+        return True
+
+    def _deliver_proof(self, peer: Peer, email: str, proof: str) -> None:
+        if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
+            self._register(peer, email)
+        peer.send({"type": "verified", "email": email, "proof": proof})
 
     def _verify_finish(self, peer: Peer, message: dict[str, Any]) -> None:
         email = normalize_email(message.get("email"))
@@ -960,9 +1027,15 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
 
     data_dir = Path(os.getenv("JACKDAW_CALLS_DATA_DIR", "/var/lib/jackdaw-calls"))
     chat = ChatService(ChatStore(data_dir / "chat.sqlite3", data_dir / "blobs"))
+    reverse = None
+    reverse_domain = os.getenv("JACKDAW_CALLS_INBOUND_DOMAIN", "").strip().lower()
+    if reverse_domain:
+        from inbound import ReverseVerification
+
+        reverse = ReverseVerification(verification.signer.issue, reverse_domain)
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
-        send_mail=send_mail, chat=chat, stun_urls=stun_urls,
+        send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"
     print(f"Jackdaw calls media mode: {mode}", flush=True)
@@ -1044,6 +1117,14 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
         close_timeout=5,
     ) as server:
         print(f"Jackdaw call signaling listening on {host}:{port}", flush=True)
+        inbound_port = int(os.getenv("JACKDAW_CALLS_INBOUND_PORT", "0") or 0)
+        if hub.reverse is not None and inbound_port:
+            from inbound import InboundHandler, start_inbound_server
+
+            inbound_host = os.getenv("JACKDAW_CALLS_INBOUND_HOST", "0.0.0.0")
+            await start_inbound_server(InboundHandler(hub.reverse, hub.reverse_verified),
+                                       inbound_host, inbound_port, hub.reverse.domain)
+            print(f"Jackdaw reverse verification SMTP on {inbound_host}:{inbound_port} for {hub.reverse.domain}", flush=True)
         await server.serve_forever()
 
 

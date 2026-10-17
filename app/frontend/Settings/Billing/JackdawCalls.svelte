@@ -57,6 +57,15 @@
                   />
               {:else}
                 <hbox flex />
+                {#if mailAccountForAddress(address)}
+                  <Button
+                    label={reverse?.address == address ? $t`Waiting for the email…` : $t`Confirm by email`}
+                    tooltip={$t`Jackdaw sends a short email from this address to the Jackdaw server. Use this if the code does not arrive, for example with company mail.`}
+                    classes="secondary"
+                    disabled={!$client.isOnline || busyAddress == address || reverse?.address == address}
+                    onClick={() => confirmByMail(address)}
+                    />
+                {/if}
                 <Button
                   label={codeSentTo == address ? $t`Send again` : $t`Confirm`}
                   classes={codeSentTo == address ? "secondary" : "filled"}
@@ -118,6 +127,34 @@
     return null;
   }
 
+  const kReversePendingKey = "jackdaw.calls.pendingReverseVerification";
+  type ReversePending = { address: string, token: string, until: number };
+
+  function loadReverse(): ReversePending | null {
+    try {
+      let pending = JSON.parse(localStorage.getItem(kReversePendingKey) ?? "null");
+      if (typeof pending?.address == "string" && typeof pending?.token == "string" &&
+          typeof pending?.until == "number" && Date.now() < pending.until) {
+        return pending;
+      }
+    } catch {
+      // Нет доступа к хранилищу — ожидание не восстановится после ухода со страницы.
+    }
+    return null;
+  }
+
+  function saveReverse(pending: ReversePending | null) {
+    try {
+      if (pending) {
+        localStorage.setItem(kReversePendingKey, JSON.stringify(pending));
+      } else {
+        localStorage.removeItem(kReversePendingKey);
+      }
+    } catch {
+      // Нет доступа к хранилищу — ожидание живёт только до ухода со страницы.
+    }
+  }
+
   function savePending(address: string | null) {
     try {
       if (address) {
@@ -136,6 +173,8 @@
   import type { JackdawCallStatus } from "../../../logic/Meet/Jackdaw/JackdawCallClient";
   import { normalizeCallEmail } from "../../../logic/Meet/Jackdaw/JackdawCallProtocol";
   import { appGlobal } from "../../../logic/app";
+  import { mailAccountForAddress, sendReverseVerificationMail } from "../../../logic/Meet/Jackdaw/ReverseVerification";
+  import { onDestroy } from "svelte";
   import Button from "../../Shared/Button.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
@@ -152,6 +191,16 @@
   let feedback: string | null = null;
   let feedbackKind: "error" | "success" = "success";
   let feedbackFor: string | null = null;
+  /** Обратное подтверждение в ожидании письма */
+  let reverse: ReversePending | null = loadReverse();
+  /** Проверка, дошло ли письмо: сервер присылает `verified` сам, это — страховка после переподключения */
+  const kReverseCheckMS = 15_000;
+  let reverseTimer: ReturnType<typeof setInterval> | null = null;
+  $: reverse ? startReverseChecks() : stopReverseChecks();
+  $: if (reverse && $client.verifiedEmails.includes(reverse.address)) {
+    reverseConfirmed(reverse.address);
+  }
+  onDestroy(stopReverseChecks);
 
   $: myAddresses = [...new Set($emailAccounts.contents
     .map(account => normalizeCallEmail(account.emailAddress))
@@ -204,6 +253,61 @@
     } finally {
       busyAddress = null;
     }
+  }
+
+  async function confirmByMail(address: string) {
+    let account = mailAccountForAddress(address);
+    if (!account || busyAddress) return;
+    busyAddress = address;
+    feedback = null;
+    try {
+      let request = await client.startReverseVerification(address);
+      await sendReverseVerificationMail(account, address, request);
+      reverse = { address, token: request.token, until: Date.now() + request.expiresIn * 1000 };
+      saveReverse(reverse);
+      showFeedback(address, $t`We sent a short confirmation email from ${address}. The address will be confirmed automatically within a few minutes.`, "success");
+    } catch (ex) {
+      showFeedback(address, ex.message, "error");
+    } finally {
+      busyAddress = null;
+    }
+  }
+
+  function startReverseChecks() {
+    if (reverseTimer) return;
+    reverseTimer = setInterval(checkReverse, kReverseCheckMS);
+  }
+
+  function stopReverseChecks() {
+    if (reverseTimer) {
+      clearInterval(reverseTimer);
+      reverseTimer = null;
+    }
+  }
+
+  async function checkReverse() {
+    let pending = reverse;
+    if (!pending) return;
+    if (Date.now() >= pending.until) {
+      reverse = null;
+      saveReverse(null);
+      showFeedback(pending.address, $t`The confirmation email did not arrive in time. Please try again.`, "error");
+      return;
+    }
+    if (!client.isOnline) return;
+    try {
+      if (await client.checkReverseVerification(pending.token)) {
+        reverseConfirmed(pending.address);
+      }
+    } catch {
+      // Сеть или сервер недоступны — попробуем при следующей проверке.
+    }
+  }
+
+  function reverseConfirmed(address: string) {
+    reverse = null;
+    saveReverse(null);
+    showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
   }
 
   function disconnect(address: string) {

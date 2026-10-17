@@ -267,6 +267,37 @@ describe("клиент сигналинга", () => {
     expect(client.verifiedEmails).toEqual(["alice@example.com"]);
   });
 
+  test("обратное подтверждение: адрес от сервера, затем подтверждение письмом", async () => {
+    connectOnline([]);
+    let started = client.startReverseVerification("Alice@Corp.Example");
+    expect(socket().last()).toEqual({ type: "verify-reverse-start", email: "alice@corp.example" });
+    socket().receive({
+      type: "verify-reverse-ready", email: "alice@corp.example", token: "abcdefghijklmnop",
+      address: "verify+abcdefghijklmnop@verify.calls.test", mailSubject: "Jackdaw Mail: подтверждение адреса abcdefghijklmnop", expiresIn: 900,
+    });
+    let ready = await started;
+    expect(ready.address).toBe("verify+abcdefghijklmnop@verify.calls.test");
+
+    let pending = client.checkReverseVerification(ready.token);
+    expect(socket().last()).toEqual({ type: "verify-reverse-check", token: "abcdefghijklmnop" });
+    socket().receive({ type: "verify-reverse-pending", email: "alice@corp.example", token: "abcdefghijklmnop" });
+    expect(await pending).toBe(false);
+
+    socket().receive({ type: "verified", email: "alice@corp.example", proof: "proof-reverse" });
+    expect(client.verifiedEmails).toEqual(["alice@corp.example"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "alice@corp.example": "proof-reverse" });
+  });
+
+  test("обратное подтверждение не отправит письмо на чужой домен", async () => {
+    connectOnline([]);
+    let started = client.startReverseVerification("alice@corp.example");
+    socket().receive({
+      type: "verify-reverse-ready", email: "alice@corp.example", token: "abcdefghijklmnop",
+      address: "verify+abcdefghijklmnop@evil.example", mailSubject: "x", expiresIn: 900,
+    });
+    await expect(started).rejects.toBeInstanceOf(JackdawCallServiceError);
+  });
+
   test("неверный код отклоняет ожидание понятной ошибкой", async () => {
     connectOnline([]);
     let finished = client.finishVerification("alice@example.com", "000000");
@@ -359,5 +390,25 @@ describe("клиент сигналинга", () => {
     connectOnline();
     timers.advance(25_000);
     expect(socket().last()).toEqual({ type: "ping" });
+  });
+});
+
+describe("адрес обратного подтверждения", () => {
+  test("только одноразовый адрес на домене сервиса", async () => {
+    let { isTrustedReverseAddress } = await import("../../../../logic/Meet/Jackdaw/JackdawCallProtocol");
+    let url = "wss://license.jackdaw-mail.pro/v1/calls";
+    expect(isTrustedReverseAddress("verify+abcdefghijklmnop@verify.jackdaw-mail.pro", url)).toBe(true);
+    expect(isTrustedReverseAddress("verify+abcdefghijklmnop@jackdaw-mail.pro", url)).toBe(true);
+    expect(isTrustedReverseAddress("verify+abcdefghijklmnop@evil.pro", url)).toBe(false);
+    expect(isTrustedReverseAddress("verify+abcdefghijklmnop@jackdaw-mail.pro.evil.com", url)).toBe(false);
+    expect(isTrustedReverseAddress("boss+abcdefghijklmnop@verify.jackdaw-mail.pro", url)).toBe(false);
+    expect(isTrustedReverseAddress("verify+abc@verify.jackdaw-mail.pro", url)).toBe(false);
+    expect(isTrustedReverseAddress("verify+abcdefghijklmnop@verify.jackdaw-mail.pro", null)).toBe(false);
+  });
+
+  test("сообщения сервера проверяются", () => {
+    expect(parseServerMessage(JSON.stringify({ type: "verify-reverse-ready", email: "a@b.c", token: "abcdefghijklmnop",
+      address: "verify+other0000000000@x.y", mailSubject: "s", expiresIn: 900 }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({ type: "verify-reverse-pending", email: "a@b.c", token: "BAD" }))).toBeNull();
   });
 });
