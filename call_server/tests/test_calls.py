@@ -1,11 +1,16 @@
 import base64
+import contextlib
 import hashlib
 import hmac
+import io
 import json
+import runpy
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -259,6 +264,108 @@ class EmailProofTests(HubTestCase):
         peer = self.connect()
         self.hub.handle(peer, {"type": "verify-start", "email": "a@example.com"})
         self.assertEqual(self.last(peer)["code"], "verification_unavailable")
+
+
+class SharedVerificationTests(HubTestCase):
+    """Адрес, подтверждённый на одном устройстве лицензии, подтверждён на всех её устройствах."""
+
+    def setUp(self):
+        super().setUp()
+        import chat
+
+        self.store = chat.ChatStore(Path(self.tmp.name) / "chat.sqlite3", Path(self.tmp.name) / "blobs")
+        self.hub.verified_store = self.store
+
+    def verify(self, peer, email):
+        self.hub.handle(peer, {"type": "verify-start", "email": email})
+        self.hub.handle(peer, {"type": "verify-finish", "email": email, "code": self.mail_outbox[-1][1]})
+        return self.last(peer, "verified")
+
+    def test_code_is_valid_for_thirty_minutes(self):
+        self.assertEqual(calls.VERIFICATION_CODE_TTL_SECONDS, 30 * 60)
+        peer = self.connect()
+        self.hub.handle(peer, {"type": "verify-start", "email": "a@example.com"})
+        code = self.mail_outbox[-1][1]
+        self.clock.value += 25 * 60
+        self.hub.handle(peer, {"type": "verify-finish", "email": "a@example.com", "code": code})
+        self.assertEqual(self.last(peer)["type"], "verified")
+
+    def test_other_device_of_license_gets_address_on_login(self):
+        mac = self.connect(device="device-alice-1")
+        self.verify(mac, "alice@example.com")
+        windows = self.connect(device="device-alice-2")
+        welcome = self.last(windows, "welcome")
+        self.assertEqual(welcome["emails"], ["alice@example.com"])
+        self.assertEqual(self.signer.verify(welcome["proofs"]["alice@example.com"], "license:1"), "alice@example.com")
+        self.assertIn(windows, self.hub.peers_by_email["alice@example.com"])
+
+    def test_online_device_of_license_gets_address_at_once(self):
+        mac = self.connect(device="device-alice-1")
+        windows = self.connect(device="device-alice-2")
+        self.verify(mac, "alice@example.com")
+        self.assertEqual(self.last(windows, "verified")["email"], "alice@example.com")
+        self.assertIn(windows, self.hub.peers_by_email["alice@example.com"])
+
+    def test_proofs_issued_before_the_store_are_shared(self):
+        self.connect(device="device-alice-1", emails=["old@example.com"])
+        windows = self.connect(device="device-alice-2")
+        self.assertEqual(self.last(windows, "welcome")["emails"], ["old@example.com"])
+
+    def test_copied_proof_does_not_extend_its_lifetime(self):
+        expires = int(time.time()) + 3600
+        proof = self.signer.issue("a@example.com", "license:1", expires=expires)
+        peer = calls.Peer(lambda m: None)
+        self.hub.handle(peer, {"type": "hello", "credential": {"kind": "license", "deviceId": "device-alice-1", "licenseKey": LICENSE_KEY}, "emailProofs": [proof]})
+        windows = self.connect(device="device-alice-2")
+        copied = self.last(windows, "welcome")["proofs"]["a@example.com"]
+        self.assertEqual(self.signer.verify_claims(copied, "license:1"), ("a@example.com", expires))
+
+    def test_other_license_and_trial_do_not_get_address(self):
+        self.verify(self.connect(device="device-alice-1"), "alice@example.com")
+        trial = self.connect(device="device-trial-01", kind="trial")
+        self.assertEqual(self.last(trial, "welcome")["emails"], [])
+        self.assertNotIn("proofs", self.last(trial, "welcome"))
+
+    def test_address_disconnected_on_device_is_not_restored(self):
+        self.verify(self.connect(device="device-alice-1"), "alice@example.com")
+        windows = calls.Peer(lambda m: windows.inbox.append(m))
+        windows.inbox = []
+        self.hub.handle(windows, {"type": "hello", "credential": {"kind": "license", "deviceId": "device-alice-2", "licenseKey": LICENSE_KEY},
+                                  "emailProofs": [], "excludedEmails": ["Alice@Example.com"]})
+        self.assertEqual(self.last(windows, "welcome")["emails"], [])
+        self.verify(self.connect(device="device-bob-0001"), "alice@example.com")
+        self.assertIsNone(self.last(windows, "verified"))
+        # Подтверждая адрес на этом устройстве заново, пользователь снова его включает.
+        self.hub.handle(windows, {"type": "verify-start", "email": "alice@example.com"})
+        self.assertNotIn("alice@example.com", windows.excluded_emails)
+
+    def test_expired_addresses_are_not_restored(self):
+        expires = int(time.time()) + 60
+        self.store.remember_verified_email("license:1", "a@example.com", expires)
+        self.store._clock = lambda: expires + 1
+        windows = self.connect(device="device-alice-2")
+        self.assertEqual(self.last(windows, "welcome")["emails"], [])
+
+
+class RobustnessTests(HubTestCase):
+    def test_unexpected_handler_error_does_not_close_the_connection(self):
+        peer = self.connect(emails=["alice@example.com"])
+
+        def broken(_peer, _message):
+            raise RuntimeError("boom")
+
+        self.hub._lookup = broken
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.hub.handle(peer, {"type": "lookup", "emails": [], "requestId": "r1"})
+        reply = self.last(peer)
+        self.assertEqual((reply["type"], reply["code"], reply["requestId"]), ("error", "internal_error", "r1"))
+        self.assertEqual(peer.closed, [])
+
+    def test_script_entry_point_uses_the_calls_module(self):
+        """Запуск `python calls.py`: ошибки chat.py должны быть тем же классом CallError, что ловит CallHub."""
+        with mock.patch.object(calls, "main") as main:
+            runpy.run_path(str(Path(calls.__file__)), run_name="__main__")
+        main.assert_called_once_with()
 
 
 class LookupTests(HubTestCase):

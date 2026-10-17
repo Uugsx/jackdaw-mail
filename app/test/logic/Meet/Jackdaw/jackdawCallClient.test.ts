@@ -224,6 +224,37 @@ describe("клиент сигналинга", () => {
     expect(storage.getItem("jackdaw.calls.email-proofs.v1")).toBeNull();
   });
 
+  test("адрес, подтверждённый на другом устройстве лицензии, сохраняется", () => {
+    client.start();
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [], proofs: { "Alice@Example.com": "proof-other-device", bad: 5 } });
+    expect(client.verifiedEmails).toEqual(["alice@example.com"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "alice@example.com": "proof-other-device" });
+  });
+
+  test("отключённый на устройстве адрес не возвращается с других устройств, пока его не подтвердят снова", () => {
+    storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({ "alice@example.com": "proof-1" }));
+    connectOnline(["alice@example.com"]);
+    client.forgetEmail("alice@example.com");
+    socket().open();
+    expect(socket().last("hello").excludedEmails).toEqual(["alice@example.com"]);
+    expect(socket().last("hello").emailProofs).toEqual([]);
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    socket().receive({ type: "verified", email: "alice@example.com", proof: "proof-2" });
+    client.restart();
+    socket().open();
+    expect(socket().last("hello").excludedEmails).toBeUndefined();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-2"]);
+  });
+
+  test("проверка письма не принимает подтверждение другого адреса", async () => {
+    connectOnline();
+    let check = client.checkReverseVerification("abcdefghijklmnop", "bob@example.com");
+    socket().receive({ type: "verified", email: "carol@example.com", proof: "proof-carol" });
+    socket().receive({ type: "verify-reverse-pending", email: "bob@example.com", token: "abcdefghijklmnop" });
+    await expect(check).resolves.toBeNull();
+  });
+
   test("отказ в лицензии останавливает переподключения", () => {
     client.start();
     socket().open();

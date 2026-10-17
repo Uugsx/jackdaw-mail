@@ -290,6 +290,15 @@ describe("чат между двумя пользователями", () => {
     expect(copy.outgoing).toBe(true);
   });
 
+  test("сообщение на свой адрес без других своих устройств — понятная ошибка, а не пустой список ключей", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let room = await alice.account.getDirectRoom("alice@example.com");
+    let msg = room.newMessage();
+    msg.text = "себе";
+    await expect(room.sendMessage(msg)).rejects.toThrow(/your own address/);
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Unknown);
+  });
+
   test("отправка контакту без чата — понятная ошибка", async () => {
     let alice = await makeAccount(server, "alice@example.com");
     let room = await alice.account.getDirectRoom("nobody@example.com");

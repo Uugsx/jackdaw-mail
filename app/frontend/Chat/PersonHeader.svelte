@@ -11,6 +11,10 @@
     {#if canCall}
       <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
         onClick={() => startAudioCall(callTarget)} />
+    {:else if callUnavailableReason}
+      <!-- В чате Jackdaw кнопка звонка видна всегда; неактивна с объяснением, почему звонить нельзя -->
+      <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
+        disabled={callUnavailableReason} />
     {/if}
     {#if chatEmail}
       <RoundButton label={$t`Message in Jackdaw chat`} icon={ChatIcon} classes="secondary large"
@@ -30,6 +34,7 @@
   import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { callTargetEmails } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import { normalizeCallEmail } from "../../logic/Meet/Jackdaw/JackdawCallProtocol";
   import { appGlobal } from "../../logic/app";
   import { openChatRoomFromOtherApp } from "./open";
   import ChatIcon from "lucide-svelte/icons/message-square-text";
@@ -51,6 +56,23 @@
   $: canCall = $callClient && $callClient.presenceVersion >= 0 && canStartCall(callTarget);
   /** Видео — только через WhatsApp: звонки между пользователями Jackdaw голосовые */
   $: canVideo = canCall && canStartVideoCall(callTarget);
+  /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
+   * null — не чат Jackdaw или звонок возможен. */
+  $: callUnavailableReason = inJackdawChat && !canCall && $callClient
+    ? callUnavailableText(person as ChatPersonUID)
+    : null;
+  function callUnavailableText(contact: ChatPersonUID): string {
+    if (!callClient.isOnline) {
+      return $t`No connection to the Jackdaw server. Calls will be available when it is restored.`;
+    }
+    if (!callClient.verifiedEmails.length) {
+      return $t`Confirm your email address in Settings → Jackdaw Pro → Calls and chat to make calls.`;
+    }
+    if (callClient.verifiedEmails.includes(normalizeCallEmail(contact.emailAddress) ?? "")) {
+      return $t`This is your own address.`;
+    }
+    return $t`You can call when the contact is online in Jackdaw Mail.`;
+  }
 
   /** «Написать» в чат Jackdaw — из почты и других мест, где собеседник ещё не в чате Jackdaw */
   const chatAccounts = appGlobal.chatAccounts;

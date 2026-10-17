@@ -45,7 +45,7 @@ MAX_BLOB_BYTES = 25 * 1024 * 1024
 MAX_BLOB_CHUNKS = MAX_BLOB_BYTES // BLOB_CHUNK_BYTES + 1
 BLOB_QUOTA_BYTES = 1024 * 1024 * 1024
 CLEANUP_INTERVAL_SECONDS = 60 * 60
-MIGRATIONS = ((1, "001_chat.sql"),)
+MIGRATIONS = ((1, "001_chat.sql"), (2, "002_verified_emails.sql"))
 
 
 def decode_b64(value: Any, max_bytes: int, code: str = "invalid_payload") -> bytes:
@@ -307,6 +307,27 @@ class ChatStore:
             file.seek(index * BLOB_CHUNK_BYTES)
             return file.read(BLOB_CHUNK_BYTES), int(row["chunks"])
 
+    # --- подтверждённые адреса лицензии ------------------------------------------
+
+    def remember_verified_email(self, subject: str, email: str, expires_at: int) -> None:
+        """Запоминает подтверждение, чтобы другие устройства той же лицензии получили его при входе."""
+        with self._transaction() as connection:
+            connection.execute(
+                """INSERT INTO verified_emails (subject, email, expires_at, updated_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(subject, email) DO UPDATE SET
+                     expires_at = MAX(expires_at, excluded.expires_at), updated_at = excluded.updated_at""",
+                (subject, email, int(expires_at), int(self._clock())),
+            )
+
+    def verified_emails(self, subject: str) -> list[tuple[str, int]]:
+        """Действующие подтверждения лицензии: (email, срок действия)."""
+        with contextlib.closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT email, expires_at FROM verified_emails WHERE subject = ? AND expires_at > ? ORDER BY email",
+                (subject, int(self._clock())),
+            ).fetchall()
+        return [(row["email"], int(row["expires_at"])) for row in rows]
+
     # --- очистка --------------------------------------------------------------
 
     def cleanup(self, force: bool = False) -> None:
@@ -317,6 +338,7 @@ class ChatStore:
         with self._transaction() as connection:
             connection.execute("DELETE FROM chat_messages WHERE created_at < ?", (int(now) - MESSAGE_TTL_SECONDS,))
             connection.execute("DELETE FROM chat_devices WHERE last_seen_at < ?", (int(now) - DEVICE_TTL_SECONDS,))
+            connection.execute("DELETE FROM verified_emails WHERE expires_at <= ?", (int(now),))
             expired = [row["blob_id"] for row in connection.execute(
                 "SELECT blob_id FROM chat_blobs WHERE created_at < ?", (int(now) - BLOB_TTL_SECONDS,),
             )]

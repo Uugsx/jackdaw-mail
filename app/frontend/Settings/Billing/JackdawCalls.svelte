@@ -41,6 +41,9 @@
       <ul class="addresses">
         {#each myAddresses as address (address)}
           {@const confirmed = $client.verifiedEmails.includes(address)}
+          {@const busy = busyAddresses.includes(address)}
+          {@const codeSent = !!pendingCodes[address]}
+          {@const waitingForMail = !!reverses[address]}
           <li class:confirmed>
             <div class="address-row">
               <span class="address">{address}</span>
@@ -57,55 +60,55 @@
                   />
               {:else}
                 <hbox flex />
-                {#if reverse?.address == address}
+                {#if waitingForMail}
                   <Button
                     label={$t`Cancel`}
                     classes="secondary"
-                    onClick={cancelReverse}
+                    onClick={() => cancelReverse(address)}
                     />
                 {/if}
                 {#if mailAccountForAddress(address)}
                   <Button
-                    label={reverse?.address == address ? $t`Waiting for the email…` : $t`Confirm by email`}
+                    label={waitingForMail ? $t`Waiting for the email…` : $t`Confirm by email`}
                     tooltip={$t`Jackdaw sends a short email from this address to the Jackdaw server. Use this if the code does not arrive, for example with company mail.`}
                     classes="secondary"
-                    disabled={!$client.isOnline || busyAddress == address || reverse?.address == address}
+                    disabled={!$client.isOnline || busy || waitingForMail}
                     onClick={() => confirmByMail(address)}
                     />
                 {/if}
                 <Button
-                  label={codeSentTo == address ? $t`Send again` : $t`Confirm`}
-                  classes={codeSentTo == address ? "secondary" : "filled"}
-                  disabled={!$client.isOnline || busyAddress == address}
+                  label={codeSent ? $t`Send again` : $t`Confirm`}
+                  classes={codeSent ? "secondary" : "filled"}
+                  disabled={!$client.isOnline || busy}
                   onClick={() => sendCode(address)}
                   />
               {/if}
             </div>
-            {#if codeSentTo == address && !confirmed}
+            {#if codeSent && !confirmed}
               <form class="code-row" on:submit|preventDefault={() => confirmCode(address)}>
                 <label for="call-code-{address}">{$t`Code from the email`}</label>
                 <div class="code-inputs">
                   <input
                     id="call-code-{address}"
-                    bind:value={code}
+                    bind:value={codes[address]}
                     inputmode="numeric"
                     autocomplete="one-time-code"
                     maxlength="12"
                     placeholder="000000"
-                    aria-describedby="call-code-help"
+                    aria-describedby="call-code-help-{address}"
                     />
                   <Button
                     label={$t`Confirm code`}
                     classes="filled"
-                    disabled={!code.trim() || busyAddress == address}
+                    disabled={!codes[address]?.trim() || busy}
                     onClick={() => confirmCode(address)}
                     />
                 </div>
-                <p id="call-code-help" class="help">{$t`The code is valid for 10 minutes.`}</p>
+                <p id="call-code-help-{address}" class="help">{$t`The code is valid for 30 minutes. If the email is not in the inbox, check the spam folder.`}</p>
               </form>
             {/if}
-            {#if feedbackFor == address && feedback}
-              <p class="feedback {feedbackKind}" role={feedbackKind == "error" ? "alert" : "status"}>{feedback}</p>
+            {#if feedbacks[address]}
+              <p class="feedback {feedbacks[address].kind}" role={feedbacks[address].kind == "error" ? "alert" : "status"}>{feedbacks[address].text}</p>
             {/if}
           </li>
         {/each}
@@ -115,62 +118,75 @@
 </vbox>
 
 <script context="module" lang="ts">
-  /** Код из письма действует 10 минут (как на сервере). Пока он действует,
+  /** Код из письма действует 30 минут (как на сервере). Пока он действует,
    * поле для кода остаётся открытым, даже если пользователь ушёл в почту
-   * и вернулся или перезапустил приложение. Сам код здесь не хранится. */
-  const kCodeTTLMS = 10 * 60 * 1000;
+   * и вернулся или перезапустил приложение. Сам код здесь не хранится.
+   * Адресов в ожидании может быть несколько: каждый подтверждается независимо. */
+  const kCodeTTLMS = 30 * 60 * 1000;
+  /** Хранилище: [{ address, sentAt }]. Прежние версии хранили один объект — он тоже читается. */
   const kPendingKey = "jackdaw.calls.pendingVerification";
 
-  function loadPending(): { address: string, sentAt: number } | null {
+  /** @returns адрес → время отправки кода */
+  function loadPending(): Record<string, number> {
+    let result: Record<string, number> = {};
     try {
-      let pending = JSON.parse(localStorage.getItem(kPendingKey) ?? "null");
-      if (typeof pending?.address == "string" && typeof pending?.sentAt == "number" &&
-          Date.now() - pending.sentAt < kCodeTTLMS) {
-        return pending;
+      let stored = JSON.parse(localStorage.getItem(kPendingKey) ?? "null");
+      for (let pending of Array.isArray(stored) ? stored : [stored]) {
+        if (typeof pending?.address == "string" && typeof pending?.sentAt == "number" &&
+            Date.now() - pending.sentAt < kCodeTTLMS) {
+          result[pending.address] = pending.sentAt;
+        }
       }
     } catch {
-      // Нет доступа к хранилищу — поле просто не восстановится.
+      // Нет доступа к хранилищу — поля просто не восстановятся.
     }
-    return null;
+    return result;
   }
 
-  const kReversePendingKey = "jackdaw.calls.pendingReverseVerification";
-  type ReversePending = { address: string, token: string, until: number };
-
-  function loadReverse(): ReversePending | null {
+  function savePending(pending: Record<string, number>) {
     try {
-      let pending = JSON.parse(localStorage.getItem(kReversePendingKey) ?? "null");
-      if (typeof pending?.address == "string" && typeof pending?.token == "string" &&
-          typeof pending?.until == "number" && Date.now() < pending.until) {
-        return pending;
-      }
-    } catch {
-      // Нет доступа к хранилищу — ожидание не восстановится после ухода со страницы.
-    }
-    return null;
-  }
-
-  function saveReverse(pending: ReversePending | null) {
-    try {
-      if (pending) {
-        localStorage.setItem(kReversePendingKey, JSON.stringify(pending));
-      } else {
-        localStorage.removeItem(kReversePendingKey);
-      }
-    } catch {
-      // Нет доступа к хранилищу — ожидание живёт только до ухода со страницы.
-    }
-  }
-
-  function savePending(address: string | null) {
-    try {
-      if (address) {
-        localStorage.setItem(kPendingKey, JSON.stringify({ address, sentAt: Date.now() }));
+      let list = Object.entries(pending).map(([address, sentAt]) => ({ address, sentAt }));
+      if (list.length) {
+        localStorage.setItem(kPendingKey, JSON.stringify(list));
       } else {
         localStorage.removeItem(kPendingKey);
       }
     } catch {
       // Нет доступа к хранилищу — состояние живёт только до ухода со страницы.
+    }
+  }
+
+  /** Хранилище: [ReversePending]. Прежние версии хранили один объект — он тоже читается. */
+  const kReversePendingKey = "jackdaw.calls.pendingReverseVerification";
+  type ReversePending = { address: string, token: string, until: number };
+
+  /** @returns адрес → ожидание письма */
+  function loadReverses(): Record<string, ReversePending> {
+    let result: Record<string, ReversePending> = {};
+    try {
+      let stored = JSON.parse(localStorage.getItem(kReversePendingKey) ?? "null");
+      for (let pending of Array.isArray(stored) ? stored : [stored]) {
+        if (typeof pending?.address == "string" && typeof pending?.token == "string" &&
+            typeof pending?.until == "number" && Date.now() < pending.until) {
+          result[pending.address] = { address: pending.address, token: pending.token, until: pending.until };
+        }
+      }
+    } catch {
+      // Нет доступа к хранилищу — ожидание не восстановится после ухода со страницы.
+    }
+    return result;
+  }
+
+  function saveReverses(pending: Record<string, ReversePending>) {
+    try {
+      let list = Object.values(pending);
+      if (list.length) {
+        localStorage.setItem(kReversePendingKey, JSON.stringify(list));
+      } else {
+        localStorage.removeItem(kReversePendingKey);
+      }
+    } catch {
+      // Нет доступа к хранилищу — ожидание живёт только до ухода со страницы.
     }
   }
 </script>
@@ -192,20 +208,30 @@
   const client = getJackdawCallClient();
   const emailAccounts = appGlobal.emailAccounts;
 
-  let codeSentTo: string | null = loadPending()?.address ?? null;
-  let code = "";
-  let busyAddress: string | null = null;
-  let feedback: string | null = null;
-  let feedbackKind: "error" | "success" = "success";
-  let feedbackFor: string | null = null;
-  /** Обратное подтверждение в ожидании письма */
-  let reverse: ReversePending | null = loadReverse();
+  /** Адрес → время отправки кода. Каждый адрес подтверждается независимо от других. */
+  let pendingCodes: Record<string, number> = loadPending();
+  /** Адрес → введённый код */
+  let codes: Record<string, string> = {};
+  /** Адреса, по которым сейчас идёт запрос к серверу */
+  let busyAddresses: string[] = [];
+  /** Адрес → сообщение под ним */
+  let feedbacks: Record<string, { text: string, kind: "error" | "success" }> = {};
+  /** Адрес → обратное подтверждение в ожидании письма */
+  let reverses: Record<string, ReversePending> = loadReverses();
   /** Проверка, дошло ли письмо: сервер присылает `verified` сам, это — страховка после переподключения */
   const kReverseCheckMS = 15_000;
   let reverseTimer: ReturnType<typeof setInterval> | null = null;
-  $: reverse ? startReverseChecks() : stopReverseChecks();
-  $: if (reverse && $client.verifiedEmails.includes(reverse.address)) {
-    reverseConfirmed(reverse.address);
+  $: Object.keys(reverses).length ? startReverseChecks() : stopReverseChecks();
+  $: for (let address of Object.keys(reverses)) {
+    if ($client.verifiedEmails.includes(address)) {
+      reverseConfirmed(address);
+    }
+  }
+  /** Подтверждённый (в том числе на другом устройстве) адрес больше не ждёт код */
+  $: for (let address of Object.keys(pendingCodes)) {
+    if ($client.verifiedEmails.includes(address)) {
+      setPending(address, false);
+    }
   }
   onDestroy(stopReverseChecks);
 
@@ -228,60 +254,79 @@
     }
   }
 
-  function showFeedback(address: string, message: string, kind: "error" | "success") {
-    feedbackFor = address;
-    feedback = message;
-    feedbackKind = kind;
+  function showFeedback(address: string, text: string, kind: "error" | "success") {
+    feedbacks = { ...feedbacks, [address]: { text, kind } };
+  }
+
+  function clearFeedback(address: string) {
+    if (!feedbacks[address]) return;
+    let { [address]: _removed, ...rest } = feedbacks;
+    feedbacks = rest;
+  }
+
+  function setBusy(address: string, busy: boolean) {
+    busyAddresses = busy
+      ? [...busyAddresses.filter(a => a != address), address]
+      : busyAddresses.filter(a => a != address);
+  }
+
+  function setPending(address: string, pending: boolean) {
+    let { [address]: _removed, ...rest } = pendingCodes;
+    pendingCodes = pending ? { ...rest, [address]: Date.now() } : rest;
+    savePending(pendingCodes);
+    if (!pending) {
+      let { [address]: _code, ...otherCodes } = codes;
+      codes = otherCodes;
+    }
   }
 
   async function sendCode(address: string) {
-    busyAddress = address;
-    feedback = null;
+    if (busyAddresses.includes(address)) return;
+    setBusy(address, true);
+    clearFeedback(address);
     try {
       await client.startVerification(address);
-      codeSentTo = address;
-      savePending(address);
-      code = "";
+      setPending(address, true);
+      codes = { ...codes, [address]: "" };
       showFeedback(address, $t`We sent a code to ${address}. Check the inbox in Jackdaw.`, "success");
     } catch (ex) {
       showFeedback(address, ex.message, "error");
     } finally {
-      busyAddress = null;
+      setBusy(address, false);
     }
   }
 
   async function confirmCode(address: string) {
-    if (!code.trim() || busyAddress) return;
-    busyAddress = address;
-    feedback = null;
+    let code = codes[address]?.trim();
+    if (!code || busyAddresses.includes(address)) return;
+    setBusy(address, true);
+    clearFeedback(address);
     try {
       await client.finishVerification(address, code);
-      codeSentTo = null;
-      savePending(null);
-      code = "";
+      setPending(address, false);
       showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
     } catch (ex) {
       showFeedback(address, ex.message, "error");
     } finally {
-      busyAddress = null;
+      setBusy(address, false);
     }
   }
 
   async function confirmByMail(address: string) {
     let account = mailAccountForAddress(address);
-    if (!account || busyAddress) return;
-    busyAddress = address;
-    feedback = null;
+    if (!account || busyAddresses.includes(address)) return;
+    setBusy(address, true);
+    clearFeedback(address);
     try {
       let request = await client.startReverseVerification(address);
       await sendReverseVerificationMail(account, address, request);
-      reverse = { address, token: request.token, until: Date.now() + request.expiresIn * 1000 };
-      saveReverse(reverse);
+      reverses = { ...reverses, [address]: { address, token: request.token, until: Date.now() + request.expiresIn * 1000 } };
+      saveReverses(reverses);
       showFeedback(address, $t`We sent a short confirmation email from ${address}. The address will be confirmed automatically within a few minutes.`, "success");
     } catch (ex) {
       showFeedback(address, ex.message, "error");
     } finally {
-      busyAddress = null;
+      setBusy(address, false);
     }
   }
 
@@ -298,38 +343,42 @@
   }
 
   async function checkReverse() {
-    let pending = reverse;
-    if (!pending) return;
+    for (let pending of Object.values(reverses)) {
+      await checkOneReverse(pending);
+    }
+  }
+
+  async function checkOneReverse(pending: ReversePending) {
     if (Date.now() >= pending.until) {
-      reverse = null;
-      saveReverse(null);
+      cancelReverse(pending.address);
       showFeedback(pending.address, $t`The confirmation email did not arrive in time. Please try again.`, "error");
       return;
     }
     if (!client.isOnline) return;
     try {
-      let confirmed = await client.checkReverseVerification(pending.token);
-      if (confirmed) {
+      let confirmed = await client.checkReverseVerification(pending.token, pending.address);
+      if (confirmed && reverses[pending.address]) {
         reverseConfirmed(pending.address, confirmed);
       }
     } catch (ex) {
       // Письмо отклонено или подтверждение устарело — сообщаем и разблокируем кнопку.
       // Остальное (сеть, сервер) — попробуем при следующей проверке.
       if (ex instanceof JackdawCallServiceError && (ex.code == "sender_not_authenticated" || ex.code == "code_expired")) {
-        cancelReverse();
+        cancelReverse(pending.address);
         showFeedback(pending.address, ex.message, "error");
       }
     }
   }
 
-  function cancelReverse() {
-    reverse = null;
-    saveReverse(null);
+  function cancelReverse(address: string) {
+    if (!reverses[address]) return;
+    let { [address]: _removed, ...rest } = reverses;
+    reverses = rest;
+    saveReverses(reverses);
   }
 
   function reverseConfirmed(address: string, confirmedEmail = address) {
-    reverse = null;
-    saveReverse(null);
+    cancelReverse(address);
     if (confirmedEmail == address) {
       showFeedback(address, $t`The address is confirmed. Other Jackdaw users can now call you.`, "success");
     } else {

@@ -204,11 +204,13 @@ class MigrationTests(unittest.TestCase):
             connection = sqlite3.connect(db)
             try:
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                self.assertTrue({"chat_devices", "chat_messages", "chat_deliveries", "chat_blobs"} <= tables)
-                rollback = (Path(chat.__file__).with_name("migrations") / "001_chat.rollback.sql").read_text()
-                connection.executescript(rollback)
+                self.assertTrue({"chat_devices", "chat_messages", "chat_deliveries", "chat_blobs", "verified_emails"} <= tables)
+                # Откат — в обратном порядке миграций
+                for _, filename in reversed(chat.MIGRATIONS):
+                    rollback = (Path(chat.__file__).with_name("migrations") / filename.replace(".sql", ".rollback.sql")).read_text()
+                    connection.executescript(rollback)
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                self.assertFalse(tables & {"chat_devices", "chat_messages", "chat_deliveries", "chat_blobs"})
+                self.assertFalse(tables & {"chat_devices", "chat_messages", "chat_deliveries", "chat_blobs", "verified_emails"})
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0], 0)
             finally:
                 connection.close()

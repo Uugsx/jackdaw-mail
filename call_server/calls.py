@@ -27,6 +27,7 @@ import secrets
 import smtplib
 import sqlite3
 import time
+import traceback
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
@@ -55,7 +56,8 @@ RING_TIMEOUT_SECONDS = 45
 RECONNECT_GRACE_SECONDS = 30
 MAX_CALL_DURATION_SECONDS = 4 * 60 * 60
 CREDENTIAL_RECHECK_SECONDS = 15 * 60
-VERIFICATION_CODE_TTL_SECONDS = 10 * 60
+# Письмо с кодом до некоторых ящиков идёт долго: корпоративные антиспам-фильтры задерживают его на минуты.
+VERIFICATION_CODE_TTL_SECONDS = 30 * 60
 VERIFICATION_MAX_ATTEMPTS = 5
 EMAIL_PROOF_TTL_SECONDS = 90 * 24 * 60 * 60
 LIVEKIT_TOKEN_TTL_SECONDS = 15 * 60
@@ -309,16 +311,22 @@ class EmailProofSigner:
     def _sign(self, body: str) -> str:
         return base64url_encode(hmac.new(self._secret, f"{self.PREFIX}.{body}".encode("ascii"), hashlib.sha256).digest())
 
-    def issue(self, email: str, subject: str, now: float | None = None) -> str:
+    def issue(self, email: str, subject: str, now: float | None = None, expires: int | None = None) -> str:
+        """`expires` — срок уже существующего подтверждения: копия для другого устройства его не продлевает."""
         issued = int(now if now is not None else time.time())
         body = base64url_encode(json.dumps(
-            {"email": email, "sub": subject, "exp": issued + EMAIL_PROOF_TTL_SECONDS},
+            {"email": email, "sub": subject, "exp": expires if expires is not None else issued + EMAIL_PROOF_TTL_SECONDS},
             separators=(",", ":"), sort_keys=True,
         ).encode("utf-8"))
         return f"{self.PREFIX}.{body}.{self._sign(body)}"
 
     def verify(self, token: Any, subject: str, now: float | None = None) -> str | None:
         """Возвращает email или None, если подтверждение подделано, просрочено или чужое."""
+        claims = self.verify_claims(token, subject, now)
+        return claims[0] if claims else None
+
+    def verify_claims(self, token: Any, subject: str, now: float | None = None) -> tuple[str, int] | None:
+        """Как `verify`, но вместе со сроком действия подтверждения."""
         if not isinstance(token, str) or len(token) > 1024:
             return None
         parts = token.split(".")
@@ -336,7 +344,7 @@ class EmailProofSigner:
         if not isinstance(expires, int) or expires <= (now if now is not None else time.time()):
             return None
         try:
-            return normalize_email(data.get("email"))
+            return normalize_email(data.get("email")), expires
         except CallError:
             return None
 
@@ -494,6 +502,8 @@ class Peer:
         self.rate: dict[str, deque[float]] = {}
         # Устройство чата этого соединения, после `chat-register`
         self.chat_device_id: str | None = None
+        # Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии сюда не приходят
+        self.excluded_emails: set[str] = set()
 
     @property
     def identity_email(self) -> str | None:
@@ -547,6 +557,7 @@ class CallHub:
         chat: Any = None,
         stun_urls: Iterable[str] = (),
         reverse: Any = None,
+        verified_store: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -567,6 +578,9 @@ class CallHub:
         self.calls: dict[str, Call] = {}
         # ReverseVerification из inbound.py; None — обратное подтверждение выключено
         self.reverse = reverse
+        # ChatStore из chat.py: подтверждённые адреса лицензии для её других устройств.
+        # None — подтверждение живёт только на устройстве, где его получили.
+        self.verified_store = verified_store
 
     # --- соединения ---------------------------------------------------
 
@@ -625,12 +639,19 @@ class CallHub:
                 raise CallError("unknown_type", "Неизвестный тип сообщения.")
             handler(peer, message)
         except CallError as error:
-            reply: dict[str, Any] = {"type": "error", "code": error.code, "message": error.message, "requestType": request_type}
-            if isinstance(message, dict):
-                for key in ("callId", "requestId", "email", "messageId", "blobId"):
-                    if isinstance(message.get(key), str) and len(message[key]) <= 256:
-                        reply[key] = message[key]
-            peer.send(reply)
+            self._reply_error(peer, message, request_type, error)
+        except Exception:  # noqa: BLE001 — сбой одного запроса не должен обрывать соединение
+            traceback.print_exc()
+            self._reply_error(peer, message, request_type, CallError("internal_error", "Внутренняя ошибка сервера."))
+
+    @staticmethod
+    def _reply_error(peer: Peer, message: Any, request_type: str, error: CallError) -> None:
+        reply: dict[str, Any] = {"type": "error", "code": error.code, "message": error.message, "requestType": request_type}
+        if isinstance(message, dict):
+            for key in ("callId", "requestId", "email", "messageId", "blobId"):
+                if isinstance(message.get(key), str) and len(message[key]) <= 256:
+                    reply[key] = message[key]
+        peer.send(reply)
 
     def _check_rate(self, peer: Peer, request_type: str) -> None:
         limit = RATE_LIMITS.get(request_type, RATE_LIMITS["default"])
@@ -677,17 +698,68 @@ class CallHub:
         peer.credential_payload = message.get("credential")
         peer.credential_checked_at = self._clock()
         peer.display_name = normalize_display_name(message.get("name"))
+        peer.excluded_emails = self._excluded_emails(message.get("excludedEmails"))
         proofs = message.get("emailProofs")
         accepted: list[str] = []
         if isinstance(proofs, list):
             for proof in proofs[:MAX_EMAILS_PER_CONNECTION]:
-                email = self.verification.signer.verify(proof, credential.subject)
-                if email and email not in accepted:
-                    accepted.append(email)
+                claims = self.verification.signer.verify_claims(proof, credential.subject)
+                if claims and claims[0] not in accepted:
+                    accepted.append(claims[0])
+                    # Подтверждения, полученные до появления общего хранилища, тоже становятся общими.
+                    self._remember_verified(credential.subject, *claims)
+        restored = self._restore_verified(credential.subject, accepted, peer.excluded_emails)
+        accepted.extend(restored)
         for email in accepted:
             self._register(peer, email)
         resumed = self._resume_calls(peer, message.get("activeCalls"))
-        peer.send({"type": "welcome", "emails": sorted(accepted), "resumedCalls": resumed})
+        welcome: dict[str, Any] = {"type": "welcome", "emails": sorted(accepted), "resumedCalls": resumed}
+        if restored:
+            welcome["proofs"] = restored
+        peer.send(welcome)
+
+    @staticmethod
+    def _excluded_emails(values: Any) -> set[str]:
+        excluded: set[str] = set()
+        if isinstance(values, list):
+            for value in values[:MAX_EMAILS_PER_CONNECTION]:
+                with contextlib.suppress(CallError):
+                    excluded.add(normalize_email(value))
+        return excluded
+
+    def _remember_verified(self, subject: str, email: str, expires: int) -> None:
+        if self.verified_store is None:
+            return
+        try:
+            self.verified_store.remember_verified_email(subject, email, expires)
+        except sqlite3.Error as error:
+            # Без записи подтверждение всё равно работает на этом устройстве.
+            print(f"Could not store verified email: {type(error).__name__}", flush=True)
+
+    def _restore_verified(self, subject: str, known: list[str], excluded: set[str]) -> dict[str, str]:
+        """Адреса, подтверждённые на других устройствах той же лицензии: email → подтверждение."""
+        if self.verified_store is None:
+            return {}
+        try:
+            stored = self.verified_store.verified_emails(subject)
+        except sqlite3.Error as error:
+            print(f"Could not read verified emails: {type(error).__name__}", flush=True)
+            return {}
+        restored: dict[str, str] = {}
+        for email, expires in stored:
+            if len(known) + len(restored) >= MAX_EMAILS_PER_CONNECTION:
+                break
+            if email in known or email in excluded or email in restored:
+                continue
+            restored[email] = self.verification.signer.issue(email, subject, expires=expires)
+        return restored
+
+    def _share_verified(self, subject: str, email: str, proof: str, source: Peer | None = None) -> None:
+        """Новое подтверждение — сразу всем подключённым устройствам лицензии, кроме отключивших адрес."""
+        self._remember_verified_proof(subject, proof)
+        for other in list(self.peers_by_subject.get(subject, ())):
+            if other is not source and email not in other.excluded_emails:
+                self._deliver_proof(other, email, proof)
 
     def _resume_calls(self, peer: Peer, call_ids: Any) -> list[str]:
         """После переподключения возвращаем соединению его идущие звонки."""
@@ -715,6 +787,8 @@ class CallHub:
             raise CallError("verification_unavailable", "Подтверждение адресов на сервере не настроено.")
         assert peer.credential is not None
         code = self.verification.start(email, peer.credential.subject)
+        # Подтверждая адрес заново, пользователь снова включает его на этом устройстве.
+        peer.excluded_emails.discard(email)
 
         def sent(error: BaseException | None) -> None:
             if error is None:
@@ -747,6 +821,7 @@ class CallHub:
             ready = self.reverse.start(email, peer.credential.subject)
         except ReverseVerificationError as error:
             raise CallError(error.code, error.message) from error
+        peer.excluded_emails.discard(email)
         peer.send({"type": "verify-reverse-ready", "email": email, **ready})
 
     def _verify_reverse_check(self, peer: Peer, message: dict[str, Any]) -> None:
@@ -772,9 +847,16 @@ class CallHub:
             pending = self.reverse.complete(token, normalize_email(from_email))
         except (ReverseVerificationError, CallError):
             return False
+        self._remember_verified_proof(pending.subject, pending.proof)
         for peer in list(self.peers_by_subject.get(pending.subject, ())):
-            self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
+            if pending.email not in peer.excluded_emails:
+                self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
         return True
+
+    def _remember_verified_proof(self, subject: str, proof: str) -> None:
+        claims = self.verification.signer.verify_claims(proof, subject)
+        if claims is not None:
+            self._remember_verified(subject, *claims)
 
     def _deliver_proof(self, peer: Peer, email: str, proof: str, requested_email: str = "") -> None:
         if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
@@ -792,6 +874,7 @@ class CallHub:
         if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
             self._register(peer, email)
         peer.send({"type": "verified", "email": email, "proof": proof})
+        self._share_verified(peer.credential.subject, email, proof, source=peer)
 
     def _register(self, peer: Peer, email: str) -> None:
         peer.emails.add(email)
@@ -1042,6 +1125,7 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
         send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
+        verified_store=chat.store,
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"
     print(f"Jackdaw calls media mode: {mode}", flush=True)
@@ -1140,4 +1224,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Запуск скриптом загружает этот файл как `__main__`, а chat.py и inbound.py импортируют `calls`.
+    # Без перехода на модуль `calls` в процессе были бы два разных класса CallError: ошибки чата
+    # не перехватывались бы в CallHub.handle и обрывали соединение клиента.
+    import calls
+
+    calls.main()

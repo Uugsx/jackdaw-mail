@@ -47,7 +47,8 @@ export const DEFAULT_ICE_SERVERS: readonly JackdawIceServer[] = [
 
 export type JackdawServerMessage =
   | { type: "server-hello"; protocol: number }
-  | { type: "welcome"; emails: string[]; resumedCalls: string[] }
+  /** `proofs` — адреса, подтверждённые на других устройствах той же лицензии: email → подтверждение */
+  | { type: "welcome"; emails: string[]; resumedCalls: string[]; proofs: Record<string, string> }
   | { type: "verify-sent"; email: string }
   /** `requestedEmail` — если почтовый сервер отправил письмо от другого адреса ящика, и подтверждён он */
   | { type: "verified"; email: string; proof: string; requestedEmail?: string }
@@ -80,6 +81,9 @@ const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
 const REVERSE_TOKEN_PATTERN = /^[a-z2-7]{16}$/;
+/** Как на сервере: подтверждение адреса не длиннее 1024 символов, не больше 20 адресов на соединение */
+const MAX_PROOF_LENGTH = 1024;
+const MAX_WELCOME_PROOFS = 20;
 /** Совпадает с ограничениями сервера (call_server/calls.py) */
 const MAX_SDP_LENGTH = 16 * 1024;
 const MAX_ICE_CANDIDATE_LENGTH = 1024;
@@ -175,6 +179,19 @@ function emailList(value: unknown): string[] {
   return value.map(normalizeCallEmail).filter((email): email is string => !!email);
 }
 
+/** Подтверждения адресов из `welcome`. Некорректные записи отбрасываются. */
+function proofMap(value: unknown): Record<string, string> {
+  let result: Record<string, string> = {};
+  if (!value || typeof value != "object" || Array.isArray(value)) return result;
+  for (let [key, proof] of Object.entries(value).slice(0, MAX_WELCOME_PROOFS)) {
+    let email = normalizeCallEmail(key);
+    if (email && typeof proof == "string" && proof.length <= MAX_PROOF_LENGTH) {
+      result[email] = proof;
+    }
+  }
+  return result;
+}
+
 /** @returns null, если сообщение не соответствует протоколу. Такие сообщения отбрасываются. */
 export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
   let data: any;
@@ -192,6 +209,7 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
         type: "welcome",
         emails: emailList(data.emails),
         resumedCalls: Array.isArray(data.resumedCalls) ? data.resumedCalls.map(callID).filter(Boolean) : [],
+        proofs: proofMap(data.proofs),
       };
     case "verify-sent": {
       let email = normalizeCallEmail(data.email);
@@ -199,7 +217,7 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
     }
     case "verified": {
       let email = normalizeCallEmail(data.email);
-      return email && typeof data.proof == "string" && data.proof.length <= 1024
+      return email && typeof data.proof == "string" && data.proof.length <= MAX_PROOF_LENGTH
         ? { type: "verified", email, proof: data.proof, ...(normalizeCallEmail(data.requestedEmail) ? { requestedEmail: normalizeCallEmail(data.requestedEmail)! } : {}) }
         : null;
     }
@@ -376,7 +394,9 @@ export function serverErrorMessage(code: string): string {
     case "call_not_found":
       return gt`The call has already ended.`;
     case "service_unavailable":
-      return gt`The call service is temporarily unavailable. Try again later.`;
+      return gt`No connection to the Jackdaw server. Check the internet connection and try again.`;
+    case "internal_error":
+      return gt`The Jackdaw server could not process the request. Try again later.`;
     case "quota_exceeded":
       return gt`The file storage limit is reached. Old files are deleted after 30 days.`;
     case "blob_not_found":
@@ -385,7 +405,7 @@ export function serverErrorMessage(code: string): string {
     case "invalid_device":
       return gt`The chat could not be set up on this device. Reconnect and try again.`;
     default:
-      return gt`The call service rejected the request.`;
+      return gt`The Jackdaw server rejected the request.`;
   }
 }
 

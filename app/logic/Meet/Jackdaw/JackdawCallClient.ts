@@ -63,6 +63,8 @@ export class JackdawCallServiceError extends Error {
 }
 
 const PROOFS_STORAGE_KEY = "jackdaw.calls.email-proofs.v1";
+/** Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии их не включают */
+const EXCLUDED_STORAGE_KEY = "jackdaw.calls.excluded-emails.v1";
 const SOCKET_OPEN = 1;
 const LOOKUP_CACHE_MS = 60_000;
 const LOOKUP_DEBOUNCE_MS = 250;
@@ -178,11 +180,13 @@ export class JackdawCallClient extends Observable {
     this.socket = socket;
     socket.onopen = () => {
       if (this.socket != socket) return;
+      let excluded = this.readExcluded();
       this.sendRaw({
         type: "hello",
         credential,
         name: this.options.getDisplayName(),
         emailProofs: Object.values(this.readProofs()),
+        ...(excluded.length ? { excludedEmails: excluded } : {}),
         activeCalls: [...this.calls.keys()],
       });
     };
@@ -260,7 +264,7 @@ export class JackdawCallClient extends Observable {
         this.attempt = 0;
         this.lastError = null;
         this.verifiedEmails = message.emails;
-        this.forgetUnacceptedProofs(message.emails);
+        this.forgetUnacceptedProofs(message.emails, message.proofs);
         this.status = "online";
         this.reachable.clear();
         this.presenceVersion++;
@@ -269,6 +273,7 @@ export class JackdawCallClient extends Observable {
         break;
       case "verified":
         this.saveProof(message.email, message.proof);
+        this.setExcluded(message.email, false);
         if (!this.verifiedEmails.includes(message.email)) {
           this.verifiedEmails = [...this.verifiedEmails, message.email].sort();
         }
@@ -433,11 +438,14 @@ export class JackdawCallClient extends Observable {
   /**
    * Подтверждённый адрес (доказательство уже сохранено) или null, если письмо ещё не пришло.
    * Адрес может отличаться от запрошенного: подтверждается фактический отправитель письма.
+   * `emailAddress` — запрошенный адрес: без него ответом считается любое подтверждение,
+   * и при нескольких одновременных ожиданиях подтверждение другого адреса закрыло бы это.
    */
-  async checkReverseVerification(token: string): Promise<string | null> {
+  async checkReverseVerification(token: string, emailAddress?: string): Promise<string | null> {
+    let requested = emailAddress ? normalizeCallEmail(emailAddress) : null;
     let reply = this.waitFor(message =>
       message.type == "verify-reverse-pending" && message.token == token ||
-      message.type == "verified" ||
+      message.type == "verified" && (!requested || message.email == requested || message.requestedEmail == requested) ||
       message.type == "error" && message.requestType == "verify-reverse-check");
     this.send({ type: "verify-reverse-check", token });
     let message = await reply;
@@ -451,6 +459,8 @@ export class JackdawCallClient extends Observable {
     let proofs = this.readProofs();
     delete proofs[email];
     this.writeProofs(proofs);
+    // Иначе сервер вернёт адрес при следующем входе: он подтверждён на другом устройстве лицензии.
+    this.setExcluded(email, true);
     this.verifiedEmails = this.verifiedEmails.filter(e => e != email);
     // Сервер узнаёт об этом при новом входе: регистрация адресов живёт только в соединении.
     if (this.socket) {
@@ -498,12 +508,40 @@ export class JackdawCallClient extends Observable {
     this.writeProofs({ ...this.readProofs(), [email]: proof });
   }
 
-  /** Сервер не принял подтверждение (просрочено, другая лицензия) — убираем, чтобы не показывать адрес подтверждённым. */
-  protected forgetUnacceptedProofs(accepted: string[]): void {
-    let proofs = this.readProofs();
+  /**
+   * Сервер не принял подтверждение (просрочено, другая лицензия) — убираем, чтобы не показывать адрес подтверждённым.
+   * Подтверждения, пришедшие с других устройств лицензии (`received`), сохраняем.
+   */
+  protected forgetUnacceptedProofs(accepted: string[], received: Record<string, string> = {}): void {
+    let proofs = { ...this.readProofs(), ...received };
     let kept = Object.fromEntries(Object.entries(proofs).filter(([email]) => accepted.includes(email)));
-    if (Object.keys(kept).length != Object.keys(proofs).length) {
+    let stored = this.readProofs();
+    if (Object.keys(kept).length != Object.keys(stored).length || Object.entries(kept).some(([email, proof]) => stored[email] != proof)) {
       this.writeProofs(kept);
+    }
+  }
+
+  protected readExcluded(): string[] {
+    try {
+      let value = JSON.parse(this.options.storage?.getItem(EXCLUDED_STORAGE_KEY) ?? "[]");
+      return Array.isArray(value) ? [...new Set(value.map(normalizeCallEmail).filter((e): e is string => !!e))] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  protected setExcluded(email: string, excluded: boolean): void {
+    let current = this.readExcluded();
+    if (current.includes(email) == excluded) return;
+    let next = excluded ? [...current, email] : current.filter(e => e != email);
+    try {
+      if (next.length) {
+        this.options.storage?.setItem(EXCLUDED_STORAGE_KEY, JSON.stringify(next));
+      } else {
+        this.options.storage?.removeItem(EXCLUDED_STORAGE_KEY);
+      }
+    } catch {
+      // Без хранилища отключение действует до перезапуска.
     }
   }
 

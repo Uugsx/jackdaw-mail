@@ -287,8 +287,12 @@ export class JackdawChatAccount extends ChatAccount {
     let own = this.registeredEmails;
     let byEmail = await this.devicesFor([...new Set([...recipients, ...own])]);
     let devices = [...byEmail.values()].flat();
-    if (!recipients.some(email => (byEmail.get(email) ?? []).length)) {
-      throw new UserError(gt`This contact does not use Jackdaw chat yet.`);
+    // Своё устройство в получатели не попадает: если других нет, сервер получил бы пустой список ключей.
+    let ownDeviceID = this.deviceKeys!.deviceId;
+    if (!recipients.some(email => (byEmail.get(email) ?? []).some(device => device.deviceId != ownDeviceID))) {
+      throw new UserError(recipients.every(email => this.isOwnEmail(email))
+        ? gt`This is your own address. Jackdaw chat is not set up on your other devices yet.`
+        : gt`This contact does not use Jackdaw chat yet.`);
     }
     let encrypted = encryptMessage(payload, payload.id, this.deviceKeys!, devices);
     return await client.request({
