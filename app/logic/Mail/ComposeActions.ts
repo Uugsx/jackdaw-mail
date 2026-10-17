@@ -11,7 +11,7 @@ import { fileExtensionForMIMEType } from "../Files/FileType/MIMETypes";
 import { escapeAttr, escapeHTML } from "../Files/FileType/htmlHelper";
 import { backgroundError } from "../../frontend/Util/error";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
-import { UserError, assert, dataURLToBlob, type URLString, ensureArray } from "../util/util";
+import { UserError, assert, dataURLToBlob, type URLString } from "../util/util";
 import { convertTextToHTML } from "../util/convertHTML";
 import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
@@ -188,9 +188,30 @@ export class ComposeActions {
 
   replyAll(): EMail {
     let reply = this.replyToAuthor();
-    reply.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
-    reply.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
+    this._addOtherRecipients(reply);
     return reply;
+  }
+
+  /**
+   * Добавляет To и Cc исходного письма в `mail` без своих адресов и без повторов.
+   * Адреса сравниваются без учёта регистра: один адрес может прийти разными
+   * объектами `PersonUID` (с разными именами или и в Reply-To, и в To).
+   */
+  protected _addOtherRecipients(mail: EMail): void {
+    let seen = new Set<string>();
+    let isNew = (pe: PersonUID): boolean => {
+      let address = pe?.emailAddress?.toLowerCase();
+      if (!address || seen.has(address)) {
+        return false;
+      }
+      seen.add(address);
+      return true;
+    };
+    for (let pe of mail.to.contents.concat(mail.cc.contents)) {
+      isNew(pe);
+    }
+    mail.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && isNew(pe)));
+    mail.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && isNew(pe)));
   }
 
   /** Whether Reply All would include more than one party. */
@@ -236,8 +257,7 @@ export class ComposeActions {
   newToAll(): EMail {
     let mail = this.newMailFromSameIdentity();
     this._addFromAsRecipient(mail);
-    mail.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
-    mail.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
+    this._addOtherRecipients(mail);
     return mail;
   }
 
@@ -251,7 +271,10 @@ export class ComposeActions {
   }
 
   protected _forward(): EMail {
-    let forward = this.email.folder.account.newEMailFrom();
+    // Та же личность (алиас), на которую пришло письмо, — как при ответе
+    let forward = this.newMailFromSameIdentity();
+    // Пересылку, как и раньше, сохраняем в «Отправленные», а не в папку оригинала
+    forward.folder = this.email.folder.account.getSpecialFolder(SpecialFolder.Sent);
     forward.composeSource = this.email;
     forward.subject = "Fwd: " + this.email.subject; // Do *not* localize "Fwd: "
     forward.mustEncrypt = this.email.wasEncrypted;
@@ -386,14 +409,27 @@ export class ComposeActions {
   populateFromMailtoURL(mailtoURL: URLString) {
     let urlObj = new URL(mailtoURL);
     let args = new URLSearchParams(urlObj.search);
-    let tos = ensureArray(urlObj.pathname.split(","));
-    for (let to of tos) {
-      this.email.to.add(findOrCreatePersonUID(sanitize.emailAddress(to), null));
+    // RFC 6068: адрес может быть пустым (`mailto:?subject=…`) и закодированным (`%40`),
+    // получатели бывают и в параметрах to/cc/bcc, в том числе через запятую
+    let addAddresses = (list: ArrayColl<PersonUID>, values: (string | null | undefined)[]) => {
+      for (let value of values) {
+        for (let address of (value ?? "").split(",")) {
+          address = address.trim();
+          if (address) {
+            list.add(findOrCreatePersonUID(sanitize.emailAddress(address), null));
+          }
+        }
+      }
+    };
+    let path = urlObj.pathname;
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      // Невалидная %-последовательность — оставляем как есть, проверит sanitize
     }
-    let ccs = ensureArray(args.get("cc")?.split(","));
-    for (let cc of ccs) {
-      this.email.cc.add(findOrCreatePersonUID(sanitize.emailAddress(cc), null));
-    }
+    addAddresses(this.email.to, [path, ...args.getAll("to")]);
+    addAddresses(this.email.cc, args.getAll("cc"));
+    addAddresses(this.email.bcc, args.getAll("bcc"));
     this.email.subject = sanitize.label(args.get("subject"), null);
     this.email.text = sanitize.label(args.get("body"), null);
     this.email.html; // Generate HTML from plaintext TODO doesn't work
@@ -576,8 +612,11 @@ export class ComposeActions {
       mail !== this.email && mail.pID != this.email.pID);
 
     this.email.isDraft = true;
-    // TODO encrypt
-    assert(!this.email.shouldEncrypt, "TODO encrypt drafts");
+    // Шифрование черновиков пока не поддерживается: сохранять зашифрованный
+    // ответ открытым текстом на сервер нельзя, поэтому сообщаем понятной ошибкой.
+    if (this.email.shouldEncrypt) {
+      throw new UserError(gt`Encrypted drafts cannot be saved yet. Send the message or close it without saving.`);
+    }
 
     await draftFolder.addMessage(this.email);
 

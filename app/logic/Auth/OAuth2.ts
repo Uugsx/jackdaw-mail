@@ -122,6 +122,12 @@ export class OAuth2 extends WebBasedAuth {
           return await this.getAccessTokenFromRefreshToken(this.refreshToken);
         } catch (ex) {
           console.error(ex);
+          // Сеть, таймаут или 5xx — токен ещё действителен. Удаляем его только,
+          // если сервер авторизации явно отклонил его, иначе после каждого сбоя
+          // сети пользователю пришлось бы входить заново.
+          if (!isRefreshTokenRejected(ex)) {
+            throw ex;
+          }
           this.refreshToken = null;
           await this.deleteRefreshTokenFromStorage();
         }
@@ -240,7 +246,8 @@ export class OAuth2 extends WebBasedAuth {
         assert(!!this.codeVerifierPKCE, "Missing code verifier");
         params.code_verifier = this.codeVerifierPKCE;
       }
-      console.log("OAuth2", this.account.name, "get new access token", tokenURL, params);
+      // Не логируем params: там refresh_token, client_secret, code и пароль
+      console.log("OAuth2", this.account.name, "get new access token", tokenURL, params.grant_type);
 
       let data: any;
       try {
@@ -293,7 +300,8 @@ export class OAuth2 extends WebBasedAuth {
   }
 
   async getAuthURL(doneURL?: URLString): Promise<URLString> {
-    this.verificationToken = Math.random().toString().slice(2);
+    // state защищает от подстановки чужого кода авторизации — нужен стойкий случайный токен
+    this.verificationToken = crypto.randomUUID().replace(/-/g, "");
     this.authDoneURL = doneURL ?? this.authDoneURL; // needed for getAccessTokenFromAuthCode()
     let params = new URLSearchParams({
       client_id: this.clientID,
@@ -321,7 +329,7 @@ export class OAuth2 extends WebBasedAuth {
   /** Helper for auth Done URL */
   async isAuthDoneURL(url: URLString): Promise<boolean> {
     let urlParams = Object.fromEntries(new URL(url).searchParams);
-    console.log("OAuth2 page change to", url, "doneURL is", this.authDoneURL, "matches", url.startsWith(this.authDoneURL),
+    console.log("OAuth2 page change to", urlWithoutQuery(url), "doneURL is", this.authDoneURL, "matches", url.startsWith(this.authDoneURL),
       "is auth done", url.startsWith(this.authDoneURL) && this.verificationToken && urlParams.state == this.verificationToken);
     return url.startsWith(this.authDoneURL) &&
       this.verificationToken && urlParams.state == this.verificationToken;
@@ -416,5 +424,25 @@ export class OAuth2 extends WebBasedAuth {
     let host = new URL(this.tokenURL).host.replaceAll(".", "-");
     let username = this.account.username.replace(/@/, "-").replaceAll(".", "-");
     return `oauth2refresh.${host}.${username}.${this.account.id}`;
+  }
+}
+
+/** Сервер авторизации однозначно отклонил refresh token (а не временная ошибка). */
+function isRefreshTokenRejected(ex: any): boolean {
+  if (ex instanceof OAuth2ServerError) {
+    const kTransientErrors = ["temporarily_unavailable", "server_error"];
+    return !kTransientErrors.includes(ex.code);
+  }
+  // Например, «No access token» в ответе сервера
+  return ex instanceof OAuth2Error;
+}
+
+/** URL без query и fragment — в них могут быть code и state. */
+function urlWithoutQuery(url: string): string {
+  try {
+    let parsed = new URL(url);
+    return parsed.origin + parsed.pathname;
+  } catch {
+    return "";
   }
 }

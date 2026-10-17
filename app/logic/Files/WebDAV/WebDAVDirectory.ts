@@ -7,6 +7,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { Buffer } from "buffer";
 import type { ArrayColl, Collection } from "svelte-collections";
 import type { FileStat } from "webdav";
+import { kNoOverwrite, runWithoutOverwrite } from "./webdavMove";
 
 export class WebDAVDirectory extends Directory {
   declare account: WebDAVAccount;
@@ -97,7 +98,9 @@ export class WebDAVDirectory extends Directory {
   fromDAV(stat: FileStat) {
     let path = sanitize.nonemptystring(stat.filename);
     this.path = path.endsWith("/") ? path : path + "/";
-    this.name = sanitize.filename(stat.basename);
+    // Имя показываем как есть: «очистка» убирала скобки, #, № и т. п., после чего
+    // сохранение переименовывало папку на сервере, а имя из одних символов ломало листинг
+    this.name = sanitize.nonemptystring(stat.basename);
     this.etag = sanitize.string(stat.etag, null);
     this.lastMod = sanitize.date(stat.lastmod, new Date());
   }
@@ -109,10 +112,10 @@ export class WebDAVDirectory extends Directory {
       for (let file of files) {
         let target = this.childPath(file.name);
         if (action == "move") {
-          await this.account.client.moveFile(file.path, target);
+          await runWithoutOverwrite(() => this.account.client.moveFile(file.path, target, kNoOverwrite));
           await file.deleteLocally();
         } else {
-          await this.account.client.copyFile(file.path, target);
+          await runWithoutOverwrite(() => this.account.client.copyFile(file.path, target, kNoOverwrite));
         }
       }
     } catch (ex) {
@@ -151,6 +154,23 @@ export class WebDAVDirectory extends Directory {
     await this.account.client.createDirectory(subDir.path);
     await this.listContents();
     return this.subDirs.find(dir => dir.path == subDir.path) ?? subDir;
+  }
+
+  /** Переименование папки на сервере (MOVE без перезаписи). */
+  async saveOnServer() {
+    let parent = this.parent as WebDAVDirectory;
+    if (!parent || !this.name) {
+      return;
+    }
+    let renamedPath = parent.childPath(this.name, true);
+    if (renamedPath == this.path) {
+      return;
+    }
+    await this.account.login(false);
+    await runWithoutOverwrite(() => this.account.client.moveFile(this.path, renamedPath, kNoOverwrite));
+    this.path = renamedPath;
+    await this.saveLocally();
+    await parent.listContents();
   }
 
   async deleteOnServer() {

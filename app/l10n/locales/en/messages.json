@@ -2349,5 +2349,12 @@
   "vGRZ1v": "Not added, because they do not use Jackdaw chat: {0}",
   "BkKA4s": "Only the group admin can change the name and members.",
   "U3pytU": "Admin",
-  "09Tv5j": "Reconnecting…"
+  "09Tv5j": "Reconnecting…",
+  "GPVffC": "Encrypted drafts cannot be saved yet. Send the message or close it without saving.",
+  "MmYpxT": "Reply…",
+  "4YBqaJ": "Could not restore the deleted message from Trash. Open Trash and move it back manually.",
+  "LWq5X/": "A file or folder with this name already exists",
+  "r/nxPs": "Please enter a valid name. It must not contain slashes.",
+  "j90MSC": "Delete the folder \"{0}\" with all its contents from the server? This cannot be undone.",
+  "CEM3nF": "Delete the file \"{0}\" from the server? This cannot be undone."
 }

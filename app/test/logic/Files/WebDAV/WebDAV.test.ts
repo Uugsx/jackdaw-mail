@@ -327,3 +327,53 @@ test("ошибка загрузки между аккаунтами сохран
   expect(target.files.length).toBe(0);
   expect(deleteSource).not.toHaveBeenCalled();
 });
+
+// Регрессии QA-аудита (октябрь 2026)
+
+test("имена со скобками и # не «очищаются» и не переименовываются на сервере при сохранении", async () => {
+  const root = account.rootDirs.first;
+  const dir = await root.createSubDirectory("names (2026) #1");
+  await verify.putFileContents(dir.path + "Счёт (1), №2.txt", "x");
+  await root.listContents();
+  const listedDir = root.subDirs.find(d => d.path == dir.path);
+  expect(listedDir.name).toBe("names (2026) #1");
+  await listedDir.listContents();
+  const file = listedDir.files.first;
+  expect(file.name).toBe("Счёт (1), №2.txt");
+  await file.save();
+  expect(await verify.exists(dir.path + "Счёт (1), №2.txt")).toBe(true);
+});
+
+test("локальный кеш различает имена, которые совпадают после очистки", async () => {
+  const { localCacheFileName } = await import("../../../../logic/Files/File");
+  expect(localCacheFileName("plain.txt")).toBe("plain.txt");
+  expect(localCacheFileName("a(1).txt")).not.toBe(localCacheFileName("a1.txt"));
+  expect(localCacheFileName("()")).toMatch(/^[0-9a-f]{8}-file$/);
+});
+
+test("перенос не затирает одноимённый файл в целевой папке", async () => {
+  const { source, target } = await transferFolders("no-overwrite");
+  await verify.putFileContents(target.path + "first.txt", "keep me");
+  await expect(target.moveFilesHere(new ArrayColl([source.files.first])))
+    .rejects.toThrow(/already exists/);
+  expect(await verify.getFileContents(target.path + "first.txt", { format: "text" })).toBe("keep me");
+  expect(await verify.exists(source.path + "first.txt")).toBe(true);
+});
+
+test("переименование папки выполняется на сервере", async () => {
+  const root = account.rootDirs.first;
+  const dir = await root.createSubDirectory("rename-me");
+  await verify.putFileContents(dir.path + "inside.txt", "inside");
+  dir.name = "renamed";
+  await dir.save();
+  expect(await verify.exists("/rename-me/")).toBe(false);
+  expect(await verify.getFileContents("/renamed/inside.txt", { format: "text" })).toBe("inside");
+  expect(dir.path).toBe("/renamed/");
+});
+
+test("«Обновить» не падает на файлах, которые ещё не скачивались", async () => {
+  const { source } = await transferFolders("not-downloaded");
+  const file = source.files.first;
+  expect(file.filepathLocal).toBeFalsy();
+  await expect(file.isLocalFileChanged()).resolves.toBe(false);
+});

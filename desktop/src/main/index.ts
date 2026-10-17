@@ -948,12 +948,19 @@ app.on("before-quit", event => {
 
 async function handleBeforeQuit() {
   try {
-    await releaseOWASessionsOnQuit();
+    // Без сети (VPN выключен) выход из OWA висел без ограничения, и приложение
+    // не закрывалось. Ждём не дольше нескольких секунд.
+    await Promise.race([
+      releaseOWASessionsOnQuit(),
+      new Promise<void>(resolve => setTimeout(resolve, kOWALogoffOnQuitTimeoutMs)),
+    ]);
   } catch (ex) {
     console.error(ex);
   }
   app.quit();
 }
+
+const kOWALogoffOnQuitTimeoutMs = 3_000;
 
 const gotLock = app.requestSingleInstanceLock();
 if (gotLock) {
@@ -1058,6 +1065,14 @@ app.on("open-file", (_event, file) => {
 app.on("second-instance", (_, argv) => {
   // Remove executable path and "--allow-file-access-from-files"
   handleCommandline(argv.splice(2));
+  // Повторный запуск должен показать уже открытое окно, даже свёрнутое
+  if (primaryWindow && !primaryWindow.isDestroyed()) {
+    if (primaryWindow.isMinimized()) {
+      primaryWindow.restore();
+    }
+    primaryWindow.show();
+    primaryWindow.focus();
+  }
 });
 
 function handleCommandline(args: string[]) {
@@ -1065,11 +1080,14 @@ function handleCommandline(args: string[]) {
     console.log("commandline arguments", args);
     startupArgs.commandline = args;
     let lastArg = args[args.length - 1];
-    if (lastArg?.includes(":")) {
+    if (lastArg?.includes(":") && !/^[a-zA-Z]:[\\/]/.test(lastArg)) {
       let urlObj = new URL(lastArg); // Check syntax
       startupArgs.url = urlObj.href;
     }
-    if (lastArg?.startsWith("/") && lastArg.includes(".")) {
+    // Путь к файлу: `/…` на macOS/Linux, `C:\…` или `\\server\…` на Windows.
+    // Путь Windows похож на URL со схемой `c:`, поэтому выше он не разбирается как URL.
+    let isFilePath = !!lastArg && /^(\/|[a-zA-Z]:[\\/]|\\\\)/.test(lastArg) && lastArg.includes(".");
+    if (isFilePath) {
       startupArgs.file = lastArg;
     }
     startupArgs.notifyObservers();

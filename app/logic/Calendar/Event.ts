@@ -436,6 +436,26 @@ export class Event extends Observable {
     this.isCancelled = sanitize.boolean(json.isCancelled, false);
     this.lastUpdateTime = sanitize.date(json.lastUpdateTime, null);
     this.lastMod = sanitize.date(json.lastMod, this.lastMod);
+    // В таблице event нет колонок для этих полей. Читаем только если они были
+    // записаны, чтобы старые записи не затирали значения по умолчанию.
+    if ("location" in json) {
+      this.location = sanitize.string(json.location, "");
+    }
+    if ("alarm" in json) {
+      this.alarm = sanitize.date(json.alarm, null);
+    }
+    if ("isPrivate" in json) {
+      this.isPrivate = sanitize.boolean(json.isPrivate, false);
+    }
+    if ("freeBusyStatus" in json) {
+      this.freeBusyStatus = sanitize.translate(json.freeBusyStatus, {
+        Busy: "Busy",
+        Free: "Free",
+        Tentative: "Tentative",
+        OOF: "OOF",
+        WorkingElsewhere: "WorkingElsewhere",
+      } as const, "Busy");
+    }
   }
   toExtraJSON(): any {
     let json: any = {};
@@ -445,6 +465,10 @@ export class Event extends Observable {
     json.isCancelled = this.isCancelled;
     json.lastUpdateTime = this.lastUpdateTime;
     json.lastMod = this.lastMod;
+    json.location = this.location ?? "";
+    json.alarm = this.alarm;
+    json.isPrivate = this.isPrivate;
+    json.freeBusyStatus = this.freeBusyStatus;
     return json;
   }
 
@@ -901,7 +925,15 @@ export class Event extends Observable {
       instance.recurrenceCase = RecurrenceCase.Instance;
       instance.recurrenceStartTime = occurrence;
       instance.startTime = new Date(occurrence); // Clone in case of exception
-      instance.endTime = new Date(this.endTime.getTime() + instance.startTime.getTime() - this.startTime.getTime());
+      if (this.allDay) {
+        // Целые календарные дни, а не миллисекунды: после перехода на летнее/зимнее
+        // время конец иначе съезжал на 01:00 следующего дня (или 23:00 того же)
+        let days = Math.max(1, Math.round((this.endTime.getTime() - this.startTime.getTime()) / 1000 / k1DayS));
+        instance.endTime = new Date(occurrence);
+        instance.endTime.setDate(instance.endTime.getDate() + days);
+      } else {
+        instance.endTime = new Date(this.endTime.getTime() + instance.startTime.getTime() - this.startTime.getTime());
+      }
       if (this.alarm) {
         instance.alarm = new Date(this.alarm.getTime() + instance.startTime.getTime() - this.startTime.getTime());
       }

@@ -458,6 +458,7 @@ export class IMAPFolder extends Folder {
           uid: true,
           size: true,
           threadId: true,
+          internalDate: true,
           envelope: true,
           source: true,
           flags: true,

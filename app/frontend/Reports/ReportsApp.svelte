@@ -87,6 +87,10 @@
     setWorkingHoursSchedule,
   } from "./WorkingHoursSettings";
   import {
+    getStoredResponseTargetMinutes,
+    setStoredResponseTargetMinutes,
+  } from "./ResponseTargetSettings";
+  import {
     getReportSession,
     setReportSession,
     type ReportSessionSnapshot,
@@ -657,7 +661,9 @@
     const range: ReportDateRange = { from: fromDate, to: toDate };
     if (
       validateReportDateRange(range) ||
-      validateWorkingHoursSchedule(workingHours)
+      validateWorkingHoursSchedule(workingHours) ||
+      // Иначе пустой или нулевой норматив молча заменяется на 30 минут
+      validateResponseTargetMinutes(responseTargetMinutes)
     ) {
       return false;
     }
@@ -1037,6 +1043,10 @@
     closeReportViewer();
     syncResponderAttribution(null);
     workingHours = getWorkingHoursSchedule(selectedMailAccountId);
+    // Норматив свой у каждого ящика и общий с «Живым контролем»
+    responseTargetMinutes =
+      getStoredResponseTargetMinutes(selectedMailAccountId) ??
+      DEFAULT_RESPONSE_TARGET_MINUTES;
     await loadMailFoldersForAccount(selectedMailAccountId);
     void runReport();
   }
@@ -1452,6 +1462,19 @@
     );
   }
 
+  function onResponseTargetInputChange(): void {
+    if (
+      selectedMailAccountId == null ||
+      validateResponseTargetMinutes(responseTargetMinutes)
+    ) {
+      return;
+    }
+    setStoredResponseTargetMinutes(
+      selectedMailAccountId,
+      normalizeResponseTargetMinutes(responseTargetMinutes),
+    );
+  }
+
   function validateResponseTargetMinutes(
     value: number | undefined,
   ): "invalid" | null {
@@ -1855,7 +1878,7 @@
       <button
         type="button"
         class="refresh-button"
-        disabled={loading}
+        disabled={loading || !!responseTargetError}
         on:click={runReport}
       >
         <RefreshIcon size="15px" class={loading ? "spinning" : ""} />
@@ -1966,6 +1989,7 @@
             max={MAX_RESPONSE_TARGET_MINUTES}
             step="5"
             bind:value={responseTargetMinutes}
+            on:change={onResponseTargetInputChange}
             aria-invalid={!!responseTargetError}
             aria-describedby="response-target-help"
           />

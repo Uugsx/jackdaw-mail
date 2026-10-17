@@ -854,6 +854,16 @@
       }
       syncComposeHtml();
       await commitPendingRecipients();
+      // Ctrl/Cmd+Enter не должен обходить проверки, которые блокируют кнопку «Отправить»
+      if (!mail.subject) {
+        throw new UserError(gt`Please enter a subject`);
+      }
+      if (mail.to.isEmpty) {
+        throw new UserError(gt`Please add some recipients`);
+      }
+      if (encryptionError) {
+        throw new UserError(encryptionError);
+      }
       if (!sendInOwner) {
         await resolveComposeRecipients(mail);
       }
