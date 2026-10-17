@@ -6,6 +6,7 @@
  * видит в форме, и — по его согласию — версия приложения, платформа и язык.
  */
 import { BILLING_LICENSE_API_URL } from "../Billing/Billing";
+import { getDeviceID } from "../Billing/ProEntitlement";
 import { appVersion } from "../build";
 import { getUILocale, gt } from "../../l10n/l10n";
 
@@ -71,6 +72,15 @@ export function isValidContactEmail(value: string): boolean {
   return value.length <= 254 && /^[^@\s<>"',;]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}$/.test(value);
 }
 
+/**
+ * Обезличенный отпечаток устройства для лимитов на сервере: SHA-256 от ID
+ * устройства. Сам ID участвует в проверке лицензии и сервису отзывов не нужен.
+ */
+export async function deviceFingerprint(deviceID: string = getDeviceID()): Promise<string> {
+  let digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(`jackdaw-feedback:${deviceID}`));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Сообщение об ошибке по коду сервера — без технических подробностей. */
 function messageForError(code: string): string {
   switch (code) {
@@ -104,6 +114,7 @@ export async function sendFeedback(draft: FeedbackDraft, version?: string): Prom
   let body = {
     kind: draft.kind,
     message,
+    device: await deviceFingerprint(),
     ...(contactEmail ? { contactEmail } : {}),
     ...(draft.includeDiagnostics ? { diagnostics: collectDiagnostics(version) } : {}),
     ...(draft.website ? { website: draft.website } : {}),

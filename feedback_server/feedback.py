@@ -8,8 +8,12 @@
   В приложении никаких секретов нет: оно знает лишь адрес /v1/feedback.
 - Тело запроса ограничено по размеру, поля проверяются по белому списку,
   управляющие символы вырезаются. Неизвестные поля отклоняются.
-- Ограничение частоты по IP (окно 10 минут и сутки) и общий суточный лимит,
-  повторы одного и того же текста отбрасываются, поле-ловушка для ботов.
+- Ограничение частоты по IP и по устройству (окно 10 минут и сутки), общий
+  суточный лимит, отдельные суточные квоты на issue в GitHub и на письма
+  (квота Resend общая с кодами подтверждения звонков — её нельзя выжечь спамом).
+  Повторы одного и того же текста отбрасываются, поле-ловушка для ботов.
+- Устройство передаётся только хешем SHA-256 от ID устройства: сам ID участвует
+  в проверке лицензии и сюда не попадает.
 - В issue на GitHub не попадают адрес для ответа и IP: только тип, текст,
   версия и ОС. Текст ставится в блок кода — упоминания @ и ссылки не срабатывают.
 - Telegram получает простой текст без разметки (parse_mode не задаётся).
@@ -49,7 +53,8 @@ MIN_MESSAGE_CHARS = 5
 MAX_MESSAGE_CHARS = 5000
 MAX_EMAIL_CHARS = 254
 KINDS = {"bug": "Ошибка", "idea": "Предложение", "other": "Другое"}
-ALLOWED_FIELDS = {"kind", "message", "contactEmail", "diagnostics", "website"}
+ALLOWED_FIELDS = {"kind", "message", "contactEmail", "diagnostics", "website", "device"}
+DEVICE_RE = re.compile(r"^[0-9a-f]{64}$")
 DIAGNOSTIC_FIELDS = {
     "appVersion": re.compile(r"^[0-9A-Za-z.+_-]{1,64}$"),
     "platform": re.compile(r"^[0-9A-Za-z ._()-]{1,40}$"),
@@ -61,7 +66,11 @@ EMAIL_RE = re.compile(r"^[^@\s<>\"',;]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63
 PER_IP_WINDOW_SECONDS = 10 * 60
 PER_IP_WINDOW_LIMIT = 3
 PER_IP_DAY_LIMIT = 10
-GLOBAL_DAY_LIMIT = 300
+PER_DEVICE_WINDOW_LIMIT = 3
+PER_DEVICE_DAY_LIMIT = 10
+GLOBAL_DAY_LIMIT = 50
+GITHUB_DAY_LIMIT = 20
+EMAIL_DAY_LIMIT = 20
 DUPLICATE_WINDOW_SECONDS = 60 * 60
 DAY_SECONDS = 24 * 60 * 60
 QUEUE_SIZE = 100
@@ -85,6 +94,7 @@ class Feedback:
     message: str
     contact_email: str | None
     diagnostics: dict[str, str] = field(default_factory=dict)
+    device: str = ""
 
 
 # ───────────── Проверка входных данных ─────────────
@@ -104,6 +114,10 @@ def parse_feedback(raw: Any) -> Feedback | None:
         raise FeedbackError(400, "unknown_fields", "Неизвестные поля в запросе.")
     if raw.get("website"):
         return None
+
+    device = raw.get("device")
+    if not isinstance(device, str) or not DEVICE_RE.match(device):
+        raise FeedbackError(400, "invalid_device", "Отзыв можно отправить только из приложения Jackdaw Mail.")
 
     kind = raw.get("kind")
     if kind not in KINDS:
@@ -140,33 +154,42 @@ def parse_feedback(raw: Any) -> Feedback | None:
                 raise FeedbackError(400, "invalid_diagnostics", "Неверные сведения о системе.")
             diagnostics[name] = value
 
-    return Feedback(secrets.token_hex(4), kind, message, contact_email, diagnostics)
+    return Feedback(secrets.token_hex(4), kind, message, contact_email, diagnostics, device)
 
 
 # ───────────── Ограничение частоты ─────────────
 
 class AbuseGuard:
-    """Лимиты по IP, общий суточный лимит и отсев повторов. Всё в памяти процесса."""
+    """Лимиты по IP и устройству, общий суточный лимит и отсев повторов. Всё в памяти процесса."""
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic):
+    def __init__(self, clock: Callable[[], float] = time.monotonic, global_day_limit: int = GLOBAL_DAY_LIMIT):
         self._clock = clock
+        self._global_day_limit = global_day_limit
         self._lock = threading.Lock()
         self._per_ip: dict[str, deque[float]] = {}
+        self._per_device: dict[str, deque[float]] = {}
         self._global: deque[float] = deque()
         self._recent: dict[str, float] = {}
 
-    def check(self, ip: str, fingerprint: str) -> bool:
+    @staticmethod
+    def _over(hits: deque[float], now: float, window_limit: int, day_limit: int) -> bool:
+        in_window = sum(1 for at in hits if now - at < PER_IP_WINDOW_SECONDS)
+        return in_window >= window_limit or len(hits) >= day_limit
+
+    def check(self, ip: str, fingerprint: str, device: str = "") -> bool:
         """True — отзыв нужно доставить; False — повтор, тихо отбрасываем. Превышение лимита — исключение."""
         now = self._clock()
         with self._lock:
             self._expire(now)
-            hits = self._per_ip.setdefault(ip, deque())
-            in_window = sum(1 for at in hits if now - at < PER_IP_WINDOW_SECONDS)
-            if in_window >= PER_IP_WINDOW_LIMIT or len(hits) >= PER_IP_DAY_LIMIT:
+            ip_hits = self._per_ip.setdefault(ip, deque())
+            device_hits = self._per_device.setdefault(device, deque()) if device else None
+            if (self._over(ip_hits, now, PER_IP_WINDOW_LIMIT, PER_IP_DAY_LIMIT)
+                    or device_hits is not None and self._over(device_hits, now, PER_DEVICE_WINDOW_LIMIT, PER_DEVICE_DAY_LIMIT)
+                    or len(self._global) >= self._global_day_limit):
                 raise FeedbackError(429, "rate_limited", "Слишком много отзывов. Попробуйте позже.")
-            if len(self._global) >= GLOBAL_DAY_LIMIT:
-                raise FeedbackError(429, "rate_limited", "Слишком много отзывов. Попробуйте позже.")
-            hits.append(now)
+            ip_hits.append(now)
+            if device_hits is not None:
+                device_hits.append(now)
             self._global.append(now)
             if fingerprint in self._recent:
                 return False
@@ -174,17 +197,38 @@ class AbuseGuard:
             return True
 
     def _expire(self, now: float) -> None:
-        for ip in list(self._per_ip):
-            hits = self._per_ip[ip]
-            while hits and now - hits[0] >= DAY_SECONDS:
-                hits.popleft()
-            if not hits:
-                del self._per_ip[ip]
+        for buckets in (self._per_ip, self._per_device):
+            for key in list(buckets):
+                hits = buckets[key]
+                while hits and now - hits[0] >= DAY_SECONDS:
+                    hits.popleft()
+                if not hits:
+                    del buckets[key]
         while self._global and now - self._global[0] >= DAY_SECONDS:
             self._global.popleft()
         for key, at in list(self._recent.items()):
             if now - at >= DUPLICATE_WINDOW_SECONDS:
                 del self._recent[key]
+
+
+class DailyQuota:
+    """Скользящая суточная квота одного канала доставки."""
+
+    def __init__(self, limit: int, clock: Callable[[], float] = time.monotonic):
+        self.limit = limit
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._hits: deque[float] = deque()
+
+    def take(self) -> bool:
+        now = self._clock()
+        with self._lock:
+            while self._hits and now - self._hits[0] >= DAY_SECONDS:
+                self._hits.popleft()
+            if len(self._hits) >= self.limit:
+                return False
+            self._hits.append(now)
+            return True
 
 
 def fingerprint(feedback: Feedback) -> str:
@@ -217,13 +261,14 @@ def email_body(feedback: Feedback, issue_url: str | None) -> str:
     return "\n".join(parts) + "\n\n" + feedback.message + "\n"
 
 
-def telegram_text(feedback: Feedback, issue_url: str | None) -> str:
+def telegram_text(feedback: Feedback, issue_url: str | None, notes: list[str] | None = None) -> str:
     header = [f"{KINDS[feedback.kind]} · #{feedback.id}"]
     if feedback.contact_email:
         header.append(f"Ответить: {feedback.contact_email}")
     header += diagnostics_lines(feedback)
     if issue_url:
         header.append(f"Issue: {issue_url}")
+    header += notes or []
     text = "\n".join(header) + "\n\n" + feedback.message
     return text if len(text) <= TELEGRAM_TEXT_LIMIT else text[: TELEGRAM_TEXT_LIMIT - 1] + "…"
 
@@ -281,6 +326,9 @@ class Settings:
     github_token: str | None = None
     github_repo: str | None = None
     github_labels: list[str] = field(default_factory=lambda: ["bug", "feedback"])
+    daily_limit: int = GLOBAL_DAY_LIMIT
+    github_daily_limit: int = GITHUB_DAY_LIMIT
+    email_daily_limit: int = EMAIL_DAY_LIMIT
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -299,6 +347,9 @@ class Settings:
             telegram_thread_id=int(env("JACKDAW_FEEDBACK_TELEGRAM_THREAD_ID")) if env("JACKDAW_FEEDBACK_TELEGRAM_THREAD_ID") else None,
             github_token=read_secret(env("JACKDAW_FEEDBACK_GITHUB_TOKEN_FILE")),
             github_repo=env("JACKDAW_FEEDBACK_GITHUB_REPO") or None,
+            daily_limit=int(env("JACKDAW_FEEDBACK_DAILY_LIMIT") or GLOBAL_DAY_LIMIT),
+            github_daily_limit=int(env("JACKDAW_FEEDBACK_GITHUB_DAILY_LIMIT") or GITHUB_DAY_LIMIT),
+            email_daily_limit=int(env("JACKDAW_FEEDBACK_EMAIL_DAILY_LIMIT") or EMAIL_DAY_LIMIT),
         )
         labels = env("JACKDAW_FEEDBACK_GITHUB_LABELS")
         if labels is not None:
@@ -333,28 +384,39 @@ def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dic
 
 class Deliverer:
     def __init__(self, settings: Settings, post: Callable[..., dict[str, Any]] = post_json,
-                 smtp_factory: Callable[..., Any] = smtplib.SMTP):
+                 smtp_factory: Callable[..., Any] = smtplib.SMTP, clock: Callable[[], float] = time.monotonic):
         self.settings = settings
         self._post = post
         self._smtp_factory = smtp_factory
+        self.github_quota = DailyQuota(settings.github_daily_limit, clock)
+        self.email_quota = DailyQuota(settings.email_daily_limit, clock)
 
     def deliver(self, feedback: Feedback) -> dict[str, str]:
         """Доставляет по всем настроенным каналам; ошибка одного канала не мешает другим."""
         results: dict[str, str] = {}
+        notes: list[str] = []
         issue_url = None
         if feedback.kind == "bug" and self.settings.github_enabled:
-            try:
-                issue_url = self.create_issue(feedback)
-                results["github"] = "ok"
-            except Exception as exc:  # noqa: BLE001 — канал не должен ронять остальные
-                results["github"] = f"error:{type(exc).__name__}"
+            if not self.github_quota.take():
+                results["github"] = "skipped:quota"
+                notes.append("Issue не создан: суточный лимит issue исчерпан.")
+            else:
+                try:
+                    issue_url = self.create_issue(feedback)
+                    results["github"] = "ok"
+                except Exception as exc:  # noqa: BLE001 — канал не должен ронять остальные
+                    results["github"] = f"error:{type(exc).__name__}"
+        send_email = self.settings.email_enabled and self.email_quota.take()
+        if self.settings.email_enabled and not send_email:
+            results["email"] = "skipped:quota"
+            notes.append("Письмо не отправлено: суточный лимит писем исчерпан.")
         if self.settings.telegram_enabled:
             try:
-                self.send_telegram(feedback, issue_url)
+                self.send_telegram(feedback, issue_url, notes)
                 results["telegram"] = "ok"
             except Exception as exc:  # noqa: BLE001
                 results["telegram"] = f"error:{type(exc).__name__}"
-        if self.settings.email_enabled:
+        if send_email:
             try:
                 self.send_email(feedback, issue_url)
                 results["email"] = "ok"
@@ -378,10 +440,10 @@ class Deliverer:
         url = response.get("html_url")
         return url if isinstance(url, str) and url.startswith("https://github.com/") else None
 
-    def send_telegram(self, feedback: Feedback, issue_url: str | None) -> None:
+    def send_telegram(self, feedback: Feedback, issue_url: str | None, notes: list[str] | None = None) -> None:
         payload: dict[str, Any] = {
             "chat_id": self.settings.telegram_chat_id,
-            "text": telegram_text(feedback, issue_url),
+            "text": telegram_text(feedback, issue_url, notes),
             "disable_web_page_preview": True,
         }
         if self.settings.telegram_thread_id is not None:
@@ -418,7 +480,7 @@ class FeedbackService:
         feedback = parse_feedback(raw)
         if feedback is None:
             return secrets.token_hex(4)
-        if not self.guard.check(ip, fingerprint(feedback)):
+        if not self.guard.check(ip, fingerprint(feedback), feedback.device):
             return feedback.id
         try:
             self.queue.put_nowait(feedback)
@@ -494,10 +556,11 @@ def make_handler(service: FeedbackService) -> type[BaseHTTPRequestHandler]:
 
 def main() -> None:
     settings = Settings.from_environment()
-    service = FeedbackService(Deliverer(settings))
+    service = FeedbackService(Deliverer(settings), AbuseGuard(global_day_limit=settings.daily_limit))
     channels = [name for name, on in (("email", settings.email_enabled), ("telegram", settings.telegram_enabled),
                                       ("github", settings.github_enabled)) if on]
-    print(f"Jackdaw feedback channels: {', '.join(channels) or 'нет'}", flush=True)
+    print(f"Jackdaw feedback channels: {', '.join(channels) or 'нет'}; limits: {settings.daily_limit}/day, "
+          f"github {settings.github_daily_limit}/day, email {settings.email_daily_limit}/day", flush=True)
     threading.Thread(target=service.run_worker, name="feedback-worker", daemon=True).start()
     server = ThreadingHTTPServer((settings.host, settings.port), make_handler(service))
     server.daemon_threads = True

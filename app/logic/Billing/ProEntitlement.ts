@@ -284,7 +284,7 @@ function normalizedLicenseKey(value: string): string {
   return formatted;
 }
 
-function getDeviceID(): string {
+export function getDeviceID(): string {
   if (inMemoryDeviceID) return inMemoryDeviceID;
   let storage = getStorage();
   let saved: string | null = null;

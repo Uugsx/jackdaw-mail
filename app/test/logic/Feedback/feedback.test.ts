@@ -6,6 +6,7 @@ import {
   kFeedbackMaxChars,
   sendFeedback,
   FeedbackError,
+  deviceFingerprint,
 } from "../../../logic/Feedback/Feedback";
 
 function mockFetch(status: number, body: any) {
@@ -43,6 +44,16 @@ describe("isValidContactEmail", () => {
   });
 });
 
+describe("deviceFingerprint", () => {
+  test("стабильный хеш, а не сам ID устройства", async () => {
+    let first = await deviceFingerprint("device-12345678");
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(first).not.toContain("device-12345678");
+    expect(await deviceFingerprint("device-12345678")).toBe(first);
+    expect(await deviceFingerprint("device-87654321")).not.toBe(first);
+  });
+});
+
 describe("sendFeedback", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -55,7 +66,10 @@ describe("sendFeedback", () => {
     let [url, init] = fetchMock.mock.calls[0] as any;
     expect(url).toMatch(/^https:\/\/.+\/v1\/feedback$/);
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({ kind: "bug", message: "Падает при открытии", contactEmail: "user@example.com" });
+    let body = JSON.parse(init.body);
+    expect(body.device).toMatch(/^[0-9a-f]{64}$/);
+    delete body.device;
+    expect(body).toEqual({ kind: "bug", message: "Падает при открытии", contactEmail: "user@example.com" });
   });
 
   test("прикладывает сведения о системе только по согласию", async () => {

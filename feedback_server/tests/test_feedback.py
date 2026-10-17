@@ -18,6 +18,7 @@ def valid(**overrides):
         "message": "Не открывается письмо с вложением",
         "contactEmail": "user@example.com",
         "diagnostics": {"appVersion": "0.9.126-dev.20261017061649", "platform": "macOS", "locale": "ru"},
+        "device": "a" * 64,
     }
     body.update(overrides)
     return body
@@ -62,6 +63,17 @@ class ParseTests(unittest.TestCase):
             with self.subTest(email=email), self.assertRaises(fb.FeedbackError):
                 fb.parse_feedback(valid(contactEmail=email))
 
+    def test_device_fingerprint_is_required(self):
+        for device in (None, "", "short", "A" * 64, "z" * 64, "a" * 65):
+            with self.subTest(device=device), self.assertRaises(fb.FeedbackError) as error:
+                body = valid()
+                if device is None:
+                    del body["device"]
+                else:
+                    body["device"] = device
+                fb.parse_feedback(body)
+            self.assertEqual(error.exception.code, "invalid_device")
+
     def test_contact_email_is_optional(self):
         self.assertIsNone(fb.parse_feedback(valid(contactEmail="")).contact_email)
 
@@ -92,6 +104,25 @@ class GuardTests(unittest.TestCase):
             clock.now += fb.PER_IP_WINDOW_SECONDS
         with self.assertRaises(fb.FeedbackError):
             guard.check("1.1.1.1", "over-day")
+
+    def test_per_device_limit_across_ips(self):
+        clock = FakeClock()
+        guard = fb.AbuseGuard(clock)
+        for i in range(fb.PER_DEVICE_WINDOW_LIMIT):
+            self.assertTrue(guard.check(f"10.0.0.{i}", f"f{i}", "dev1"))
+        with self.assertRaises(fb.FeedbackError):
+            guard.check("10.0.0.99", "next", "dev1")
+        self.assertTrue(guard.check("10.0.0.99", "other-device", "dev2"))
+
+    def test_global_day_limit(self):
+        clock = FakeClock()
+        guard = fb.AbuseGuard(clock, global_day_limit=5)
+        for i in range(5):
+            guard.check(f"10.0.1.{i}", f"f{i}", f"d{i}")
+        with self.assertRaises(fb.FeedbackError):
+            guard.check("10.0.1.99", "next", "d99")
+        clock.now += fb.DAY_SECONDS
+        self.assertTrue(guard.check("10.0.1.99", "after-day", "d99"))
 
     def test_duplicates_are_dropped(self):
         clock = FakeClock()
@@ -186,6 +217,26 @@ class DelivererTests(unittest.TestCase):
         self.assertNotIn("github", results)
         self.assertFalse(any("github" in url for url in urls))
 
+    def test_github_and_email_quotas(self):
+        settings = self.settings()
+        settings.github_daily_limit = 1
+        settings.email_daily_limit = 1
+        texts = []
+
+        def post(url, payload, headers):
+            if "api.github.com" in url:
+                return {"html_url": "https://github.com/owner/repo/issues/1"}
+            texts.append(payload["text"])
+            return {"ok": True}
+
+        deliverer = fb.Deliverer(settings, post=post, smtp_factory=FakeSMTP)
+        first = deliverer.deliver(fb.parse_feedback(valid(message="Первая ошибка")))
+        second = deliverer.deliver(fb.parse_feedback(valid(message="Вторая ошибка")))
+        self.assertEqual(first, {"github": "ok", "telegram": "ok", "email": "ok"})
+        self.assertEqual(second, {"github": "skipped:quota", "email": "skipped:quota", "telegram": "ok"})
+        self.assertIn("лимит issue", texts[1])
+        self.assertIn("лимит писем", texts[1])
+
     def test_channel_failure_does_not_stop_others(self):
         def post(url, payload, headers):
             if "api.github.com" in url:
@@ -237,10 +288,10 @@ class HTTPTests(unittest.TestCase):
     def test_rate_limit_uses_forwarded_ip_from_local_proxy(self):
         for i in range(fb.PER_IP_WINDOW_LIMIT):
             self.request("/v1/feedback", valid(message=f"Сообщение номер {i}"), headers={"X-Forwarded-For": "9.9.9.9"})
-        status, body = self.request("/v1/feedback", valid(message="Ещё одно"), headers={"X-Forwarded-For": "9.9.9.9"})
+        status, body = self.request("/v1/feedback", valid(message="Ещё одно", device="b" * 64), headers={"X-Forwarded-For": "9.9.9.9"})
         self.assertEqual(status, 429)
         self.assertEqual(body["error"], "rate_limited")
-        self.assertEqual(self.request("/v1/feedback", valid(message="Другой пользователь"),
+        self.assertEqual(self.request("/v1/feedback", valid(message="Другой пользователь", device="c" * 64),
                                       headers={"X-Forwarded-For": "8.8.8.8"})[0], 202)
 
 
