@@ -294,6 +294,16 @@ describe("клиент сигналинга", () => {
     expect(client.verifiedEmails).toContain("primary@corp.example");
   });
 
+  test("отклонённое письмо сообщается понятной ошибкой", async () => {
+    connectOnline([]);
+    let check = client.checkReverseVerification("abcdefghijklmnop");
+    socket().receive({ type: "error", code: "sender_not_authenticated", message: "x", requestType: "verify-reverse-check" });
+    let error = await check.catch(e => e);
+    expect(error).toBeInstanceOf(JackdawCallServiceError);
+    expect(error.code).toBe("sender_not_authenticated");
+    expect(error.message).toMatch(/DKIM/);
+  });
+
   test("обратное подтверждение не отправит письмо на чужой домен", async () => {
     connectOnline([]);
     let started = client.startReverseVerification("alice@corp.example");

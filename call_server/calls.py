@@ -757,6 +757,8 @@ class CallHub:
         pending = self.reverse.check(token, peer.credential.subject)
         if pending is None:
             raise CallError("code_expired", "Подтверждение устарело. Начните заново.")
+        if pending.failed:
+            raise CallError(pending.failed, "Письмо пришло, но почтовый сервер отправителя его не подписал (DKIM/SPF).")
         if pending.proof is None:
             peer.send({"type": "verify-reverse-pending", "token": token, "email": pending.email})
             return
@@ -1126,7 +1128,7 @@ async def serve(hub: CallHub, host: str, port: int) -> None:
             from inbound import InboundHandler, start_inbound_server
 
             inbound_host = os.getenv("JACKDAW_CALLS_INBOUND_HOST", "0.0.0.0")
-            await start_inbound_server(InboundHandler(hub.reverse, hub.reverse_verified),
+            await start_inbound_server(InboundHandler(hub.reverse, hub.reverse_verified, hub.reverse.fail),
                                        inbound_host, inbound_port, hub.reverse.domain)
             print(f"Jackdaw reverse verification SMTP on {inbound_host}:{inbound_port} for {hub.reverse.domain}", flush=True)
         await server.serve_forever()

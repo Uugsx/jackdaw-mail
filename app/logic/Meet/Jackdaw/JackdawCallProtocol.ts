@@ -367,6 +367,8 @@ export function serverErrorMessage(code: string): string {
       return gt`The confirmation code is wrong.`;
     case "code_expired":
       return gt`The confirmation code has expired. Request a new one.`;
+    case "sender_not_authenticated":
+      return gt`The email arrived, but your mail server did not sign it (DKIM/SPF), so it cannot confirm the address. Use the code from the email instead.`;
     case "rate_limited":
       return gt`Too many requests. Try again later.`;
     case "invalid_email":

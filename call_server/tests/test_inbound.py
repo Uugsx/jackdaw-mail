@@ -134,10 +134,12 @@ class HandlerTests(unittest.TestCase):
     def setUp(self):
         self.reverse = inbound.ReverseVerification(lambda email, subject: "proof", DOMAIN)
         self.verified = []
+        self.failed = []
         self.auth_result = "dkim"
         self.handler = inbound.InboundHandler(
             self.reverse,
             lambda token, sender: self.verified.append((token, sender)) or True,
+            lambda token, reason: self.failed.append((token, reason)),
             authenticate=lambda *args: self.auth_result,
             log=lambda line: None,
         )
@@ -176,6 +178,7 @@ class HandlerTests(unittest.TestCase):
         self.auth_result = None
         self.assertTrue(self.run_flow(ready["address"], make_message()).startswith("550"))
         self.assertEqual(self.verified, [])
+        self.assertEqual(self.failed, [(ready["token"], "sender_not_authenticated")])
 
     def test_only_one_recipient(self):
         ready = self.reverse.start("alice@corp.example", "license:1")
@@ -245,6 +248,16 @@ class HubReverseTests(HubTestCase):
         self.hub.handle(peer, {"type": "verify-reverse-start", "email": "alice@corp.example"})
         token = self.last(peer, "verify-reverse-ready")["token"]
         self.assertTrue(self.hub.reverse_verified(token, "alice@corp.example"))
+        self.assertFalse(self.hub.reverse_verified(token, "alice@corp.example"))
+
+    def test_failed_message_is_reported_on_check(self):
+        peer = self.connect()
+        self.hub.handle(peer, {"type": "verify-reverse-start", "email": "alice@corp.example"})
+        token = self.last(peer, "verify-reverse-ready")["token"]
+        self.hub.reverse.fail(token, "sender_not_authenticated")
+        self.assertFalse(self.hub.reverse.accepts(token))
+        self.hub.handle(peer, {"type": "verify-reverse-check", "token": token})
+        self.assertEqual(self.last(peer, "error")["code"], "sender_not_authenticated")
         self.assertFalse(self.hub.reverse_verified(token, "alice@corp.example"))
 
     def test_disabled_without_configuration(self):

@@ -65,6 +65,8 @@ class PendingReverse:
     proof: str | None = None
     # Адрес, который запрашивал пользователь; `email` после подтверждения — фактический отправитель
     requested_email: str = ""
+    # Код причины, если письмо пришло, но не прошло проверку (например, sender_not_authenticated)
+    failed: str | None = None
 
 
 class ReverseVerification:
@@ -100,12 +102,18 @@ class ReverseVerification:
 
     def accepts(self, token: str) -> bool:
         pending = self._pending.get(token)
-        return pending is not None and pending.proof is None and pending.expires_at > self._clock()
+        return pending is not None and pending.proof is None and pending.failed is None and pending.expires_at > self._clock()
+
+    def fail(self, token: str, reason: str) -> None:
+        """Письмо пришло, но не прошло проверку: клиент узнает причину и сможет повторить."""
+        pending = self._pending.get(token)
+        if pending is not None and pending.proof is None:
+            pending.failed = reason
 
     def complete(self, token: str, from_email: str) -> PendingReverse:
         """Письмо прошло проверку DKIM/SPF: выдаём доказательство владения адресом."""
         pending = self._pending.get(token)
-        if pending is None or pending.expires_at <= self._clock() or pending.proof is not None:
+        if pending is None or pending.expires_at <= self._clock() or pending.proof is not None or pending.failed:
             raise ReverseVerificationError("code_expired", "Адрес для подтверждения устарел.")
         pending.email = from_email
         pending.proof = self._issue_proof(from_email, pending.subject)
@@ -238,11 +246,13 @@ class InboundHandler:
     """Обработчик aiosmtpd. `on_verified(token, from_email)` вызывается в цикле событий."""
 
     def __init__(self, reverse: ReverseVerification, on_verified: Callable[[str, str], bool],
+                 on_failed: Callable[[str, str], None] = lambda token, reason: None,
                  authenticate: Callable[..., str | None] = authenticate_sender,
                  log: Callable[[str], None] = lambda line: print(line, flush=True),
                  clock: Callable[[], float] = time.monotonic):
         self.reverse = reverse
         self.on_verified = on_verified
+        self.on_failed = on_failed
         self.authenticate = authenticate
         self.log = log
         self._clock = clock
@@ -292,6 +302,7 @@ class InboundHandler:
         domain = from_email.rpartition("@")[2]
         if method is None:
             self.log(f"Reverse verification rejected for *@{domain}: DKIM/SPF not aligned")
+            self.on_failed(token, "sender_not_authenticated")
             return "550 5.7.1 Sender domain not authenticated (DKIM/SPF)"
         if not self.on_verified(token, from_email):
             self.log(f"Reverse verification for *@{domain} did not match a pending request")

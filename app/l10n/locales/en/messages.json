@@ -2283,5 +2283,6 @@
   "nHZ8q7": "We sent a short confirmation email from {0}. The address will be confirmed automatically within a few minutes.",
   "+CR/zM": "The confirmation email did not arrive in time. Please try again.",
   "5FYH3s": "This message confirms that this email address belongs to me, for calls and chat in Jackdaw Mail. It was sent automatically by the Jackdaw Mail app.",
-  "BvGVdL": "Your mail server sent the email from {0}, so this address is confirmed. Other Jackdaw users can call you on it. To confirm {1} too, use the code from the email."
+  "BvGVdL": "Your mail server sent the email from {0}, so this address is confirmed. Other Jackdaw users can call you on it. To confirm {1} too, use the code from the email.",
+  "JlCM2F": "The email arrived, but your mail server did not sign it (DKIM/SPF), so it cannot confirm the address. Use the code from the email instead."
 }

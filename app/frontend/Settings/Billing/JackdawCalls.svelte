@@ -57,6 +57,13 @@
                   />
               {:else}
                 <hbox flex />
+                {#if reverse?.address == address}
+                  <Button
+                    label={$t`Cancel`}
+                    classes="secondary"
+                    onClick={cancelReverse}
+                    />
+                {/if}
                 {#if mailAccountForAddress(address)}
                   <Button
                     label={reverse?.address == address ? $t`Waiting for the email…` : $t`Confirm by email`}
@@ -170,7 +177,7 @@
 
 <script lang="ts">
   import { getJackdawCallClient } from "../../../logic/Meet/Jackdaw/JackdawCalls";
-  import type { JackdawCallStatus } from "../../../logic/Meet/Jackdaw/JackdawCallClient";
+  import { JackdawCallServiceError, type JackdawCallStatus } from "../../../logic/Meet/Jackdaw/JackdawCallClient";
   import { normalizeCallEmail } from "../../../logic/Meet/Jackdaw/JackdawCallProtocol";
   import { appGlobal } from "../../../logic/app";
   import { mailAccountForAddress, sendReverseVerificationMail } from "../../../logic/Meet/Jackdaw/ReverseVerification";
@@ -305,9 +312,19 @@
       if (confirmed) {
         reverseConfirmed(pending.address, confirmed);
       }
-    } catch {
-      // Сеть или сервер недоступны — попробуем при следующей проверке.
+    } catch (ex) {
+      // Письмо отклонено или подтверждение устарело — сообщаем и разблокируем кнопку.
+      // Остальное (сеть, сервер) — попробуем при следующей проверке.
+      if (ex instanceof JackdawCallServiceError && (ex.code == "sender_not_authenticated" || ex.code == "code_expired")) {
+        cancelReverse();
+        showFeedback(pending.address, ex.message, "error");
+      }
     }
+  }
+
+  function cancelReverse() {
+    reverse = null;
+    saveReverse(null);
   }
 
   function reverseConfirmed(address: string, confirmedEmail = address) {
