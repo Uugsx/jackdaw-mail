@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import contextlib
+import functools
 import hashlib
 import hmac
 import json
@@ -34,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Generator, Iterable
 
 
 # 2 — P2P: `accepted`/`joined` без токенов LiveKit, сообщения `signal` с SDP и ICE.
@@ -70,7 +72,21 @@ SIGNAL_KINDS = frozenset({"offer", "answer", "ice"})
 # Публичные STUN-серверы, которые сервис может сообщить клиентам. TURN сюда не входит: у него есть секреты.
 STUN_URL_RE = re.compile(r"^stuns?:[A-Za-z0-9.-]{1,253}(?::\d{1,5})?$")
 MAX_STUN_URLS = 8
+# Свой TURN (coturn с `use-auth-secret`): ретранслирует медиа, когда напрямую соединиться нельзя
+# (симметричный NAT, корпоративный фаервол). Адрес — только хост и порт, транспорт — udp или tcp.
+TURN_URL_RE = re.compile(r"^turns?:[A-Za-z0-9.-]{1,253}(?::\d{1,5})?(?:\?transport=(?:udp|tcp))?$")
+MAX_TURN_URLS = 4
+MIN_TURN_SECRET_LENGTH = 32
+# Учётные данные TURN проверяются и при продлении выделенного адреса, поэтому живут не меньше самого
+# длинного разговора — с запасом на гудки и перезапуски ICE.
+TURN_CREDENTIAL_TTL_SECONDS = MAX_CALL_DURATION_SECONDS + 15 * 60
 RATE_WINDOW_SECONDS = 60
+# Принятые, но ещё не обработанные сообщения одного соединения. Дальше чтение из сокета ждёт:
+# клиент, засыпающий сервер запросами, упирается в собственное соединение, а не в память сервера.
+MAX_QUEUED_REQUESTS = 32
+# Потоки для обращений к базам и файлам. Отдельно от пула отправки писем: зависший SMTP не держит базу.
+# При занятой базе лицензий (ожидание до 10 с) часть потоков ждёт, остальные обслуживают чат.
+DATABASE_THREADS = 16
 RATE_LIMITS = {
     "hello": 10,
     "lookup": 12,
@@ -388,6 +404,34 @@ class LiveKitTokenIssuer:
         return f"{signing_input}.{base64url_encode(signature)}"
 
 
+class TurnCredentialIssuer:
+    """Временные учётные данные TURN по REST API coturn (`use-auth-secret`, `static-auth-secret`):
+    имя — `<срок действия>:<случайный идентификатор>`, пароль — base64(HMAC-SHA1(секрет, имя)).
+    Адрес, лицензия и устройство в имя не попадают: журнал TURN не связывает ретрансляцию с человеком."""
+
+    def __init__(self, urls: Iterable[str], secret: str, clock: Callable[[], float] = time.time):
+        self.urls = validate_turn_urls(urls)
+        if not self.urls:
+            raise RuntimeError("JACKDAW_CALLS_TURN_URLS: не задан ни один адрес turn:")
+        if len(secret) < MIN_TURN_SECRET_LENGTH:
+            raise RuntimeError(f"JACKDAW_CALLS_TURN_SECRET: нужен секрет не короче {MIN_TURN_SECRET_LENGTH} символов")
+        self._secret = secret.encode("utf-8")
+        self._clock = clock
+
+    def issue(self) -> dict[str, Any]:
+        expires = int(self._clock()) + TURN_CREDENTIAL_TTL_SECONDS
+        username = f"{expires}:{secrets.token_hex(8)}"
+        digest = hmac.new(self._secret, username.encode("ascii"), hashlib.sha1).digest()
+        return {"urls": list(self.urls), "username": username, "credential": base64.b64encode(digest).decode("ascii")}
+
+
+def validate_turn_urls(values: Iterable[str]) -> tuple[str, ...]:
+    urls = tuple(value.strip() for value in values if value and value.strip())
+    if len(urls) > MAX_TURN_URLS or any(not TURN_URL_RE.fullmatch(url) for url in urls):
+        raise RuntimeError("JACKDAW_CALLS_TURN_URLS: нужен список адресов вида turn:host:port?transport=udp через запятую")
+    return urls
+
+
 # ---------------------------------------------------------------------------
 # Отправка кода подтверждения
 
@@ -496,6 +540,24 @@ class EmailVerification:
 # Состояние звонков
 
 
+@dataclass(frozen=True)
+class Blocking:
+    """Блокирующий шаг обработчика (база, файлы): обработчик-генератор отдаёт его наружу через `yield`.
+
+    `CallHub.handle_async` выполняет шаг в пуле потоков и возвращает результат в генератор уже в цикле
+    событий, поэтому состояние хаба меняется только там. `CallHub.handle` выполняет шаг на месте.
+    """
+
+    call: Callable[[], Any]
+    # True — продолжить и после закрытия соединения: например, сохранённое сообщение чата
+    # всё равно надо доставить получателям в сети, иначе они увидят его только при переподключении.
+    detached: bool = False
+
+
+# Обработчик сообщения: обычная функция или генератор блокирующих шагов.
+Steps = Generator[Blocking, Any, Any]
+
+
 class Peer:
     """Одно соединение клиента. `send` кладёт сообщение в очередь отправки и не блокирует."""
 
@@ -513,6 +575,8 @@ class Peer:
         self.chat_device_id: str | None = None
         # Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии сюда не приходят
         self.excluded_emails: set[str] = set()
+        # True после `CallHub.disconnected`: незаконченная обработка его сообщений не меняет состояние хаба
+        self.gone = False
 
     @property
     def identity_email(self) -> str | None:
@@ -569,6 +633,8 @@ class CallHub:
         stun_urls: Iterable[str] = (),
         reverse: Any = None,
         verified_store: Any = None,
+        turn: TurnCredentialIssuer | None = None,
+        executor: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -576,6 +642,8 @@ class CallHub:
         self.livekit = livekit
         # Пустой список — клиент использует свои публичные STUN-серверы
         self.stun_urls = validate_stun_urls(stun_urls)
+        # None — TURN не настроен: за симметричным NAT соединения не будет
+        self.turn = turn
         self.mailer = mailer
         self.scheduler = scheduler or Scheduler()
         self._clock = clock
@@ -592,6 +660,10 @@ class CallHub:
         # ChatStore из chat.py: подтверждённые адреса лицензии для её других устройств.
         # None — подтверждение живёт только на устройстве, где его получили.
         self.verified_store = verified_store
+        # Пул потоков для блокирующих шагов; None — пул цикла событий по умолчанию
+        self.executor = executor
+        # Фоновые шаги без соединения (запись подтверждения из SMTP-приёма): ссылка нужна, чтобы задачу не собрал GC
+        self._background: set[asyncio.Task[None]] = set()
 
     # --- соединения ---------------------------------------------------
 
@@ -599,6 +671,7 @@ class CallHub:
         peer.send({"type": "server-hello", "protocol": PROTOCOL_VERSION})
 
     def disconnected(self, peer: Peer) -> None:
+        peer.gone = True
         self._forget_subject(peer)
         if self.chat is not None:
             self.chat.disconnected(peer)
@@ -617,6 +690,70 @@ class CallHub:
                 call.timers.append(handle)
 
     def handle(self, peer: Peer, message: Any) -> None:
+        """Обработка с блокирующими шагами на месте. Для тестов и вызовов вне цикла событий."""
+        self._run_sync(self._dispatch(peer, message))
+
+    async def handle_async(self, peer: Peer, message: Any) -> None:
+        """Обработка в цикле событий: база и файлы — в пуле потоков, состояние хаба — только в цикле.
+
+        Сообщения одного соединения вызывающий передаёт строго по очереди (следующее — после
+        завершения предыдущего). Пока идёт блокирующий шаг, остальные соединения обслуживаются.
+        """
+        if peer.gone:
+            return
+        await self._run_async(self._dispatch(peer, message), peer)
+
+    @staticmethod
+    def _run_sync(steps: Steps) -> None:
+        try:
+            step = next(steps)
+            while True:
+                try:
+                    result = step.call()
+                except Exception as error:  # noqa: BLE001 — ошибку шага разбирает сам обработчик
+                    step = steps.throw(error)
+                else:
+                    step = steps.send(result)
+        except StopIteration:
+            return
+
+    async def _run_async(self, steps: Steps, peer: Peer | None) -> None:
+        """После каждого шага проверяет, что соединение живо и его credential не сменился.
+
+        Иначе обработка прекращается: устаревший результат не должен вернуть закрытое соединение
+        в peers_by_* или применить ответ к другой лицензии.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            step = next(steps)
+            while True:
+                credential = peer.credential if peer is not None else None
+                error: Exception | None = None
+                result: Any = None
+                try:
+                    result = await loop.run_in_executor(self.executor, step.call)
+                except Exception as exc:  # noqa: BLE001 — ошибку шага разбирает сам обработчик
+                    error = exc
+                if peer is not None and not step.detached and (peer.gone or peer.credential is not credential):
+                    return
+                step = steps.throw(error) if error is not None else steps.send(result)
+        except StopIteration:
+            return
+        finally:
+            steps.close()
+
+    def _spawn(self, steps: Steps) -> None:
+        """Шаги без соединения: в цикле событий — фоновой задачей, вне его — сразу."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._run_sync(steps)
+            return
+        task = loop.create_task(self._run_async(steps, None))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    def _dispatch(self, peer: Peer, message: Any) -> Steps:
         request_type = message.get("type") if isinstance(message, dict) else None
         if not isinstance(request_type, str):
             peer.send({"type": "error", "code": "invalid_message", "message": "Некорректное сообщение."})
@@ -627,11 +764,11 @@ class CallHub:
                 peer.send({"type": "pong"})
                 return
             if request_type == "hello":
-                self._hello(peer, message)
+                yield from self._hello(peer, message)
                 return
             if peer.credential is None:
                 raise CallError("not_authenticated", "Сначала нужна проверка лицензии.")
-            self._recheck_credential(peer)
+            yield from self._recheck_credential(peer)
             handler = {
                 "verify-start": self._verify_start,
                 "verify-finish": self._verify_finish,
@@ -648,7 +785,9 @@ class CallHub:
             }.get(request_type)
             if handler is None:
                 raise CallError("unknown_type", "Неизвестный тип сообщения.")
-            handler(peer, message)
+            steps = handler(peer, message)
+            if steps is not None:
+                yield from steps
         except CallError as error:
             self._reply_error(peer, message, request_type, error)
         except Exception:  # noqa: BLE001 — сбой одного запроса не должен обрывать соединение
@@ -674,12 +813,12 @@ class CallHub:
             raise CallError("rate_limited", "Слишком много запросов. Попробуйте позже.")
         bucket.append(current)
 
-    def _recheck_credential(self, peer: Peer) -> None:
+    def _recheck_credential(self, peer: Peer) -> Steps:
         """Отозванная лицензия отключает звонки и у уже подключённых клиентов."""
         if self._clock() - peer.credential_checked_at < CREDENTIAL_RECHECK_SECONDS:
             return
         try:
-            credential = self.verifier.verify(peer.credential_payload)
+            credential = yield Blocking(functools.partial(self.verifier.verify, peer.credential_payload))
         except CallError as error:
             if error.code == "service_unavailable":
                 return
@@ -698,8 +837,22 @@ class CallHub:
 
     # --- вход и подтверждение email -----------------------------------
 
-    def _hello(self, peer: Peer, message: dict[str, Any]) -> None:
-        credential = self.verifier.verify(message.get("credential"))
+    def _hello(self, peer: Peer, message: dict[str, Any]) -> Steps:
+        credential = yield Blocking(functools.partial(self.verifier.verify, message.get("credential")))
+        # Сначала все обращения к базе, затем изменение состояния без await между ними:
+        # другие соединения не видят соединение наполовину вошедшим.
+        excluded_emails = self._excluded_emails(message.get("excludedEmails"))
+        proofs = message.get("emailProofs")
+        accepted: list[str] = []
+        if isinstance(proofs, list):
+            for proof in proofs[:MAX_EMAILS_PER_CONNECTION]:
+                claims = self.verification.signer.verify_claims(proof, credential.subject)
+                if claims and claims[0] not in accepted:
+                    accepted.append(claims[0])
+                    # Подтверждения, полученные до появления общего хранилища, тоже становятся общими.
+                    yield from self._remember_verified(credential.subject, *claims)
+        restored = yield from self._restore_verified(credential.subject, accepted, excluded_emails)
+        accepted.extend(restored)
         for email in list(peer.emails):
             self._unregister(peer, email)
         if self.chat is not None:
@@ -711,18 +864,7 @@ class CallHub:
         peer.credential_payload = message.get("credential")
         peer.credential_checked_at = self._clock()
         peer.display_name = normalize_display_name(message.get("name"))
-        peer.excluded_emails = self._excluded_emails(message.get("excludedEmails"))
-        proofs = message.get("emailProofs")
-        accepted: list[str] = []
-        if isinstance(proofs, list):
-            for proof in proofs[:MAX_EMAILS_PER_CONNECTION]:
-                claims = self.verification.signer.verify_claims(proof, credential.subject)
-                if claims and claims[0] not in accepted:
-                    accepted.append(claims[0])
-                    # Подтверждения, полученные до появления общего хранилища, тоже становятся общими.
-                    self._remember_verified(credential.subject, *claims)
-        restored = self._restore_verified(credential.subject, accepted, peer.excluded_emails)
-        accepted.extend(restored)
+        peer.excluded_emails = excluded_emails
         for email in accepted:
             self._register(peer, email)
         resumed = self._resume_calls(peer, message.get("activeCalls"))
@@ -740,21 +882,21 @@ class CallHub:
                     excluded.add(normalize_email(value))
         return excluded
 
-    def _remember_verified(self, subject: str, email: str, expires: int) -> None:
+    def _remember_verified(self, subject: str, email: str, expires: int) -> Steps:
         if self.verified_store is None:
             return
         try:
-            self.verified_store.remember_verified_email(subject, email, expires)
+            yield Blocking(functools.partial(self.verified_store.remember_verified_email, subject, email, expires))
         except sqlite3.Error as error:
             # Без записи подтверждение всё равно работает на этом устройстве.
             print(f"Could not store verified email: {type(error).__name__}", flush=True)
 
-    def _restore_verified(self, subject: str, known: list[str], excluded: set[str]) -> dict[str, str]:
+    def _restore_verified(self, subject: str, known: list[str], excluded: set[str]) -> Steps:
         """Адреса, подтверждённые на других устройствах той же лицензии: email → подтверждение."""
         if self.verified_store is None:
             return {}
         try:
-            stored = self.verified_store.verified_emails(subject)
+            stored = yield Blocking(functools.partial(self.verified_store.verified_emails, subject))
         except sqlite3.Error as error:
             print(f"Could not read verified emails: {type(error).__name__}", flush=True)
             return {}
@@ -767,12 +909,13 @@ class CallHub:
             restored[email] = self.verification.signer.issue(email, subject, expires=expires)
         return restored
 
-    def _share_verified(self, subject: str, email: str, proof: str, source: Peer | None = None) -> None:
+    def _share_verified(self, subject: str, email: str, proof: str, source: Peer | None = None) -> Steps:
         """Новое подтверждение — сразу всем подключённым устройствам лицензии, кроме отключивших адрес."""
-        self._remember_verified_proof(subject, proof)
+        # Сначала доставка, затем запись: закрытие соединения-источника во время записи не отменяет доставку.
         for other in list(self.peers_by_subject.get(subject, ())):
             if other is not source and email not in other.excluded_emails:
                 self._deliver_proof(other, email, proof)
+        yield from self._remember_verified_proof(subject, proof)
 
     def _resume_calls(self, peer: Peer, call_ids: Any) -> list[str]:
         """После переподключения возвращаем соединению его идущие звонки."""
@@ -861,16 +1004,17 @@ class CallHub:
             pending = self.reverse.complete(token, normalize_email(from_email))
         except (ReverseVerificationError, CallError):
             return False
-        self._remember_verified_proof(pending.subject, pending.proof)
         for peer in list(self.peers_by_subject.get(pending.subject, ())):
             if pending.email not in peer.excluded_emails:
                 self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
+        # Вызывается в цикле событий: запись в базу — в фоне, чтобы не держать звонки и чаты.
+        self._spawn(self._remember_verified_proof(pending.subject, pending.proof))
         return True
 
-    def _remember_verified_proof(self, subject: str, proof: str) -> None:
+    def _remember_verified_proof(self, subject: str, proof: str) -> Steps:
         claims = self.verification.signer.verify_claims(proof, subject)
         if claims is not None:
-            self._remember_verified(subject, *claims)
+            yield from self._remember_verified(subject, *claims)
 
     def _deliver_proof(self, peer: Peer, email: str, proof: str, requested_email: str = "") -> None:
         if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
@@ -881,14 +1025,14 @@ class CallHub:
             message["requestedEmail"] = requested_email
         peer.send(message)
 
-    def _verify_finish(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _verify_finish(self, peer: Peer, message: dict[str, Any]) -> Steps:
         email = normalize_email(message.get("email"))
         assert peer.credential is not None
         proof = self.verification.finish(email, message.get("code"), peer.credential.subject)
         if len(peer.emails) < MAX_EMAILS_PER_CONNECTION:
             self._register(peer, email)
         peer.send({"type": "verified", "email": email, "proof": proof})
-        self._share_verified(peer.credential.subject, email, proof, source=peer)
+        yield from self._share_verified(peer.credential.subject, email, proof, source=peer)
 
     def _register(self, peer: Peer, email: str) -> None:
         peer.emails.add(email)
@@ -1001,8 +1145,14 @@ class CallHub:
     def _media_details(self, call: Call, email: str, name: str) -> dict[str, Any]:
         """Как участнику подключить медиа: всегда P2P, токен LiveKit — только если он настроен."""
         details: dict[str, Any] = {"media": "p2p"}
+        ice_servers: list[dict[str, Any]] = []
         if self.stun_urls:
-            details["iceServers"] = [{"urls": list(self.stun_urls)}]
+            ice_servers.append({"urls": list(self.stun_urls)})
+        if self.turn is not None:
+            # Свои учётные данные каждому участнику: срок у них короткий, отозвать их можно сменой секрета.
+            ice_servers.append(self.turn.issue())
+        if ice_servers:
+            details["iceServers"] = ice_servers
         if self.livekit is not None:
             details["livekitURL"] = self.livekit.url
             details["token"] = self.livekit.issue(call.room, f"{email}#{secrets.token_hex(4)}", name)
@@ -1109,6 +1259,7 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     proof_secret = read_secret("JACKDAW_CALLS_PROOF_SECRET")
     livekit = build_livekit_from_environment()
     stun_urls = os.getenv("JACKDAW_CALLS_STUN_URLS", "").split(",")
+    turn = build_turn_from_environment()
     mailer = Mailer(
         os.getenv("JACKDAW_CALLS_SMTP_HOST", "").strip(),
         int(os.getenv("JACKDAW_CALLS_SMTP_PORT", "587")),
@@ -1147,9 +1298,12 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
         send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
-        verified_store=chat.store,
+        verified_store=chat.store, turn=turn,
+        executor=concurrent.futures.ThreadPoolExecutor(max_workers=DATABASE_THREADS, thread_name_prefix="jackdaw-calls-db"),
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"
+    if turn is not None:
+        mode += " + TURN"
     print(f"Jackdaw calls media mode: {mode}", flush=True)
     return hub, host, port
 
@@ -1162,6 +1316,15 @@ def build_livekit_from_environment() -> LiveKitTokenIssuer | None:
     if not url and not api_key and not api_secret:
         return None
     return LiveKitTokenIssuer(url, api_key, api_secret)
+
+
+def build_turn_from_environment() -> TurnCredentialIssuer | None:
+    """TURN необязателен. Адреса без секрета или секрет без адресов — ошибка конфигурации."""
+    urls = [url for url in os.getenv("JACKDAW_CALLS_TURN_URLS", "").split(",") if url.strip()]
+    secret = read_secret("JACKDAW_CALLS_TURN_SECRET")
+    if not urls and not secret:
+        return None
+    return TurnCredentialIssuer(urls, secret)
 
 
 def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
@@ -1208,7 +1371,23 @@ def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
             except ConnectionClosed:
                 return
 
+        # Принятые сообщения обрабатываются строго по очереди отдельной задачей: чтение из сокета
+        # (а с ним ping/pong WebSocket) продолжается, пока идёт обращение к базе.
+        requests: asyncio.Queue[Any] = asyncio.Queue(maxsize=MAX_QUEUED_REQUESTS)
+        finished = object()
+
+        async def worker() -> None:
+            while True:
+                request = await requests.get()
+                if request is finished:
+                    return
+                try:
+                    await hub.handle_async(peer, request)
+                except Exception:  # noqa: BLE001 — сбой одного запроса не должен останавливать очередь
+                    traceback.print_exc()
+
         writer_task = asyncio.create_task(writer())
+        worker_task = asyncio.create_task(worker())
         hub.connected(peer)
         try:
             async for raw in websocket:
@@ -1221,7 +1400,7 @@ def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
                     # JSONDecodeError — подкласс ValueError; RecursionError — слишком глубокая вложенность.
                     peer.send({"type": "error", "code": "invalid_message", "message": "Некорректное сообщение."})
                     continue
-                hub.handle(peer, message)
+                await requests.put(message)
         except ConnectionClosed:
             pass
         finally:
@@ -1232,6 +1411,13 @@ def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
                 traceback.print_exc()
             try:
                 hub.disconnected(peer)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+            # Начатый запрос дорабатывает (без изменения состояния хаба для закрытого соединения),
+            # оставшиеся в очереди хаб пропускает: соединения уже нет.
+            try:
+                await requests.put(finished)
+                await worker_task
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
 
