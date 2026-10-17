@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
+import functools
 import os
 import re
 import sqlite3
@@ -22,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from calls import CallError, Peer, normalize_email
+from calls import Blocking, CallError, Peer, Steps, normalize_email
 
 
 CHAT_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
@@ -377,7 +378,8 @@ class ChatService:
         self.store = store
         self.peers_by_device: dict[str, set[Peer]] = {}
 
-    def handlers(self) -> dict[str, Callable[[Peer, dict[str, Any]], None]]:
+    def handlers(self) -> dict[str, Callable[[Peer, dict[str, Any]], Steps | None]]:
+        """Обработчики с базой и файлами — генераторы шагов `Blocking` (см. CallHub.handle_async)."""
         return {
             "chat-register": self._register,
             "chat-keys": self._keys,
@@ -407,7 +409,7 @@ class ChatService:
             raise CallError("chat_not_registered", "Сначала зарегистрируйте устройство чата.")
         return device_id
 
-    def _register(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _register(self, peer: Peer, message: dict[str, Any]) -> Steps:
         if not peer.emails:
             raise CallError("not_verified", "Подтвердите свой адрес, чтобы пользоваться чатом.")
         assert peer.credential is not None
@@ -415,15 +417,23 @@ class ChatService:
         public_key = decode_b64(message.get("publicKey"), X25519_KEY_BYTES, "invalid_device")
         if len(public_key) != X25519_KEY_BYTES:
             raise CallError("invalid_device", "Некорректный ключ устройства.")
-        self.store.cleanup()
-        self.store.register_device(device_id, peer.credential.subject, peer.credential.device_hash, public_key, peer.emails)
+        # Снимок адресов: пока идёт запись, другое устройство лицензии может добавить соединению адрес,
+        # а в ответе должны быть ровно те адреса, что записаны в базу.
+        emails = sorted(peer.emails)
+        credential = peer.credential
+
+        def register() -> None:
+            self.store.cleanup()
+            self.store.register_device(device_id, credential.subject, credential.device_hash, public_key, emails)
+
+        yield Blocking(register)
         self.disconnected(peer)
         peer.chat_device_id = device_id
         self.peers_by_device.setdefault(device_id, set()).add(peer)
-        peer.send({"type": "chat-registered", "deviceId": device_id, "emails": sorted(peer.emails)})
-        self._pull(peer, {})
+        peer.send({"type": "chat-registered", "deviceId": device_id, "emails": emails})
+        yield from self._pull(peer, {})
 
-    def _keys(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _keys(self, peer: Peer, message: dict[str, Any]) -> Steps:
         self._require_device(peer)
         emails = message.get("emails")
         if not isinstance(emails, list) or len(emails) > MAX_KEY_FETCH_EMAILS:
@@ -434,12 +444,13 @@ class ChatService:
                 normalized.append(normalize_email(value))
             except CallError:
                 continue
-        reply: dict[str, Any] = {"type": "chat-keys-result", "devices": self.store.devices_for(normalized)}
+        devices = yield Blocking(functools.partial(self.store.devices_for, normalized))
+        reply: dict[str, Any] = {"type": "chat-keys-result", "devices": devices}
         if isinstance(message.get("requestId"), str):
             reply["requestId"] = message["requestId"][:64]
         peer.send(reply)
 
-    def _send(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _send(self, peer: Peer, message: dict[str, Any]) -> Steps:
         device_id = self._require_device(peer)
         message_id = message.get("messageId")
         if not isinstance(message_id, str) or not MESSAGE_ID_RE.fullmatch(message_id):
@@ -462,7 +473,7 @@ class ChatService:
             if target != device_id:
                 keys[target] = decode_b64(wrapped, MAX_WRAPPED_KEY_BYTES)
         # Отправлять можно только устройствам получателей и своим другим устройствам.
-        owners = self.store.device_emails(keys.keys())
+        owners = yield Blocking(functools.partial(self.store.device_emails, list(keys)))
         keys = {target: wrapped for target, wrapped in keys.items() if owners.get(target, set()) & allowed_emails}
         if not keys:
             # Сообщение без ключей никто не прочитает: не храним его и сообщаем отправителю.
@@ -481,7 +492,9 @@ class ChatService:
             peer.send({"type": "chat-sent", "messageId": message_id, "queued": 0, "delivered": delivered})
             return
         assert peer.credential is not None
-        stored = self.store.store_message(message_id, sender_email, device_id, ciphertext, keys, peer.credential.subject)
+        stored = yield Blocking(functools.partial(
+            self.store.store_message, message_id, sender_email, device_id, ciphertext, keys, peer.credential.subject),
+            detached=True)
         if stored:
             created = {"message_id": message_id, "sender_email": sender_email, "sender_device": device_id,
                        "ciphertext": ciphertext, "created_at": int(self.store.now())}
@@ -491,21 +504,22 @@ class ChatService:
                     delivered += 1
         peer.send({"type": "chat-sent", "messageId": message_id, "queued": len(keys), "delivered": delivered})
 
-    def _ack(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _ack(self, peer: Peer, message: dict[str, Any]) -> Steps:
         device_id = self._require_device(peer)
         ids = message.get("messageIds")
         if not isinstance(ids, list) or len(ids) > PENDING_BATCH:
             raise CallError("invalid_payload", "Некорректный список сообщений.")
-        self.store.acknowledge(device_id, [value for value in ids if isinstance(value, str) and MESSAGE_ID_RE.fullmatch(value)])
+        yield Blocking(functools.partial(
+            self.store.acknowledge, device_id, [value for value in ids if isinstance(value, str) and MESSAGE_ID_RE.fullmatch(value)]))
 
-    def _pull(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _pull(self, peer: Peer, message: dict[str, Any]) -> Steps:
         device_id = self._require_device(peer)
-        envelopes, remaining = self.store.pending_for(device_id)
+        envelopes, remaining = yield Blocking(functools.partial(self.store.pending_for, device_id))
         for envelope in envelopes:
             peer.send(envelope)
         peer.send({"type": "chat-pending", "count": len(envelopes), "remaining": remaining})
 
-    def _blob_put(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _blob_put(self, peer: Peer, message: dict[str, Any]) -> Steps:
         device_id = self._require_device(peer)
         assert peer.credential is not None
         blob_id = message.get("blobId")
@@ -515,17 +529,22 @@ class ChatService:
         if not isinstance(index, int) or not isinstance(total, int):
             raise CallError("invalid_blob", "Некорректная часть файла.")
         data = decode_b64(message.get("data"), BLOB_CHUNK_BYTES, "invalid_blob")
-        if index == 0:
-            # Брошенные загрузки освобождают резерв квоты и на долгом соединении (не чаще раза в час).
-            self.store.cleanup()
-        complete = self.store.put_blob_chunk(blob_id, peer.credential.subject, device_id, index, total, data)
+        subject = peer.credential.subject
+
+        def put() -> bool:
+            if index == 0:
+                # Брошенные загрузки освобождают резерв квоты и на долгом соединении (не чаще раза в час).
+                self.store.cleanup()
+            return self.store.put_blob_chunk(blob_id, subject, device_id, index, total, data)
+
+        complete = yield Blocking(put)
         peer.send({"type": "blob-stored", "blobId": blob_id, "index": index, "complete": complete})
 
-    def _blob_get(self, peer: Peer, message: dict[str, Any]) -> None:
+    def _blob_get(self, peer: Peer, message: dict[str, Any]) -> Steps:
         self._require_device(peer)
         blob_id = message.get("blobId")
         index = message.get("index")
         if not isinstance(blob_id, str) or not BLOB_ID_RE.fullmatch(blob_id) or not isinstance(index, int):
             raise CallError("invalid_blob", "Некорректный запрос файла.")
-        data, total = self.store.get_blob_chunk(blob_id, index)
+        data, total = yield Blocking(functools.partial(self.store.get_blob_chunk, blob_id, index))
         peer.send({"type": "blob-data", "blobId": blob_id, "index": index, "total": total, "data": encode_b64(data)})
