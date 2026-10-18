@@ -67,11 +67,14 @@
   .first-row {
     height: 1.3em; /* prevent line breaks */
   }
+  /* block, а не flex: многоточие у flex-контейнера не работает, имя просто срезалось. */
   .name {
-    align-items: center;
+    display: block;
+    min-width: 0;
     white-space: nowrap;
     max-height: 1.3em;
     overflow: hidden;
+    text-overflow: ellipsis;
   }
   .second-row:first-child {
     max-height: 1.3em;

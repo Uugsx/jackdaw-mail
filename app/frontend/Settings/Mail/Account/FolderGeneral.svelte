@@ -28,10 +28,10 @@
         {$t`${$messages.length} displayed.`}
       {/if}
     {/if}
-    {#if $folder.countTotal > 0 && $folder.countTotal == $downloadedMessages.length}
+    {#if $folder.countTotal > 0 && $folder.countTotal == downloadedCount}
       {$t`All downloaded.`}
-    {:else if $downloadedMessages.length > 0}
-      {$t`${$downloadedMessages.length} downloaded messages.`}
+    {:else if downloadedCount > 0}
+      {$t`${downloadedCount} downloaded messages.`}
     {/if}
   </hbox>
   <hbox />
@@ -62,16 +62,16 @@
   import Button from "../../../Shared/Button.svelte";
   import { assert } from "../../../../logic/util/util";
   import { t } from "../../../../l10n/l10n";
-  import { EMail } from "../../../../logic/Mail/EMail";
-  import { Collection } from "svelte-collections";
 
   export let folder: Folder;
 
   $: init($folder);
 
-  let downloadedMessages: Collection<EMail>;
   $: messages = $folder.messages;
-  $: downloadedMessages = $messages.filter(msg => msg.downloadComplete), refreshTrigger;
+  let downloadedCount = 0;
+  /* Число, а не `filter()`: каждый пересчёт создавал наблюдающую коллекцию,
+   * которая навсегда оставалась подписанной на письма папки. */
+  $: downloadedCount = $messages.contents.filter(msg => msg.downloadComplete).length, refreshTrigger;
   $: disableSpecial = $folder.disableChangeSpecial();
   $: disableRename = $folder.disableRename();
 

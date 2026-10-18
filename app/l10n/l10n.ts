@@ -3,23 +3,46 @@ import { derived, writable } from "svelte/store";
 import { generateMessageID } from "./generateMessageID";
 import { sanitize } from '../../lib/util/sanitizeDatatypes';
 
-import { languageMessages, sourceLocale, localeMapping } from './list';
+import { sourceLocale, localeMapping } from './list';
+import { languageMessages, hasLanguageMessages, loadLanguageMessages } from './messagesLoader';
 
 /** @lang Either 2-letter ISO lang code, or 5-letter ISO locale code
  * Must match list.ts */
 export function setUILocale(lang: string) {
   // This function *must* be sync, for gt() to work in TS modules
+  loadedLocale = true;
+  let availableLang = resolveUILocale(lang);
+  let messages = languageMessages[availableLang];
+  if (messages) {
+    locale.set(availableLang, messages);
+    return;
+  }
+  // Перевод ещё не загружен: пока исходный язык, после загрузки $t перерисует интерфейс.
+  locale.set(sourceLocale, languageMessages[sourceLocale]);
+  loadLanguageMessages(availableLang)
+    .then(() => {
+      if (resolveUILocale(getUILocale()) == availableLang && languageMessages[availableLang]) {
+        locale.set(availableLang, languageMessages[availableLang]);
+      }
+    })
+    .catch(console.error);
+}
 
+/** Загружает перевод и включает его. Вызывать до импорта модулей, которые зовут gt() при загрузке. */
+export async function loadUILocale(lang: string = getUILocale()): Promise<void> {
+  let availableLang = resolveUILocale(lang);
+  await loadLanguageMessages(availableLang);
+  setUILocale(availableLang);
+}
+
+/** @returns язык из сборки, ближайший к запрошенному */
+function resolveUILocale(lang: string): string {
   lang = localeMapping[lang.toLowerCase()] ?? lang;
   // e.g. 'en' for 'en-US'
   let lang2 = lang.substring(0, 2);
-
-  let availableLang =
-    languageMessages[lang] ? lang :
-    languageMessages[lang2] ? lang2 :
+  return hasLanguageMessages(lang) ? lang :
+    hasLanguageMessages(lang2) ? lang2 :
     sourceLocale;
-  let messages = languageMessages[availableLang];
-  locale.set(availableLang, messages);
 }
 
 const handlers = { plural: pluralTypeHandler };

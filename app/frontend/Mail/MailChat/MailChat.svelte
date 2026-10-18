@@ -50,6 +50,7 @@
   import Splitter from "../../Shared/Splitter.svelte";
   import { ArrayColl, Collection, mergeColls } from 'svelte-collections';
   import { onDestroy } from "svelte";
+  import { releaseObservableFilter } from "../../Util/collections";
 
   export let accounts: Collection<MailAccount>; /** in */
 
@@ -62,7 +63,16 @@
   $: folders = mergeColls<Folder>(messageAccounts.map(account => account.rootFolders));
   $: allMessages = mergeColls<EMail>(folders.map(folder => folder.messages)).sortBy(msg => -msg.sent.getTime());
   $: persons = allMessages.map(mailChatContactForMessage).filterObservable(Boolean).unique() as Collection<PersonUID>;
-  $: personMessages = allMessages.filterObservable(msg => mailChatContactMatches(msg, selectedPerson));
+  /* Фильтр пересоздаётся при каждом выборе человека: старый надо отписать,
+   * иначе он остаётся подписан на все письма всех папок. */
+  let personMessages: Collection<EMail>;
+  let personMessagesSource: Collection<EMail> | null = null;
+  $: replacePersonMessages(allMessages, selectedPerson);
+  function replacePersonMessages(source: Collection<EMail>, person: any): void {
+    releaseObservableFilter(personMessagesSource, personMessages);
+    personMessagesSource = source;
+    personMessages = source.filterObservable(msg => mailChatContactMatches(msg, person));
+  }
   $: applyChatEntryMessage($mailChatEntryMessage);
   $: $folders, loadMailChatFolders(messageAccounts);
   $: account = isConcreteMailAccount($selectedAccount)
@@ -75,11 +85,21 @@
   let chatRoomPerson: MailChatContact | null = null;
   let chatRoomMessages: Collection<EMail> | null = null;
   $: updateChatRoom(account, selectedPerson, personMessages);
-  $: chatMessages = chatRoom
-    ? ($globalSearchTerm
-      ? chatRoom.messages.filterObservable(msg => msg.text?.toLowerCase().includes($globalSearchTerm))
-      : chatRoom.messages) as any as Collection<EMail>
-    : null;
+  let chatMessages: Collection<EMail> | null = null;
+  let searchedChatMessages: Collection<EMail> | null = null;
+  let searchedChatSource: Collection<EMail> | null = null;
+  $: replaceChatMessages(chatRoom, $globalSearchTerm);
+  function replaceChatMessages(room: MailChatRoom | null, searchTerm: string): void {
+    releaseObservableFilter(searchedChatSource, searchedChatMessages);
+    searchedChatMessages = null;
+    searchedChatSource = null;
+    let messages = room?.messages as any as Collection<EMail> | undefined;
+    if (messages && searchTerm) {
+      searchedChatSource = messages;
+      searchedChatMessages = messages.filterObservable(msg => msg.text?.toLowerCase().includes(searchTerm));
+    }
+    chatMessages = searchedChatMessages ?? messages ?? null;
+  }
 
   function applyChatEntryMessage(message: EMail | null): void {
     if (!message) {
@@ -158,6 +178,8 @@
   }
 
   onDestroy(() => {
+    releaseObservableFilter(personMessagesSource, personMessages);
+    releaseObservableFilter(searchedChatSource, searchedChatMessages);
     chatRoom?.destroy();
     chatRoom = null;
     chatRoomAccount = null;

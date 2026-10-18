@@ -76,7 +76,7 @@
   .account {
     align-items: center;
     margin-inline-end: 6px;
-    width: 48px;
+    width: 64px;
   }
   .large .account {
     width: 60px;
@@ -91,11 +91,16 @@
   /*.large .account :global(button) {
     border: 2px solid var(--account-color) !important;
   }*/
+  /* Одна строка с многоточием: вторая строка обрезалась по высоте наполовину. */
   .name {
+    display: block;
+    box-sizing: border-box;
+    margin-block-start: 4px;
     text-align: center;
+    white-space: nowrap;
     overflow: hidden;
-    text-overflow: clip;
-    max-height: 18px;
+    text-overflow: ellipsis;
+    line-height: 16px;
     max-width: 100%;
   }
 </style>

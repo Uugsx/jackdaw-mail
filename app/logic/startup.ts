@@ -172,14 +172,14 @@ function checkAccounts(): void {
 
 function errorWithAccountName(account: Account, errorCallback: (ex: Error) => void) {
   return (ex: Error) => {
-    account.errors.add(ex);
+    account.addError(ex);
     addAccountName(ex, account);
     errorCallback(ex);
   };
 }
 
 function backgroundErrorInAccount(ex: Error, account: Account) {
-  account.errors.add(ex);
+  account.addError(ex);
   addAccountName(ex, account);
   logError(ex);
 }

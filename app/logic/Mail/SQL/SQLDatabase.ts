@@ -6,6 +6,7 @@ import {
   createResponseReminderIndexes,
   addEMailStatusColumns,
   repairReportReplyIndexes,
+  createEMailLookupIndexes,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -26,6 +27,7 @@ export async function getDatabase(): Promise<Database> {
     createResponseReminderIndexes,
     addEMailStatusColumns,
     repairReportReplyIndexes,
+    createEMailLookupIndexes,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");
@@ -44,6 +46,7 @@ export async function makeTestDatabase(): Promise<Database> {
     mailDatabaseSchema,
     createReportReplyIndexes,
     createResponseReminderIndexes,
+    createEMailLookupIndexes,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

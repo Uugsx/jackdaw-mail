@@ -38,7 +38,20 @@ export async function showNewMail(messages: EMail[]) {
     return;
   }
 
-  messages = messages.filter(message => shouldNotifyMessage(message));
+  /* Сначала дешёвая проверка: при загрузке папки из базы приходят тысячи
+   * старых писем, и для каждого раньше читались и разбирались две настройки.
+   * Настройки одинаковы для всей папки — считаем их один раз на папку. */
+  messages = messages.filter(message => message.isNewArrived && !message.isRead);
+  let notifyByFolder = new Map<Folder | null | undefined, boolean>();
+  messages = messages.filter(message => {
+    let folder = message.folder;
+    let notify = notifyByFolder.get(folder);
+    if (notify === undefined) {
+      notify = shouldNotifyMessage(message);
+      notifyByFolder.set(folder, notify);
+    }
+    return notify;
+  });
   if (!messages.length) {
     return;
   }

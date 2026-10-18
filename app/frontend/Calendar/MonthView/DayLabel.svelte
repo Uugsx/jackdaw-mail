@@ -70,6 +70,18 @@
     font-size: 90%;
     align-self: end;
     margin-inline-start: 8px;
+    white-space: nowrap;
+  }
+  /* В узкой ячейке «5 окт.» срезалось до «5 ок»: оставляем только число. */
+  @container (max-width: 640px) {
+    .month {
+      display: none;
+    }
+  }
+  @container (max-width: 420px) {
+    .day {
+      padding-inline: 4px;
+    }
   }
   .today-icon {
     display: none;

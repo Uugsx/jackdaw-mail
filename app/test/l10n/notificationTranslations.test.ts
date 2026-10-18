@@ -1,5 +1,9 @@
-import { afterEach, expect, test } from "vitest";
+import { beforeAll, afterEach, expect, test } from "vitest";
 import { gt, setUILocale } from "../../l10n/l10n";
+import { loadLanguageMessages } from "../../l10n/messagesLoader";
+
+// Переводы грузятся по требованию: русский нужен до синхронного setUILocale("ru").
+beforeAll(() => loadLanguageMessages("ru"));
 
 const slaTakenInWorkBody =
   "The timer follows the selected mailbox schedule until a message is taken into work. If it is taken outside working hours, the timer continues without pausing from that moment.";

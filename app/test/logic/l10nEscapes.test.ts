@@ -1,5 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { gt, setUILocale } from "../../l10n/l10n";
+import { loadLanguageMessages } from "../../l10n/messagesLoader";
+
+// Переводы грузятся по требованию: русский нужен до синхронного setUILocale("ru").
+beforeAll(() => loadLanguageMessages("ru"));
 
 // Первый вызов инициализирует локаль; дальше её можно переключать в тестах.
 gt`Cancel`;

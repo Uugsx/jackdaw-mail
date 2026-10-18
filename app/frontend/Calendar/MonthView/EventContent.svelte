@@ -44,6 +44,7 @@
   .event {
     background-color: var(--color);
     color: lch(from var(--color) calc((49.44 - l) * infinity) 0 0);
+    box-sizing: border-box;
     padding-inline-start: 4px;
     width: 100%;
   }
@@ -60,9 +61,40 @@
   .event:hover {
     background-color: #20AF9E70;
   }
+  /* Время не сжимается: при нехватке места многоточием сокращается название. */
   .time {
+    flex-shrink: 0;
     margin-inline-end: 4px;
     font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Очень узкая сетка месяца (рядом открыт день): время должно помещаться целиком. */
+  @container (max-width: 420px) {
+    .event {
+      padding-inline-start: 2px;
+    }
+    .time {
+      margin-inline-end: 2px;
+      font-size: 11px;
+    }
+  }
+  /* Ячейка ~28px: помещается только время, название остаётся во всплывающей подсказке. */
+  @container (max-width: 260px) {
+    .event {
+      padding-inline-start: 1px;
+    }
+    .time {
+      display: block;
+      min-width: 0;
+      flex-shrink: 1;
+      margin-inline-end: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .time + .title {
+      display: none;
+    }
   }
   :global(.cancelled) .time,
   .title {
