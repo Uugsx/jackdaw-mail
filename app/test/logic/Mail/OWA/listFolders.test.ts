@@ -199,3 +199,71 @@ test("reuses a folder created by a concurrent hierarchy notification", async () 
   expect(folders.first).toBe(folder);
   expect(account.folderMap.get("folder")).toBe(folder);
 });
+
+function sharedMailboxResponses(requests: any[]) {
+  return async (request: any) => {
+    requests.push(request);
+    let isArchive = request.Body.ParentFolderIds[0].Id == "archivemsgfolderroot";
+    return isArchive ? {
+      RootFolder: {
+        ParentFolder: { FolderId: { Id: "integrators-archive-root" }, DisplayName: "Online Archive — integrators" },
+        Folders: [{
+          FolderClass: "IPF.Note",
+          FolderId: { Id: "integrators-archive-inbox" },
+          ParentFolderId: { Id: "integrators-archive-root" },
+          DistinguishedFolderId: "archiveinbox",
+          DisplayName: "Inbox",
+        }],
+      },
+    } : {
+      RootFolder: {
+        ParentFolder: { FolderId: { Id: "integrators-root" } },
+        Folders: [{
+          FolderClass: "IPF.Note",
+          FolderId: { Id: "integrators-inbox" },
+          ParentFolderId: { Id: "integrators-root" },
+          DistinguishedFolderId: "inbox",
+          DisplayName: "Inbox",
+        }],
+      },
+    };
+  };
+}
+
+test("подключает сетевой архив общего ящика с полным доступом", async () => {
+  let account = fakeAccount(null);
+  account.username = "integrators@example.com";
+  (account as any).sharedFolderRoot = "msgfolderroot";
+  (account as any)._mainAccount = new OWAAccount();
+  let requests: any[] = [];
+  (account as any).callOWA = sharedMailboxResponses(requests);
+
+  await account.listFolders();
+
+  let archiveRequest = requests.find(request => request.Body.ParentFolderIds[0].Id == "archivemsgfolderroot");
+  expect(archiveRequest?.Body.ParentFolderIds[0].Mailbox.EmailAddress).toBe("integrators@example.com");
+  expect(account.archiveMailboxRoot?.id).toBe("integrators-archive-root");
+  expect(account.archiveMailboxRoot?.subFolders.first.id).toBe("integrators-archive-inbox");
+  expect(account.inbox?.id).toBe("integrators-inbox");
+});
+
+test("не запрашивает архив, если доступ выдан только ко «Входящим»", async () => {
+  let account = fakeAccount(null);
+  account.username = "integrators@example.com";
+  (account as any).sharedFolderRoot = "inbox";
+  (account as any)._mainAccount = new OWAAccount();
+  let requests: any[] = [];
+  let respond = sharedMailboxResponses(requests);
+  (account as any).callOWA = async (request: any) => request.action == "GetFolder"
+    ? { Folders: [] }
+    : await respond(request);
+
+  await account.listFolders();
+
+  expect(requests.some(request => request.Body?.ParentFolderIds?.[0]?.Id == "archivemsgfolderroot")).toBe(false);
+  expect(account.archiveMailboxRoot).toBeNull();
+});
+
+test("архивирование письма общего ящика идёт через Explicit Logon этого ящика", () => {
+  expect((OWAAccount as any).needsExplicitLogon({ action: "ArchiveItem" })).toBe(true);
+});

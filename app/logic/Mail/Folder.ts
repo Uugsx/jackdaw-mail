@@ -267,6 +267,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
       }
     }
     let removedLocally = false;
+    let movedOnServer = false;
     let bumpedTargetCount = false;
     let movedUnreadCount = messages.contents.filter(message => !message.isRead).length;
     let movedNewArrivedCount = messages.contents.filter(message => message.isNewArrived).length;
@@ -306,6 +307,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
       bumpedTargetUnread = true;
 
       await this.moveOrCopyMessagesOnServer(action, messages);
+      movedOnServer = action == "move";
 
       if (action == "move") {
         for (let sourceMsg of messages) {
@@ -339,11 +341,22 @@ export class Folder extends Observable implements TreeItem<Folder> {
       if (action == "move") {
         for (let msg of messages) {
           if (msg.pID) {
-            sourceFolder.deletions.delete(msg.pID);
+            sourceFolder.releaseDeletion(msg.pID, movedOnServer);
           }
         }
       }
     }
+  }
+
+  /**
+   * Снимает защиту письма от повторного добавления синхронизацией
+   * (`deletions`) после переноса или удаления.
+   * @param _serverConfirmed сервер подтвердил, что письма в этой папке больше нет.
+   *   Протоколы, где другие сессии видят изменение с задержкой (IMAP),
+   *   переопределяют метод и держат защиту ещё некоторое время.
+   */
+  releaseDeletion(id: string | number, _serverConfirmed: boolean): void {
+    this.deletions.delete(id);
   }
 
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<EMail>) {

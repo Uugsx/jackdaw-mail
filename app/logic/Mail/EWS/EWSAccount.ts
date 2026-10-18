@@ -833,7 +833,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       result.RootFolder.Folders.Folder = folders;
     }
     this.msgFolderRootID = await this.applyFolderHierarchy(result, false);
-    if (!this.isDependentAccount && !this.sharedFolderRoot) {
+    // Сетевой архив есть у собственного ящика и может быть у общего ящика с
+    // полным доступом; при доступе только к «Входящим» архива нет.
+    if (this.sharedFolderRoot == "msgfolderroot" ||
+        (!this.isDependentAccount && !this.sharedFolderRoot)) {
       await this.listArchiveMailbox();
     }
     if (this.sharedFolderRoot) {
@@ -874,9 +877,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         },
       },
       m$ParentFolderIds: {
-        t$DistinguishedFolderId: this.sharedFolderRoot && rootFolderID == this.sharedFolderRoot
+        // Иерархия общего ящика (включая его архив) адресуется через Mailbox.
+        t$DistinguishedFolderId: this.sharedFolderRoot
         ? {
-          Id: this.sharedFolderRoot,
+          Id: rootFolderID,
           t$Mailbox: {
             t$EmailAddress: this.username,
           },

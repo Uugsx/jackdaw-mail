@@ -15,6 +15,14 @@ import { Buffer } from "buffer";
 import type { ImapFlow, MailboxLockObject, StatusObject } from "../../../../desktop/backend/node_modules/imapflow";
 import { trackMailSync } from "../mailSyncStatus";
 
+/**
+ * Сколько держать UID удалённого или перенесённого письма в `deletions` после
+ * ответа сервера. Другие IMAP-сессии (у Gmail — заметно дольше) видят письмо
+ * до получения EXPUNGE, и синхронизация через них вернула бы его в список.
+ * UID внутри одного UIDVALIDITY не переиспользуется, так что защита безопасна.
+ */
+const kDeletionGracePeriodMs = 180_000;
+
 export class IMAPFolder extends Folder {
   declare account: IMAPAccount;
   declare readonly messages: EMailCollection<IMAPEMail>;
@@ -24,6 +32,8 @@ export class IMAPFolder extends Folder {
   protected poller: ReturnType<typeof setInterval>;
   protected pollInFlight = false;
   private bulkDeleteInProgress = false;
+  /** Таймеры снятия защиты `deletions` по UID, @see releaseDeletion() */
+  protected deletionReleaseTimers = new Map<number, ReturnType<typeof setTimeout>>();
   protected returnToInboxDebounce = new Debounce(2);
 
   constructor(account: IMAPAccount) {
@@ -193,6 +203,24 @@ export class IMAPFolder extends Folder {
       return newMessages;
     }
     return await this.getNewMessages(true, false);
+  }
+
+  /**
+   * После подтверждения сервером не снимаем защиту сразу: синхронизация через
+   * другое IMAP-соединение ещё видит письмо и вернула бы его в список (мигание
+   * при удалении в Gmail). При ошибке защиту снимаем сразу — письмо вернётся.
+   */
+  override releaseDeletion(uid: number, serverConfirmed: boolean): void {
+    clearTimeout(this.deletionReleaseTimers.get(uid));
+    this.deletionReleaseTimers.delete(uid);
+    if (!serverConfirmed) {
+      this.deletions.delete(uid);
+      return;
+    }
+    this.deletionReleaseTimers.set(uid, setTimeout(() => {
+      this.deletionReleaseTimers.delete(uid);
+      this.deletions.delete(uid);
+    }, kDeletionGracePeriodMs));
   }
 
   /** Удаляет все сообщения одной IMAP-операцией, чтобы не запускать гонку синхронизаций. */
