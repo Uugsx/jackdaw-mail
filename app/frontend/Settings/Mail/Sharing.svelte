@@ -2,8 +2,8 @@
 <hbox class="subtitle font-small">{$t`Select the people who have access to your mails, calendar and contacts, or access theirs`}</hbox>
 
 {#if account.isDependentAccount}
-  This is the shared account of {account.username}.
-  You access it from main account {account.mainAccount.name}.
+  {$t`This is the shared account of ${account.username}.`}
+  {$t`You access it from main account ${account.mainAccount.name}.`}
   <!-- TODO make it clickable to navigate to main account Sharing settings -->
 {:else}
   <SharingIncoming {account}  />

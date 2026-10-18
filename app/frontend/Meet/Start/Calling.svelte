@@ -39,7 +39,7 @@
               {/if}
               <hbox class="who-count">
                 {#if $participants.length > 1}
-                  ({participants.length} participants)
+                  {$plural(participants.length, { one: '(# participant)', other: '(# participants)' })}
                 {/if}
               </hbox>
               <hbox class="what">
@@ -180,7 +180,7 @@
   import XIcon from "lucide-svelte/icons/x";
   import OpenIcon from "lucide-svelte/icons/door-open";
   import HourglassIcon from "lucide-svelte/icons/hourglass";
-  import { t } from "../../../l10n/l10n";
+  import { t, plural } from "../../../l10n/l10n";
   import { onKeyEnter } from "../../Util/util";
   import { catchErrors } from "../../Util/error";
   import { kDummyPerson } from "../../../logic/Abstract/PersonUID";

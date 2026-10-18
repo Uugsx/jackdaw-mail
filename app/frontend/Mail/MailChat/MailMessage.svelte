@@ -2,7 +2,7 @@
   class="mail-message-row"
   class:incoming={!displayOutgoing}
   class:outgoing={displayOutgoing}
-  aria-label={displayOutgoing ? "Исходящее письмо" : "Входящее письмо"}
+  aria-label={displayOutgoing ? $t`Outgoing message` : $t`Incoming message`}
 >
   <div class="mail-message-card">
     <MessageBubble
