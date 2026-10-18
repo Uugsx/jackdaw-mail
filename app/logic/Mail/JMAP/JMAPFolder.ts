@@ -239,7 +239,8 @@ export class JMAPFolder extends Folder {
       await this.account.save();
       if (changes.hasMoreChanges) {
         lock.release();
-        await this.fetchChangedMessagesForAllFolders();
+        // Новые письма со следующих страниц изменений тоже нужно вернуть (уведомления)
+        newMessagesOfThisFolder.addAll(await this.fetchChangedMessagesForAllFolders());
       }
       return newMessagesOfThisFolder;
     } finally {
@@ -481,10 +482,8 @@ export class JMAPFolder extends Folder {
       update: updates,
     });
 
-    this.countTotal += messages.length;
-    let sourceFolder = messages.first.folder;
+    // Счётчики countTotal источника и цели уже меняет Folder.moveOrCopyMessagesHere()
     if (action == "move") {
-      sourceFolder.countTotal -= messages.length;
       for (let sourceMsg of messages) {
         await sourceMsg.deleteMessageLocally();
       }

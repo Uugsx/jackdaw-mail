@@ -91,7 +91,7 @@ export class FilterRuleAction extends Observable {
         return;
       }
     }
-    if (booleanHasValue(this.deleteTrash) || booleanHasValue(this.deleteImmediately)) {
+    if (this.deleteTrash === true || this.deleteImmediately === true) {
       await email.deleteMessage();
       return;
     }
@@ -122,7 +122,8 @@ export class FilterRuleAction extends Observable {
     // let folderAccount = appGlobal.emailAccounts.find(acc => acc.id == json.toFolderAccountID);
     this.toFolderID = sanitize.nonemptystring(json.toFolder, null);
     this._toFolder = null;
-    this.addTags.replaceAll(sanitize.array(json.addTags, [])?.map(name => getTagByName(name)));
+    // toJSON() пишет ключ "tags"; "addTags" читаем для совместимости со старыми сохранениями
+    this.addTags.replaceAll(sanitize.array(json.tags ?? json.addTags, [])?.map(name => getTagByName(name)));
   }
 
   toJSON() {

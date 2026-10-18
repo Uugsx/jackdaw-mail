@@ -95,17 +95,27 @@ export function convertICalContainerToEvent(vevent: ICalContainer, event: Event)
   if (vevent.entries.dtstart) {
     [event.startTime, event.timezone] = parseDate(vevent.entries.dtstart[0]);
   }
+  if (vevent.entries.dtstart) {
+    // Присваиваем и false: при обновлении с сервера «весь день» может стать событием со временем
+    event.allDay = vevent.entries.dtstart[0].properties.value?.toLowerCase() == "date";
+  }
   if (vevent.entries.dtend) {
     [event.endTime] = parseDate(vevent.entries.dtend[0]);
+  } else if (event.startTime) {
+    // RFC 5545 3.6.1: вместо DTEND может быть DURATION, или ни того ни другого
+    let seconds = vevent.entries.duration ? parseICalDuration(vevent.entries.duration[0].value) : null;
+    event.endTime = new Date(event.startTime);
+    if (seconds != null) {
+      event.endTime.setTime(event.startTime.getTime() + seconds * 1000);
+    } else if (event.allDay) {
+      event.endTime.setDate(event.endTime.getDate() + 1);
+    }
   }
   if (vevent.entries.recurrenceid) {
     [event.recurrenceStartTime] = parseDate(vevent.entries.recurrenceid[0]);
   }
   if (vevent.entries.dtstamp) {
     [event.lastUpdateTime] = parseDate(vevent.entries.dtstamp[0]);
-  }
-  if (vevent.entries.dtstart?.[0].properties.value?.toLowerCase() == "date") {
-    event.allDay = true;
   }
   if (vevent.entries.rrule) {
     event.recurrenceRule = RecurrenceRule.fromCalString(event.duration, event.timezone, event.startTime, vevent.entries.rrule[0].line);
@@ -120,10 +130,11 @@ export function convertICalContainerToEvent(vevent: ICalContainer, event: Event)
   if (vevent.entries.location) {
     // Some clients send the online meeting URL in `LOCATION` (see `CONFERENCE` above)
     event.setLocationFromServer(vevent.entries.location[0].value);
+  } else if (event.location) {
+    event.location = ""; // место удалили на сервере
   }
-  if (vevent.entries.status?.[0].value == "CANCELLED") {
-    event.isCancelled = true;
-  }
+  // Присваиваем и false: отменённое событие могли восстановить
+  event.isCancelled = vevent.entries.status?.[0].value == "CANCELLED";
   event.participants.clear(); // in case we're updating an existing event
   let organizer: Participant | undefined;
   if (vevent.entries.organizer) {
@@ -212,4 +223,19 @@ export function parseDate(icalDate: { value: string, properties: { tzid?: string
   } catch (ex) {
     return [null, null];
   }
+}
+
+/**
+ * Разбирает длительность iCalendar (RFC 5545 3.3.6), например `PT1H30M`, `P1D`, `-PT15M`.
+ * @returns секунды или null, если формат не распознан
+ */
+export function parseICalDuration(value: string | null | undefined): number | null {
+  let match = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/i.exec(value?.trim() ?? "");
+  if (!match || !match.slice(2).some(part => part != null)) {
+    return null;
+  }
+  let [, sign, weeks, days, hours, minutes, seconds] = match;
+  let total = (Number(weeks ?? 0) * 7 + Number(days ?? 0)) * 86400 +
+    Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(seconds ?? 0);
+  return sign == "-" ? -total : total;
 }

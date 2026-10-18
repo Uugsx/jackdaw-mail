@@ -20,6 +20,8 @@ if (production) {
     // An array here would *add* to the default integrations, not replace them.
     // `BrowserSession` sends a session to the server on every navigation.
     integrations: defaults => defaults.filter(integration => integration.name != "BrowserSession"),
+    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их
+    beforeBreadcrumb: breadcrumb => breadcrumb.category == "console" ? null : breadcrumb,
   });
 }
 

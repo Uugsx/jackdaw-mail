@@ -28,7 +28,7 @@
         <hbox class="time value">{getDateTimeString($message.sent)}</hbox>
       </hbox>
     {/if}
-    {#if showActions}
+    {#if showActions && showActionBar}
       <vbox class="hover-popup-anchor">
         <vbox class="hover-above-msg">
           <ActionBar {message} />
@@ -110,6 +110,8 @@
   export let hideHeaderFollowup = false;
   export let openMenuOnMessageHover = false;
   export let showReactions = true;
+  /** Всплывающая панель «копировать/удалить/ответить». Вид чата писем показывает свою панель. */
+  export let showActionBar = true;
   /** Allow a caller to render sanitized content in a dedicated renderer. */
   export let renderHTML = true;
   /** Optional display-only direction for messages whose model flag is incomplete. */
@@ -303,11 +305,10 @@
     padding: 0px 4px;
     border: 2px solid transparent;
     border-radius: 20px;
-    background-color: white;
+    /* Цвета темы: жёсткий white давал белую плашку в тёмной теме */
+    background-color: var(--main-bg);
+    color: var(--main-fg);
     box-shadow: 1px 1px 2px 0px rgba(0, 0, 0, 10%);
-  }
-  .outgoing .reactions {
-    background-color: white;
   }
   .hover-popup-anchor {
     position: relative;
@@ -323,10 +324,11 @@
     margin-inline-end: 16px;
     min-width: max-content;
     padding: 0px 4px;
-    border: 2px solid transparent;
+    border: 1px solid var(--border);
     border-radius: 20px;
-    background-color: white;
-    box-shadow: 1px 1px 2px 0px rgba(0, 0, 0, 10%);
+    background-color: var(--main-bg);
+    color: var(--main-fg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 20%);
   }
   .hover-above-msg {
     bottom: 0px;

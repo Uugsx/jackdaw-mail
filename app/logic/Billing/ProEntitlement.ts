@@ -545,6 +545,12 @@ async function requestTrialEntitlement(path: string, deviceName: string): Promis
 
 export function hasProFeature(feature: ProFeatureKey): boolean {
   let state = proEntitlement.value;
+  if (state.status == "checking") {
+    // Первые секунды после запуска и в отдельных окнах ответ сервера ещё не пришёл.
+    // Пока идёт проверка, используем последнюю подписанную лицензию из кэша —
+    // по тем же правилам, что и в офлайн-режиме. Иначе подпись вырезалась из писем.
+    state = cachedStateWhileChecking() ?? state;
+  }
   if (!ACCESS_STATUSES.has(state.status) || !state.features.includes(feature)) return false;
   if (state.status == "trial") {
     let trustedNow = trustedServerNowMs();
@@ -555,6 +561,45 @@ export function hasProFeature(feature: ProFeatureKey): boolean {
     if (state.validUntil && Number.isFinite(Date.parse(state.validUntil)) && Date.parse(state.validUntil) <= Date.now()) return false;
   }
   return true;
+}
+
+let cachedCheckingState: { raw: string | null; state: ProEntitlementState | null } | null = null;
+
+/** Подписанная лицензия из локального кэша, пока сервер ещё не ответил.
+ * Подпись проверяется один раз на каждое значение в хранилище. */
+function cachedStateWhileChecking(): ProEntitlementState | null {
+  let raw: string | null = null;
+  try {
+    raw = getStorage()?.getItem(STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+  if (cachedCheckingState && cachedCheckingState.raw === raw) {
+    return cachedCheckingState.state;
+  }
+  let state: ProEntitlementState | null = null;
+  try {
+    let stored = readStoredEntitlement();
+    if (stored && BILLING_LICENSE_API_URL && BILLING_ENTITLEMENT_PUBLIC_KEY) {
+      assertValidEntitlement(stored.payload, stored.signature);
+      let cachedDate = Date.parse(stored.validatedAt);
+      if (cachedEntitlementMayBeUsed(stored.payload) &&
+          Number.isFinite(cachedDate) && Date.now() - cachedDate <= OFFLINE_GRACE_MS) {
+        state = stateFromPayload(
+          stored.payload,
+          null,
+          isTrialCredential(stored) ? "trial" : "offline",
+          null,
+          stored.validatedAt,
+          Date.now(),
+        );
+      }
+    }
+  } catch {
+    state = null;
+  }
+  cachedCheckingState = { raw, state };
+  return state;
 }
 
 /** Учётные данные устройства для сервиса звонков. Сервис сам проверяет их по базе лицензий,

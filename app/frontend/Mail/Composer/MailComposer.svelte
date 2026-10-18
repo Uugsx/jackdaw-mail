@@ -200,7 +200,7 @@
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { goBack } from "../../AppsBar/selectedApp";
   import { appGlobal } from "../../../logic/app";
-  import { hasProFeature, proEntitlement } from "../../../logic/Billing/ProEntitlement";
+  import { hasProFeature, proEntitlement, refreshProEntitlement } from "../../../logic/Billing/ProEntitlement";
   import { UserError, assert } from "../../../logic/util/util";
   import { backgroundError, catchErrors, showUserError } from "../../Util/error";
   import CloseButton from "./CloseButton.svelte";
@@ -231,7 +231,7 @@
     normalizeComposeTextColor,
   } from "../../Shared/Editor/composeEditorExtensions";
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
-  import { addSenderToCC } from "../../../logic/Mail/composeRecipients";
+  import { addIdentityDefaultRecipients, addSenderToCC, mentionsAttachment } from "../../../logic/Mail/composeRecipients";
   import { closeFloatingCompose } from "./composeFloating";
   import { focusComposeTypingArea } from "./composeCursor";
   import { editorHasNewComposeText } from "./composeBody";
@@ -289,6 +289,7 @@
   let ccAutocomplete: MailAutocomplete;
   let bccAutocomplete: MailAutocomplete;
   let spellcheckEnabled = getLocalStorage("mail.send.spellcheck.enabled", false);
+  let warnMissingAttachmentSetting = getLocalStorage("mail.send.warnMissingAttachment", true);
   let quoteAttributionSetting = getLocalStorage("mail.send.quote.attribution", false);
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
@@ -301,6 +302,27 @@
   $: isReplyQuote = !!(mail.composeSource && mail.inReplyTo);
   $: billingState = $proEntitlement.value;
   $: signatureEnabled = !!billingState && hasProFeature("signatures");
+  // Сразу после запуска и в отдельном окне статус Pro ещё «проверяется», и подпись
+  // при открытии письма вырезается. Когда Pro подтвердится, подставляем её один раз.
+  let lateSignatureChecked = false;
+  $: if (signatureEnabled && composeContentReady && !loading) applyLateSignature();
+  function applyLateSignature() {
+    if (lateSignatureChecked || !editor || closing) {
+      return;
+    }
+    lateSignatureChecked = true;
+    if (!fromIdentity?.signatureHTML || mail.signatureRemovedByUser || hasSignatureFooter(mail.rawHTMLDangerous)) {
+      return;
+    }
+    let { from, to } = editor.state.selection;
+    syncComposeHtml();
+    mail.compose.applySignature();
+    void reloadEditorFromMail().then(() => {
+      // Подпись встаёт после текста пользователя, поэтому позиция курсора не меняется
+      let size = editor?.state.doc.content.size ?? 0;
+      editor?.commands.setTextSelection({ from: Math.min(from, size), to: Math.min(to, size) });
+    }).catch(backgroundError);
+  }
   let editorZoom = 100;
   let encryptionError: string | null = null;
 
@@ -322,6 +344,10 @@
     editableHtml = "";
     quoteBodyHtml = "";
     defaultComposeFormattingApplied = false;
+    lateSignatureChecked = false;
+    if (proEntitlement.value.status == "checking") {
+      void refreshProEntitlement().catch(backgroundError);
+    }
 
     fromIdentity = mail.identity
       ?? mail.folder?.account.identities.first
@@ -329,6 +355,8 @@
     assert(fromIdentity, "Composer: Need identity or account for email");
     showCCForce = mail.cc.hasItems;
     showBCCForce = mail.bcc.hasItems;
+    identityDefaultsFor = null;
+    identityDefaultsAdded = [];
     ensureCopyToSelf();
     // setAuthor() called
 
@@ -404,7 +432,11 @@
     if (!composeContentReady || loading) {
       return;
     }
+    let hadSignature = hasSignatureFooter(mail.rawHTMLDangerous);
     syncComposeHtml();
+    if (hadSignature && !hasSignatureFooter(mail.rawHTMLDangerous)) {
+      mail.signatureRemovedByUser = true;
+    }
     removeOrphanedInlineAttachments(editor, mail);
   }
 
@@ -418,13 +450,19 @@
     return false;
   }
 
+  /** Загрузка письма в редактор не должна попадать в историю отмены:
+   * иначе Ctrl+Z стирал всё тело с подписью или возвращал подпись прежнего отправителя. */
+  function setEditorContentWithoutUndo(html: string) {
+    editor.chain().setMeta("addToHistory", false).setContent(html).run();
+  }
+
   async function reloadEditorFromMail() {
     let { editable, quote } = splitComposeQuote(mail.rawHTMLDangerous);
     composeQuoteHtml = quote;
     editableHtml = editable;
     refreshQuoteBodyHtml();
     if (editor) {
-      editor.commands.setContent(editableHtml || "<p></p>");
+      setEditorContentWithoutUndo(editableHtml || "<p></p>");
     }
     composeContentReady = true;
   }
@@ -474,7 +512,7 @@
         editableHtml = editable;
       }
       refreshQuoteBodyHtml();
-      editor.commands.setContent(editableHtml || "<p></p>");
+      setEditorContentWithoutUndo(editableHtml || "<p></p>");
       applyDefaultComposeFormatting();
       await tick();
       setCursorDefault();
@@ -602,6 +640,7 @@
       return;
     }
     syncComposeHtml();
+    mail.signatureRemovedByUser = false;
     mail.compose.applySignature();
     void reloadEditorFromMail().then(() => setCursorDefault());
   }
@@ -689,7 +728,9 @@
       return;
     }
     if (mail.to.isEmpty) {
-      editor.commands.focus("start");
+      // Фокус остаётся в поле «Кому» (autofocus); каретку в тексте ставим в начало,
+      // но не внутрь подписи — первый блок теперь пустой абзац перед ней
+      editor.commands.setTextSelection(1);
       setReplyTypingFont();
       return;
     }
@@ -738,12 +779,34 @@
       mail.from = fromIdentity.asPersonUID();
     }
     ensureCopyToSelf();
+    applyIdentityDefaultRecipients();
     // When user switches identity in composer, refresh signature footer
     if (identityChanged && editor && !loading) {
       syncComposeHtml();
       mail.compose.applySignature();
       void reloadEditorFromMail().then(() => setCursorDefault());
     }
+  }
+
+  // «Всегда в копии» / «Всегда в скрытой копии» отправителя (как в Outlook).
+  // При смене отправителя убираем адреса, добавленные для прежнего.
+  let identityDefaultsFor: MailIdentity | null = null;
+  let identityDefaultsAdded: PersonUID[] = [];
+  function applyIdentityDefaultRecipients() {
+    // В черновике получатели уже сохранены — пользователь мог их убрать
+    if (!fromIdentity || mail.isDraft || identityDefaultsFor == fromIdentity) {
+      return;
+    }
+    for (let person of identityDefaultsAdded) {
+      mail.cc.remove(person);
+      mail.bcc.remove(person);
+    }
+    let before = new Set([...mail.cc.contents, ...mail.bcc.contents]);
+    addIdentityDefaultRecipients(mail, fromIdentity);
+    identityDefaultsAdded = [...mail.cc.contents, ...mail.bcc.contents].filter(person => !before.has(person));
+    identityDefaultsFor = fromIdentity;
+    showCCForce ||= mail.cc.hasItems;
+    showBCCForce ||= mail.bcc.hasItems;
   }
 
   function ensureCopyToSelf() {
@@ -842,6 +905,19 @@
     encryptionError ??
     null;
 
+  function hasVisibleAttachments(): boolean {
+    return mail.attachments.contents.some(attachment => !attachment.hidden);
+  }
+
+  /** Только свой текст письма: без цитаты и подписи. */
+  function ownComposeText(): string {
+    let doc = new DOMParser().parseFromString(editableHtml ?? "", "text/html");
+    for (let element of doc.body.querySelectorAll("footer, blockquote")) {
+      element.remove();
+    }
+    return doc.body.textContent ?? "";
+  }
+
   let sending = false;
   async function onSend() {
     if (sending) {
@@ -854,6 +930,22 @@
       }
       syncComposeHtml();
       await commitPendingRecipients();
+      // Ctrl/Cmd+Enter не должен обходить проверки, которые блокируют кнопку «Отправить»
+      if (!mail.subject) {
+        throw new UserError(gt`Please enter a subject`);
+      }
+      if (mail.to.isEmpty) {
+        throw new UserError(gt`Please add some recipients`);
+      }
+      if (encryptionError) {
+        throw new UserError(encryptionError);
+      }
+      // Как в Outlook: в тексте обещано вложение, а файлов нет
+      if (warnMissingAttachmentSetting.value && !hasVisibleAttachments() &&
+          mentionsAttachment(ownComposeText()) &&
+          !confirm(gt`The message mentions an attachment, but no file is attached. Send anyway?`)) {
+        return;
+      }
       if (!sendInOwner) {
         await resolveComposeRecipients(mail);
       }

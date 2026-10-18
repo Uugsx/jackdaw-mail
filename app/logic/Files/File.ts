@@ -87,7 +87,19 @@ export class File extends FileOrDirectory {
    * @returns Has changed: Local file is newer than the server file.
    */
   async isLocalFileChanged(): Promise<boolean> {
-    let stat = await appGlobal.remoteApp.statFile(this.filepathLocal);
+    // Файл ещё не скачивался — локальных изменений быть не может
+    if (!this.filepathLocal || !this.lastModOnServer) {
+      return false;
+    }
+    let stat: { size: number, lastMod: Date };
+    try {
+      stat = await appGlobal.remoteApp.statFile(this.filepathLocal);
+    } catch (ex) {
+      if (ex?.code == "ENOENT" || String(ex?.message ?? "").includes("ENOENT")) {
+        return false;
+      }
+      throw ex;
+    }
     this.size = stat.size;
     if (this.lastMod.getTime() != stat.lastMod.getTime()) {
       this.lastMod = stat.lastMod;
@@ -209,8 +221,32 @@ export class File extends FileOrDirectory {
       fullDir += "/" + dir;
     }
     await appGlobal.remoteApp.fs.mkdir(fullDir, { recursive: true, mode: 0o700 });
-    return `${fullDir}/${sanitize.filename(this.name)}`;
+    return `${fullDir}/${localCacheFileName(this.name)}`;
   }
+}
+
+/**
+ * Безопасное и уникальное имя файла в локальном кеше.
+ * Если «очистка» меняет имя, добавляем короткий хэш исходного имени:
+ * иначе `a(1).txt` и `a1.txt` делили бы один файл кеша, а имя из одних
+ * символов (`()`, `№`) вообще нельзя было бы сохранить.
+ */
+export function localCacheFileName(name: string): string {
+  let safe = sanitize.filename(name, "") || "file";
+  if (safe == name) {
+    return safe;
+  }
+  return `${hashFileName(name)}-${safe}`;
+}
+
+/** FNV-1a, 32 бита — детерминированный короткий хэш для имени файла кеша. */
+function hashFileName(name: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < name.length; i++) {
+    hash ^= name.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 let filesDir: string = null;

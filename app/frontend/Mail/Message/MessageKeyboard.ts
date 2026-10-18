@@ -176,10 +176,12 @@ export async function executeConfigurableMailAction(
     }
     case "mail.reply":
       if (!message) return false;
+      await message.loadForDisplay(); // иначе цитата в ответе уйдёт пустой
       openComposer(message.compose.replyToAuthor());
       return true;
     case "mail.replyAll":
       if (!message) return false;
+      await message.loadForDisplay(); // иначе цитата в ответе уйдёт пустой
       openComposer(message.compose.replyAll());
       return true;
     case "mail.forward":
@@ -204,6 +206,7 @@ export async function executeConfigurableMailAction(
       return true;
     case "mail.newToAll":
       if (!message) return false;
+      await message.loadForDisplay(); // иначе цитата в ответе уйдёт пустой
       openComposer(message.compose.newToAll());
       return true;
     case "mail.selectAll":
@@ -299,6 +302,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
     if (event.key == "r") { // Thunderbird
       consume(event);
+      await message.loadForDisplay(); // иначе цитата в ответе уйдёт пустой
       openComposer(message.compose.replyToAuthor());
       return;
     } else if (event.key == "l") { // Thunderbird
@@ -340,6 +344,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
       return;
     } else if (event.key == "N") { // Jackdaw
       consume(event);
+      await message.loadForDisplay(); // иначе цитата в ответе уйдёт пустой
       openComposer(message.compose.newToAll());
       return;
     }

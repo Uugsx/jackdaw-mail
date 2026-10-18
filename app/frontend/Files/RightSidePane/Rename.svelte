@@ -34,12 +34,20 @@
   import PencilIcon from "lucide-svelte/icons/pencil";
   import OKIcon from "lucide-svelte/icons/check";
   import { catchErrors } from "../../Util/error";
-  import { t } from "../../../l10n/l10n";
+  import { t, gt } from "../../../l10n/l10n";
+  import { UserError } from "../../../logic/util/util";
 
   export let file: FileOrDirectory;
 
   let name = file.name;
   let isRenaming = false;
+  // Компонент переиспользуется при выборе другого файла: незавершённое
+  // переименование не должно примениться к новому выбранному файлу.
+  $: resetRename(file);
+  function resetRename(_file: FileOrDirectory) {
+    isRenaming = false;
+    name = _file?.name;
+  }
   function onRenameStart() {
     if (file instanceof File) {
       name = file.nameWithoutExt;
@@ -49,14 +57,29 @@
     isRenaming = true;
   }
   async function onRenameSave() {
+    let newName = name?.trim();
+    if (!newName || /[\/\\]/.test(newName) || newName == "." || newName == "..") {
+      throw new UserError(gt`Please enter a valid name. It must not contain slashes.`);
+    }
+    let oldName = file.name;
+    let oldNameWithoutExt = file instanceof File ? file.nameWithoutExt : null;
     if (file instanceof File) {
-      file.name = name + (file.ext ? "." + file.ext : "");
-      file.nameWithoutExt = name;
+      file.name = newName + (file.ext ? "." + file.ext : "");
+      file.nameWithoutExt = newName;
     } else {
-      file.name = name;
+      file.name = newName;
     }
     isRenaming = false;
-    await file.save();
+    try {
+      await file.save();
+    } catch (ex) {
+      // Сервер не переименовал — возвращаем прежнее имя, чтобы список не врал
+      file.name = oldName;
+      if (file instanceof File) {
+        file.nameWithoutExt = oldNameWithoutExt;
+      }
+      throw ex;
+    }
   }
 </script>
 

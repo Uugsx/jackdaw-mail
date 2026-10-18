@@ -210,6 +210,8 @@ export class RecurrenceRule implements Readonly<Omit<RecurrenceInit, "seriesStar
       data.interval = sanitize.integerRange(interval, 1, Infinity);
     }
     if (byday) {
+      // `+1MO` равносильно `1MO` (RFC 5545 3.3.10)
+      byday = byday.replace(/\+/g, "");
       if (byday.startsWith("-1")) {
         data.week = 5;
         byday = byday.replace(/-1/g, "");
@@ -228,7 +230,12 @@ export class RecurrenceRule implements Readonly<Omit<RecurrenceInit, "seriesStar
   getCalString(allDay: boolean): string {
     let rule: { FREQ: string, UNTIL?: string, COUNT?: number, INTERVAL?: number, BYDAY?: string, WKST?: string } = { FREQ: this.frequency };
     if (this.seriesEndTime) {
-      rule.UNTIL = this.seriesEndTime.toISOString().replace(/-|:|\..../g, "").slice(0, allDay ? 8 : 16);
+      // Для «весь день» UNTIL — локальная дата: через toISOString() в поясах UTC−X
+      // локальные 23:59:59 становились следующим днём, и серия росла на день при каждом сохранении
+      let end = this.seriesEndTime;
+      rule.UNTIL = allDay
+        ? `${end.getFullYear()}${String(end.getMonth() + 1).padStart(2, "0")}${String(end.getDate()).padStart(2, "0")}`
+        : end.toISOString().replace(/-|:|\..../g, "").slice(0, 16);
     }
     if (this.count != Infinity) {
       rule.COUNT = this.count;
@@ -366,6 +373,10 @@ export class RecurrenceRule implements Readonly<Omit<RecurrenceInit, "seriesStar
           }
         }
         break;
+      default:
+        // Frequency.None или неизвестная частота: дата не продвигается,
+        // и цикл добавлял бы одну и ту же дату бесконечно (зависание UI).
+        return;
       }
       let utc = new Date(Date.UTC(this.year, this.month, this.day, this.hours, this.minutes, this.seconds));
       if (this.week == 5 && utc.getUTCDate() != this.day) {

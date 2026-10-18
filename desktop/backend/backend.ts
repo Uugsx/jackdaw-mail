@@ -959,6 +959,17 @@ function downloadGithubAsset(
       let total = Number(response.headers["content-length"] ?? asset.size ?? 0);
       let received = 0;
       let file = fs.createWriteStream(destPath);
+      let failed = false;
+      let fail = (ex: Error) => {
+        if (failed) {
+          return;
+        }
+        failed = true;
+        response.destroy();
+        file.destroy();
+        // Обрезанный файл не должен потом приниматься за скачанное обновление
+        fsPromises.rm(destPath, { force: true }).catch(() => {}).finally(() => reject(ex));
+      };
       response.on("data", chunk => {
         received += chunk.length;
         if (total > 0) {
@@ -968,14 +979,29 @@ function downloadGithubAsset(
       response.pipe(file);
       file.on("finish", () => {
         file.close();
+        if (failed) {
+          return;
+        }
+        if (total > 0 && received != total) {
+          fail(new Error(`Download incomplete (${received} of ${total} bytes)`));
+          return;
+        }
         resolve();
       });
-      file.on("error", reject);
-      response.on("error", reject);
+      file.on("error", fail);
+      response.on("error", fail);
+      response.on("aborted", () => fail(new Error("Download aborted")));
+    });
+    // Без таймаута обрыв сети оставлял «Загрузка N%» навсегда
+    request.setTimeout(kUpdateDownloadIdleTimeoutMs, () => {
+      request.destroy(new Error("Download timed out"));
     });
     request.on("error", reject);
   });
 }
+
+/** Сколько ждать данных от сервера обновлений, прежде чем считать загрузку оборванной. */
+const kUpdateDownloadIdleTimeoutMs = 60_000;
 
 function getMacAppBundlePath(): string {
   let dir = path.dirname(process.execPath);
@@ -1014,11 +1040,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Новую версию сначала копируем рядом и только потом подменяем: если DMG повреждён,
+# не хватает места или прав, старое приложение остаётся на месте и запускается снова.
+STAGE="$DEST.update-$$"
+BACKUP="$DEST.previous-$$"
+restore_on_error() {
+  rm -rf "$STAGE"
+  if [ ! -d "$DEST" ] && [ -d "$BACKUP" ]; then mv "$BACKUP" "$DEST"; fi
+  if [ -d "$DEST" ]; then open "$DEST"; fi
+}
+trap restore_on_error ERR
+
 hdiutil attach -nobrowse -mountpoint "$MOUNT" "$DMG"
 SRC=$(find "$MOUNT" -maxdepth 1 -name '*.app' | head -1)
-if [ -z "$SRC" ]; then echo "No .app in DMG" >&2; exit 1; fi
-rm -rf "$DEST"
-ditto "$SRC" "$DEST"
+if [ -z "$SRC" ]; then echo "No .app in DMG" >&2; restore_on_error; exit 1; fi
+rm -rf "$STAGE"
+ditto "$SRC" "$STAGE"
+if [ -d "$DEST" ]; then mv "$DEST" "$BACKUP"; fi
+mv "$STAGE" "$DEST"
+trap - ERR
+rm -rf "$BACKUP"
 open "$DEST"
 `;
   await fsPromises.writeFile(scriptPath, script, { mode: 0o755 });

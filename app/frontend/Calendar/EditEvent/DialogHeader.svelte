@@ -245,7 +245,24 @@
     }
     let master = event.parentEvent;
     master.startEditing(); // #701
+    // Начало серии остаётся прежним: переносим на мастер только сдвиг времени
+    // этого экземпляра. Иначе DTSTART серии становился датой экземпляра,
+    // и все прошлые вхождения пропадали у всех участников.
+    let seriesStart = new Date(master.startTime);
+    let startDelta = event.recurrenceStartTime
+      ? event.startTime.getTime() - event.recurrenceStartTime.getTime()
+      : 0;
+    let duration = event.duration;
+    let alarmOffset = event.alarm ? event.startTime.getTime() - event.alarm.getTime() : null;
     master.copyEditableFieldsFrom(event);
+    master.startTime = new Date(seriesStart.getTime() + startDelta);
+    master.endTime = null;
+    master.duration = duration;
+    master.alarm = alarmOffset == null ? null : new Date(master.startTime.getTime() - alarmOffset);
+    if (startDelta && master.recurrenceRule) {
+      let { frequency, interval, week, weekdays } = master.recurrenceRule;
+      master.newRecurrenceRule(frequency, interval, week, weekdays);
+    }
     await master.save();
     master.finishEditing(); // #701
     onClose();

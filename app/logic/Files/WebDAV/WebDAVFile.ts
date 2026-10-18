@@ -4,6 +4,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { Buffer } from "buffer";
 import type { URLString } from "../../util/util";
 import type { FileStat } from "webdav";
+import { kNoOverwrite, runWithoutOverwrite } from "./webdavMove";
 
 export class WebDAVFile extends File {
   declare parent: WebDAVDirectory;
@@ -24,7 +25,9 @@ export class WebDAVFile extends File {
 
   fromDAV(stat: FileStat) {
     this.path = sanitize.nonemptystring(stat.filename);
-    this.setFileName(sanitize.filename(stat.basename));
+    // Имя с сервера не «очищаем»: иначе следующее сохранение переименует файл
+    // на сервере. Безопасное имя нужно только для локального кеша (getLocalFilePath).
+    this.setFileName(sanitize.nonemptystring(stat.basename));
     this.mimetype = sanitize.nonemptystring(stat.mime, this.mimetype ?? "");
     let size = sanitize.integer(stat.size, 0)
     let etag = sanitize.nonemptystring(stat.etag, null);
@@ -115,7 +118,7 @@ export class WebDAVFile extends File {
     }
     await this.account.login(false);
     if (nameChanged) {
-      await this.account.client.moveFile(this.path, renamedPath);
+      await runWithoutOverwrite(() => this.account.client.moveFile(this.path, renamedPath, kNoOverwrite));
       this.path = renamedPath;
       this.serverURL = sanitize.url(new URL(this.path, this.account.url).href, null);
       await this.parent.listContents();

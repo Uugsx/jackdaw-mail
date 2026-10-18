@@ -40,7 +40,10 @@ export class CreateMIME {
       cc: CreateMIME.getRecipients(email.cc),
       bcc: CreateMIME.getRecipients(email.bcc),
       text: fixNewlines(email.text),
-      html: doHTML ? fixNewlines(email.html) : null,
+      // Исходящее тело — без санитайзера для показа: тот обнулял внешние картинки
+      // подписи и превращал телефоны в ссылки. Тело собрано редактором, а цитата
+      // была санитизирована ещё при вставке.
+      html: doHTML ? fixNewlines(email.rawHTMLDangerous ?? email.html) : null,
       icalEvent: iCal ? {
         content: iCal,
         method: email.iCalMethod,

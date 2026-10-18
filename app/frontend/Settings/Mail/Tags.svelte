@@ -166,7 +166,7 @@
   import GripIcon from "lucide-svelte/icons/grip-vertical";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
   import AddIcon from "lucide-svelte/icons/plus";
-  import { catchErrors } from "../../Util/error";
+  import { catchErrors, showError } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
   import {
     clearTagDrag, getDraggedTag, getTagDropMode, isTagDrag, kTagDragMIME, startTagDrag,
@@ -238,8 +238,8 @@
     clearCategoryShortcut({ type: "tag", id: tag.name });
     removeTagFromCombinations(tag.name)
       .then(pruneCategoryShortcuts)
-      .catch(catchErrors);
-    saveTagsList().catch(catchErrors);
+      .catch(showError);
+    saveTagsList().catch(showError);
   }
 
   async function onAddCombination() {

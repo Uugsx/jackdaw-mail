@@ -109,7 +109,11 @@
   function removeDelete() {
     rule.deleteTrash = null;
     rule.deleteImmediately = null;
-    rule.markAsSpam = false;
+    // Снимаем только «пометить как спам»: явный выбор «не спам» сохраняем,
+    // а неопределённое состояние не превращаем в действие «не спам».
+    if (rule.markAsSpam === true) {
+      rule.markAsSpam = null;
+    }
   }
 </script>
 
