@@ -1926,6 +1926,7 @@ export class OWAAccount extends ExchangeMailAccount {
       return true;
     }
     if ([
+      "ArchiveItem",
       "DeleteItem",
       "UpdateItem",
       "MoveItem",
@@ -2214,7 +2215,7 @@ export class OWAAccount extends ExchangeMailAccount {
       }
     }
     this.msgFolderRootID = await this.applyFolderHierarchy(result, false);
-    if (!this.isDependentAccount && !this.sharedFolderRoot) {
+    if (this.mayHaveArchiveMailbox) {
       await this.listArchiveMailbox();
     }
     // `MailAccount.inbox` may have been resolved before the remote hierarchy
@@ -2234,11 +2235,25 @@ export class OWAAccount extends ExchangeMailAccount {
     }
   }
 
+  /**
+   * Сетевой архив есть у собственного ящика и может быть у общего ящика,
+   * к которому выдан полный доступ (msgfolderroot). При доступе только к
+   * «Входящим» сервер архив не отдаёт.
+   */
+  protected get mayHaveArchiveMailbox(): boolean {
+    return this.sharedFolderRoot == "msgfolderroot" ||
+      (!this.isDependentAccount && !this.sharedFolderRoot);
+  }
+
   /** Fetch the optional secondary mailbox without making login depend on it. */
   protected async listArchiveMailbox(): Promise<void> {
     let result: any;
     try {
-      result = await this.callOWA(owaFindFoldersRequest(true, null, undefined, kArchiveMailboxRoot));
+      // Для общего ящика архив адресуется явно через Mailbox: иначе сервер
+      // вернул бы архив основного пользователя, а не этого ящика.
+      result = await this.callOWA(this.sharedFolderRoot
+        ? owaFindFoldersRequest(true, kArchiveMailboxRoot, this.username)
+        : owaFindFoldersRequest(true, null, undefined, kArchiveMailboxRoot));
     } catch {
       // Not every Exchange account has an Online Archive. Keep a previously
       // cached hierarchy if the optional request is unavailable temporarily.
