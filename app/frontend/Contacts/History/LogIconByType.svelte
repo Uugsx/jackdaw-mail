@@ -36,7 +36,7 @@
 {:else}
   <LogIcon type="call" outgoing={false}
     color="white" fgcolor="black"
-    tooltip="Unknown">
+    tooltip={$t`Unknown`}>
     <UnknownIcon {size} slot="icon" />
   </LogIcon>
 {/if}

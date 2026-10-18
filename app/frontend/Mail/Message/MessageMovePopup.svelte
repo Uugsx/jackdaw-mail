@@ -78,7 +78,7 @@
       <vbox class="archive-folders">
         <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
           <ArchiveIcon size="14px" />
-          <span>Сетевой архив</span>
+          <span>{$t`Online archive`}</span>
         </hbox>
         <FolderList
           folders={archiveMailboxRoot.subFolders}

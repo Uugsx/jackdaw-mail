@@ -2,6 +2,7 @@ import { appGlobal } from "../../logic/app";
 import { MailAccount } from "../../logic/Mail/MailAccount";
 import type { PendingResponseRequest } from "../../logic/Reports/ResponseReminder";
 import { openEMailMessage } from "./open";
+import { gt } from "../../l10n/l10n";
 
 /** Открывает письмо из живого SLA-контроля, даже если оно ещё не загружено в список. */
 export async function openPendingResponseMessage(
@@ -13,14 +14,14 @@ export async function openPendingResponseMessage(
       String(item.dbID) == String(candidate.accountId),
   );
   if (!(account instanceof MailAccount)) {
-    throw new Error("Почтовый ящик для этого запроса недоступен.");
+    throw new Error(gt`The mailbox for this request is not available.`);
   }
   await account.readFromDB();
   const folder = account.findFolder(
     (item) => String(item.dbID) == String(candidate.folderId),
   );
   if (!folder) {
-    throw new Error("Папка для этого запроса недоступна.");
+    throw new Error(gt`The folder for this request is not available.`);
   }
   let email = folder.messages.find(
     (item) => String(item.dbID) == String(candidate.emailId),

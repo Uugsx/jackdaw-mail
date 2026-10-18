@@ -5,7 +5,7 @@
 /** @typedef {{ match(filename: string) => boolean, extract(filename: string, code: string, onMessageExtracted: (msg: ExtractedMessage) => void, ctx?: ExtractorCtx)=> Promise<void> | void }} ExtractorType */
 
 import { generateMessageID } from '../generateMessageID';
-import { commentSymbol } from '../l10n';
+import { commentSymbol } from '../commentSymbol';
 
 export const extractFromTaggedTemplate = (node, filename, onMessageExtracted) => {
   // `node.quasi.loc` is for extraction from svelte files, and `node.quasi` is for extraction from js/ts files
