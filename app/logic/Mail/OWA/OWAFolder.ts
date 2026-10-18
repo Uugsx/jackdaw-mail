@@ -2759,6 +2759,7 @@ export class OWAFolder extends ExchangeFolder {
         }
         firstPage = false;
         let newMessageIDs: string[] = [];
+        let changedEmails: OWAEMail[] = [];
         for (let message of messagesToProcess) {
           let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
           if (!id || this.deletions.has(id)) {
@@ -2768,7 +2769,7 @@ export class OWAFolder extends ExchangeFolder {
           if (email) {
             let wasUnread = !email.isRead;
             if (email.setFlags(message, "list")) {
-              await this.persistEmailFlags(email);
+              changedEmails.push(email);
               if (wasUnread && email.isRead) {
                 this.countUnread = Math.max(0, this.countUnread - 1);
                 this.countNewArrived = Math.max(0, this.countNewArrived - 1);
@@ -2781,6 +2782,7 @@ export class OWAFolder extends ExchangeFolder {
             newMessageIDs.push(id);
           }
         }
+        await this.persistEmailFlagsAll(changedEmails);
         let newMsgsInIteration = await this.getNewMessageHeaders(newMessageIDs);
         let loadedHeaderIDs = new Set(newMsgsInIteration.contents
           .map(message => message.itemID)
@@ -2904,12 +2906,20 @@ export class OWAFolder extends ExchangeFolder {
         // to `allMsgs` while looping over it would skip the following entry
         // and leave that message behind in storage. Snapshot first.
         let stale = this.messages.contents.filter(email => !allMsgs.contains(email));
+        let staleToDelete: EMail[] = [];
         for (let email of stale) {
           if (this.shouldPreserveMoved(email)) {
             allMsgs.add(email);
             continue;
           }
-          await this.storage.deleteMessage(email);
+          staleToDelete.push(email);
+        }
+        if (staleToDelete.length > 1 && this.storage.deleteMessages) {
+          await this.storage.deleteMessages(staleToDelete);
+        } else {
+          for (let email of staleToDelete) {
+            await this.storage.deleteMessage(email);
+          }
         }
         allMsgs.addAll(newMsgs);
         this.messages.replaceAll(allMsgs);
@@ -3002,6 +3012,7 @@ export class OWAFolder extends ExchangeFolder {
       if (pageSignature) {
         seenPageSignatures.add(pageSignature);
       }
+      let changedEmails: EMail[] = [];
       for (let message of messages) {
         let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
         if (!id) {
@@ -3012,10 +3023,11 @@ export class OWAFolder extends ExchangeFolder {
           continue;
         }
         if (email.setFlags(message, "list")) {
-          await email.saveWritablePropsLocally();
+          changedEmails.push(email);
         }
         pendingItemIDs.delete(id);
       }
+      await this.saveMessagesWritablePropsLocally(changedEmails);
       if (!pendingItemIDs.size) {
         paginationComplete = true;
         break;
@@ -3131,6 +3143,11 @@ export class OWAFolder extends ExchangeFolder {
           }
         }
       }
+      // Сначала разбираем всю страницу, затем сохраняем её одной транзакцией
+      let unchanged: { id: string, item: any, email: OWAEMail }[] = [];
+      let changed: { id: string, item: any, email: OWAEMail }[] = [];
+      let created: { id: string, item: any, email: OWAEMail }[] = [];
+      let createdIDs = new Set<string>();
       for (let item of items) {
         try {
           let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "");
@@ -3146,10 +3163,14 @@ export class OWAFolder extends ExchangeFolder {
               ? item
               : { ...item, IsRead: defaultIsRead };
             if (existing.setFlags(header, "full")) {
-              await this.persistEmailFlags(existing);
+              changed.push({ id, item, email: existing });
+            } else {
+              unchanged.push({ id, item, email: existing });
             }
-            this.markMetadataBackfillComplete(id, item, existing);
-            existing.contact = computeEMailContact(existing);
+            continue;
+          }
+          if (createdIDs.has(id)) {
+            // Тот же ItemId пришёл и из основного, и из запасного запроса
             continue;
           }
           let header = Object.prototype.hasOwnProperty.call(item, "IsRead") || defaultIsRead == null
@@ -3157,7 +3178,29 @@ export class OWAFolder extends ExchangeFolder {
             : { ...item, IsRead: defaultIsRead };
           let email = this.newEMail();
           email.fromJSON(header);
-          await email.saveMetadataLocally();
+          created.push({ id, item, email });
+          createdIDs.add(id);
+        } catch (ex) {
+          this.account.errorCallback(ex);
+        }
+      }
+      let persisted = new Set<OWAEMail>(await this.persistEmailFlagsAll(
+        changed.map(entry => entry.email), this.account.errorCallback));
+      for (let { id, item, email } of [...unchanged, ...changed.filter(entry => persisted.has(entry.email))]) {
+        try {
+          this.markMetadataBackfillComplete(id, item, email);
+          email.contact = computeEMailContact(email);
+        } catch (ex) {
+          this.account.errorCallback(ex);
+        }
+      }
+      let saved = new Set(await this.saveMessagesMetadataLocally(
+        created.map(entry => entry.email), this.account.errorCallback));
+      for (let { id, item, email } of created) {
+        if (!saved.has(email)) {
+          continue;
+        }
+        try {
           // Another concurrent fetch may have inserted the same pID meanwhile.
           let raced = this.getEmailByItemID(id);
           if (raced && raced !== email) {
@@ -3755,6 +3798,47 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   /**
+   * `persistEmailFlags()` для страницы писем: одна транзакция вместо
+   * 5–10 запросов на письмо. Если пакет не удался, письма сохраняются
+   * по одному, как раньше.
+   * @param onError Без него первая ошибка прерывает сохранение и
+   *   пробрасывается (как у цикла с `persistEmailFlags()`); с ним ошибка
+   *   письма передаётся в onError, а остальные письма сохраняются.
+   * @returns сохранённые письма в исходном порядке
+   */
+  protected async persistEmailFlagsAll(emails: OWAEMail[], onError?: (ex: unknown) => void): Promise<OWAEMail[]> {
+    let storage = this.storage;
+    if (emails.length > 1 && storage.saveMessagesMetadata && storage.saveMessagesWritableProps) {
+      try {
+        let unsaved = emails.filter(email => !email.dbID);
+        let saved = emails.filter(email => !!email.dbID);
+        if (unsaved.length) {
+          await storage.saveMessagesMetadata(unsaved);
+        }
+        if (saved.length) {
+          await storage.saveMessagesWritableProps(saved);
+        }
+        return emails;
+      } catch {
+        // По одному ниже: ошибка останется у своего письма
+      }
+    }
+    let persisted: OWAEMail[] = [];
+    for (let email of emails) {
+      try {
+        await this.persistEmailFlags(email);
+        persisted.push(email);
+      } catch (ex) {
+        if (!onError) {
+          throw ex;
+        }
+        onError(ex);
+      }
+    }
+    return persisted;
+  }
+
+  /**
    * Письма без категорий остаются в очереди backfill: Exchange-правила часто
    * проставляют категории через несколько секунд после доставки.
    */
@@ -3813,13 +3897,21 @@ export class OWAFolder extends ExchangeFolder {
           continue;
         }
       }
+      let changedEmails: OWAEMail[] = [];
+      let checked: { id: string, item: any, email: OWAEMail | undefined }[] = [];
       for (let id of batch) {
         let item = items.find(entry => sanitize.nonemptystring(entry?.ItemId?.Id ?? entry?.ItemId, "") == id);
         let email = this.getEmailByItemID(id);
         if (email && item && email.setFlags(item, "full")) {
-          await this.persistEmailFlags(email);
-          changed = true;
+          changedEmails.push(email);
         }
+        checked.push({ id, item, email });
+      }
+      await this.persistEmailFlagsAll(changedEmails);
+      if (changedEmails.length) {
+        changed = true;
+      }
+      for (let { id, item, email } of checked) {
         if (item && email) {
           this.markMetadataBackfillComplete(id, item, email);
         } else {

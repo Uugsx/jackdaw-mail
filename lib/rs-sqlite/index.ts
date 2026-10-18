@@ -14,6 +14,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
  * and exports the type `Database`.
  * All actual functions, which use better-sqlite3, are removed. */
 import type BetterSQLite3Database from "better-sqlite3";
+import type { BatchStep } from "./batch";
 
 export interface Database {
   migrate(
@@ -84,6 +85,13 @@ export interface Database {
    * An internal method that returns a `better-sqlite3` prepared statement for a given query. Normally you don’t have to use this, but it’s available for advanced use-cases in which you’d like to manipulate a prepared statement (for example, to set [`safeIntegers()`](https://github.com/WiseLibs/better-sqlite3/blob/bd55c76c1520c7796aa9d904fe65b3fb4fe7aac0/docs/integer.md#getting-bigints-from-the-database)).
    */
   getStatement(query: Query): BetterSQLite3Database.Statement;
+
+  /**
+   * Выполнить шаги одной транзакцией за один вызов бэкенда.
+   * Есть только у десктопного бэкенда, поэтому вызывайте через `runBatch()`
+   * из `./batch`: там же запасной путь для остальных бэкендов.
+   */
+  batch?(steps: BatchStep[]): Promise<any[]>;
 }
 
 /**

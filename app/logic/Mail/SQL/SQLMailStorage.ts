@@ -57,6 +57,18 @@ export class SQLMailStorage implements MailAccountStorage {
   async deleteMessage(email: EMail): Promise<void> {
     await SQLEMail.deleteIt(email);
   }
+  async saveMessagesMetadata(emails: EMail[]): Promise<void> {
+    await SQLEMail.saveAll(emails);
+  }
+  async saveMessagesWritableProps(emails: EMail[]): Promise<void> {
+    await SQLEMail.saveWritablePropsAll(emails);
+  }
+  async deleteMessages(emails: EMail[]): Promise<void> {
+    await SQLEMail.deleteAll(emails);
+  }
+  async markFolderReadLocally(folder: Folder, isRead: boolean): Promise<void> {
+    await SQLEMail.markFolderRead(folder, isRead);
+  }
 
   static async readMailAccounts(): Promise<Collection<MailAccount>> {
     return await SQLMailAccount.readAll();
