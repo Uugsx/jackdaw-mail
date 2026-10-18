@@ -131,7 +131,7 @@ export class SQLEvent extends Event {
 
   /** Updates the existing rows, keeping `filepathLocal`, and deletes only
    * the rows of attachments that the user removed from the event.
-   * @see SQLEMail.saveAttachments() */
+   * @see SQLEMail.addAttachmentsSteps() */
   protected static async saveAttachments(event: Event) {
     let db = await getDatabase();
     let existingRows = await db.all(sql`

@@ -6,7 +6,9 @@ import {
   createResponseReminderIndexes,
   addEMailStatusColumns,
   repairReportReplyIndexes,
+  dedupeEMailPersons,
   createEMailLookupIndexes,
+  dedupeEMailsWithoutPID,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -15,20 +17,27 @@ import { getSQLiteDatabase } from "../../util/backend-wrapper";
 
 let mailDatabase: Database;
 
+/** Миграции mail.db по порядку. Новые — только в конец списка:
+ * номер последней выполненной хранится в user_version. */
+export const mailDatabaseMigrations = [
+  mailDatabaseSchema,
+  createFolderIDDateSentIndex,
+  createReportReplyIndexes,
+  createResponseReminderIndexes,
+  addEMailStatusColumns,
+  repairReportReplyIndexes,
+  // Уже выпущена седьмой (PR #14): установленные базы стоят на user_version 7.
+  createEMailLookupIndexes,
+  dedupeEMailPersons,
+  dedupeEMailsWithoutPID,
+];
+
 export async function getDatabase(): Promise<Database> {
   if (mailDatabase) {
     return mailDatabase;
   }
   mailDatabase = await getSQLiteDatabase("mail.db");
-  await mailDatabase.migrate(
-    mailDatabaseSchema,
-    createFolderIDDateSentIndex,
-    createReportReplyIndexes,
-    createResponseReminderIndexes,
-    addEMailStatusColumns,
-    repairReportReplyIndexes,
-    createEMailLookupIndexes,
-  );
+  await mailDatabase.migrate(...mailDatabaseMigrations);
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");
   return mailDatabase;

@@ -363,6 +363,17 @@ export interface MailAccountStorage {
   deleteMessage(email: EMail): Promise<void>;
   readAllMessages(folder: Folder, limit?: number, startWith?: number): Promise<void>;
   readAllMessagesMainProperties(folder: Folder, limit?: number, startWith?: number): Promise<void>;
+
+  // Необязательные пакетные варианты: одна транзакция на все письма.
+  // Хранилище без них получает те же письма по одному.
+  /** Как `saveMessage()` для каждого письма, без пропуска писем без темы */
+  saveMessagesMetadata?(emails: EMail[]): Promise<void>;
+  /** Как `saveMessageWritableProps()` для каждого письма */
+  saveMessagesWritableProps?(emails: EMail[]): Promise<void>;
+  /** Как `deleteMessage()` для каждого письма */
+  deleteMessages?(emails: EMail[]): Promise<void>;
+  /** Отмечает прочитанными или непрочитанными все письма папки в хранилище */
+  markFolderReadLocally?(folder: Folder, isRead: boolean): Promise<void>;
 }
 
 export interface MailContentStorage extends AttachmentStorage {

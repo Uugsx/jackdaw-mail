@@ -7,6 +7,7 @@ import { EMailCollection } from "./Store/EMailCollection";
 import { Observable, notifyChangedProperty } from "../util/Observable";
 import { ArrayColl, Collection } from 'svelte-collections';
 import { Lock } from "../util/flow/Lock";
+import { PromiseAllDone } from "../util/flow/PromiseAllDone";
 import { assert, AbstractFunction } from "../util/util";
 import { gt } from "../../l10n/l10n";
 import { trackMailSync } from "./mailSyncStatus";
@@ -310,9 +311,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
       movedOnServer = action == "move";
 
       if (action == "move") {
-        for (let sourceMsg of messages) {
-          await sourceMsg.deleteMessageLocally();
-        }
+        await sourceFolder.deleteMessagesLocally(messages);
         removedLocally = false; // already purged from DB; do not restore
       }
       onProgress?.(messages.length);
@@ -532,24 +531,127 @@ export class Folder extends Observable implements TreeItem<Folder> {
   async markAllRead(): Promise<void> {
     this.countUnread = 0;
     this.countNewArrived = 0;
-    for (let message of this.messages) {
-      if (!message.isRead) {
-        message.isRead = true;
-        // Without this the flags are back to unread after a restart, until the
-        // server sync happens to catch up.
-        await message.saveWritablePropsLocally().catch(() => null);
-      }
+    let changed = this.messages.contents.filter(message => !message.isRead);
+    for (let message of changed) {
+      message.isRead = true;
     }
+    // Without this the flags are back to unread after a restart, until the
+    // server sync happens to catch up.
+    await this.saveReadFlagsLocally(changed, true);
   }
 
   async markAllUnread(): Promise<void> {
-    for (let message of this.messages) {
-      if (message.isRead) {
-        message.isRead = false;
-        await message.saveWritablePropsLocally().catch(() => null);
+    let changed = this.messages.contents.filter(message => message.isRead);
+    for (let message of changed) {
+      message.isRead = false;
+    }
+    await this.saveReadFlagsLocally(changed, false);
+    this.countUnread = this.messages.contents.filter(msg => !msg.isRead).length;
+  }
+
+  /**
+   * Сохраняет флаг прочтения после markAllRead()/markAllUnread().
+   * Хранилище с пакетным API получает один UPDATE на всю папку,
+   * остальные — по письму, как раньше. Ошибки не прерывают отметку в памяти.
+   */
+  protected async saveReadFlagsLocally(changed: EMail[], isRead: boolean): Promise<void> {
+    let storage = this.storage;
+    if (this.dbID && storage.markFolderReadLocally &&
+        changed.every(message => message.folder === this)) {
+      try {
+        await storage.markFolderReadLocally(this, isRead);
+        return;
+      } catch {
+        // По одному ниже: так сохранятся хотя бы письма без ошибок
       }
     }
-    this.countUnread = this.messages.contents.filter(msg => !msg.isRead).length;
+    for (let message of changed) {
+      await message.saveWritablePropsLocally().catch(() => null);
+    }
+  }
+
+  /**
+   * `saveMetadataLocally()` для многих писем одной транзакцией.
+   * Если пакет не удался или хранилище его не умеет, письма сохраняются
+   * по одному: ошибка достаётся только своему письму и уходит в `onError`.
+   * @returns письма, которые удалось сохранить, в исходном порядке
+   */
+  async saveMessagesMetadataLocally(emails: EMail[], onError: (ex: unknown) => void): Promise<EMail[]> {
+    let storage = this.storage;
+    if (emails.length > 1 && storage.saveMessagesMetadata) {
+      try {
+        await storage.saveMessagesMetadata(emails);
+        return emails;
+      } catch {
+        // По одному ниже
+      }
+    }
+    let saved: EMail[] = [];
+    for (let email of emails) {
+      try {
+        await email.saveMetadataLocally();
+        saved.push(email);
+      } catch (ex) {
+        onError(ex);
+      }
+    }
+    return saved;
+  }
+
+  /**
+   * `saveWritablePropsLocally()` для многих писем одной транзакцией.
+   * Без пакетного хранилища или при ошибке пакета — по одному, и первая
+   * ошибка пробрасывается, как в обычном цикле.
+   */
+  async saveMessagesWritablePropsLocally(emails: EMail[]): Promise<void> {
+    let storage = this.storage;
+    if (emails.length > 1 && storage.saveMessagesWritableProps) {
+      try {
+        await storage.saveMessagesWritableProps(emails);
+        return;
+      } catch {
+        // По одному ниже
+      }
+    }
+    for (let email of emails) {
+      await email.saveWritablePropsLocally();
+    }
+  }
+
+  /**
+   * `deleteMessageLocally()` для многих писем этой папки: один проход по списку
+   * писем и одна транзакция удаления из хранилища вместо отдельного DELETE на письмо.
+   */
+  async deleteMessagesLocally(messages: Iterable<EMail>): Promise<void> {
+    let all = [...new Set(messages)];
+    let batch = all.filter(message => message.folder === this);
+    let storage = this.storage;
+    if (batch.length < 2 || !storage.deleteMessages) {
+      for (let message of all) {
+        await message.deleteMessageLocally();
+      }
+      return;
+    }
+    for (let message of all) {
+      if (message.folder !== this) {
+        await message.deleteMessageLocally();
+      }
+    }
+    for (let message of batch) {
+      message.isDeleted = true;
+      message.downloadComplete = false;
+    }
+    this.messages.removeAll(batch);
+    await storage.deleteMessages(batch);
+    // Письма по очереди, как в deleteMessageLocally(): MailZIP переписывает
+    // общий архив, параллельное удаление из него небезопасно
+    for (let message of batch) {
+      let contentDeletes = new PromiseAllDone();
+      for (let contentStorage of this.account.contentStorage) {
+        contentDeletes.add(contentStorage.deleteIt(message));
+      }
+      await contentDeletes.wait();
+    }
   }
 
   /** Move every message to Trash, or permanently delete in Trash/Spam. */

@@ -7,7 +7,9 @@ import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
-import { Database } from "@radically-straightforward/sqlite"; // formerly @leafac/sqlite
+import { SQLiteHost, type RemoteSQLiteDatabase } from "./sqlite/SQLiteHost";
+import { createUtilityProcessChannel } from "./sqlite/utilityProcessChannel";
+import sqliteWorkerPath from "./sqlite/worker?modulePath";
 import Zip from "adm-zip";
 import ky from 'ky';
 import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
@@ -124,6 +126,7 @@ export async function shutdownBackend() {
   await OWA.stopAllNotificationStreams();
   await jpc?.stopListening();
   jpc = null;
+  await sqliteHost.shutdown();
 }
 
 /** Returns a passcode with at least 32 chars. Only alpha-num-dash. */
@@ -1513,14 +1516,18 @@ function createIMAPFlowConnection(...args): ImapFlow {
   return new ImapFlow(...args);
 }
 
-function getSQLiteDatabase(filename: string, options: any, buffer?: Uint8Array): Database {
+/** SQLite работает в отдельном utilityProcess, чтобы запросы к базе
+ * не блокировали главный процесс (сеть, JPC, меню, окна). */
+const sqliteHost = new SQLiteHost(createUtilityProcessChannel(sqliteWorkerPath));
+
+async function getSQLiteDatabase(filename: string, options: any, buffer?: Uint8Array): Promise<RemoteSQLiteDatabase> {
   if (buffer) {
-    return new Database(Buffer.from(buffer), options);
+    return await sqliteHost.openDatabase(null, options, buffer);
   }
   if (!path.isAbsolute(filename)) {
     filename = path.join(getConfigDir(), filename);
   }
-  return new Database(filename, options);
+  return await sqliteHost.openDatabase(filename, options);
 }
 
 async function sendMailNodemailer(transport, mail) {
