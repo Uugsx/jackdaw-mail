@@ -2,6 +2,7 @@
 import "../../../../logic/app";
 import { mailDatabaseMigrations } from "../../../../logic/Mail/SQL/SQLDatabase";
 import {
+  createEMailLookupIndexes,
   dedupeEMailPersons,
   rollbackDedupeEMailPersons,
   rollbackEMailLookupIndexes,
@@ -125,4 +126,11 @@ test("свежая база проходит все миграции", async () 
   await db.migrate(...mailDatabaseMigrations);
   expect(await db.pragma("user_version", { simple: true })).toBe(mailDatabaseMigrations.length);
   expect(await db.all(sql`SELECT * FROM emailPerson`)).toEqual([]);
+});
+
+test("выпущенные миграции не сдвигаются: базы пользователей стоят на user_version 7", () => {
+  // Номер выполненной миграции хранится в user_version. Если вставить новую
+  // миграцию в середину, установленные базы пропустят её навсегда.
+  expect(mailDatabaseMigrations.indexOf(createEMailLookupIndexes)).toBe(6);
+  expect(mailDatabaseMigrations.indexOf(dedupeEMailPersons)).toBeGreaterThan(6);
 });

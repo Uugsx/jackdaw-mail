@@ -26,8 +26,9 @@ export const mailDatabaseMigrations = [
   createResponseReminderIndexes,
   addEMailStatusColumns,
   repairReportReplyIndexes,
-  dedupeEMailPersons,
+  // Уже выпущена седьмой (PR #14): установленные базы стоят на user_version 7.
   createEMailLookupIndexes,
+  dedupeEMailPersons,
   dedupeEMailsWithoutPID,
 ];
 
