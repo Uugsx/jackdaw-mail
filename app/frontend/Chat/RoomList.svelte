@@ -119,11 +119,14 @@
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+  /* Одна строка с многоточием: вторая строка срезалась по высоте наполовину. */
   .last-msg {
+    display: block;
+    min-width: 0;
     opacity: 50%;
     margin-inline-start: 1px;
     margin-block-end: 2px;
-    max-height: 1.8em;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }

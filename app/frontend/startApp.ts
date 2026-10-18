@@ -1,0 +1,66 @@
+import { mount } from 'svelte';
+import MainWindow from './MainWindow/MainWindow.svelte';
+import StandaloneComposeWindow from './Mail/Composer/StandaloneComposeWindow.svelte';
+import StandaloneMessageWindow from './Mail/Message/StandaloneMessageWindow.svelte';
+import { appName, appVersion, production } from '../logic/build';
+import { getLocalStorage } from './Util/LocalStorage';
+import { sanitize } from '../../lib/util/sanitizeDatatypes';
+import { assert } from '../logic/util/util';
+import { catchErrors } from './Util/error';
+import { gt } from '../l10n/l10n';
+import * as Sentry from "@sentry/svelte";
+import { installTooltips } from './Shared/tooltip';
+
+installTooltips(document);
+
+if (production) {
+  Sentry.init({
+    dsn: "https://dade72a5be5a4a84a3171531b279181a@errorlog.jackdaw.app/3",
+    release: appName + "@" + appVersion,
+    // An array here would *add* to the default integrations, not replace them.
+    // `BrowserSession` sends a session to the server on every navigation.
+    integrations: defaults => defaults.filter(integration => integration.name != "BrowserSession"),
+    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их
+    beforeBreadcrumb: breadcrumb => breadcrumb.category == "console" ? null : breadcrumb,
+  });
+}
+
+const composeWindowID = new URLSearchParams(location.hash.slice(1)).get("composeWindow");
+const messageWindowID = new URLSearchParams(location.hash.slice(1)).get("messageWindow");
+const target = document.getElementById('app');
+const app = composeWindowID
+  ? mount(StandaloneComposeWindow, { target, props: { composeWindowID } })
+  : messageWindowID
+    ? mount(StandaloneMessageWindow, { target, props: { messageWindowID } })
+  : mount(MainWindow, { target });
+
+export default app;
+
+function loadWindowSettings() {
+  if (composeWindowID || messageWindowID) {
+    return;
+  }
+  let windowSize = getLocalStorage("window.size", []).value;
+  try {
+    assert(windowSize?.length == 2 && windowSize.every(i => sanitize.integer(i, -1) > 0), "Bad window size");
+    windowSize[0] = Math.min(windowSize[0], screen.width);
+    windowSize[1] = Math.min(windowSize[1], screen.height);
+    window.resizeTo(windowSize[0], windowSize[1]);
+  } catch (ex) {
+    throw gt`Bad window size: ` + windowSize;
+  }
+
+  let windowPosition = getLocalStorage("window.position", []).value;
+  try {
+    assert(windowPosition?.length == 2 && windowPosition.every(i => sanitize.integer(i, null) != null), "Bad window position");
+    window.moveTo(windowPosition[0], windowPosition[1]);
+  } catch (ex) {
+    throw gt`Bad window position: ` + windowPosition;
+  }
+}
+// Модуль грузится динамически после перевода: DOMContentLoaded к этому моменту может уже пройти.
+if (document.readyState == "loading") {
+  window.addEventListener("DOMContentLoaded", () => catchErrors(loadWindowSettings, console.error), false);
+} else {
+  catchErrors(loadWindowSettings, console.error);
+}

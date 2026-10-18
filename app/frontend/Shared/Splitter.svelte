@@ -1,7 +1,7 @@
 {#if hasLeft && hasRight}
   <hbox class="splitter" bind:clientWidth={containerWidth}
     class:mobile={appGlobal.isMobile}>
-    <hbox class="left" style="min-width: {leftMinWidth}px" bind:clientWidth={currentLeftWidth}>
+    <hbox class="left" style="min-width: {fittedLeftMinWidth}px" bind:clientWidth={currentLeftWidth}>
       <ErrorBoundary>
         <slot name="left" />
       </ErrorBoundary>
@@ -15,7 +15,7 @@
     <hbox class="right" style={
       rightFixedWidth
       ? `flex: 0 0 ${rightFixedWidth}px; width: ${rightFixedWidth}px; min-width: ${rightFixedWidth}px; max-width: ${rightFixedWidth}px;`
-      : `flex: ${rightRatio} 0 0; min-width: ${rightMinWidth}px;`
+      : `flex: ${rightRatio} 0 0; min-width: ${fittedRightMinWidth}px;`
       }>
       <ErrorBoundary>
         <slot name="right" />
@@ -80,6 +80,14 @@
   let currentLeftWidth: number;
   let previousLeftWidth: number;
 
+  /* Если окно уже суммы минимумов, минимумы ужимаются пропорционально:
+   * иначе правая панель выходила за край и срезалась вместе с текстом. */
+  $: minWidthScale = containerWidth > barWidth && containerWidth - barWidth < leftMinWidth + rightMinWidth
+    ? (containerWidth - barWidth) / (leftMinWidth + rightMinWidth)
+    : 1;
+  $: fittedLeftMinWidth = Math.floor(leftMinWidth * minWidthScale);
+  $: fittedRightMinWidth = Math.floor(rightMinWidth * minWidthScale);
+
   function onPointerMove(event: PointerEvent) {
     if (!isMouseDown || activePointerId !== event.pointerId) {
       return;
@@ -90,8 +98,8 @@
     let newLeftWidth = Math.max(
       Math.min(
         previousLeftWidth - mouseMoveX,
-        availableWidth - rightMinWidth),
-      leftMinWidth);
+        availableWidth - fittedRightMinWidth),
+      fittedLeftMinWidth);
     let newRightWidth = availableWidth - newLeftWidth;
     let right = newRightWidth / availableWidth;
     let left = newLeftWidth / availableWidth;

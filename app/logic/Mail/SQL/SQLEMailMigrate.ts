@@ -36,6 +36,22 @@ export const rollbackReportReplyIndexes = sql`
   DROP INDEX IF EXISTS index_email_threadID_outgoing_dateSent;
 `;
 
+/** Индексы для поиска уже сохранённого письма перед вставкой (по pID в папке
+ * и по Message-ID). Без них каждая вставка читала всю папку: заполнение папки
+ * на десятки тысяч писем было O(n²). */
+export const createEMailLookupIndexes = sql`
+  CREATE INDEX IF NOT EXISTS index_email_folderID_pID
+  ON email (folderID, pID);
+  CREATE INDEX IF NOT EXISTS index_email_messageID
+  ON email (messageID);
+`;
+
+/** Откат createEMailLookupIndexes для инструментов обслуживания базы. */
+export const rollbackEMailLookupIndexes = sql`
+  DROP INDEX IF EXISTS index_email_folderID_pID;
+  DROP INDEX IF EXISTS index_email_messageID;
+`;
+
 /** Откат индекса поиска писем для напоминаний. */
 export const rollbackResponseReminderIndexes = sql`
   DROP INDEX IF EXISTS index_email_folderID_outgoing_dateReceived;

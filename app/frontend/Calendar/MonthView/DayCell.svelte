@@ -64,7 +64,6 @@
   }
   .events:hover {
     background-color: color-mix(in srgb, var(--selected-calendar-color) 10%, transparent);
-    color: white;
   }
   .month-name {
     position: absolute;
@@ -84,7 +83,8 @@
     text-transform: uppercase;
     font-weight: 300;
   }
-  @container (max-height: 400px)  {
+  /* В узкой сетке повёрнутое название месяца не помещается и срезается («ОКТЯ»). */
+  @container (max-height: 400px) or (max-width: 640px) {
     .month-name {
       display: none;
     }

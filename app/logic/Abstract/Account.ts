@@ -7,6 +7,8 @@ import { logError } from "../../frontend/Util/error";
 import { SpecificError, assert } from "../util/util";
 import { ArrayColl, Collection } from "svelte-collections";
 
+const kMaxAccountErrors = 50;
+
 export class Account extends Observable {
   id: string;
   /** The primary ID in the type-specific database (not in accounts DB) */
@@ -53,6 +55,16 @@ export class Account extends Observable {
    * which cannot be attributed directly to an API function called,
    * e.g. errors while processing server messages. */
   errorCallback = (ex) => console.error(ex);
+
+  /** Добавляет некритичную ошибку, не давая списку расти без конца:
+   * фоновые опросы при постоянной ошибке сервера добавляли тысячи записей в час.
+   * Первая ошибка остаётся — её показывает список аккаунтов. */
+  addError(ex: Error) {
+    this.errors.add(ex);
+    while (this.errors.length > kMaxAccountErrors) {
+      this.errors.removeKey(1);
+    }
+  }
 
   constructor() {
     super();

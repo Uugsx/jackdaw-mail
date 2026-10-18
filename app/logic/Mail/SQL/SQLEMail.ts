@@ -10,7 +10,7 @@ import { convertHTMLToText } from "../../util/convertHTML";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { Lock } from "../../util/flow/Lock";
 import { assert, fileExtensionForMIMEType } from "../../util/util";
-import { ArrayColl, Collection } from "svelte-collections";
+import { ArrayColl, Collection, CollectionObserver } from "svelte-collections";
 import sql from "../../../../lib/rs-sqlite";
 
 /** Stay below SQLite's portable bound-parameter limit when loading large folders. */
@@ -753,44 +753,73 @@ export class SQLEMail {
     let recipientsByEmailID = rowsByEmailID(outgoingRecipientRows);
     let tagsByEmailID = rowsByEmailID(folderTagRows);
     let newEmails = new ArrayColl<EMail>();
-    for (let row of emailRows) {
-      let email = folder.messages.find(email => email.dbID == row.id);
-      let emailID = String(row.id);
-      let recipients = recipientsByEmailID.get(emailID) ?? [];
-      let tagRows = tagsByEmailID.get(emailID) ?? [];
-      if (email) {
-        email.outgoing = sanitize.boolean(row.outgoing, email.outgoing);
-        email.isReplied = sanitize.boolean(row.isReplied, email.isReplied);
-        email.isForwarded = sanitize.boolean(row.isForwarded, email.isForwarded);
-        email.isImportant = sanitize.boolean(row.isImportant, email.isImportant);
-        email.isStarred = sanitize.boolean(row.isStarred, email.isStarred);
-        email.isRead = sanitize.boolean(row.isRead, email.isRead);
-        JSONEMail.readLastVerbAt(email, sanitize.json(row.json, {}));
-        if (row.contactName || row.contactEmail) {
-          email.contact = findOrCreatePersonUID(
-            sanitize.emailAddress(row.contactEmail, kDummyPerson.emailAddress),
-            sanitize.nonemptylabel(row.contactName, " "));
-        } else {
-          let contact = computeEMailContact(email);
-          if (contact?.emailAddress && contact.emailAddress != kDummyPerson.emailAddress) {
-            email.contact = contact;
+    /* Индекс по dbID вместо `find()` на каждую строку: O(n) вместо O(n²).
+     * Синхронизация может менять папку во время загрузки (между await),
+     * поэтому любое изменение помечает индекс устаревшим. */
+    let cachedByDbID: Map<string, EMail> | null = null;
+    let invalidateCache = new class extends CollectionObserver<EMail> {
+      added() {
+        cachedByDbID = null;
+      }
+      removed() {
+        cachedByDbID = null;
+      }
+    };
+    let findCached = (dbID: any): EMail | undefined => {
+      if (!cachedByDbID) {
+        cachedByDbID = new Map();
+        for (let cached of folder.messages.contents) {
+          let key = String(cached.dbID);
+          if (cached.dbID != null && !cachedByDbID.has(key)) {
+            cachedByDbID.set(key, cached);
           }
         }
-        this.applyStoredIncomingSender(email, row);
+      }
+      return dbID == null ? undefined : cachedByDbID.get(String(dbID));
+    };
+    folder.messages.registerObserver(invalidateCache);
+    try {
+      for (let row of emailRows) {
+        let email = findCached(row.id);
+        let emailID = String(row.id);
+        let recipients = recipientsByEmailID.get(emailID) ?? [];
+        let tagRows = tagsByEmailID.get(emailID) ?? [];
+        if (email) {
+          email.outgoing = sanitize.boolean(row.outgoing, email.outgoing);
+          email.isReplied = sanitize.boolean(row.isReplied, email.isReplied);
+          email.isForwarded = sanitize.boolean(row.isForwarded, email.isForwarded);
+          email.isImportant = sanitize.boolean(row.isImportant, email.isImportant);
+          email.isStarred = sanitize.boolean(row.isStarred, email.isStarred);
+          email.isRead = sanitize.boolean(row.isRead, email.isRead);
+          JSONEMail.readLastVerbAt(email, sanitize.json(row.json, {}));
+          if (row.contactName || row.contactEmail) {
+            email.contact = findOrCreatePersonUID(
+              sanitize.emailAddress(row.contactEmail, kDummyPerson.emailAddress),
+              sanitize.nonemptylabel(row.contactName, " "));
+          } else {
+            let contact = computeEMailContact(email);
+            if (contact?.emailAddress && contact.emailAddress != kDummyPerson.emailAddress) {
+              email.contact = contact;
+            }
+          }
+          this.applyStoredIncomingSender(email, row);
+          if (isOutgoingFolder && recipients.length) {
+            await this.readRecipients(email, recipients);
+            email.contact = computeEMailContact(email);
+          }
+          await SQLEMail.readTags(email, tagRows);
+          continue;
+        }
+        email = folder.newEMail();
+        await SQLEMail.readMainProperties(row.id, email, row, tagRows);
         if (isOutgoingFolder && recipients.length) {
           await this.readRecipients(email, recipients);
           email.contact = computeEMailContact(email);
         }
-        await SQLEMail.readTags(email, tagRows);
-        continue;
+        newEmails.add(email);
       }
-      email = folder.newEMail();
-      await SQLEMail.readMainProperties(row.id, email, row, tagRows);
-      if (isOutgoingFolder && recipients.length) {
-        await this.readRecipients(email, recipients);
-        email.contact = computeEMailContact(email);
-      }
-      newEmails.add(email);
+    } finally {
+      folder.messages.unregisterObserver(invalidateCache);
     }
     folder.messages.addAll(newEmails);
   }

@@ -88,9 +88,29 @@ export class SQLSearchEMail extends SearchEMail {
       appGlobal.emailAccounts.first?.inbox;
     assert(randomFolder, gt`Please set up a mail account first`);
     let emails = new ArrayColl<EMail>();
+    /* Индекс писем папки по dbID: раньше на каждую найденную строку
+     * перебиралась вся папка (тысячи результатов × десятки тысяч писем). */
+    let messagesByFolder = new Map<Folder, Map<string, EMail>>();
+    let findExisting = (folder: Folder | null, dbID: any): EMail | undefined => {
+      if (!folder || dbID == null) {
+        return undefined;
+      }
+      let byDbID = messagesByFolder.get(folder);
+      if (!byDbID) {
+        byDbID = new Map();
+        for (let msg of folder.messages.contents) {
+          let key = String(msg.dbID);
+          if (msg.dbID != null && !byDbID.has(key)) {
+            byDbID.set(key, msg);
+          }
+        }
+        messagesByFolder.set(folder, byDbID);
+      }
+      return byDbID.get(String(dbID));
+    };
     for (let row of rows) {
       let folder = findFolder(row.folderID);
-      let existing = folder?.messages.find(msg => msg.dbID == row.id);
+      let existing = findExisting(folder, row.id);
       if (existing) {
         emails.add(existing);
         continue;
