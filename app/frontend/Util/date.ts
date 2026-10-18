@@ -1,5 +1,26 @@
 import { getDateTimeLocale, gPlural, gt } from "../../l10n/l10n";
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/** То же, что `date.toLocaleString(locale, options)`, но форматтер создаётся
+ * один раз: строки списка писем форматируют дату на каждой перерисовке, и
+ * `toLocaleString` каждый раз заново собирал правила локали (в ~10 раз медленнее).
+ * Только для опций, где указан хотя бы один компонент даты или времени. */
+function formatDate(date: Date, options: Intl.DateTimeFormatOptions): string {
+  let locale = getDateTimeLocale();
+  if (Number.isNaN(date.getTime?.())) {
+    // `format()` бросает RangeError на неверной дате, а `toLocaleString` возвращает текст.
+    return date.toLocaleString(locale, options);
+  }
+  let key = locale + "\u0000" + JSON.stringify(options);
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, formatter);
+  }
+  return formatter.format(date);
+}
+
 /**
 * @returns
 * For today: Time, e.g. "15:23"
@@ -27,7 +48,7 @@ export function getDateTimeString(date: Date): string {
   } else { // full date
     dateDetails = { year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "numeric" };
   }
-  return date.toLocaleString(getDateTimeLocale(), dateDetails);
+  return formatDate(date, dateDetails);
 }
 
 /** Calendar day key for comparisons. */
@@ -116,7 +137,7 @@ export function getMailDayGroupLabel(date: Date): string {
 
   let thisWeekStart = getWeekStart(today);
   if (day.getTime() >= thisWeekStart.getTime()) {
-    return date.toLocaleString(getDateTimeLocale(), { weekday: "long" });
+    return formatDate(date, { weekday: "long" });
   }
 
   let lastWeekStart = new Date(thisWeekStart);
@@ -138,7 +159,7 @@ export function getMailDayGroupLabel(date: Date): string {
   }
 
   if (day.getFullYear() == year) {
-    return date.toLocaleString(getDateTimeLocale(), { month: "long" });
+    return formatDate(date, { month: "long" });
   }
 
   if (day.getFullYear() == year - 1) {
@@ -194,7 +215,7 @@ export function getTimeString(date: Date): string {
   if (!date) {
     return "";
   }
-  return date.toLocaleString(getDateTimeLocale(), { hour: "numeric", minute: "numeric" });
+  return formatDate(date, { hour: "numeric", minute: "numeric" });
 }
 
 /**

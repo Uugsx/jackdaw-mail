@@ -89,7 +89,7 @@
 </vbox>
 
 <script lang="ts">
-  import { getUILocale, getUILocalePref, getDateTimeLocale, getDateTimeLocalePref, saveDateTimeLocale, saveUILocale, setUILocale, t } from "../../../l10n/l10n";
+  import { getUILocale, getUILocalePref, getDateTimeLocale, getDateTimeLocalePref, saveDateTimeLocale, saveUILocale, loadUILocale, t } from "../../../l10n/l10n";
   import { appGlobal } from "../../../logic/app";
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
   import AppThemeColors from "./AppThemeColors.svelte";
@@ -116,7 +116,7 @@
 
   async function onSaveLanguage() {
     saveUILocale(language);
-    setUILocale(getUILocale());
+    await loadUILocale(getUILocale());
     await onSaveDateTimeFormat();
     await appGlobal.remoteApp.restartApp(); // unfortunately needed for the strings in ts modules
   }

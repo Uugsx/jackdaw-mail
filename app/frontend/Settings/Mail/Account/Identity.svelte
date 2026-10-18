@@ -78,8 +78,13 @@
     for (let identity of identities) {
       identityBlocks[identity.id]?.flushSignature();
       sanitize.emailAddress(identity.emailAddress.replace("*", "any"));
+      if (identity.replyTo) {
+        // Иначе неверный Reply-To молча пропадал после перезапуска
+        sanitize.emailAddress(identity.replyTo);
+      }
     }
-    account.emailAddress = identities.first.emailAddress;
+    // Адрес аккаунта не может быть шаблоном `*@domain`
+    account.emailAddress = (identities.find(identity => !identity.isCatchAll) ?? identities.first).emailAddress;
     account.realname = identities.first.realname;
     await account.save();
   }

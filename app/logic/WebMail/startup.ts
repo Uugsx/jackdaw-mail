@@ -86,7 +86,7 @@ export function checkWakeUp(): void {
 }
 
 function backgroundErrorInAccount(ex: Error, account: Account) {
-  account.errors.add(ex);
+  account.addError(ex);
   console.error(ex);
   logError(ex);
 }

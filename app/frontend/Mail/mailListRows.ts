@@ -80,8 +80,11 @@ function listDisplayTimestamp(message: EMail): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+/** Тот же порядок, что у `localeCompare` без аргументов, но без поиска правил на каждое сравнение */
+const textCollator = new Intl.Collator();
+
 function compareText(a: string, b: string): number {
-  return a.localeCompare(b);
+  return textCollator.compare(a, b);
 }
 
 type MailListGroupMode = "date" | "sender" | "subject";
@@ -93,36 +96,35 @@ type MailListGroupInfo = {
   label: string;
 };
 
-function groupInfoForMessage(message: EMail, mode: MailListGroupMode): MailListGroupInfo | null {
+type MailListGroupKey = Omit<MailListGroupInfo, "label">;
+
+/* Ключ группы дешёвый и нужен для каждого письма. Подпись (Intl, перевод)
+ * считаем только для заголовка группы: раньше она строилась дважды на письмо,
+ * и на 30 тыс. писем это занимало почти секунду. */
+function groupKeyForMessage(message: EMail, mode: MailListGroupMode): MailListGroupKey | null {
   if (mode == "date") {
-    let date = listDisplayDate(message);
-    let key = getMailListGroupKey(date);
+    let key = getMailListGroupKey(listDisplayDate(message));
     if (!key) {
       return null;
     }
-    return {
-      kind: "day",
-      key,
-      id: `day:${key}`,
-      label: getMailDayGroupLabel(date) || gt`Today`,
-    };
+    return { kind: "day", key, id: `day:${key}` };
   }
   if (mode == "sender") {
     let key = senderGroupKey(message);
-    return {
-      kind: "sender",
-      key,
-      id: `sender:${key}`,
-      label: senderGroupLabel(message) || gt`Unknown sender`,
-    };
+    return { kind: "sender", key, id: `sender:${key}` };
   }
   let key = subjectGroupKey(message.subject) || "no-subject";
-  return {
-    kind: "topic",
-    key,
-    id: `topic:${key}`,
-    label: subjectGroupLabel(message.subject),
-  };
+  return { kind: "topic", key, id: `topic:${key}` };
+}
+
+function groupLabelForMessage(message: EMail, kind: MailListGroupKind): string {
+  if (kind == "day") {
+    return getMailDayGroupLabel(listDisplayDate(message)) || gt`Today`;
+  }
+  if (kind == "sender") {
+    return senderGroupLabel(message) || gt`Unknown sender`;
+  }
+  return subjectGroupLabel(message.subject);
 }
 
 /** Плоский список с заголовками группировки для FastList. */
@@ -143,24 +145,27 @@ export function buildMailListRows(
         ? "date"
         : null;
   let groupCounts = new Map<string, number>();
+  let groups: (MailListGroupKey | null)[] = [];
   if (groupMode) {
     for (let message of messages) {
-      let group = groupInfoForMessage(message, groupMode);
+      let group = groupKeyForMessage(message, groupMode);
+      groups.push(group);
       if (group) {
         groupCounts.set(group.id, (groupCounts.get(group.id) ?? 0) + 1);
       }
     }
   }
-  for (let message of messages) {
+  for (let [index, message] of messages.entries()) {
     if (groupMode) {
-      let group = groupInfoForMessage(message, groupMode);
+      let group = groups[index];
       if (group && group.key != lastGroup) {
         let count = groupCounts.get(group.id) ?? 0;
+        let label = groupLabelForMessage(message, group.kind);
         if (group.kind == "day") {
           rows.push({
             kind: "day",
             id: group.id,
-            label: group.label,
+            label,
             count,
             collapsed: collapsedGroupIds.has(group.id),
           });
@@ -168,7 +173,7 @@ export function buildMailListRows(
           rows.push({
             kind: "sender",
             id: group.id,
-            label: group.label,
+            label,
             count,
             collapsed: collapsedGroupIds.has(group.id),
           });
@@ -176,7 +181,7 @@ export function buildMailListRows(
           rows.push({
             kind: "topic",
             id: group.id,
-            label: group.label,
+            label,
             count,
             collapsed: collapsedGroupIds.has(group.id),
           });
@@ -196,22 +201,43 @@ export function buildMailListRows(
   return rows;
 }
 
-function sortComparator(sort: MailListSort): ((a: EMail, b: EMail) => number) | null {
+/** Письмо с заранее посчитанными ключами сортировки */
+type MailSortItem = {
+  message: EMail;
+  timestamp: number;
+  subjectKey: string;
+  senderKey: string;
+};
+
+function sortComparator(sort: MailListSort): (a: MailSortItem, b: MailSortItem) => number {
   switch (sort) {
   case "date-asc":
-    return (a, b) => listDisplayTimestamp(a) - listDisplayTimestamp(b) ||
-      compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject));
+    return (a, b) => a.timestamp - b.timestamp ||
+      compareText(a.subjectKey, b.subjectKey);
   case "sender":
-    return (a, b) => compareText(senderName(a), senderName(b)) ||
-      listDisplayTimestamp(b) - listDisplayTimestamp(a);
+    return (a, b) => compareText(a.senderKey, b.senderKey) ||
+      b.timestamp - a.timestamp;
   case "subject":
-    return (a, b) => compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject)) ||
-      listDisplayTimestamp(b) - listDisplayTimestamp(a) ||
-      compareText(senderName(a), senderName(b));
+    return (a, b) => compareText(a.subjectKey, b.subjectKey) ||
+      b.timestamp - a.timestamp ||
+      compareText(a.senderKey, b.senderKey);
   default:
-    return (a, b) => listDisplayTimestamp(b) - listDisplayTimestamp(a) ||
-      compareText(subjectGroupKey(a.subject), subjectGroupKey(b.subject));
+    return (a, b) => b.timestamp - a.timestamp ||
+      compareText(a.subjectKey, b.subjectKey);
   }
+}
+
+/* Нормализация темы и имени отправителя дорогая: раньше она выполнялась
+ * в каждом сравнении, то есть O(n log n) раз вместо n. */
+function sortMessages(messages: readonly EMail[], sort: MailListSort): EMail[] {
+  let items = messages.map((message): MailSortItem => ({
+    message,
+    timestamp: listDisplayTimestamp(message),
+    subjectKey: subjectGroupKey(message.subject),
+    senderKey: senderName(message),
+  }));
+  items.sort(sortComparator(sort));
+  return items.map(item => item.message);
 }
 
 function senderName(email: EMail): string {
@@ -280,8 +306,7 @@ export class MailListRows {
   }
 
   protected rebuild() {
-    let messages = this.source ? this.source.contents.slice() : [];
-    messages.sort(sortComparator(this.sort));
+    let messages = sortMessages(this.source ? this.source.contents : [], this.sort);
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
     let byTopic = this.sort == "subject";
     let bySender = this.sort == "sender";
@@ -348,7 +373,51 @@ export function findMailListRowsForMessages(
   messages: Collection<EMail>,
   rows: Collection<MailListRow>,
 ): MailListMessageRow[] {
+  /* Раньше для каждого выбранного письма перебирались все строки: «Выделить всё»
+   * на 30 тыс. писем — это 9·10⁸ сравнений и зависание интерфейса. Индекс даёт
+   * тех же кандидатов, а сравнение и порядок «первая подходящая строка»
+   * остаются как в `findMailListRowForMessage`. */
+  let messageRows = rows.contents.filter((row): row is MailListMessageRow => row.kind == "message");
+  let byObject = new Map<EMail, number>();
+  let byField = new Map<unknown, number[]>();
+  let indexField = (value: unknown, index: number) => {
+    if (value == null) {
+      return;
+    }
+    let list = byField.get(value);
+    if (list) {
+      list.push(index);
+    } else {
+      byField.set(value, [index]);
+    }
+  };
+  messageRows.forEach((row, index) => {
+    if (!byObject.has(row.message)) {
+      byObject.set(row.message, index);
+    }
+    indexField(row.message.dbID, index);
+    indexField(row.message.pID, index);
+    indexField(row.message.id, index);
+  });
+  let findRow = (message: EMail): MailListMessageRow | null => {
+    let best = byObject.get(message) ?? Infinity;
+    for (let value of [message.dbID, message.pID, message.id]) {
+      if (value == null) {
+        continue;
+      }
+      for (let index of byField.get(value) ?? []) {
+        if (index >= best) {
+          break;
+        }
+        if (messagesRepresentSameMail(messageRows[index].message, message)) {
+          best = index;
+          break;
+        }
+      }
+    }
+    return Number.isFinite(best) ? messageRows[best] : null;
+  };
   return messages.contents
-    .map(message => findMailListRowForMessage(rows, message))
+    .map(message => message ? findRow(message) : null)
     .filter((row): row is MailListMessageRow => !!row);
 }

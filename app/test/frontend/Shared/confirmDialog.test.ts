@@ -18,6 +18,8 @@ afterEach(() => {
 beforeAll(async () => {
   ConfirmDialog = (await import("../../../frontend/Shared/ConfirmDialog.svelte")).default;
   ({ gt, setUILocale } = await import("../../../l10n/l10n"));
+  // Переводы грузятся по требованию: русский нужен до синхронного setUILocale("ru").
+  await (await import("../../../l10n/messagesLoader")).loadLanguageMessages("ru");
 });
 
 describe("confirm dialog", () => {

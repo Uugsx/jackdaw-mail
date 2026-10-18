@@ -26,7 +26,7 @@ import { assert, base64ToUint8Array, blobToBase64, ensureArray, sleep } from "..
 import { Lock } from "../../util/flow/Lock";
 import { RunOnce } from "../../util/flow/RunOnce";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
-import { ArrayColl, Collection } from "svelte-collections";
+import { ArrayColl, Collection, CollectionObserver } from "svelte-collections";
 import { gt } from "../../../l10n/l10n";
 import { trackMailSync } from "../mailSyncStatus";
 
@@ -3691,11 +3691,75 @@ export class OWAFolder extends ExchangeFolder {
     return this.finishNewMessages(newMsgs, recentOnly);
   }
 
+  /* Индекс по itemID вместо `find()`: функцию зовут в циклах по страницам
+   * сервера и на каждое push-уведомление, и на больших папках это было O(n²).
+   * Индекс сбрасывается при изменении списка писем, а смену itemID у письма
+   * из папки сообщает `OWAEMail` (см. `onItemIDChanged`). */
+  protected itemIDIndex: Map<string, OWAEMail> | null = null;
+  /** Письма папки, которых нет в индексе: без itemID или с повторным itemID */
+  protected itemIDUnindexed = new Set<OWAEMail>();
+  protected itemIDIndexObserver: CollectionObserver<EMail> | null = null;
+
   getEmailByItemID(id: string): OWAEMail | undefined {
     if (!id) {
       return undefined;
     }
-    return this.messages.find((m: OWAEMail) => m.itemID == id) as OWAEMail | undefined;
+    let message = this.getItemIDIndex().get(id);
+    return message?.itemID == id ? message : undefined;
+  }
+
+  protected getItemIDIndex(): Map<string, OWAEMail> {
+    if (!this.itemIDIndexObserver) {
+      let invalidate = () => {
+        this.itemIDIndex = null;
+      };
+      this.itemIDIndexObserver = new class extends CollectionObserver<EMail> {
+        added() {
+          invalidate();
+        }
+        removed() {
+          invalidate();
+        }
+      };
+      this.messages.registerObserver(this.itemIDIndexObserver);
+    }
+    if (!this.itemIDIndex) {
+      let index = new Map<string, OWAEMail>();
+      this.itemIDUnindexed.clear();
+      for (let message of this.messages.contents as OWAEMail[]) {
+        // Первое совпадение, как раньше у `find()`
+        if (message.itemID && !index.has(message.itemID)) {
+          index.set(message.itemID, message);
+        } else {
+          this.itemIDUnindexed.add(message);
+        }
+      }
+      this.itemIDIndex = index;
+    }
+    return this.itemIDIndex;
+  }
+
+  /** Вызывает `OWAEMail`, когда у письма меняется itemID */
+  onItemIDChanged(message: OWAEMail, previousID: string | null): void {
+    let index = this.itemIDIndex;
+    if (!index) {
+      return;
+    }
+    let isMember = (previousID && index.get(previousID) === message) || this.itemIDUnindexed.has(message);
+    if (!isMember) {
+      return; // письмо ещё не в папке — индекс обновится, когда его добавят
+    }
+    if (previousID && index.get(previousID) === message) {
+      // Под старым ключом могло стоять и другое письмо с тем же itemID
+      this.itemIDIndex = null;
+      return;
+    }
+    this.itemIDUnindexed.delete(message);
+    if (message.itemID && !index.has(message.itemID)) {
+      index.set(message.itemID, message);
+    } else {
+      this.itemIDUnindexed.add(message);
+    }
   }
 
   /**

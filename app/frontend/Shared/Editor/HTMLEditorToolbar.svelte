@@ -450,11 +450,16 @@ block
     max-width: 9em;
   }
   .font-select.font-size {
-    min-width: 3em;
-    max-width: 4.5em;
+    min-width: 5em;
+    max-width: 6em;
   }
   .font-select.line-height {
-    min-width: 3em;
-    max-width: 4em;
+    min-width: 5em;
+    max-width: 6em;
+  }
+  /* Глобальный стиль select резервирует 32px под стрелку — значение обрезалось */
+  select.font-select {
+    padding-inline-end: 18px !important;
+    background-position: right 4px center !important;
   }
 </style>

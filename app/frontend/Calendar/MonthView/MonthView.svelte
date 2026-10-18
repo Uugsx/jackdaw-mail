@@ -94,7 +94,8 @@
 <style>
   grid.month {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+    /* minmax(0, …): колонки не растягиваются по содержимому и не выталкивают сетку за край. */
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: max-content;
     grid-auto-rows: 1fr;
     border-right: 1px dotted var(--border);
@@ -110,6 +111,11 @@
     letter-spacing: 0.378px;
     text-transform: uppercase;
     font-weight: 300;
+  }
+  @container (max-width: 420px) {
+    .weekday {
+      padding-inline: 4px;
+    }
   }
   .day {
     overflow: hidden;

@@ -18,6 +18,7 @@ import { retryOnTransientError } from './util/netUtil';
 import { catchErrors, logError, showError } from '../frontend/Util/error';
 import { OWAAccount } from './Mail/OWA/OWAAccount';
 import { assert, sleep } from './util/util';
+import { refreshProEntitlement } from './Billing/ProEntitlement';
 
 /** Read JPC secret from frontent URL hash `jpcSecret=password`.
  * Before svelte-navigator `<Router>` mounts and rewrites `location.hash` */
@@ -99,6 +100,9 @@ export async function getStartObjects(): Promise<void> {
   readSavedSearches();
   await loadTagsList();
   await loadTagCombinations();
+  // Отдельные окна письма и редактора — свой JS-контекст. Без проверки статус Pro
+  // в них навсегда остаётся «checking», и подпись Pro вырезается из письма.
+  void refreshProEntitlement().catch(logError);
 }
 
 /**
@@ -172,14 +176,14 @@ function checkAccounts(): void {
 
 function errorWithAccountName(account: Account, errorCallback: (ex: Error) => void) {
   return (ex: Error) => {
-    account.errors.add(ex);
+    account.addError(ex);
     addAccountName(ex, account);
     errorCallback(ex);
   };
 }
 
 function backgroundErrorInAccount(ex: Error, account: Account) {
-  account.errors.add(ex);
+  account.addError(ex);
   addAccountName(ex, account);
   logError(ex);
 }

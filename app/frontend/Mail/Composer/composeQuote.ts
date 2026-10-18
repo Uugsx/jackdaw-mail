@@ -1,18 +1,19 @@
 /** Split compose HTML into the TipTap reply and the separately editable quote. */
 export function splitComposeQuote(html: string | null | undefined): { editable: string; quote: string } {
   let body = html ?? "";
-  let headerMatch = body.match(/<p\b[^>]*\bclass=(["'])quote-header\1[^>]*>[\s\S]*$/i);
-  if (headerMatch?.index != null) {
+  // Режем по САМОМУ РАННЕМУ маркеру: строка «X написал:» может встретиться внутри
+  // цитируемого письма, а пересылаемое письмо (после <hr> и заголовка пересылки)
+  // само может содержать <blockquote>. Иначе подпись вставлялась внутрь цитаты.
+  let markers = [
+    body.search(/<p\b[^>]*\bclass=(["'])quote-header\1/i),
+    body.search(/<blockquote\b/i),
+    body.search(/<hr\b[^>]*>\s*<p\b[^>]*\bclass=(["'])forward-header\1/i),
+  ].filter(index => index >= 0);
+  if (markers.length) {
+    let cut = Math.min(...markers);
     return {
-      editable: body.slice(0, headerMatch.index),
-      quote: body.slice(headerMatch.index),
-    };
-  }
-  let blockquoteMatch = body.match(/<blockquote\b[\s\S]*$/i);
-  if (blockquoteMatch?.index != null) {
-    return {
-      editable: body.slice(0, blockquoteMatch.index),
-      quote: body.slice(blockquoteMatch.index),
+      editable: body.slice(0, cut),
+      quote: body.slice(cut),
     };
   }
   let hrMatch = body.match(/<hr\b[^>]*\s*\/?>[\s\S]*$/i);

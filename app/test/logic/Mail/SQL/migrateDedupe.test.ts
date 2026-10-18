@@ -4,7 +4,7 @@ import { mailDatabaseMigrations } from "../../../../logic/Mail/SQL/SQLDatabase";
 import {
   dedupeEMailPersons,
   rollbackDedupeEMailPersons,
-  rollbackEMailFolderIDPIDIndex,
+  rollbackEMailLookupIndexes,
 } from "../../../../logic/Mail/SQL/SQLEMailMigrate";
 import { InProcessSQLiteHost } from "../../util/hostedSQLite";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -109,12 +109,15 @@ test("откаты: пустое имя снова NULL, индекс удалё
   let db = await openLegacyDatabase();
   await db.migrate(...mailDatabaseMigrations);
   await db.execute(rollbackDedupeEMailPersons);
-  await db.execute(rollbackEMailFolderIDPIDIndex);
+  await db.execute(rollbackEMailLookupIndexes);
   let names = await db.all(sql`SELECT DISTINCT name FROM emailPerson ORDER BY name`) as any[];
   expect(names.map(row => row.name)).toEqual([null, "Bob"]);
   let index = await db.get(sql`
     SELECT name FROM sqlite_schema WHERE type = 'index' AND name = 'index_email_folderID_pID'`);
   expect(index).toBeUndefined();
+  let messageIDIndex = await db.get(sql`
+    SELECT name FROM sqlite_schema WHERE type = 'index' AND name = 'index_email_messageID'`);
+  expect(messageIDIndex).toBeUndefined();
 });
 
 test("свежая база проходит все миграции", async () => {

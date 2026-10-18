@@ -267,12 +267,14 @@
     box-sizing: border-box;
     overflow: hidden;
   }
+  /* block: у flex-контейнера многоточие не работает, заголовок срезался. */
   .section-title {
+    display: block;
     min-width: 0;
     overflow: hidden;
-    color: color-mix(in srgb, var(--leftbar-fg) 58%, transparent);
-    font-size: 10px;
-    font-weight: 650;
+    color: color-mix(in srgb, var(--leftbar-fg) 64%, transparent);
+    font-size: 11px;
+    font-weight: 600;
     letter-spacing: 0.01em;
     text-overflow: ellipsis;
     white-space: nowrap;

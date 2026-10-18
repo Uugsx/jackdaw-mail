@@ -35,6 +35,17 @@ async function resolvePerson(
   }
   let matches = await search(searchTerm, candidate =>
     candidate.emailAddress !== person.emailAddress && skip(candidate));
+  if (isValidAddress(person.emailAddress)) {
+    // Правильно набранный адрес не подменяем: поиск идёт по подстроке, и для
+    // `ivanov@x` единственным найденным мог оказаться `a.ivanov@x`. Из справочника
+    // берём только имя для точно такого же адреса.
+    let address = person.emailAddress.toLowerCase();
+    matches = matches.filter(match => match.emailAddress?.toLowerCase() === address);
+    if (matches.length === 0) {
+      person.nameIsUnknown = false;
+      return true;
+    }
+  }
   if (matches.length === 0) {
     return false;
   }

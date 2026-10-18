@@ -71,7 +71,11 @@ export class OWAEMail extends ExchangeEMail {
   }
   set itemID(val: string | null) {
     assert(val == null || typeof (val) == "string", "OWA EMail itemID must be a string");
+    let previous = this.pID as string | null;
     this.pID = val;
+    if (val !== previous) {
+      this.folder?.onItemIDChanged?.(this, previous);
+    }
   }
 
   async download() {

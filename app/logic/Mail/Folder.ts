@@ -282,7 +282,10 @@ export class Folder extends Observable implements TreeItem<Folder> {
         let completed = 0;
         for (let message of messages) {
           await message.loadMIME();
-          await this.addMessage(message);
+          // addMessage() в OWA/JMAP переписывает у переданного объекта папку и ID.
+          // Отдаём ему отдельную копию, чтобы исходное письмо осталось нетронутым
+          // и удалялось (при переносе) именно в исходном ящике.
+          await this.addMessage(await this.cloneForUpload(message));
           if (action == "move") {
             await message.deleteMessage();
           }
@@ -751,6 +754,20 @@ export class Folder extends Observable implements TreeItem<Folder> {
 
   newEMail(): EMail {
     return new EMail(this);
+  }
+
+  /** Новый объект письма в этой папке с MIME и флагами `message` — для загрузки
+   * письма из другого аккаунта, не изменяя исходный объект. */
+  protected async cloneForUpload(message: EMail): Promise<EMail> {
+    let copy = this.newEMail();
+    copy.mime = message.mime;
+    await copy.parseMIME();
+    copy.received = new Date(message.received);
+    copy.isRead = message.isRead;
+    copy.isStarred = message.isStarred;
+    copy.isDraft = message.isDraft;
+    copy.tags.addAll(message.tags);
+    return copy;
   }
 }
 

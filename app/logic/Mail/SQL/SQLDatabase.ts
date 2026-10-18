@@ -7,7 +7,7 @@ import {
   addEMailStatusColumns,
   repairReportReplyIndexes,
   dedupeEMailPersons,
-  createEMailFolderIDPIDIndex,
+  createEMailLookupIndexes,
   dedupeEMailsWithoutPID,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
@@ -27,7 +27,7 @@ export const mailDatabaseMigrations = [
   addEMailStatusColumns,
   repairReportReplyIndexes,
   dedupeEMailPersons,
-  createEMailFolderIDPIDIndex,
+  createEMailLookupIndexes,
   dedupeEMailsWithoutPID,
 ];
 
@@ -54,6 +54,7 @@ export async function makeTestDatabase(): Promise<Database> {
     mailDatabaseSchema,
     createReportReplyIndexes,
     createResponseReminderIndexes,
+    createEMailLookupIndexes,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

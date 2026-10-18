@@ -33,6 +33,7 @@
   import { loadResponseTrackingCategoryNames } from "../../logic/Reports/ResponseReminderData";
   import {
     getResponseReminderConfig,
+    LIVE_SLA_ACCOUNT_STORAGE_KEY,
     setResponseReminderConfig,
   } from "./ResponseReminderSettings";
   import {
@@ -55,7 +56,7 @@
   const REPORT_MAIL_ACCOUNTS_RETRY_DELAY_MS = 250;
   const REPORT_MAIL_ACCOUNTS_MAX_EMPTY_RETRIES = 20;
   const liveAccountSetting = getLocalStorage<number | null>(
-    "reports.live-sla.account.v1",
+    LIVE_SLA_ACCOUNT_STORAGE_KEY,
     null,
   );
   const liveFolderSetting = getLocalStorage<unknown>(

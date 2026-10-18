@@ -36,6 +36,22 @@ export const rollbackReportReplyIndexes = sql`
   DROP INDEX IF EXISTS index_email_threadID_outgoing_dateSent;
 `;
 
+/** Индексы для поиска уже сохранённого письма перед вставкой (по pID в папке,
+ * в том числе ветка `pID IS NULL` из BUG-203, и по Message-ID). Без них каждая вставка читала всю папку: заполнение папки
+ * на десятки тысяч писем было O(n²). */
+export const createEMailLookupIndexes = sql`
+  CREATE INDEX IF NOT EXISTS index_email_folderID_pID
+  ON email (folderID, pID);
+  CREATE INDEX IF NOT EXISTS index_email_messageID
+  ON email (messageID);
+`;
+
+/** Откат createEMailLookupIndexes для инструментов обслуживания базы. */
+export const rollbackEMailLookupIndexes = sql`
+  DROP INDEX IF EXISTS index_email_folderID_pID;
+  DROP INDEX IF EXISTS index_email_messageID;
+`;
+
 /** Откат индекса поиска писем для напоминаний. */
 export const rollbackResponseReminderIndexes = sql`
   DROP INDEX IF EXISTS index_email_folderID_outgoing_dateReceived;
@@ -125,18 +141,6 @@ export const rollbackDedupeEMailPersons = sql`
   UPDATE emailPerson SET name = NULL WHERE name = '';
 `;
 
-/** Индекс поиска сохранённого письма по pID в папке (`SQLEMail.save()`,
- * в том числе ветка `pID IS NULL` из BUG-203). */
-export const createEMailFolderIDPIDIndex = sql`
-  CREATE INDEX IF NOT EXISTS index_email_folderID_pID
-  ON email (folderID, pID);
-`;
-
-/** Откат createEMailFolderIDPIDIndex. */
-export const rollbackEMailFolderIDPIDIndex = sql`
-  DROP INDEX IF EXISTS index_email_folderID_pID;
-`;
-
 /**
  * BUG-203: письма без pID из-за условия `pID = NULL` (всегда ложного)
  * при каждом сохранении вставлялись заново. Оставляем одну строку на
@@ -147,7 +151,7 @@ export const rollbackEMailFolderIDPIDIndex = sql`
  * и метки дублей удаляем явно, а не каскадом.
  *
  * Отката нет: удалённые строки были копиями оставшейся, и старый код
- * работает с базой без них так же. Откат индекса — rollbackEMailFolderIDPIDIndex.
+ * работает с базой без них так же. Откат индекса — rollbackEMailLookupIndexes.
  */
 export const dedupeEMailsWithoutPID = sql`
   DROP TABLE IF EXISTS temp."emailDuplicate";

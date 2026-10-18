@@ -94,6 +94,8 @@ export interface ComposeWindowMail {
   importanceLevel: "high" | "normal" | "low";
   requestReadReceipt: boolean;
   requestDeliveryReceipt: boolean;
+  /** Необязательно: старые окна редактора его не передают */
+  signatureRemovedByUser?: boolean;
   isDraft: boolean;
   isDeleted: boolean;
   shouldEncrypt: boolean;

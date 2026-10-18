@@ -15,6 +15,11 @@
   <vbox class="right-pane" slot="right">
     {#if chatMessages && selectedPerson && chatRoom}
       <Header person={selectedPerson as any} />
+      <!-- Это почта, а не чат Jackdaw Pro: подсказываем, куда уйдёт ответ -->
+      <hbox class="mode-note font-smallest" role="note">
+        <MailOpenIcon size="14px" />
+        <span>{$t`Emails with this person, shown as a conversation. Your reply is sent as a regular email.`}</span>
+      </hbox>
       <vbox flex class="messages background-pattern">
         <MessageList messages={chatMessages}>
           <svelte:fragment slot="message" let:message let:previousMessage>
@@ -25,6 +30,12 @@
       </vbox>
       <vbox class="editor">
         <MsgEditor to={chatRoom} />
+      </vbox>
+    {:else}
+      <vbox flex class="empty-state">
+        <MailOpenIcon size="32px" />
+        <h3>{$t`Mail conversations`}</h3>
+        <p>{$t`Pick a person on the left to see all emails with them as one conversation. For instant messages between app users, use Jackdaw Chat.`}</p>
       </vbox>
     {/if}
   </vbox>
@@ -50,6 +61,9 @@
   import Splitter from "../../Shared/Splitter.svelte";
   import { ArrayColl, Collection, mergeColls } from 'svelte-collections';
   import { onDestroy } from "svelte";
+  import { releaseObservableFilter } from "../../Util/collections";
+  import MailOpenIcon from "lucide-svelte/icons/mail-open";
+  import { t } from "../../../l10n/l10n";
 
   export let accounts: Collection<MailAccount>; /** in */
 
@@ -62,7 +76,16 @@
   $: folders = mergeColls<Folder>(messageAccounts.map(account => account.rootFolders));
   $: allMessages = mergeColls<EMail>(folders.map(folder => folder.messages)).sortBy(msg => -msg.sent.getTime());
   $: persons = allMessages.map(mailChatContactForMessage).filterObservable(Boolean).unique() as Collection<PersonUID>;
-  $: personMessages = allMessages.filterObservable(msg => mailChatContactMatches(msg, selectedPerson));
+  /* Фильтр пересоздаётся при каждом выборе человека: старый надо отписать,
+   * иначе он остаётся подписан на все письма всех папок. */
+  let personMessages: Collection<EMail>;
+  let personMessagesSource: Collection<EMail> | null = null;
+  $: replacePersonMessages(allMessages, selectedPerson);
+  function replacePersonMessages(source: Collection<EMail>, person: any): void {
+    releaseObservableFilter(personMessagesSource, personMessages);
+    personMessagesSource = source;
+    personMessages = source.filterObservable(msg => mailChatContactMatches(msg, person));
+  }
   $: applyChatEntryMessage($mailChatEntryMessage);
   $: $folders, loadMailChatFolders(messageAccounts);
   $: account = isConcreteMailAccount($selectedAccount)
@@ -75,11 +98,21 @@
   let chatRoomPerson: MailChatContact | null = null;
   let chatRoomMessages: Collection<EMail> | null = null;
   $: updateChatRoom(account, selectedPerson, personMessages);
-  $: chatMessages = chatRoom
-    ? ($globalSearchTerm
-      ? chatRoom.messages.filterObservable(msg => msg.text?.toLowerCase().includes($globalSearchTerm))
-      : chatRoom.messages) as any as Collection<EMail>
-    : null;
+  let chatMessages: Collection<EMail> | null = null;
+  let searchedChatMessages: Collection<EMail> | null = null;
+  let searchedChatSource: Collection<EMail> | null = null;
+  $: replaceChatMessages(chatRoom, $globalSearchTerm);
+  function replaceChatMessages(room: MailChatRoom | null, searchTerm: string): void {
+    releaseObservableFilter(searchedChatSource, searchedChatMessages);
+    searchedChatMessages = null;
+    searchedChatSource = null;
+    let messages = room?.messages as any as Collection<EMail> | undefined;
+    if (messages && searchTerm) {
+      searchedChatSource = messages;
+      searchedChatMessages = messages.filterObservable(msg => msg.text?.toLowerCase().includes(searchTerm));
+    }
+    chatMessages = searchedChatMessages ?? messages ?? null;
+  }
 
   function applyChatEntryMessage(message: EMail | null): void {
     if (!message) {
@@ -158,6 +191,8 @@
   }
 
   onDestroy(() => {
+    releaseObservableFilter(personMessagesSource, personMessages);
+    releaseObservableFilter(searchedChatSource, searchedChatMessages);
     chatRoom?.destroy();
     chatRoom = null;
     chatRoomAccount = null;
@@ -206,5 +241,30 @@
   }
   .spacer {
     min-width: 8px;
+  }
+  .mode-note {
+    align-items: center;
+    gap: 6px;
+    padding: 4px 20px;
+    color: var(--fg);
+    opacity: 0.75;
+    border-block-end: 1px solid var(--border);
+  }
+  .empty-state {
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px;
+    text-align: center;
+    color: var(--fg);
+    opacity: 0.8;
+  }
+  .empty-state h3 {
+    margin: 0;
+  }
+  .empty-state p {
+    max-width: 28em;
+    margin: 0;
+    line-height: 1.4;
   }
 </style>

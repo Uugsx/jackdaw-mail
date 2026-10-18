@@ -11,14 +11,15 @@ import { fileExtensionForMIMEType } from "../Files/FileType/MIMETypes";
 import { escapeAttr, escapeHTML } from "../Files/FileType/htmlHelper";
 import { backgroundError } from "../../frontend/Util/error";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
-import { UserError, assert, dataURLToBlob, type URLString, ensureArray } from "../util/util";
+import { UserError, assert, dataURLToBlob, type URLString } from "../util/util";
 import { convertTextToHTML } from "../util/convertHTML";
 import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
 import { addSenderToCC } from "./composeRecipients";
 import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
 import { normalizeSignatureHTML } from "./SignatureHTML";
-import { hasProFeature } from "../Billing/ProEntitlement";
+import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
+import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -41,22 +42,9 @@ export class ComposeActions {
 
   /** Split user reply from quoted original (header + blockquote). */
   protected splitReplyAndQuote(html: string): { reply: string; quote: string } {
-    let body = html ?? "";
-    let headerMatch = body.match(/<p\b[^>]*\bclass=(["'])quote-header\1[^>]*>[\s\S]*$/i);
-    if (headerMatch?.index != null) {
-      return {
-        reply: body.slice(0, headerMatch.index),
-        quote: body.slice(headerMatch.index),
-      };
-    }
-    let blockquoteMatch = body.match(/<blockquote\b[\s\S]*$/i);
-    if (blockquoteMatch?.index != null) {
-      return {
-        reply: body.slice(0, blockquoteMatch.index),
-        quote: body.slice(blockquoteMatch.index),
-      };
-    }
-    return { reply: body, quote: "" };
+    // Та же точка разреза, что и в редакторе (учитывает пересылку и самый ранний маркер)
+    let { editable, quote } = splitComposeQuote(html);
+    return { reply: editable, quote };
   }
 
   protected stripSignatureFooters(html: string): string {
@@ -188,9 +176,30 @@ export class ComposeActions {
 
   replyAll(): EMail {
     let reply = this.replyToAuthor();
-    reply.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
-    reply.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
+    this._addOtherRecipients(reply);
     return reply;
+  }
+
+  /**
+   * Добавляет To и Cc исходного письма в `mail` без своих адресов и без повторов.
+   * Адреса сравниваются без учёта регистра: один адрес может прийти разными
+   * объектами `PersonUID` (с разными именами или и в Reply-To, и в To).
+   */
+  protected _addOtherRecipients(mail: EMail): void {
+    let seen = new Set<string>();
+    let isNew = (pe: PersonUID): boolean => {
+      let address = pe?.emailAddress?.toLowerCase();
+      if (!address || seen.has(address)) {
+        return false;
+      }
+      seen.add(address);
+      return true;
+    };
+    for (let pe of mail.to.contents.concat(mail.cc.contents)) {
+      isNew(pe);
+    }
+    mail.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && isNew(pe)));
+    mail.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && isNew(pe)));
   }
 
   /** Whether Reply All would include more than one party. */
@@ -236,8 +245,7 @@ export class ComposeActions {
   newToAll(): EMail {
     let mail = this.newMailFromSameIdentity();
     this._addFromAsRecipient(mail);
-    mail.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
-    mail.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
+    this._addOtherRecipients(mail);
     return mail;
   }
 
@@ -251,7 +259,10 @@ export class ComposeActions {
   }
 
   protected _forward(): EMail {
-    let forward = this.email.folder.account.newEMailFrom();
+    // Та же личность (алиас), на которую пришло письмо, — как при ответе
+    let forward = this.newMailFromSameIdentity();
+    // Пересылку, как и раньше, сохраняем в «Отправленные», а не в папку оригинала
+    forward.folder = this.email.folder.account.getSpecialFolder(SpecialFolder.Sent);
     forward.composeSource = this.email;
     forward.subject = "Fwd: " + this.email.subject; // Do *not* localize "Fwd: "
     forward.mustEncrypt = this.email.wasEncrypted;
@@ -386,14 +397,27 @@ export class ComposeActions {
   populateFromMailtoURL(mailtoURL: URLString) {
     let urlObj = new URL(mailtoURL);
     let args = new URLSearchParams(urlObj.search);
-    let tos = ensureArray(urlObj.pathname.split(","));
-    for (let to of tos) {
-      this.email.to.add(findOrCreatePersonUID(sanitize.emailAddress(to), null));
+    // RFC 6068: адрес может быть пустым (`mailto:?subject=…`) и закодированным (`%40`),
+    // получатели бывают и в параметрах to/cc/bcc, в том числе через запятую
+    let addAddresses = (list: ArrayColl<PersonUID>, values: (string | null | undefined)[]) => {
+      for (let value of values) {
+        for (let address of (value ?? "").split(",")) {
+          address = address.trim();
+          if (address) {
+            list.add(findOrCreatePersonUID(sanitize.emailAddress(address), null));
+          }
+        }
+      }
+    };
+    let path = urlObj.pathname;
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      // Невалидная %-последовательность — оставляем как есть, проверит sanitize
     }
-    let ccs = ensureArray(args.get("cc")?.split(","));
-    for (let cc of ccs) {
-      this.email.cc.add(findOrCreatePersonUID(sanitize.emailAddress(cc), null));
-    }
+    addAddresses(this.email.to, [path, ...args.getAll("to")]);
+    addAddresses(this.email.cc, args.getAll("cc"));
+    addAddresses(this.email.bcc, args.getAll("bcc"));
     this.email.subject = sanitize.label(args.get("subject"), null);
     this.email.text = sanitize.label(args.get("body"), null);
     this.email.html; // Generate HTML from plaintext TODO doesn't work
@@ -433,6 +457,11 @@ export class ComposeActions {
       return reply + quote;
     }
     let footer = `<footer class="signature">${sig}</footer>`;
+    // Без пустого абзаца перед подписью курсор нового письма попадал внутрь неё:
+    // текст печатался шрифтом подписи и пропадал при смене отправителя
+    if (!reply.trim()) {
+      reply = "<p></p>";
+    }
 
     let quoteSetting = getLocalStorage("mail.send.quote", "below").value;
     if (quoteSetting == "below" && quote) {
@@ -516,11 +545,17 @@ export class ComposeActions {
     }
     let account = fromIdentity.account;
 
+    // Пока статус Pro ещё «проверяется» (первые секунды после запуска, отдельное окно),
+    // hasProFeature() даёт false, и подпись была бы вырезана из отправляемого письма.
+    if (proEntitlement.value.status == "checking") {
+      await refreshProEntitlement().catch(() => null);
+    }
     // Добавляем подпись, если её нет, и сохраняем правки внутри существующего
     // footer. Бесплатный аккаунт не должен отправить управляемую подпись из
     // старого черновика или импортированного письма.
     if (hasProFeature("signatures")) {
-      if (!this.hasSignatureFooter(this.email.rawHTMLDangerous)) {
+      // Подпись, которую пользователь сам удалил из этого письма, не возвращаем
+      if (!this.hasSignatureFooter(this.email.rawHTMLDangerous) && !this.email.signatureRemovedByUser) {
         this.applySignature();
       }
     } else {
@@ -550,6 +585,9 @@ export class ComposeActions {
       this.email.folder = account.getSpecialFolder(SpecialFolder.Sent);
     }
     this.email.isDraft = false;
+    // Протоколы берут `mime ??=`: после сохранения черновика в «Отправленные»
+    // попала бы старая версия письма. Собираем MIME заново из текущего тела.
+    this.email.mime = undefined;
 
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
     await account.send(mail);
@@ -576,9 +614,16 @@ export class ComposeActions {
       mail !== this.email && mail.pID != this.email.pID);
 
     this.email.isDraft = true;
-    // TODO encrypt
-    assert(!this.email.shouldEncrypt, "TODO encrypt drafts");
+    // Шифрование черновиков пока не поддерживается: сохранять зашифрованный
+    // ответ открытым текстом на сервер нельзя, поэтому сообщаем понятной ошибкой.
+    if (this.email.shouldEncrypt) {
+      throw new UserError(gt`Encrypted drafts cannot be saved yet. Send the message or close it without saving.`);
+    }
 
+    // Иначе повторное сохранение и правка открытого черновика сохраняли прежний
+    // MIME (`mime ??=` в протоколах), и все новые правки терялись
+    this.email.mime = undefined;
+    this.email.regenerateTextFromHTML();
     await draftFolder.addMessage(this.email);
 
     await this.deleteDrafts(previousDrafts);

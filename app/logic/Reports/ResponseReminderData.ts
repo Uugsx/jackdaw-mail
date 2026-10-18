@@ -144,6 +144,23 @@ export async function loadPendingResponseRequests(
       )`
         : sql`
       AND $${selectedCategoryPredicate}`;
+  // Служебные письма (коды подтверждения, отчёты о недоставке, рассылки с
+  // адресов no-reply) не ждут ответа: на них невозможно или не нужно отвечать.
+  // «_» в LIKE — любой символ: no_reply покрывает no-reply, no.reply и no_reply.
+  const automatedSenderPredicate = sql`
+    AND NOT (
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'noreply%@%' OR
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'no_reply%@%' OR
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'donotreply%@%' OR
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'do_not_reply%@%' OR
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'mailer-daemon@%' OR
+      LOWER(TRIM(COALESCE(e.contactEmail, ''))) LIKE 'postmaster@%' OR
+      LOWER(TRIM(COALESCE(e.contactName, ''))) IN (
+        'mail delivery system',
+        'mail delivery subsystem',
+        'mailer-daemon'
+      )
+    )`;
   const folderPredicate =
     Number.isInteger(folderId) && folderId > 0
       ? sql`AND e.folderID = ${folderId}`
@@ -180,6 +197,7 @@ export async function loadPendingResponseRequests(
       AND LOWER(COALESCE(f.specialUse, '')) NOT IN ${ignoredFolderKinds}
       $${folderPredicate}
       $${excludedCategoryPredicate}
+      $${automatedSenderPredicate}
       AND NOT EXISTS (
         SELECT 1
         FROM email reply

@@ -5,6 +5,7 @@ import {
   getNextResponseReminderAt,
   getResponseSlaStartAt,
   getResponseSlaProgress,
+  isResponseReminderAccountInLiveScope,
   isResponseReminderRequestAfterActivation,
   normalizeResponseReminderConfig,
   normalizeResponseReminderIntervals,
@@ -502,5 +503,23 @@ describe("ResponseReminder", () => {
     expect(
       isResponseReminderRequestAfterActivation(request, receivedAt.getTime()),
     ).toBe(true);
+  });
+
+  test("напоминает только по ящику, выбранному в живом контроле", () => {
+    // Живой контроль выбран для integrators (id 2). SLA, включённый когда-то
+    // у личного ящика (id 1), и отчёт по нему не расширяют область.
+    expect(isResponseReminderAccountInLiveScope(2, 2)).toBe(true);
+    expect(isResponseReminderAccountInLiveScope(1, 2)).toBe(false);
+    expect(isResponseReminderAccountInLiveScope(3, 2)).toBe(false);
+    // Значение из localStorage может прийти строкой.
+    expect(isResponseReminderAccountInLiveScope(2, "2")).toBe(true);
+  });
+
+  test("без выбранного в живом контроле ящика область напоминаний пуста", () => {
+    for (const liveAccountId of [null, undefined, 0, -1, 1.5, "", "x", {}]) {
+      expect(isResponseReminderAccountInLiveScope(1, liveAccountId)).toBe(
+        false,
+      );
+    }
   });
 });

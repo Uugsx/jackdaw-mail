@@ -37,6 +37,7 @@ export class IMAPEMail extends EMail {
             uid: true,
             size: true,
             threadId: true,
+            internalDate: true,
             envelope: true,
             source: true,
             flags: true,
@@ -73,7 +74,8 @@ export class IMAPEMail extends EMail {
     let env = msgInfo.envelope;
     this.id = sanitize.nonemptystring(env.messageId, this.uid + "");
     this.subject = sanitize.string(env.subject, null);
-    this.received = msgInfo.internalDate ?? new Date();
+    // Без internalDate не затираем уже известную дату получения временем загрузки
+    this.received = msgInfo.internalDate ?? this.received ?? new Date();
     this.sent = sanitize.date(env.date, this.received);
     this.inReplyTo = sanitize.string(env.inReplyTo, null);
     this.threadID = sanitize.string(env.threadId, null); // Only if server supports OBJECTID or X-GM-EXT-1 IMAP extension
@@ -221,6 +223,17 @@ export class IMAPEMail extends EMail {
 
   async removeTagOnServer(tag: Tag) {
     await this.setFlagServer(tag.name, false);
+  }
+
+  async deleteMessage(strategy?: DeleteStrategy) {
+    // Корзину проверяем до локального удаления: иначе письмо пропадало из списка
+    // и базы, а на сервере оставалось, и синхронизация его уже не возвращала
+    let effectiveStrategy = strategy ?? this.folder.account.deleteStrategy;
+    if (effectiveStrategy == DeleteStrategy.MoveToTrash &&
+        ![SpecialFolder.Trash, SpecialFolder.Spam].includes(this.folder.specialFolder)) {
+      assert(this.folder.account.findSpecialFolder(SpecialFolder.Trash), gt`Trash folder is not set. Cannot delete the email. Please go to folder properties and set Use As: Trash.`);
+    }
+    await super.deleteMessage(strategy);
   }
 
   async deleteMessageOnServer(strategy = this.folder.account.deleteStrategy) {

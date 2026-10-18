@@ -151,7 +151,7 @@
     color: var(--error-fg, #b00020);
   }
   .file {
-    height: 40px;
+    min-height: 40px;
     cursor: pointer;
   }
   .icon {
@@ -164,8 +164,13 @@
     border-bottom-left-radius: 3px;
   }
   .info {
-    width: 160px;
-    padding: 2px 8px;
+    /* Имя файла не обрезается по высоте и помещается шире 160px */
+    min-width: 160px;
+    max-width: 320px;
+    justify-content: center;
+    gap: 2px;
+    line-height: 1.3;
+    padding: 4px 8px;
     border-top-right-radius: 3px;
     border-bottom-right-radius: 3px;
     background-color: var(--main-bg);

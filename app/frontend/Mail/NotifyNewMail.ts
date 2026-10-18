@@ -12,6 +12,7 @@ import { logError, showError } from "../Util/error";
 import { CollectionObserver, type ArrayColl } from "svelte-collections";
 import type { Account } from "../../logic/Abstract/Account";
 import { syncMailTaskbarBadge } from "./mailUnreadCounts";
+import { gt } from "../../l10n/l10n";
 import {
   getMailAccountNotificationSetting,
   getMailNotificationSound,
@@ -38,7 +39,20 @@ export async function showNewMail(messages: EMail[]) {
     return;
   }
 
-  messages = messages.filter(message => shouldNotifyMessage(message));
+  /* Сначала дешёвая проверка: при загрузке папки из базы приходят тысячи
+   * старых писем, и для каждого раньше читались и разбирались две настройки.
+   * Настройки одинаковы для всей папки — считаем их один раз на папку. */
+  messages = messages.filter(message => message.isNewArrived && !message.isRead);
+  let notifyByFolder = new Map<Folder | null | undefined, boolean>();
+  messages = messages.filter(message => {
+    let folder = message.folder;
+    let notify = notifyByFolder.get(folder);
+    if (notify === undefined) {
+      notify = shouldNotifyMessage(message);
+      notifyByFolder.set(folder, notify);
+    }
+    return notify;
+  });
   if (!messages.length) {
     return;
   }
@@ -101,7 +115,7 @@ export async function showNewMail(messages: EMail[]) {
   notification.updatesTaskbarBadge = false;
   notification.onClick = () => openMessage(firstMsg);
   notification.onReply = replyText => reply(firstMsg, replyText);
-  notification.replyPlaceholder = "Reply…";
+  notification.replyPlaceholder = gt`Reply…`;
   await notification.show();
   syncMailTaskbarBadge();
 }
