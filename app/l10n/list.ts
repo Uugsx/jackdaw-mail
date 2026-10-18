@@ -68,6 +68,9 @@ export const localeMapping: Record<string, string> = {
   "zh-tw": "zh-Hant",
   "zh-hk": "zh-Hant",
   "zh-sg": "zh",
+  // Общий код норвежского: устаревший каталог `no` не поддерживается, используем букмол
+  "no": "nb",
+  "no-no": "nb",
 };
 
 /** List of available locales in this build.
@@ -81,4 +84,4 @@ export const rtlLocales = [ 'ar', 'fa', 'he', 'pa-Arab', 'ur' ];
  * `npm run l10n:check` и test/l10n/catalogCompleteness.test.ts падают,
  * если в их каталогах нет хотя бы одной строки из исходного каталога.
  * Остальные языки при отсутствии перевода показывают английский текст. */
-export const fullyTranslatedLocales = [ 'ru', 'fr' ];
+export const fullyTranslatedLocales = [ 'ru', 'fr', 'de', 'es', 'it', 'pt', 'uk', 'pl', 'zh', 'ja', 'nl', 'tr' ];
