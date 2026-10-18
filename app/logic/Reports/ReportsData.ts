@@ -3,6 +3,7 @@ import { getDatabase as getMailDatabase } from "../Mail/SQL/SQLDatabase";
 import { getDatabase as getChatDatabase } from "../Chat/SQL/SQLDatabase";
 import { getDatabase as getFilesDatabase } from "../Files/SQL/SQLDatabase";
 import sql, { type Database } from "../../../lib/rs-sqlite";
+import { gt } from "../../l10n/l10n";
 import {
   DEFAULT_WORKING_HOURS_SCHEDULE,
   isWithinWorkingHours,
@@ -530,7 +531,7 @@ export async function loadReportMailAccounts(
       }
       return {
         accountId,
-        accountName: account.name || account.emailAddress || "Почтовый аккаунт",
+        accountName: account.name || account.emailAddress || gt`Mail account`,
         email:
           account.emailAddress || account.identities?.first?.emailAddress || "",
       };
@@ -569,7 +570,7 @@ export async function loadReportMailAccounts(
           accountName: findAccountName(
             appGlobal.emailAccounts,
             accountId,
-            "Почтовый аккаунт",
+            gt`Mail account`,
           ),
           email: findAccountEmail(appGlobal.emailAccounts, accountId),
         },
@@ -607,7 +608,7 @@ export async function loadReportMailFolders(
     .map((row) => ({
       accountId: rowNumber(row, "accountId"),
       folderId: rowNumber(row, "folderId"),
-      name: rowText(row, "name", "Папка"),
+      name: rowText(row, "name", gt`Folder`),
       path: rowText(row, "path", ""),
       specialUse: rowText(row, "specialUse", "") || null,
     }))
@@ -639,7 +640,7 @@ async function loadReportMailFolder(
   return {
     accountId: rowNumber(row, "accountId"),
     folderId: rowNumber(row, "folderId"),
-    name: rowText(row, "name", "Папка"),
+    name: rowText(row, "name", gt`Folder`),
     path: rowText(row, "path", ""),
     specialUse: rowText(row, "specialUse", "") || null,
   };
@@ -668,7 +669,7 @@ export function normalizeReportTopic(
     .replace(/^(?:(?:re|fw|fwd|aw|sv|wg)\s*:\s*)+/iu, "")
     .replace(/\s+/gu, " ")
     .trim();
-  return normalized || "(без темы)";
+  return normalized || gt`(no subject)`;
 }
 
 export function mergeReportTopics(rows: RawMailTopicRow[]): MailTopicRow[] {
@@ -1122,7 +1123,7 @@ async function loadMailReport(
         accountName: findAccountName(
           appGlobal.emailAccounts,
           accountId,
-          "Почтовый аккаунт",
+          gt`Mail account`,
         ),
         responderAccountId: responderAccountId > 0 ? responderAccountId : null,
         responderAccountName:
@@ -1133,7 +1134,7 @@ async function loadMailReport(
                 "",
               )
             : null,
-        subject: rowText(row, "subject", "(без темы)"),
+        subject: rowText(row, "subject", gt`(no subject)`),
         contactName: rowText(row, "contactName", ""),
         contactEmail: rowText(row, "contactEmail", ""),
         requestAt,
@@ -1182,7 +1183,7 @@ async function loadMailReport(
   );
   const categoryResponseTimes = new Map<string, MailResponseRow[]>();
   for (const row of categoryMessageRows) {
-    const name = rowText(row, "name", "Категория");
+    const name = rowText(row, "name", gt`Category`);
     const emailId = rowNumber(row, "emailId");
     const response = responseByEmailId.get(emailId);
     if (!response) {
@@ -1376,7 +1377,7 @@ async function loadMailReport(
       accountName: findAccountName(
         appGlobal.emailAccounts,
         accountId,
-        "Почтовый аккаунт",
+        gt`Mail account`,
       ),
       total: rowNumber(row, "total"),
       incoming: rowNumber(row, "incoming"),
@@ -1434,9 +1435,9 @@ async function loadMailReport(
         accountName: findAccountName(
           appGlobal.emailAccounts,
           accountId,
-          "Почтовый аккаунт",
+          gt`Mail account`,
         ),
-        folderName: rowText(row, "folderName", "Папка"),
+        folderName: rowText(row, "folderName", gt`Folder`),
         folderPath: rowText(row, "folderPath", ""),
         total: rowNumber(row, "total"),
         incoming: rowNumber(row, "incoming"),
@@ -1461,18 +1462,18 @@ async function loadMailReport(
       })),
     ),
     categories: categoryRows.map((row) => ({
-      name: rowText(row, "name", "Категория"),
+      name: rowText(row, "name", gt`Category`),
       total: rowNumber(row, "total"),
       incoming: rowNumber(row, "incoming"),
       outgoing: rowNumber(row, "outgoing"),
       answered: rowNumber(row, "answered"),
       lastActivity: unixDate(row.lastActivity),
       peakWeekday:
-        categoryPeaks.get(rowText(row, "name", "Категория"))?.weekday ?? null,
+        categoryPeaks.get(rowText(row, "name", gt`Category`))?.weekday ?? null,
       peakHour:
-        categoryPeaks.get(rowText(row, "name", "Категория"))?.hour ?? null,
+        categoryPeaks.get(rowText(row, "name", gt`Category`))?.hour ?? null,
       responseTime: buildResponseTimeStats(
-        categoryResponseTimes.get(rowText(row, "name", "Категория")) ?? [],
+        categoryResponseTimes.get(rowText(row, "name", gt`Category`)) ?? [],
         responseTargetMinutes,
       ),
     })),
@@ -1508,7 +1509,7 @@ async function loadCalendarReport(
     const calendarKey = String(calendar.dbID ?? calendar.id);
     const row: CalendarRow = {
       calendarId: calendar.dbID ?? calendar.id,
-      calendarName: calendar.name || "Календарь",
+      calendarName: calendar.name || gt`Calendar`,
       events: 0,
       hours: 0,
       onlineMeetings: 0,
@@ -1780,8 +1781,8 @@ function makeReportBounds(range: ReportDateRange): ReportBounds {
   if (validation) {
     throw new Error(
       validation == "reversed"
-        ? "Период отчёта задан в обратном порядке"
-        : "Даты отчёта некорректны",
+        ? gt`The report period is in reverse order`
+        : gt`The report dates are invalid`,
     );
   }
   const start = parseDateInput(range.from)!;
@@ -2062,7 +2063,7 @@ function findReportMailAccount(accountId: number): ReportMailAccountOption {
     accountName: findAccountName(
       appGlobal.emailAccounts,
       accountId,
-      "Почтовый аккаунт",
+      gt`Mail account`,
     ),
     email: findAccountEmail(appGlobal.emailAccounts, accountId),
   };
