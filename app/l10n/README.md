@@ -56,7 +56,11 @@ We chose lingui and svelte-18n-lingui, because:
   `l10n/locales/*/messages-compiled.json` files, which will be read
   by the lingui UI code at application startup and are optimized
   for fast parsing.
-10. Test
+10. Test. `npm run l10n:check` fails if the code has strings that are
+  not extracted yet, or that are not translated into the languages listed
+  in `fullyTranslatedLocales` (`l10n/list.ts`).
+  `test/l10n/catalogCompleteness.test.ts` checks the same for the catalogs
+  in every test run.
 11. Ship it
 
 # Instructions for translators

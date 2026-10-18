@@ -6,6 +6,7 @@ import {
 } from "./ResponseMessageAddresses";
 import { getDatabase as getMailDatabase } from "../Mail/SQL/SQLDatabase";
 import type { PendingResponseRequest } from "./ResponseReminder";
+import { gt } from "../../l10n/l10n";
 
 export const MAX_PENDING_RESPONSE_REQUESTS = 5_000;
 const ignoredFolderKinds = [
@@ -268,7 +269,7 @@ export async function loadPendingResponseRequests(
         emailId,
         messageID: optionalTextValue(row.messageID),
         threadID: optionalTextValue(row.threadID),
-        subject: textValue(row.subject) || "(без темы)",
+        subject: textValue(row.subject) || gt`(no subject)`,
         receivedAt: new Date(receivedSeconds * 1000),
         categoryNames: tagsByEmailId.get(emailId) ?? [],
         isRead: booleanValue(row.isRead),

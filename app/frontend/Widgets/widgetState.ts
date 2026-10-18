@@ -138,11 +138,28 @@ export function updateWebWidget(id: string, name: string, url: string) {
   reloadWebWidget(id);
 }
 
+/** Название встроенной панели на текущем языке интерфейса.
+ * В `widgets.list` хранится имя на языке, который был выбран при первом запуске,
+ * поэтому для встроенных панелей его нельзя показывать как есть. */
+function builtInWidgetName(kind: WidgetKind): string | null {
+  if (kind === "calendar") {
+    return gt`Calendar`;
+  }
+  if (kind === "live-sla") {
+    return gt`Live response control`;
+  }
+  return null;
+}
+
 export function normalizeWidgetList(list: WidgetEntry[] | null | undefined): WidgetEntry[] {
-  let items = (list ?? []).map(entry => ({
-    ...entry,
-    kind: entry.kind ?? (entry.url ? "web" as const : "calendar" as const),
-  }));
+  let items = (list ?? []).map(entry => {
+    let kind = entry.kind ?? (entry.url ? "web" as const : "calendar" as const);
+    return {
+      ...entry,
+      kind,
+      name: builtInWidgetName(kind) ?? entry.name,
+    };
+  });
   if (!items.length) {
     return defaultWidgets;
   }

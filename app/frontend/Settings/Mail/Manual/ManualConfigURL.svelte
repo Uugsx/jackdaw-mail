@@ -85,13 +85,13 @@
    */
   export async function onContinue(): Promise<boolean> {
     if (!config.emailAddress) {
-      throw new Error("Please enter the email address");
+      throw new Error($t`Please enter the email address`);
     }
     if (!config.url) {
-      urlError = new Error("Please enter the correct URL");
+      urlError = new Error($t`Please enter the correct URL`);
       throw urlError;
     } else if (!config.url.startsWith("https://")) {
-      urlError = new Error("URL must be https");
+      urlError = new Error($t`URL must be https`);
       throw urlError;
     } else {
       urlError = null;
@@ -133,7 +133,7 @@
       return false;
     }
     if (config.authMethod == AuthMethod.Unknown) {
-      authError = new Error("Please enter the authentication method");
+      authError = new Error($t`Please enter the authentication method`);
       throw authError;
     } else if (config.authMethod == AuthMethod.OAuth2) {
       config.oAuth2 ??= getOAuth2BuiltIn(config);

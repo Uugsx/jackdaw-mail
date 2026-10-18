@@ -74,7 +74,7 @@
       iconOnly
       />
     <Button
-      label="Code block with multiple lines"
+      label={$t`Code block with multiple lines`}
       shortCutInfo="
 ```
 code
@@ -230,7 +230,7 @@ block
     <hbox flex class="link-dialog">
       <!-- <label for="linktext">Link text</label>
       <input type="text" bind:value={linkText} id="linktext" /> -->
-      <label for="linktargeturl">Link target URL</label>
+      <label for="linktargeturl">{$t`Link target URL`}</label>
       <input type="url" bind:value={linkTargetURL} id="linktargeturl" />
       <Button
         onClick={onLinkOK}

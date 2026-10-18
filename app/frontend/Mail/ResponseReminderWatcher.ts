@@ -400,7 +400,7 @@ async function evaluateResponseReminders(): Promise<void> {
           const candidate: ResponseReminderCandidate = {
             ...request,
             accountName:
-              account.name || account.emailAddress || "Почтовый аккаунт",
+              account.name || account.emailAddress || gt`Mail account`,
           };
           const key = responseReminderKey(candidate);
           activeKeys.add(key);
@@ -784,7 +784,7 @@ async function showResponseReminder(
       elapsedResponseMinutes(candidate, now, workingHours, slaStartedAt),
     ),
   );
-  const subject = candidate.subject.trim() || "(без темы)";
+  const subject = candidate.subject.trim() || gt`(no subject)`;
   const notification = new SystemNotification(
     new NotificationKinds(
       getLocalStorage("notifications.mail", ["popup", "sound"]).value,
@@ -812,7 +812,7 @@ async function showResponseEventNotification(
   now: Date,
 ): Promise<void> {
   const { event, candidate, targetMinutes, workingHours, slaStartedAt } = job;
-  const subject = candidate.subject.trim() || "(без темы)";
+  const subject = candidate.subject.trim() || gt`(no subject)`;
   const soundEvent =
     event == "overdue" ? "sla-overdue" : "sla-taken-in-work";
   const notification = new SystemNotification(
