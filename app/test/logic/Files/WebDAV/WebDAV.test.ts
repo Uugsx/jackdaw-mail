@@ -354,7 +354,9 @@ test("локальный кеш различает имена, которые с
 test("перенос не затирает одноимённый файл в целевой папке", async () => {
   const { source, target } = await transferFolders("no-overwrite");
   await verify.putFileContents(target.path + "first.txt", "keep me");
-  await expect(target.moveFilesHere(new ArrayColl([source.files.first])))
+  // Ищем по имени: порядок листинга зависит от ФС сервера (на ext4 в CI — не алфавитный).
+  const first = source.files.find(file => file.name == "first.txt");
+  await expect(target.moveFilesHere(new ArrayColl([first])))
     .rejects.toThrow(/already exists/);
   expect(await verify.getFileContents(target.path + "first.txt", { format: "text" })).toBe("keep me");
   expect(await verify.exists(source.path + "first.txt")).toBe(true);
