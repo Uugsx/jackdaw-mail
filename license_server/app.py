@@ -76,7 +76,8 @@ PADDLE_PRICE_ID_RE = re.compile(r"^pri_[a-z0-9]{26}$")
 PADDLE_PRODUCT_ID_RE = re.compile(r"^pro_[a-z0-9]{26}$")
 PADDLE_TRANSACTION_ID_RE = re.compile(r"^txn_[a-z0-9]{26}$")
 PADDLE_SUBSCRIPTION_ID_RE = re.compile(r"^sub_[a-z0-9]{26}$")
-PADDLE_EVENT_ID_RE = re.compile(r"^evt_[a-z0-9]{26}$")
+# События симулятора Paddle приходят с префиксом ntfsimevt_ и подписаны тем же секретом destination.
+PADDLE_EVENT_ID_RE = re.compile(r"^(?:evt|ntfsimevt)_[a-z0-9]{26}$")
 # Токен получения ключа: 32 случайных байта из браузера покупателя в base64url без выравнивания.
 PADDLE_CLAIM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 PADDLE_CLAIM_CUSTOM_DATA_KEY = "jackdaw_claim"

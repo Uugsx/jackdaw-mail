@@ -386,6 +386,15 @@ class PaddleWebhookTests(unittest.TestCase):
         self.assertEqual((status, payload), (200, {"ok": True, "ignored": "price"}))
         self.assertEqual(self._license_count(), 0)
 
+    def test_simulator_event_ids_are_accepted_and_malformed_ids_rejected(self) -> None:
+        simulated = self._event("transaction.completed", self._transaction(UNKNOWN_PRICE), event_id="ntfsimevt_01" + "s" * 24)
+        self.assertEqual(self._post_event(simulated), (200, {"ok": True, "ignored": "price"}))
+        simulated = self._event("transaction.completed", self._transaction(), event_id="ntfsimevt_01" + "t" * 24)
+        self.assertEqual(self._post_event(simulated), (200, {"ok": True}))
+        self.assertEqual(self._license_count(), 1)
+        status, payload = self._post_event(self._event("transaction.completed", self._transaction(), event_id="event-1"))
+        self.assertEqual((status, payload["error"]), (400, "invalid_webhook_event"))
+
     def test_unpaid_transaction_does_not_grant_access(self) -> None:
         data = self._transaction()
         data["status"] = "billed"
