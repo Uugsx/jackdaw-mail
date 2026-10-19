@@ -41,7 +41,7 @@ export const localeNames = {
   'fa': "Persian / فارسی",
   'pl': "Polish / Polski",
   'pt': "Portuguese / Português",
-  'pa-Arab': "Punjabi (Pakistan) / پنجابی",
+  //'pa-Arab': "Punjabi (Pakistan) / پنجابی", // скрыт: каталог пустой
   'ro': "Romanian / Românește",
   'ru': "Russian / Русский язык",
   'sk': "Slovak / Slovenčina",
@@ -84,4 +84,4 @@ export const rtlLocales = [ 'ar', 'fa', 'he', 'pa-Arab', 'ur' ];
  * `npm run l10n:check` и test/l10n/catalogCompleteness.test.ts падают,
  * если в их каталогах нет хотя бы одной строки из исходного каталога.
  * Остальные языки при отсутствии перевода показывают английский текст. */
-export const fullyTranslatedLocales = [ 'ru', 'fr', 'de', 'es', 'it', 'pt', 'uk', 'pl', 'zh', 'ja', 'nl', 'tr' ];
+export const fullyTranslatedLocales = [ 'ru', 'fr', 'ar', 'az', 'bg', 'bn', 'cs', 'da', 'de', 'el', 'en-GB', 'eo', 'es', 'et', 'fa', 'fi', 'ga', 'he', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'lt', 'lv', 'nb', 'nl', 'pl', 'pt', 'ro', 'sk', 'sl', 'sv', 'ta', 'th', 'tr', 'uk', 'ur', 'vi', 'zh', 'zh-Hant' ];
