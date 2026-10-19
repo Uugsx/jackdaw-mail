@@ -1248,6 +1248,14 @@
   .editor :global(.ProseMirror p) {
     margin-block: 0;
   }
+  /* Тёмная тема: ссылки читаемые голубые, как в просмотре письма.
+     Остальные цвета адаптирует расширение DarkModeColors. */
+  @media (prefers-color-scheme: dark) {
+    .editor :global(.ProseMirror a),
+    .editor :global(.ProseMirror a span) {
+      color: #6cb4ff !important;
+    }
+  }
   .compose-quote {
     margin: 0 12px 12px;
     padding-block-start: 8px;
