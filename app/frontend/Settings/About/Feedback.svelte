@@ -110,6 +110,7 @@
 </vbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import {
     collectDiagnostics,
     isValidContactEmail,
@@ -177,7 +178,7 @@
       sentID = await sendFeedback({ kind, message, contactEmail, includeDiagnostics, website }, runtimeVersion);
       sentWithEmail = !!contactEmail.trim();
     } catch (ex) {
-      error = ex?.message ?? String(ex);
+      error = friendlyErrorMessage(ex);
     } finally {
       sending = false;
     }

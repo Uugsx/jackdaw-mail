@@ -68,7 +68,7 @@
     </vbox>
     <vbox class="error">
       {#if errorMsg}
-        <ErrorMessage bind:errorMessage={errorMsg} errorGravity={ErrorGravity.Error} />
+        <ErrorMessage bind:errorMessage={errorMsg} errorGravity={ErrorGravity.Error} ex={errorEx} />
       {/if}
     </vbox>
   </vbox>
@@ -112,6 +112,7 @@
   import StartBarM from "./StartBarM.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import AccountDropDown from "../../Shared/AccountDropDown.svelte";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import Button from "../../Shared/Button.svelte";
@@ -159,9 +160,11 @@
   }
 
   let errorMsg: string | null = null;
+  let errorEx: Error | null = null;
 
   function showError(ex: Error) {
-    errorMsg = ex.message ?? ex + "";
+    errorMsg = friendlyErrorMessage(ex);
+    errorEx = ex;
     logError(ex);
   }
 

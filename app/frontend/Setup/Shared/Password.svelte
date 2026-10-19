@@ -7,6 +7,7 @@
     required
     name="password"
     {autofocus}
+    aria-describedby={appPasswordHint ? `${id}-hint` : undefined}
     on:keydown={(event) => onKeyEnter(event, onEnter)}
     />
   <hbox class="buttons">
@@ -19,6 +20,11 @@
       />
   </hbox>
 </hbox>
+{#if appPasswordHint}
+  <p class="password-hint" id="{id}-hint">
+    {$t`Gmail, Yandex, Mail.ru, iCloud and Outlook.com with two-step verification need an app password. Create it in the security settings of your mail account and enter it here instead of your regular password.`}
+  </p>
+{/if}
 
 <script lang="ts">
   import Button from "../../Shared/Button.svelte";
@@ -33,6 +39,8 @@
   export let password: string;
   export let id = "password";
   export let autofocus = false;
+  /** Подсказка под полем: что такое пароль приложения и где его взять. */
+  export let appPasswordHint = false;
 
   let cleartext = false;
   let inputEl: HTMLInputElement;
@@ -58,5 +66,12 @@
   }
   .buttons {
     min-width: 32px;
+  }
+  .password-hint {
+    max-width: 32em;
+    margin: 0 0 8px;
+    color: color-mix(in srgb, var(--main-fg, CanvasText) 72%, transparent);
+    font-size: 12px;
+    line-height: 1.45;
   }
 </style>

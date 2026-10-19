@@ -60,6 +60,7 @@ import {
   NotificationKinds,
   SystemNotification,
 } from "../Shared/SystemNotification";
+import { notificationSubject } from "../Shared/notificationText";
 import MailIcon from "../asset/icon/appBar/mail.svg?raw";
 
 const RESPONSE_REMINDER_STATE_STORAGE_KEY =
@@ -784,7 +785,7 @@ async function showResponseReminder(
       elapsedResponseMinutes(candidate, now, workingHours, slaStartedAt),
     ),
   );
-  const subject = candidate.subject.trim() || "(без темы)";
+  const subject = notificationSubject(candidate.subject);
   const notification = new SystemNotification(
     new NotificationKinds(
       getLocalStorage("notifications.mail", ["popup", "sound"]).value,
@@ -812,7 +813,7 @@ async function showResponseEventNotification(
   now: Date,
 ): Promise<void> {
   const { event, candidate, targetMinutes, workingHours, slaStartedAt } = job;
-  const subject = candidate.subject.trim() || "(без темы)";
+  const subject = notificationSubject(candidate.subject);
   const soundEvent =
     event == "overdue" ? "sla-overdue" : "sla-taken-in-work";
   const notification = new SystemNotification(

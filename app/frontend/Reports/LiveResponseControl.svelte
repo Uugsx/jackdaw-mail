@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../logic/util/friendlyError";
   import { onMount } from "svelte";
   import ClockIcon from "lucide-svelte/icons/clock-3";
   import ArchiveIcon from "lucide-svelte/icons/archive";
@@ -595,7 +596,7 @@
     </p>
   {/if}
   {#if openError}
-    <p class="live-inline-error" role="alert">{openError.message}</p>
+    <p class="live-inline-error" role="alert">{friendlyErrorMessage(openError)}</p>
   {/if}
   {#if accountId != null}
     <p class="live-control-note">

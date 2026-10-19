@@ -6,6 +6,7 @@ import { mailApp } from "./MailJackdawApp";
 import { openApp, bringAppToFront } from "../AppsBar/selectedApp";
 import { appGlobal } from "../../logic/app";
 import { SystemNotification, NotificationKinds } from "../Shared/SystemNotification";
+import { newMailNotificationText } from "../Shared/notificationText";
 import { getLocalStorage } from "../Util/LocalStorage";
 import MailIcon from '../asset/icon/appBar/mail.svg?raw';
 import { logError, showError } from "../Util/error";
@@ -87,10 +88,7 @@ export async function showNewMail(messages: EMail[]) {
       logError(ex);
     }
   }
-  let title = singleMsg?.subject ??
-    messages.map(msg => msg.subject?.substring(0, 20) ?? "").join(", ").substring(0, 60);
-  let body = singleMsg?.text ??
-    messages.map(msg => msg.text?.substring(0, 30)).join(", ").substring(0, 160);
+  let { title, body } = newMailNotificationText(messages, count);
 
   let notification = new SystemNotification(
     kinds,

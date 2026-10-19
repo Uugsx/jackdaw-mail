@@ -88,6 +88,12 @@
   --tooltip-fg: #2d3339;
   --tooltip-border: #d7cfc1;
   --tooltip-shadow: 0 6px 18px rgba(var(--shadow-color), 0.14);
+  /* Тон сообщений: ошибка, предупреждение, успех, справка.
+   * Используются для иконки и рамки, текст остаётся основным цветом. */
+  --danger-fg: #B84E3B;
+  --warning-fg: #8A5A00;
+  --success-fg: #2F7A3E;
+  --info-fg: #3C6E91;
 
   color: var(--fg);
   background-color: var(--bg);
@@ -152,6 +158,10 @@
     --tooltip-fg: #f3f4f6;
     --tooltip-border: #475463;
     --tooltip-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    --danger-fg: #E17B65;
+    --warning-fg: #E2A842;
+    --success-fg: #7CC48A;
+    --info-fg: #8DB8D8;
 
     color: var(--fg);
     background-color: var(--bg);

@@ -163,6 +163,7 @@
 </vbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import { IMAPAccount } from "../../../logic/Mail/IMAP/IMAPAccount";
   import { EWSAccount } from "../../../logic/Mail/EWS/EWSAccount";
@@ -242,7 +243,7 @@
       }
       newPersons.add(person);
     } catch (ex) {
-      errorMessage = ex.message;
+      errorMessage = friendlyErrorMessage(ex);
     }
   }
 

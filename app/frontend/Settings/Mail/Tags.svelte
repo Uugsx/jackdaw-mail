@@ -135,6 +135,7 @@
 </vbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import { onMount } from "svelte";
   import { Tag, addAvailableTag, availableTags, moveTag, reorderTag, saveTagsList, setTagsSyncAccountId, sortedTagList } from "../../../logic/Abstract/Tag";
   import {
@@ -219,7 +220,7 @@
       let result = await syncTagsFromOWAAccount(account, removeOthersOnSync);
       syncMessage = $t`${result.total} categories synced (${result.added} added, ${result.updated} updated, ${result.removed} removed).`;
     } catch (ex) {
-      syncError = ex instanceof Error ? ex.message : String(ex);
+      syncError = friendlyErrorMessage(ex);
     } finally {
       syncing = false;
     }

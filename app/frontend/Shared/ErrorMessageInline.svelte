@@ -1,20 +1,23 @@
 {#if ex}
-  <hbox class="error">
-    <hbox class="icon">
-      <ErrorIcon />
-    </hbox>
-    <div class="value">
-      {console.error(ex), logError(ex), ""}
-      {ex.message ?? ex + ""}
-    </div>
-  </hbox>
+  <Notice {ex} tone="error" {onRetry} {onClose} />
 {/if}
 
 <script lang="ts">
+  import Notice from "./Notice.svelte";
   import { logError } from "../Util/error";
-  import ErrorIcon from "lucide-svelte/icons/triangle-alert";
 
   export let ex: Error = null;
+  /** Если задано — кнопка «Повторить». */
+  export let onRetry: (() => void | Promise<void>) | null = null;
+  /** Если задано — кнопка закрытия. */
+  export let onClose: (() => void) | null = null;
+
+  // Пользователь видит понятный текст, а в лог и Sentry уходит исходная ошибка
+  let loggedEx: Error = null;
+  $: if (ex && ex !== loggedEx) {
+    loggedEx = ex;
+    logError(ex);
+  }
 
   export function showError(error: Error) {
     ex = error;
@@ -23,17 +26,3 @@
     ex = null;
   }
 </script>
-
-<style>
-  .error {
-    background-color: #F8FFD2;
-    color: #DD0000;
-    border: 1px solid #FFC83A;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin: 8px;
-  }
-  .icon {
-    margin-inline-end: 12px;
-  }
-</style>

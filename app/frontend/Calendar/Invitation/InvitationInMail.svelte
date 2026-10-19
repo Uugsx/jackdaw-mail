@@ -11,7 +11,7 @@
           {$t`No event found`}
         {/if}
       {:catch ex}
-        {ex?.message ?? ex}
+        <Notice {ex} compact />
       {/await}
     {/if}
     {#if $message.invitationMessage == InvitationMessage.Invitation}
@@ -28,6 +28,7 @@
 </hbox>
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { InvitationMessage } from "../../../logic/Calendar/Invitation/InvitationStatus";
   import InvitationDisplay from "./InvitationDisplay.svelte";

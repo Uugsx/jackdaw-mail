@@ -1,18 +1,8 @@
-<vbox class="error">
-  <StatusMessage status={statusGravity(errorGravity)}
-    message={errorMessage}>
-    <hbox slot="icon">
-      {#if errorGravity == ErrorGravity.Error}
-        <ErrorIcon />
-      {:else if errorGravity == ErrorGravity.Warning}
-        <WarningIcon />
-      {/if}
-    </hbox>
-    <hbox flex />
-    <RoundButton label={$t`Close`} icon={CloseIcon} iconSize="16px" classes="plain small" border={false}
-      onClick={onClose} />
-  </StatusMessage>
-</vbox>
+{#if errorMessage || ex}
+  <vbox class="error">
+    <Notice {ex} message={errorMessage} tone={noticeTone(errorGravity)} onClose={onClose} />
+  </vbox>
+{/if}
 
 <script lang="ts" context="module">
   export enum ErrorGravity {
@@ -23,12 +13,7 @@
 </script>
 
 <script lang="ts">
-  import StatusMessage from "../Setup/Shared/StatusMessage.svelte";
-  import RoundButton from "./RoundButton.svelte";
-  import ErrorIcon from "lucide-svelte/icons/triangle-alert";
-  import WarningIcon from "lucide-svelte/icons/circle-alert";
-  import CloseIcon from "lucide-svelte/icons/x";
-  import { t } from "../../l10n/l10n";
+  import Notice, { type NoticeTone } from "./Notice.svelte";
   import { createEventDispatcher } from 'svelte';
   const dispatchEvent = createEventDispatcher();
 
@@ -36,19 +21,23 @@
   export let errorMessage: string;
   /** in/out */
   export let errorGravity: ErrorGravity;
+  /** Исходная ошибка: даёт подсказку и свёрнутые подробности для поддержки.
+   * Если `errorMessage` пуст, текст тоже берётся из неё. */
+  export let ex: unknown = null;
 
   function onClose() {
     errorMessage = null;
+    ex = null;
     dispatchEvent("continue");
   }
 
-  function statusGravity(errorGravity: ErrorGravity) {
+  function noticeTone(errorGravity: ErrorGravity): NoticeTone {
     if (errorGravity == ErrorGravity.Error) {
       return "error";
     } else if (errorGravity == ErrorGravity.Warning) {
       return "warning";
     }
-    return "";
+    return "success";
   }
 </script>
 

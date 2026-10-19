@@ -22,7 +22,7 @@
     </HeaderGroupBox>
   </vbox>
 {:catch ex}
-  {ex?.message ?? ex + ""}
+  <Notice {ex} />
 {/await}
 {#if isThunderbirdRunning}
   <StatusMessage status="error"
@@ -47,6 +47,7 @@
 </ButtonsBottom>
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { ThunderbirdProfile } from "../../../logic/Mail/Import/Thunderbird/TBProfile";
   import type { Addressbook } from "../../../logic/Contacts/Addressbook";
   import StatusMessage from "../Shared/StatusMessage.svelte";
