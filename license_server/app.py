@@ -4,6 +4,7 @@
 Сервис намеренно не знает пароли, письма или данные почтовых аккаунтов.
 Он хранит только хеши лицензионных ключей, хеши идентификаторов устройств,
 срок действия entitlement и технический журнал webhook-событий.
+Email покупателя Paddle запрашивается у Paddle только для письма с ключом и не сохраняется.
 """
 
 from __future__ import annotations
@@ -16,12 +17,19 @@ import json
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
+import ssl
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from email.utils import formatdate, make_msgid, parseaddr
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -60,6 +68,7 @@ DEFAULT_TRIAL_DAYS = 7
 MIGRATION_VERSION_BASELINE = 1
 MIGRATION_VERSION_TRIAL_CLAIMS = 2
 MIGRATION_VERSION_PADDLE_BILLING = 3
+MIGRATION_VERSION_PADDLE_KEY_EMAILS = 4
 # Медленный клиент не должен удерживать поток обработчика бесконечно.
 REQUEST_SOCKET_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 64
@@ -76,6 +85,12 @@ PADDLE_PRICE_ID_RE = re.compile(r"^pri_[a-z0-9]{26}$")
 PADDLE_PRODUCT_ID_RE = re.compile(r"^pro_[a-z0-9]{26}$")
 PADDLE_TRANSACTION_ID_RE = re.compile(r"^txn_[a-z0-9]{26}$")
 PADDLE_SUBSCRIPTION_ID_RE = re.compile(r"^sub_[a-z0-9]{26}$")
+PADDLE_CUSTOMER_ID_RE = re.compile(r"^ctm_[a-z0-9]{26}$")
+# Формат серверного API-ключа из документации Paddle; окружение зашито в префикс.
+PADDLE_API_KEY_RE = re.compile(r"^pdl_(live|sdbx)_apikey_[a-z0-9]{26}_[A-Za-z0-9]{22}_[A-Za-z0-9]{3}$")
+PADDLE_API_KEY_ENVIRONMENTS = {"sandbox": "sdbx", "production": "live"}
+PADDLE_API_BASE_URLS = {"sandbox": "https://sandbox-api.paddle.com", "production": "https://api.paddle.com"}
+PADDLE_API_TIMEOUT_SECONDS = 10
 # События симулятора Paddle приходят с префиксом ntfsimevt_ и подписаны тем же секретом destination.
 PADDLE_EVENT_ID_RE = re.compile(r"^(?:evt|ntfsimevt)_[a-z0-9]{26}$")
 # Токен получения ключа: 32 случайных байта из браузера покупателя в base64url без выравнивания.
@@ -109,6 +124,19 @@ PADDLE_REVOKING_ADJUSTMENT_ACTIONS = {"refund", "chargeback"}
 PADDLE_SITE_CHECKOUT_URL = "https://jackdaw-mail.pro/?checkout={plan}#plans"
 PADDLE_DELIVERY_INFO = b"jackdaw-paddle-key-delivery-v1"
 PADDLE_CLAIM_HASH_PREFIX = b"jackdaw-paddle-claim-v1:"
+PADDLE_KEY_EMAIL_INFO = b"jackdaw-paddle-key-email-v1"
+# Resend на VPS доступен только через порт 2587 (STARTTLS): 25/465/587 закрыты провайдером.
+DEFAULT_SMTP_HOST = "smtp.resend.com"
+DEFAULT_SMTP_PORT = 2587
+DEFAULT_SMTP_USER = "resend"
+DEFAULT_MAIL_FROM = "Jackdaw Mail <noreply@jackdaw-mail.pro>"
+SMTP_TIMEOUT_SECONDS = 20
+# Паузы между повторами отправки ключа: около четырёх суток, потом ключ остаётся только на странице.
+PADDLE_KEY_EMAIL_RETRY_DELAYS = (60, 300, 900, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 24 * 3600, 24 * 3600)
+PADDLE_KEY_EMAIL_POLL_SECONDS = 60
+PADDLE_KEY_EMAIL_BATCH_SIZE = 10
+PADDLE_KEY_EMAIL_PLAN_NAMES = {"monthly": ("месячная подписка", "monthly subscription"), "yearly": ("годовая подписка", "yearly subscription")}
+SUPPORT_URL = "https://github.com/Uugsx/jackdaw-mail/issues"
 # Копия migrations/003_paddle_billing.sql: CI выкладывает только app.py, поэтому миграция
 # не должна зависеть от файла рядом с сервисом. Совпадение с файлом проверяют тесты.
 PADDLE_BILLING_MIGRATION_SQL = """CREATE TABLE IF NOT EXISTS paddle_subscriptions (
@@ -140,7 +168,29 @@ CREATE TABLE IF NOT EXISTS paddle_key_deliveries (
     claimed_at TEXT
 );
 """
-EMBEDDED_MIGRATIONS = {"003_paddle_billing.sql": PADDLE_BILLING_MIGRATION_SQL}
+# Копия migrations/004_paddle_key_emails.sql (встроена по той же причине, что и 003).
+# Email покупателя здесь не хранится: воркер запрашивает его у Paddle перед отправкой.
+PADDLE_KEY_EMAILS_MIGRATION_SQL = """CREATE TABLE IF NOT EXISTS paddle_key_emails (
+    transaction_id TEXT PRIMARY KEY,
+    license_id INTEGER NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+    customer_id TEXT,
+    sealed_key TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    sent_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_paddle_key_emails_due
+    ON paddle_key_emails(status, next_attempt_at);
+"""
+EMBEDDED_MIGRATIONS = {
+    "003_paddle_billing.sql": PADDLE_BILLING_MIGRATION_SQL,
+    "004_paddle_key_emails.sql": PADDLE_KEY_EMAILS_MIGRATION_SQL,
+}
 
 
 class ServiceError(Exception):
@@ -298,20 +348,28 @@ def _paddle_delivery_cipher(claim_token: str, transaction_id: str) -> AESGCM:
     return AESGCM(key)
 
 
-def seal_license_key(license_key: str, claim_token: str, transaction_id: str) -> str:
-    """Шифрует ключ токеном покупателя: без токена из браузера ключ из базы не восстановить."""
+def _seal_with(cipher: AESGCM, license_key: str, transaction_id: str) -> str:
     nonce = secrets.token_bytes(12)
-    ciphertext = _paddle_delivery_cipher(claim_token, transaction_id).encrypt(nonce, license_key.encode("utf-8"), transaction_id.encode("ascii"))
+    ciphertext = cipher.encrypt(nonce, license_key.encode("utf-8"), transaction_id.encode("ascii"))
     return base64url_encode(nonce + ciphertext)
 
 
-def open_license_key(sealed_key: str, claim_token: str, transaction_id: str) -> str | None:
+def _open_with(cipher: AESGCM, sealed_key: str, transaction_id: str) -> str | None:
     try:
         sealed = base64url_decode(sealed_key)
-        plaintext = _paddle_delivery_cipher(claim_token, transaction_id).decrypt(sealed[:12], sealed[12:], transaction_id.encode("ascii"))
+        plaintext = cipher.decrypt(sealed[:12], sealed[12:], transaction_id.encode("ascii"))
     except (InvalidTag, ValueError):
         return None
     return plaintext.decode("utf-8")
+
+
+def seal_license_key(license_key: str, claim_token: str, transaction_id: str) -> str:
+    """Шифрует ключ токеном покупателя: без токена из браузера ключ из базы не восстановить."""
+    return _seal_with(_paddle_delivery_cipher(claim_token, transaction_id), license_key, transaction_id)
+
+
+def open_license_key(sealed_key: str, claim_token: str, transaction_id: str) -> str | None:
+    return _open_with(_paddle_delivery_cipher(claim_token, transaction_id), sealed_key, transaction_id)
 
 
 class Configuration:
@@ -338,6 +396,7 @@ class Configuration:
         configured_origins = {origin.strip().rstrip("/") for origin in os.getenv("JACKDAW_LICENSE_ORIGINS", "").split(",") if origin.strip()}
         self.allowed_origins = default_origins | configured_origins
         self._read_paddle_configuration()
+        self._read_key_email_configuration()
 
     def _read_paddle_configuration(self) -> None:
         """Paddle включается только при полном наборе значений; ошибка в заданном значении останавливает запуск."""
@@ -368,6 +427,33 @@ class Configuration:
         except ValueError as exc:
             raise RuntimeError("PADDLE_WEBHOOK_TOLERANCE_SECONDS must be an integer") from exc
         self.paddle_signature_tolerance_seconds = min(max(tolerance, 1), MAX_PADDLE_SIGNATURE_TOLERANCE_SECONDS)
+
+    def _read_key_email_configuration(self) -> None:
+        """Письмо с ключом включается API-ключом Paddle и файлом пароля SMTP; сами секреты в журнал не попадают."""
+        self.paddle_api_key = os.getenv("PADDLE_API_KEY", "").strip() or None
+        if self.paddle_api_key is not None:
+            match = PADDLE_API_KEY_RE.fullmatch(self.paddle_api_key)
+            expected = PADDLE_API_KEY_ENVIRONMENTS[self.paddle_environment]
+            if match is None or match.group(1) != expected:
+                raise RuntimeError(f"PADDLE_API_KEY must be a {self.paddle_environment} API key starting with pdl_{expected}_apikey_")
+        password_file = os.getenv("JACKDAW_LICENSE_SMTP_PASSWORD_FILE", "").strip()
+        self.smtp_password_file = Path(password_file) if password_file else None
+        self.smtp_host = os.getenv("JACKDAW_LICENSE_SMTP_HOST", "").strip() or DEFAULT_SMTP_HOST
+        try:
+            self.smtp_port = int(os.getenv("JACKDAW_LICENSE_SMTP_PORT", str(DEFAULT_SMTP_PORT)))
+        except ValueError as exc:
+            raise RuntimeError("JACKDAW_LICENSE_SMTP_PORT must be an integer") from exc
+        if not 1 <= self.smtp_port <= 65535:
+            raise RuntimeError("JACKDAW_LICENSE_SMTP_PORT must be between 1 and 65535")
+        self.smtp_user = os.getenv("JACKDAW_LICENSE_SMTP_USER", "").strip() or DEFAULT_SMTP_USER
+        self.mail_from = os.getenv("JACKDAW_LICENSE_MAIL_FROM", "").strip() or DEFAULT_MAIL_FROM
+        _name, sender_address = parseaddr(self.mail_from)
+        if "\r" in self.mail_from or "\n" in self.mail_from or not EMAIL_RE.fullmatch(sender_address):
+            raise RuntimeError("JACKDAW_LICENSE_MAIL_FROM must be an email address, optionally with a display name")
+
+    @property
+    def key_email_configured(self) -> bool:
+        return bool(self.paddle_webhook_configured and self.paddle_api_key and self.smtp_password_file)
 
     @property
     def paddle_price_plans(self) -> dict[str, str]:
@@ -411,6 +497,11 @@ class EntitlementSigner:
 
     def sign(self, payload: dict[str, Any]) -> str:
         return base64url_encode(self._key.sign(canonical_json(payload)))
+
+    def derive_secret(self, info: bytes) -> bytes:
+        """Отдельный симметричный ключ из закрытого ключа сервиса: копия базы без него бесполезна."""
+        seed = self._key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
+        return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(seed)
 
 
 class LicenseStore:
@@ -495,6 +586,7 @@ class LicenseStore:
         migrations = (
             (MIGRATION_VERSION_TRIAL_CLAIMS, "002_trial_claims.sql"),
             (MIGRATION_VERSION_PADDLE_BILLING, "003_paddle_billing.sql"),
+            (MIGRATION_VERSION_PADDLE_KEY_EMAILS, "004_paddle_key_emails.sql"),
         )
         for version, filename in migrations:
             if version in applied_versions:
@@ -938,11 +1030,15 @@ class LicenseStore:
         source: str,
         claim_token: str | None,
         grace_days: int,
+        email_customer_id: str | None = None,
+        seal_for_email: Callable[[str], str] | None = None,
     ) -> tuple[int, bool]:
         """Фиксирует оплаченную транзакцию: создаёт лицензию при первой оплате, иначе продлевает.
 
         Возвращает id лицензии и признак того, что она создана этим вызовом.
         Повтор той же транзакции не создаёт второй ключ и не сдвигает срок назад.
+        Письмо с ключом ставится в очередь в той же транзакции базы и только вместе с новым
+        ключом, поэтому продление и повтор webhook второго письма не создают.
         """
         timestamp = iso_datetime(now_utc())
         with self._write_lock, self._connect() as connection:
@@ -1035,6 +1131,16 @@ class LicenseStore:
                             iso_datetime(now_utc() + timedelta(days=PADDLE_KEY_DELIVERY_DAYS)),
                         ),
                     )
+                if email_customer_id is not None and seal_for_email is not None:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO paddle_key_emails (
+                            transaction_id, license_id, customer_id, sealed_key, status, attempts,
+                            next_attempt_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+                        """,
+                        (transaction_id, license_id, email_customer_id, seal_for_email(license_key), timestamp, timestamp, timestamp),
+                    )
             self._sync_paddle_license(connection, subscription_id, grace_days)
             return int(license_id), created
 
@@ -1111,6 +1217,45 @@ class LicenseStore:
                 "SELECT * FROM paddle_subscriptions WHERE subscription_id = ?",
                 (subscription_id,),
             ).fetchone()
+
+    def due_paddle_key_emails(self, current_time: datetime, limit: int = PADDLE_KEY_EMAIL_BATCH_SIZE) -> list[sqlite3.Row]:
+        with self._connect() as connection:
+            return connection.execute(
+                """
+                SELECT e.transaction_id, e.customer_id, e.sealed_key, e.attempts,
+                       l.plan, l.status AS license_status
+                FROM paddle_key_emails e JOIN licenses l ON l.id = e.license_id
+                WHERE e.status = 'pending' AND e.next_attempt_at <= ?
+                ORDER BY e.next_attempt_at
+                LIMIT ?
+                """,
+                (iso_datetime(current_time), limit),
+            ).fetchall()
+
+    def finish_paddle_key_email(self, transaction_id: str, status: str, error: str | None = None) -> None:
+        """Закрывает письмо: после отправки или отказа в базе не остаётся ни ключа, ни id покупателя."""
+        timestamp = iso_datetime(now_utc())
+        with self._write_lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE paddle_key_emails
+                SET status = ?, customer_id = NULL, sealed_key = NULL, last_error = ?,
+                    sent_at = CASE WHEN ? = 'sent' THEN ? ELSE sent_at END, updated_at = ?
+                WHERE transaction_id = ? AND status = 'pending'
+                """,
+                (status, error, status, timestamp, timestamp, transaction_id),
+            )
+
+    def postpone_paddle_key_email(self, transaction_id: str, error: str, next_attempt_at: datetime) -> None:
+        with self._write_lock, self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE paddle_key_emails
+                SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?, updated_at = ?
+                WHERE transaction_id = ? AND status = 'pending'
+                """,
+                (error, iso_datetime(next_attempt_at), iso_datetime(now_utc()), transaction_id),
+            )
 
     def claim_paddle_key(self, transaction_id: str, claim_token: str) -> tuple[str, sqlite3.Row]:
         """Отдаёт ключ покупателю, который предъявил токен из своего checkout.
@@ -1252,6 +1397,201 @@ def paddle_datetime(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     return iso_datetime(parse_iso_datetime(value))
+
+
+class KeyEmailRetryableError(Exception):
+    """Временный сбой: письмо повторится позже. Текст — короткий код без адреса и ключа."""
+
+
+class KeyEmailPermanentError(Exception):
+    """Письмо отправить нельзя (у покупателя нет адреса): ключ остаётся только на странице."""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        # Перенаправление унесло бы заголовок Authorization на другой адрес.
+        return None
+
+
+def paddle_customer_email_fetcher(environment: str, api_key: str) -> Callable[[str], str]:
+    """Запрашивает email покупателя у Paddle непосредственно перед отправкой, без сохранения в базе."""
+    base_url = PADDLE_API_BASE_URLS[environment]
+    opener = urllib.request.build_opener(_NoRedirect)
+
+    def fetch(customer_id: str) -> str:
+        if not PADDLE_CUSTOMER_ID_RE.fullmatch(customer_id):
+            raise KeyEmailPermanentError("invalid_customer_id")
+        request = urllib.request.Request(
+            f"{base_url}/customers/{customer_id}",
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json", "User-Agent": "jackdaw-license-server"},
+            method="GET",
+        )
+        try:
+            with opener.open(request, timeout=PADDLE_API_TIMEOUT_SECONDS) as response:
+                payload = json.loads(response.read(PADDLE_MAX_BODY_BYTES).decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            error.close()
+            if error.code == HTTPStatus.NOT_FOUND:
+                raise KeyEmailPermanentError("paddle_customer_not_found") from None
+            raise KeyEmailRetryableError(f"paddle_api_http_{error.code}") from None
+        except (OSError, ValueError):
+            raise KeyEmailRetryableError("paddle_api_unavailable") from None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        email = data.get("email") if isinstance(data, dict) else None
+        if not isinstance(email, str) or not EMAIL_RE.fullmatch(email.strip()):
+            raise KeyEmailPermanentError("paddle_customer_without_email")
+        return email.strip()
+
+    return fetch
+
+
+def smtp_message_sender(host: str, port: int, username: str, password_file: Path) -> Callable[[EmailMessage], None]:
+    """Отправка через SMTP со STARTTLS и проверкой сертификата. Пароль читается из файла при каждой попытке."""
+
+    def send(message: EmailMessage) -> None:
+        try:
+            password = password_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            raise KeyEmailRetryableError("smtp_password_unavailable") from None
+        if not password:
+            raise KeyEmailRetryableError("smtp_password_unavailable")
+        try:
+            with smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.login(username, password)
+                smtp.send_message(message)
+        except (smtplib.SMTPException, OSError) as exc:
+            # Исключения SMTP могут содержать адрес получателя, поэтому наружу уходит только тип.
+            raise KeyEmailRetryableError(f"smtp_{type(exc).__name__}") from None
+
+    return send
+
+
+def build_paddle_key_email(sender: str, recipient: str, license_key: str, plan: str) -> EmailMessage:
+    plan_ru, plan_en = PADDLE_KEY_EMAIL_PLAN_NAMES.get(plan, ("подписка", "subscription"))
+    _name, sender_address = parseaddr(sender)
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = recipient
+    message["Subject"] = "Ваш ключ Jackdaw Mail Pro / Your Jackdaw Mail Pro key"
+    message["Date"] = formatdate(usegmt=True)
+    message["Message-ID"] = make_msgid(domain=sender_address.rpartition("@")[2])
+    message["Auto-Submitted"] = "auto-generated"
+    message.set_content(
+        "Спасибо за покупку Jackdaw Mail Pro!\n\n"
+        f"Ваш ключ: {license_key}\n"
+        f"План: {plan_ru}\n\n"
+        "Откройте Jackdaw Mail → Настройки → Jackdaw Pro и вставьте ключ. "
+        f"Ключ подключает до {PADDLE_LICENSE_MAX_ACTIVATIONS} устройств и не меняется при продлении подписки. "
+        "Сохраните это письмо: ключ понадобится, чтобы подключить другое устройство.\n\n"
+        f"Вопросы — {SUPPORT_URL} (не публикуйте ключ в открытом обращении). "
+        "На это письмо отвечать не нужно.\n\n"
+        "---\n\n"
+        "Thank you for purchasing Jackdaw Mail Pro!\n\n"
+        f"Your key: {license_key}\n"
+        f"Plan: {plan_en}\n\n"
+        "Open Jackdaw Mail → Settings → Jackdaw Pro and paste the key. "
+        f"The key works on up to {PADDLE_LICENSE_MAX_ACTIVATIONS} devices and stays the same when the subscription renews. "
+        "Keep this email: you will need the key to connect another device.\n\n"
+        f"Questions: {SUPPORT_URL} (do not post the key in a public issue). "
+        "Please do not reply to this email.\n"
+    )
+    return message
+
+
+class PaddleKeyMailer:
+    """Фоновая отправка ключа Paddle на почту покупателя с повторами.
+
+    Webhook только ставит письмо в очередь (таблица paddle_key_emails) и будит поток, поэтому
+    ответ Paddle не ждёт ни API, ни SMTP. Очередь в базе переживает перезапуск сервиса.
+    Если процесс упадёт между отправкой и записью результата, письмо уйдёт ещё раз:
+    повтор лучше потерянного ключа.
+    """
+
+    def __init__(
+        self,
+        store: LicenseStore,
+        secret: bytes,
+        fetch_email: Callable[[str], str],
+        send_message: Callable[[EmailMessage], None],
+        sender: str,
+        retry_delays: tuple[int, ...] = PADDLE_KEY_EMAIL_RETRY_DELAYS,
+        poll_seconds: float = PADDLE_KEY_EMAIL_POLL_SECONDS,
+    ):
+        self.store = store
+        self._cipher = AESGCM(secret)
+        self._fetch_email = fetch_email
+        self._send_message = send_message
+        self.sender = sender
+        self.retry_delays = retry_delays
+        self.poll_seconds = poll_seconds
+        self._wake = threading.Event()
+        self._stopped = threading.Event()
+        self._run_lock = threading.Lock()
+
+    def seal(self, license_key: str, transaction_id: str) -> str:
+        return _seal_with(self._cipher, license_key, transaction_id)
+
+    def notify(self) -> None:
+        self._wake.set()
+
+    def start(self) -> threading.Thread:
+        thread = threading.Thread(target=self._loop, name="paddle-key-mailer", daemon=True)
+        thread.start()
+        return thread
+
+    def stop(self) -> None:
+        self._stopped.set()
+        self._wake.set()
+
+    def _loop(self) -> None:
+        while not self._stopped.is_set():
+            self._wake.clear()
+            try:
+                self.run_once()
+            except Exception:
+                traceback.print_exc()
+            self._wake.wait(self.poll_seconds)
+
+    def run_once(self, current_time: datetime | None = None) -> int:
+        """Обрабатывает письма, срок которых наступил. Возвращает число обработанных."""
+        current_time = current_time or now_utc()
+        with self._run_lock:
+            rows = self.store.due_paddle_key_emails(current_time)
+            for row in rows:
+                self._deliver(row, current_time)
+            return len(rows)
+
+    def _deliver(self, row: sqlite3.Row, current_time: datetime) -> None:
+        transaction_id = row["transaction_id"]
+        if row["license_status"] == "revoked":
+            self.store.finish_paddle_key_email(transaction_id, "canceled", "license_revoked")
+            return
+        license_key = _open_with(self._cipher, row["sealed_key"] or "", transaction_id)
+        if license_key is None or row["customer_id"] is None:
+            self.store.finish_paddle_key_email(transaction_id, "failed", "sealed_key_unreadable")
+            print(f"license-server: paddle key email for {transaction_id} dropped: sealed key unreadable", flush=True)
+            return
+        try:
+            recipient = self._fetch_email(row["customer_id"])
+            self._send_message(build_paddle_key_email(self.sender, recipient, license_key, row["plan"]))
+        except KeyEmailPermanentError as exc:
+            self.store.finish_paddle_key_email(transaction_id, "failed", str(exc))
+            print(f"license-server: paddle key email for {transaction_id} not sent ({exc}); key stays on the purchase page", flush=True)
+            return
+        except Exception as exc:
+            code = str(exc) if isinstance(exc, KeyEmailRetryableError) else type(exc).__name__
+            attempt = int(row["attempts"]) + 1
+            if attempt > len(self.retry_delays):
+                self.store.finish_paddle_key_email(transaction_id, "failed", code)
+                print(f"license-server: paddle key email for {transaction_id} gave up after {attempt} attempts ({code}); key stays on the purchase page", flush=True)
+                return
+            next_attempt_at = current_time + timedelta(seconds=self.retry_delays[attempt - 1])
+            self.store.postpone_paddle_key_email(transaction_id, code, next_attempt_at)
+            print(f"license-server: paddle key email for {transaction_id} failed ({code}); retry at {iso_datetime(next_attempt_at)}", flush=True)
+            return
+        self.store.finish_paddle_key_email(transaction_id, "sent")
+        print(f"license-server: paddle key email sent for {transaction_id}", flush=True)
 
 
 ADMIN_HTML = """<!doctype html>
@@ -2009,13 +2349,21 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         claim_token = paddle_claim_token(data.get("custom_data"))
         config = self.service.config
         source = "paddle-sandbox" if getattr(config, "paddle_environment", "sandbox") == "sandbox" else "paddle"
+        mailer = self.service.mailer
+        customer_id = data.get("customer_id")
+        # В transaction.completed нет email: письму нужен id покупателя, адрес воркер спросит у Paddle.
+        email_customer_id = customer_id if mailer is not None and isinstance(customer_id, str) and PADDLE_CUSTOMER_ID_RE.fullmatch(customer_id) else None
 
         def apply() -> None:
             _license_id, created = self.service.store.apply_paddle_transaction(
                 transaction_id, subscription_id, plan, price_id, paid_through, source, claim_token, config.grace_days,
+                email_customer_id=email_customer_id,
+                seal_for_email=(lambda license_key: mailer.seal(license_key, transaction_id)) if email_customer_id else None,
             )
-            if created and claim_token is None:
-                # Ключ хранится только хешем, без токена покупателя его некому передать.
+            if created and email_customer_id is not None:
+                mailer.notify()
+            if created and claim_token is None and email_customer_id is None:
+                # Ключ хранится только хешем, без токена покупателя и письма его некому передать.
                 print("license-server: paddle license created without claim token; issue a replacement key in /admin", flush=True)
 
         return apply
@@ -2187,10 +2535,11 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class LicenseHTTPService:
-    def __init__(self, config: Configuration, store: LicenseStore, signer: EntitlementSigner):
+    def __init__(self, config: Configuration, store: LicenseStore, signer: EntitlementSigner, mailer: PaddleKeyMailer | None = None):
         self.config = config
         self.store = store
         self.signer = signer
+        self.mailer = mailer
         self.rate_limiter = RateLimiter()
 
     def serve_forever(self) -> None:
@@ -2199,7 +2548,8 @@ class LicenseHTTPService:
         print(
             f"Jackdaw license server listening on {self.config.host}:{self.config.port}; "
             f"store_configured={self.config.store_configured}; "
-            f"paddle_configured={self.config.paddle_checkout_configured} ({self.config.paddle_environment})",
+            f"paddle_configured={self.config.paddle_checkout_configured} ({self.config.paddle_environment}); "
+            f"key_email_configured={self.mailer is not None}",
             flush=True,
         )
         try:
@@ -2214,7 +2564,17 @@ def main() -> None:
         raise RuntimeError("JACKDAW_ADMIN_TOKEN_SHA256 must be a 64-character SHA-256 digest")
     store = LicenseStore(config.database_path)
     signer = EntitlementSigner(config.private_key_path)
-    LicenseHTTPService(config, store, signer).serve_forever()
+    mailer = None
+    if config.key_email_configured:
+        mailer = PaddleKeyMailer(
+            store,
+            signer.derive_secret(PADDLE_KEY_EMAIL_INFO),
+            paddle_customer_email_fetcher(config.paddle_environment, config.paddle_api_key),
+            smtp_message_sender(config.smtp_host, config.smtp_port, config.smtp_user, config.smtp_password_file),
+            config.mail_from,
+        )
+        mailer.start()
+    LicenseHTTPService(config, store, signer, mailer).serve_forever()
 
 
 if __name__ == "__main__":
