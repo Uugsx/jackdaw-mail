@@ -2615,5 +2615,9 @@
   "Uoa4o2": "Les données locales sont endommagées.",
   "vqfLdA": "Redémarrez Jackdaw. Si cela se reproduit, envoyez les détails ci-dessous à l’assistance.",
   "dMBO5w": "Impossible de lire ou d’enregistrer les données locales.",
-  "iD6QNq": "Réessayez. Si cela se reproduit, redémarrez Jackdaw."
+  "iD6QNq": "Réessayez. Si cela se reproduit, redémarrez Jackdaw.",
+  "aPUAgM": "Appels audio et vidéo entre utilisateurs de Jackdaw Mail, par adresse e-mail. Le son et la vidéo passent par le serveur d'appels Jackdaw, pas par votre fournisseur de messagerie.",
+  "9rnFEa": "Appels",
+  "bADaFX": "Pour passer des appels, confirmez votre adresse dans Paramètres → Jackdaw Pro → Appels.",
+  "NWZAgc": "Les autres utilisateurs de Jackdaw Mail peuvent vous appeler sur une adresse confirmée tant que Jackdaw est ouvert. Nous envoyons un code à cette adresse pour vérifier qu'elle vous appartient."
 }
