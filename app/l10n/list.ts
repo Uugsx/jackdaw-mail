@@ -84,4 +84,4 @@ export const rtlLocales = [ 'ar', 'fa', 'he', 'pa-Arab', 'ur' ];
  * `npm run l10n:check` и test/l10n/catalogCompleteness.test.ts падают,
  * если в их каталогах нет хотя бы одной строки из исходного каталога.
  * Остальные языки при отсутствии перевода показывают английский текст. */
-export const fullyTranslatedLocales = [ 'ru', 'fr' ];
+export const fullyTranslatedLocales = [ 'ru', 'fr', 'ar', 'az', 'bg', 'bn', 'cs', 'da', 'el', 'en-GB', 'eo', 'et', 'fa', 'fi', 'ga', 'he', 'hi', 'hu', 'id', 'ko', 'lt', 'lv', 'nb', 'ro', 'sk', 'sl', 'sv', 'ta', 'th', 'ur', 'vi', 'zh-Hant' ];
