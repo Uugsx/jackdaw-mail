@@ -55,8 +55,11 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 - **Боковая панель** — виджеты, календарь, живой контроль SLA, встречи и встроенные web-приложения
 - **Отчёты и SLA** — интерактивный дашборд, рабочий календарь по дням недели, живой таймер ответа и настраиваемые напоминания
 - **Календарь и контакты** — события, приглашения, онлайн-встречи, личные адресные книги, группы и глобальные адресные списки
-- **Файлы и коммуникации** — локальное файловое хранилище, WebDAV/Nextcloud/OpenCloud, чаты и видеовстречи с поддерживаемыми аккаунтами
-- **Звонки и чат Jackdaw** (Pro) — аудиозвонки напрямую между пользователями Jackdaw Mail по email-адресу и чат со сквозным шифрованием; адрес подтверждается кодом из письма или ответным письмом со своего ящика (DKIM/SPF) — для корпоративной почты; сервер: [`call_server/`](call_server/README.md)
+- **Файлы** — локальное файловое хранилище, WebDAV и Nextcloud; теги, поиск, таблица и галерея. Сторонние чаты (XMPP, Matrix, WhatsApp, Signal) и видеовстречи LiveKit/SIP в этой сборке скрыты
+- **Звонки и чат Jackdaw** (Pro и пробный период) — аудиозвонки между пользователями Jackdaw Mail по email-адресу и чат со сквозным шифрованием (X25519 + XChaCha20-Poly1305): личные переписки и группы до 50 человек, до 10 файлов по 25 МБ в сообщении, статус доставки. Голос идёт напрямую (WebRTC), а при закрытой сети — через свой TURN-ретранслятор с временными учётными данными. Адрес подтверждается кодом из письма (30 минут) или ответным письмом со своего ящика (DKIM/SPF), один раз для всех устройств лицензии; сервер: [`call_server/`](call_server/README.md)
+- **Большие ящики** — общие ящики и сетевой архив Exchange на десятки тысяч писем: старая история догружается в фоне порциями, перенос, удаление и отмена удаления идут пачками; база SQLite работает в отдельном процессе и не блокирует сеть и окна
+- **43 языка** — интерфейс полностью переведён на 43 языка (полнота проверяется тестом `catalogCompleteness`), поддерживается письмо справа налево
+- **Пароли и ошибки** — пароли и токены входа шифруются системным хранилищем (Связка ключей macOS, DPAPI Windows); ошибки входа, сети и сервера показываются понятным текстом с подсказкой, что делать, а техническая деталь доступна по кнопке
 - **Обратная связь** — форма в «Настройки → О программе»: письмо разработчикам, Telegram и задача в GitHub для ошибок (без адреса пользователя); сервер: [`feedback_server/`](feedback_server/README.md)
 - **Обновлённый UI** — адаптивные layout'ы почты, ribbon, тёмная тема писем, масштабирование и сохранение пользовательских настроек
 - **Desktop OTA** — автообновление через GitHub Releases (Mac + Windows); см. [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
@@ -189,8 +192,11 @@ The standalone native Android client for Jackdaw Mail is developed by **[SpliffR
 - **Sidebar** — widgets, calendar, live SLA control, meetings and embedded web apps
 - **Reports & SLA** — interactive dashboard, per-weekday working calendar, live response timers and configurable reminders
 - **Calendar & contacts** — events, invitations, online meetings, personal address books, groups and global address lists
-- **Files & communication** — local file storage, WebDAV/Nextcloud/OpenCloud, chats and video meetings with supported accounts
-- **Jackdaw calls & chat** (Pro) — direct audio calls between Jackdaw Mail users by email address and end-to-end encrypted chat; the address is confirmed with an emailed code or, for company mail, with a reply sent from your own mailbox (DKIM/SPF); server: [`call_server/`](call_server/README.md)
+- **Files** — local file storage, WebDAV and Nextcloud; tags, search, table and gallery views. Third-party chats (XMPP, Matrix, WhatsApp, Signal) and LiveKit/SIP video meetings are hidden in this build
+- **Jackdaw calls & chat** (Pro and trial) — audio calls between Jackdaw Mail users by email address and end-to-end encrypted chat (X25519 + XChaCha20-Poly1305): one-to-one chats and groups of up to 50 people, up to 10 files of 25 MB per message, delivery status. Voice goes directly (WebRTC), or through our own TURN relay with short-lived credentials when the network blocks a direct path. The address is confirmed with an emailed code (valid 30 minutes) or a reply sent from your own mailbox (DKIM/SPF), once for all devices on the licence; server: [`call_server/`](call_server/README.md)
+- **Large mailboxes** — shared mailboxes and the Exchange online archive with tens of thousands of messages: older history loads in the background in batches; move, delete and undo run in batches; SQLite runs in a separate process and does not block networking or windows
+- **43 languages** — the interface is fully translated into 43 languages (checked by the `catalogCompleteness` test), with right-to-left support
+- **Passwords and errors** — passwords and sign-in tokens are encrypted with the system keychain (macOS Keychain, Windows DPAPI); sign-in, network and server errors are shown in plain words with what to do next, and the technical detail is one click away
 - **Feedback** — a form in Settings → About: email to the developers, Telegram, and a GitHub issue for bug reports (without the user's address); server: [`feedback_server/`](feedback_server/README.md)
 - **Updated UI** — responsive mail layouts, ribbon, dark-mode email rendering, zoom and persisted user preferences
 - **Desktop OTA** — auto-update via GitHub Releases (Mac + Windows); see [`docs/systems/desktop-build/ota-jackdaw.md`](docs/systems/desktop-build/ota-jackdaw.md)
