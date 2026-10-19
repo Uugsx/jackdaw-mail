@@ -41,7 +41,7 @@ export const localeNames = {
   'fa': "Persian / فارسی",
   'pl': "Polish / Polski",
   'pt': "Portuguese / Português",
-  'pa-Arab': "Punjabi (Pakistan) / پنجابی",
+  //'pa-Arab': "Punjabi (Pakistan) / پنجابی", // скрыт: каталог пустой
   'ro': "Romanian / Românește",
   'ru': "Russian / Русский язык",
   'sk': "Slovak / Slovenčina",
@@ -68,6 +68,9 @@ export const localeMapping: Record<string, string> = {
   "zh-tw": "zh-Hant",
   "zh-hk": "zh-Hant",
   "zh-sg": "zh",
+  // Общий код норвежского: устаревший каталог `no` не поддерживается, используем букмол
+  "no": "nb",
+  "no-no": "nb",
 };
 
 /** List of available locales in this build.
