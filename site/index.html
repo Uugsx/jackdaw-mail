@@ -67,7 +67,7 @@
   <main>
     <section class="hero container" aria-labelledby="hero-title">
       <h1 id="hero-title" class="hero-title" data-i18n="hero.title">Почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах</h1>
-      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
+      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Коллегам с Jackdaw Mail можно позвонить или написать в зашифрованный чат прямо из письма. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
 
       <div class="hero-actions">
         <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary">
@@ -176,7 +176,19 @@
           </div>
           <div class="feature-row">
             <dt data-i18n="features.calls.title">Звонки и чат · Pro</dt>
-            <dd data-i18n="features.calls.text">Аудиозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail по адресу почты. Голос идёт напрямую между компьютерами, текст и файлы чата шифруются на устройстве. Адрес подтверждается кодом из письма или ответным письмом со своего ящика — так работает и корпоративная почта.</dd>
+            <dd data-i18n="features.calls.text">Аудиозвонки и чат между пользователями Jackdaw Mail по адресу почты, со сквозным шифрованием. Личные переписки и группы до 50 человек: создатель группы меняет название и состав. В сообщении до 10 файлов по 25 МБ, видно, дошло ли оно. Голос идёт напрямую между компьютерами, а если сеть этого не позволяет — через наш ретранслятор, который разговор расшифровать не может. Адрес подтверждается кодом из письма или ответным письмом со своего ящика, один раз для всех устройств лицензии.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.archive.title">Большие ящики и сетевой архив</dt>
+            <dd data-i18n="features.archive.text">Общие ящики и сетевой архив Exchange на десятки тысяч писем. Старые письма догружаются в фоне порциями и не мешают работе. Перенос, удаление и отмена удаления сотен писем выполняются пачками.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.languages.title">43 языка</dt>
+            <dd data-i18n="features.languages.text">Интерфейс полностью переведён на 43 языка, среди них русский, английский, французский, немецкий, испанский, украинский, китайский и японский. Арабский, иврит, персидский и урду показываются справа налево.</dd>
+          </div>
+          <div class="feature-row">
+            <dt data-i18n="features.security.title">Пароли</dt>
+            <dd data-i18n="features.security.text">Пароли и токены входа шифруются системным хранилищем: Связкой ключей в macOS и DPAPI в Windows. Ошибки входа и сети объясняются понятными словами и подсказывают, что сделать.</dd>
           </div>
           <div class="feature-row">
             <dt data-i18n="features.related.title">Связанные письма</dt>
@@ -184,7 +196,7 @@
           </div>
           <div class="feature-row">
             <dt data-i18n="features.mail.title">Почта</dt>
-            <dd data-i18n="features.mail.text">Папки, поиск, быстрые фильтры, категории и теги, флажки, архив, отмена удаления, сочетания клавиш для категорий, настраиваемая панель инструментов.</dd>
+            <dd data-i18n="features.mail.text">Папки, поиск и сохранённые поиски, правила, быстрые фильтры, категории и теги, флажки, архив, отмена удаления, уведомления с настройкой для каждой папки, сочетания клавиш, настраиваемая панель инструментов. Шифрование PGP и S/MIME, если у вас есть ключи.</dd>
           </div>
           <div class="feature-row">
             <dt data-i18n="features.calendar.title">Календарь и контакты</dt>
@@ -192,7 +204,7 @@
           </div>
           <div class="feature-row">
             <dt data-i18n="features.protocols.title">Протоколы</dt>
-            <dd data-i18n="features.protocols.text">Exchange через OWA, EWS и ActiveSync; IMAP; календари и контакты через CalDAV и CardDAV. Microsoft Graph и JMAP — в тестовом режиме.</dd>
+            <dd data-i18n="features.protocols.text">Exchange через OWA, EWS и ActiveSync, включая общие ящики и сетевой архив; IMAP; календари и контакты через CalDAV и CardDAV. Вход через Microsoft, Google, Yahoo, AOL, Fastmail и Mail.ru. Microsoft Graph и JMAP — в тестовом режиме.</dd>
           </div>
         </dl>
       </div>
@@ -254,6 +266,11 @@
                   <th scope="row"><code>stun.l.google.com</code>, <code>stun.cloudflare.com</code></th>
                   <td data-i18n="data.stun.what">Ваш IP-адрес — чтобы соединить звонок напрямую. Собеседник тоже видит ваш IP-адрес</td>
                   <td data-i18n="data.stun.when">Во время аудиозвонка Jackdaw</td>
+                </tr>
+                <tr>
+                  <th scope="row"><code>license.jackdaw-mail.pro</code> <span data-i18n="data.turn.label">(ретранслятор звонков)</span></th>
+                  <td data-i18n="data.turn.what">Ваш IP-адрес и зашифрованный голос. Сервер передаёт его собеседнику и расшифровать не может</td>
+                  <td data-i18n="data.turn.when">Только если звонок не удалось соединить напрямую</td>
                 </tr>
                 <tr>
                   <th scope="row"><code>license.jackdaw-mail.pro</code> <span data-i18n="data.feedback.label">(обратная связь)</span></th>
@@ -328,6 +345,11 @@
                 </tr>
                 <tr>
                   <th scope="row" data-i18n="plans.row.signatures">HTML-подписи</th>
+                  <td class="no" data-i18n="plans.no">нет</td>
+                  <td class="yes" data-i18n="plans.yes">есть</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="plans.row.calls">Звонки и чат Jackdaw</th>
                   <td class="no" data-i18n="plans.no">нет</td>
                   <td class="yes" data-i18n="plans.yes">есть</td>
                 </tr>
@@ -431,11 +453,11 @@
           </details>
           <details class="faq-item">
             <summary class="faq-question"><span data-i18n="faq.q3">Где хранятся пароли и почта?</span></summary>
-            <div class="faq-answer" data-i18n="faq.a3">На вашем компьютере, в папке данных программы. На серверы Jackdaw пароли и письма не отправляются.</div>
+            <div class="faq-answer" data-i18n="faq.a3">Почта — на вашем компьютере, в папке данных программы. Пароли и токены входа дополнительно зашифрованы системным хранилищем: Связкой ключей в macOS и DPAPI в Windows. На серверы Jackdaw пароли и письма не отправляются.</div>
           </details>
           <details class="faq-item">
             <summary class="faq-question"><span data-i18n="faq.q4">Что будет, когда закончится Pro?</span></summary>
-            <div class="faq-answer" data-i18n="faq.a4">Почта продолжит работать, а подключённые аккаунты останутся. Добавить новый аккаунт будет нельзя, отчёты, очередь неотвеченных и HTML-подписи отключатся до продления.</div>
+            <div class="faq-answer" data-i18n="faq.a4">Почта продолжит работать, а подключённые аккаунты останутся. Добавить новый аккаунт будет нельзя, отчёты, очередь неотвеченных, HTML-подписи, звонки и чат Jackdaw отключатся до продления.</div>
           </details>
           <details class="faq-item">
             <summary class="faq-question"><span data-i18n="faq.q5">Как обновляется программа?</span></summary>
