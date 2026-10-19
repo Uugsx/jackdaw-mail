@@ -2,7 +2,11 @@
 
 ## Решение для международного запуска
 
-Для международных продаж выбран **Lemon Squeezy** как внешний hosted checkout и Merchant of Record. Он принимает карты Visa и Mastercard, а также доступные для конкретной страны PayPal, Apple Pay и Google Pay. Платёжная форма открывается во внешнем браузере; данные карты не проходят через Jackdaw Mail.
+Основной провайдер — **Paddle Billing** (Merchant of Record): checkout Paddle.js открывается поверх страницы тарифов на сайте, ключ Jackdaw выпускает сервер лицензий после подписанного webhook. Сейчас подключена только тестовая среда **Paddle Sandbox**; настройка описана в разделе «Paddle» ниже и в `license_server/README.md`.
+
+**Lemon Squeezy** остаётся совместимым запасным провайдером на сервере: его маршруты, webhook и ключи продолжают работать, а `/buy/{plan}` ведёт в него, если Paddle не настроен. Исходное решение:
+
+Для международных продаж был выбран **Lemon Squeezy** как внешний hosted checkout и Merchant of Record. Он принимает карты Visa и Mastercard, а также доступные для конкретной страны PayPal, Apple Pay и Google Pay. Платёжная форма открывается во внешнем браузере; данные карты не проходят через Jackdaw Mail.
 
 Российская Федерация не входит в список поддерживаемых стран покупателей Lemon Squeezy. До публикации магазина отдельно проверяются активация продавца, KYC/KYB и возможность получать выплаты на поддерживаемый банковский счёт или PayPal.
 
@@ -26,7 +30,45 @@
 
 Цены указаны в долларах США и синхронизированы с Test mode Lemon Squeezy, лендингом и экраном биллинга в приложении. Итоговая сумма, налоги и условия продления показываются в checkout перед оплатой; изменение цены в магазине требует синхронного обновления публичных цен в клиенте и документации.
 
-## Настройка магазина
+## Paddle
+
+Каталог Sandbox (шаг 1 из 4 в Paddle Dashboard выполнен):
+
+| Объект | ID |
+|---|---|
+| Продукт Jackdaw Mail | `pro_01m5a4tmfa7qet7sgepx5wdh5h` |
+| $9.99 / month | `pri_01m5a4y49fpvggt57sfxwaf7k4` |
+| $79.99 / year | `pri_01m5a4yq26dcyy79600zwytjrw` |
+
+Состояние на 2026-10-19: шаги 1–3 выполнены в Sandbox — создан клиентский токен «jackdaw-mail.pro website», задан default payment link, домен `jackdaw-mail.pro` одобрен для checkout, создан webhook destination на 11 событий (Platform и Simulation). Значения токена и секрета в репозиторий не записаны: они берутся из Dashboard и задаются только на сервере.
+
+Настройка в Paddle Dashboard (Sandbox, без переключения в Live):
+
+1. **Developer tools → Authentication → Client-side tokens**: создать токен `test_...` и записать его в `PADDLE_CLIENT_TOKEN` на сервере лицензий. В репозиторий токен не попадает: сайт получает его из `/v1/public-config`.
+2. **Checkout → Checkout settings**: указать default payment link `https://jackdaw-mail.pro/` — без него Paddle.js не открывает checkout. В Live домен `jackdaw-mail.pro` дополнительно проходит проверку Paddle.
+3. **Developer tools → Notifications → New destination**: URL `https://license.jackdaw-mail.pro/v1/webhooks/paddle`, тип webhook, события `transaction.completed`, `subscription.created`, `subscription.activated`, `subscription.updated`, `subscription.canceled`, `subscription.past_due`, `subscription.paused`, `subscription.resumed`, `subscription.trialing`, `adjustment.created`, `adjustment.updated`. Секрет destination (`pdl_ntfset_...`) записать в `PADDLE_WEBHOOK_SECRET`.
+4. На сервере лицензий задать `PADDLE_ENVIRONMENT=sandbox`, `PADDLE_MONTHLY_PRICE_ID`, `PADDLE_YEARLY_PRICE_ID`, `PADDLE_PRODUCT_ID` и перезапустить сервис. `GET /healthz` вернёт `paddleConfigured: true`.
+5. Проверить покупку тестовой картой Paddle Sandbox и повтор события через **Notifications → Replay**.
+
+Переход на Live: отдельный аккаунт Paddle Live с собственными продуктом, ценами, токеном `live_...` и секретом; на сервере `PADDLE_ENVIRONMENT=production` и новые значения, на сайте `environment: 'production'` и новые ID цен в `site/billing-config.js`. Сайт открывает checkout только при совпадении окружения и цен с сервером.
+
+Поток покупки через Paddle:
+
+```text
+Сайт: Paddle.Checkout.open(priceId, quantity 1, customData.jackdaw_claim)
+                              ↓
+          Paddle: оплата → transaction.completed (webhook)
+                              ↓
+   Сервер лицензий: подпись, цена, статус → ключ JACKDAW-PRO-...
+                              ↓
+   Сайт: checkout.completed → POST /v1/paddle/claim → ключ на странице
+                              ↓
+          Пользователь вставляет ключ в Настройки → Jackdaw Pro
+```
+
+`jackdaw_claim` — случайный токен из браузера покупателя. Он не даёт права на лицензию: доступ выдаётся только по подписанному webhook с оплаченной транзакцией. Токен лишь позволяет этой вкладке забрать уже выпущенный ключ.
+
+## Настройка магазина Lemon Squeezy (запасной провайдер)
 
 1. Создать продукт `Jackdaw Mail Pro`.
 2. Создать варианты `Monthly` и `Yearly` с подпиской.
@@ -103,6 +145,8 @@ VITE_BILLING_LICENSE_API_URL=https://license.jackdaw-mail.pro
 VITE_BILLING_ENTITLEMENT_PUBLIC_KEY=<публичный Ed25519-ключ>
 ```
 
+Сайт берёт клиентский токен Paddle только из `/v1/public-config`; в `site/billing-config.js` хранятся окружение и публичные ID цен. Если Paddle не настроен, кнопки покупки работают по-старому.
+
 Для статического сайта checkout-кнопки уже ведут только на собственный allowlist-адрес `https://license.jackdaw-mail.pro/buy/monthly` или `/buy/yearly`. Сервер перенаправит их в Lemon Squeezy только после заполнения своих переменных окружения; до этого он показывает честную страницу «магазин не подключён».
 
 Клиент проверяет HTTPS, домен Lemon Squeezy или собственный домен лицензий и формат пути. Секрет магазина, API-токен Lemon Squeezy, webhook secret и приватный ключ подписи entitlement никогда не попадают в Vite-переменные или Electron-бандл.
@@ -111,7 +155,7 @@ VITE_BILLING_ENTITLEMENT_PUBLIC_KEY=<публичный Ed25519-ключ>
 
 ## Контракт сервера лицензий
 
-Провайдер скрыт за серверным адаптером. В клиенте нет SDK Lemon Squeezy и платёжных секретов.
+Провайдер скрыт за серверным адаптером. В клиенте нет SDK Lemon Squeezy и платёжных секретов. Paddle.js загружается только сайтом и только при настроенном Paddle.
 
 ### `GET /v1/public-config`
 
@@ -121,9 +165,29 @@ VITE_BILLING_ENTITLEMENT_PUBLIC_KEY=<публичный Ed25519-ключ>
 {
   "activation": { "method": "license-key", "emailRequired": false },
   "checkout": { "monthly": { "configured": true }, "yearly": { "configured": true } },
+  "paddle": {
+    "configured": true,
+    "environment": "sandbox",
+    "clientToken": "test_...",
+    "prices": { "monthly": "pri_...", "yearly": "pri_..." }
+  },
   "trial": { "configured": true, "durationDays": 7, "onlineRequired": true }
 }
 ```
+
+`checkout.{plan}.configured` истинно, если настроен Paddle или Lemon Squeezy. Без клиентского токена объект Paddle сокращается до `{ "configured": false }`.
+
+### `POST /v1/webhooks/paddle`
+
+- подпись `Paddle-Signature` (`ts=...;h1=...`) проверяется HMAC-SHA256 над `ts:исходное тело` с constant-time сравнением и допуском по времени 5 секунд;
+- `event_id` записывается до бизнес-обработки, повтор отвечает `duplicate`;
+- `transaction.completed` со статусом `completed` и известной ценой выдаёт или продлевает доступ; `subscription.*` применяются по `occurred_at` и не выдают доступ без оплаты;
+- полный возврат и chargeback отзывают лицензию;
+- чужие цены и продукты отвечают `200 ignored` без записи события.
+
+### `POST /v1/paddle/claim`
+
+Принимает `transactionId` и `claimToken`, возвращает `licenseKey` и `license` только владельцу токена. Пока webhook не пришёл или токен неверен — `404 purchase_pending`; отозванная лицензия — `403`; истёкший срок получения (30 дней) — `410`.
 
 ### `POST /v1/license/activate` и `/v1/license/refresh`
 
@@ -141,7 +205,7 @@ VITE_BILLING_ENTITLEMENT_PUBLIC_KEY=<публичный Ed25519-ключ>
 
 Защищены bearer-токеном администратора. POST выпускает ключ, GET возвращает только превью и метаданные. Отзыв и восстановление выполняются через `/v1/admin/licenses/revoke` и `/v1/admin/licenses/restore`.
 
-### `POST /v1/webhooks/lemon-squeezy`
+### `POST /v1/webhooks/lemon-squeezy` (запасной провайдер)
 
 Сервер обязан:
 
@@ -210,6 +274,15 @@ Lemon Squeezy License API вызывается только сервером л�
 
 ## Перед включением production-оплаты
 
+Paddle:
+
+- пройти в Paddle Dashboard оставшиеся шаги проверки аккаунта и создать каталог в Live;
+- прогнать в Sandbox: успешную оплату месячной и годовой подписки, отказ карты, повтор webhook, продление (Sandbox позволяет ускорить биллинг), отмену в конце периода, `past_due`, полный возврат;
+- отозвать в `/admin` ключи с заметкой «Paddle Sandbox»;
+- переключить переменные сервера и `site/billing-config.js` на Live одновременно.
+
+Lemon Squeezy (если вернуться к нему):
+
 - подтвердить, что магазин Lemon Squeezy активирован и принимает выплаты;
 - создать и опубликовать месячный и годовой варианты;
 - включить license keys и определить лимит активаций;
@@ -224,6 +297,12 @@ Lemon Squeezy License API вызывается только сервером л�
 - только после этого включить платный checkout для внешних покупателей.
 
 ## Официальные материалы
+
+- [Paddle.js](https://developer.paddle.com/paddle-js/about/)
+- [Paddle.Checkout.open()](https://developer.paddle.com/paddle-js/methods/paddle-checkout-open/)
+- [Paddle: проверка подписи webhook](https://developer.paddle.com/webhooks/about/signature-verification/)
+- [Paddle: transaction.completed](https://developer.paddle.com/webhooks/transactions/transaction-completed/)
+- [Paddle: webhooks](https://developer.paddle.com/webhooks/)
 
 - [Lemon Squeezy: payment methods](https://docs.lemonsqueezy.com/help/checkout/payment-methods)
 - [Lemon Squeezy: supported countries](https://docs.lemonsqueezy.com/help/getting-started/supported-countries)

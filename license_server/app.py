@@ -28,8 +28,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 
 PRODUCT = "jackdaw-mail"
@@ -56,6 +59,7 @@ MAX_BODY_BYTES = 32 * 1024
 DEFAULT_TRIAL_DAYS = 7
 MIGRATION_VERSION_BASELINE = 1
 MIGRATION_VERSION_TRIAL_CLAIMS = 2
+MIGRATION_VERSION_PADDLE_BILLING = 3
 # Медленный клиент не должен удерживать поток обработчика бесконечно.
 REQUEST_SOCKET_TIMEOUT_SECONDS = 15
 MAX_CONCURRENT_REQUESTS = 64
@@ -64,6 +68,78 @@ TRUSTED_PROXY_PEERS = frozenset({"127.0.0.1", "::1"})
 LOG_CONTROL_CHARS = {code: f"\\x{code:02x}" for code in (*range(0x20), *range(0x7F, 0xA0))}
 PROVIDER_REVOKED_KEY_STATUSES = {"disabled", "expired"}
 PROVIDER_PAST_DUE_SUBSCRIPTION_STATUSES = {"past_due", "unpaid", "paused"}
+
+# Paddle Billing. Окружение задаёт ожидаемый префикс клиентского токена Paddle.js.
+PADDLE_CLIENT_TOKEN_PREFIXES = {"sandbox": "test_", "production": "live_"}
+PADDLE_CLIENT_TOKEN_RE = re.compile(r"^(?:test|live)_[A-Za-z0-9_]{8,128}$")
+PADDLE_PRICE_ID_RE = re.compile(r"^pri_[a-z0-9]{26}$")
+PADDLE_PRODUCT_ID_RE = re.compile(r"^pro_[a-z0-9]{26}$")
+PADDLE_TRANSACTION_ID_RE = re.compile(r"^txn_[a-z0-9]{26}$")
+PADDLE_SUBSCRIPTION_ID_RE = re.compile(r"^sub_[a-z0-9]{26}$")
+PADDLE_EVENT_ID_RE = re.compile(r"^evt_[a-z0-9]{26}$")
+# Токен получения ключа: 32 случайных байта из браузера покупателя в base64url без выравнивания.
+PADDLE_CLAIM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+PADDLE_CLAIM_CUSTOM_DATA_KEY = "jackdaw_claim"
+PADDLE_SIGNATURE_TIMESTAMP_RE = re.compile(r"^[0-9]{1,12}$")
+PADDLE_SIGNATURE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+# Официальные SDK Paddle допускают расхождение не больше пяти секунд.
+DEFAULT_PADDLE_SIGNATURE_TOLERANCE_SECONDS = 5
+MAX_PADDLE_SIGNATURE_TOLERANCE_SECONDS = 300
+MAX_PADDLE_SIGNATURES = 8
+# Уведомление о транзакции заметно больше запросов клиента.
+PADDLE_MAX_BODY_BYTES = 256 * 1024
+PADDLE_KEY_DELIVERY_DAYS = 30
+PADDLE_LICENSE_MAX_ACTIVATIONS = 3
+# Запасной срок, если в транзакции нет billing_period.
+PADDLE_FALLBACK_PERIOD_DAYS = {"monthly": 31, "yearly": 366}
+PADDLE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "paused", "canceled"}
+PADDLE_SUBSCRIPTION_EVENTS = {
+    "subscription.created",
+    "subscription.activated",
+    "subscription.updated",
+    "subscription.canceled",
+    "subscription.past_due",
+    "subscription.paused",
+    "subscription.resumed",
+    "subscription.trialing",
+}
+PADDLE_ADJUSTMENT_EVENTS = {"adjustment.created", "adjustment.updated"}
+PADDLE_REVOKING_ADJUSTMENT_ACTIONS = {"refund", "chargeback"}
+PADDLE_SITE_CHECKOUT_URL = "https://jackdaw-mail.pro/?checkout={plan}#plans"
+PADDLE_DELIVERY_INFO = b"jackdaw-paddle-key-delivery-v1"
+PADDLE_CLAIM_HASH_PREFIX = b"jackdaw-paddle-claim-v1:"
+# Копия migrations/003_paddle_billing.sql: CI выкладывает только app.py, поэтому миграция
+# не должна зависеть от файла рядом с сервисом. Совпадение с файлом проверяют тесты.
+PADDLE_BILLING_MIGRATION_SQL = """CREATE TABLE IF NOT EXISTS paddle_subscriptions (
+    subscription_id TEXT PRIMARY KEY,
+    license_id INTEGER REFERENCES licenses(id) ON DELETE SET NULL,
+    plan TEXT NOT NULL,
+    price_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    paid_through TEXT,
+    canceled_at TEXT,
+    paused_at TEXT,
+    past_due_since TEXT,
+    last_event_at TEXT,
+    first_transaction_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_paddle_subscriptions_license
+    ON paddle_subscriptions(license_id);
+
+CREATE TABLE IF NOT EXISTS paddle_key_deliveries (
+    transaction_id TEXT PRIMARY KEY,
+    license_id INTEGER NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+    claim_hash TEXT NOT NULL,
+    sealed_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    claimed_at TEXT
+);
+"""
+EMBEDDED_MIGRATIONS = {"003_paddle_billing.sql": PADDLE_BILLING_MIGRATION_SQL}
 
 
 class ServiceError(Exception):
@@ -163,6 +239,80 @@ def canonical_json(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
+def base64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def verify_paddle_signature(
+    header: str,
+    raw_body: bytes,
+    secret: str,
+    tolerance_seconds: int = DEFAULT_PADDLE_SIGNATURE_TOLERANCE_SECONDS,
+    current_time: float | None = None,
+) -> bool:
+    """Проверяет Paddle-Signature (`ts=...;h1=...`) по исходным байтам тела запроса.
+
+    Подписывается строка `ts:тело` алгоритмом HMAC-SHA256 с секретом destination как есть.
+    При ротации секрета Paddle присылает несколько h1, подходит любой из них.
+    """
+    if not secret or not header:
+        return False
+    timestamp: str | None = None
+    signatures: list[str] = []
+    for part in header.split(";"):
+        name, separator, value = part.strip().partition("=")
+        if not separator:
+            continue
+        if name == "ts":
+            timestamp = value.strip()
+        elif name == "h1":
+            signatures.append(value.strip().lower())
+    if timestamp is None or not PADDLE_SIGNATURE_TIMESTAMP_RE.fullmatch(timestamp):
+        return False
+    signatures = [value for value in signatures[:MAX_PADDLE_SIGNATURES] if PADDLE_SIGNATURE_HASH_RE.fullmatch(value)]
+    if not signatures:
+        return False
+    current = time.time() if current_time is None else current_time
+    if abs(current - int(timestamp)) > tolerance_seconds:
+        return False
+    expected = hmac.new(secret.encode("utf-8"), timestamp.encode("ascii") + b":" + raw_body, hashlib.sha256).hexdigest().encode("ascii")
+    matched = False
+    for signature in signatures:
+        # Сравниваются все варианты, чтобы время ответа не зависело от позиции совпадения.
+        matched = hmac.compare_digest(signature.encode("ascii"), expected) or matched
+    return matched
+
+
+def paddle_claim_hash(claim_token: str) -> str:
+    return hashlib.sha256(PADDLE_CLAIM_HASH_PREFIX + claim_token.encode("ascii")).hexdigest()
+
+
+def _paddle_delivery_cipher(claim_token: str, transaction_id: str) -> AESGCM:
+    key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=transaction_id.encode("ascii"),
+        info=PADDLE_DELIVERY_INFO,
+    ).derive(claim_token.encode("ascii"))
+    return AESGCM(key)
+
+
+def seal_license_key(license_key: str, claim_token: str, transaction_id: str) -> str:
+    """Шифрует ключ токеном покупателя: без токена из браузера ключ из базы не восстановить."""
+    nonce = secrets.token_bytes(12)
+    ciphertext = _paddle_delivery_cipher(claim_token, transaction_id).encrypt(nonce, license_key.encode("utf-8"), transaction_id.encode("ascii"))
+    return base64url_encode(nonce + ciphertext)
+
+
+def open_license_key(sealed_key: str, claim_token: str, transaction_id: str) -> str | None:
+    try:
+        sealed = base64url_decode(sealed_key)
+        plaintext = _paddle_delivery_cipher(claim_token, transaction_id).decrypt(sealed[:12], sealed[12:], transaction_id.encode("ascii"))
+    except (InvalidTag, ValueError):
+        return None
+    return plaintext.decode("utf-8")
+
+
 class Configuration:
     def __init__(self) -> None:
         self.host = os.getenv("JACKDAW_LICENSE_HOST", "127.0.0.1")
@@ -186,6 +336,49 @@ class Configuration:
         }
         configured_origins = {origin.strip().rstrip("/") for origin in os.getenv("JACKDAW_LICENSE_ORIGINS", "").split(",") if origin.strip()}
         self.allowed_origins = default_origins | configured_origins
+        self._read_paddle_configuration()
+
+    def _read_paddle_configuration(self) -> None:
+        """Paddle включается только при полном наборе значений; ошибка в заданном значении останавливает запуск."""
+        self.paddle_environment = os.getenv("PADDLE_ENVIRONMENT", "sandbox").strip().lower() or "sandbox"
+        if self.paddle_environment not in PADDLE_CLIENT_TOKEN_PREFIXES:
+            raise RuntimeError("PADDLE_ENVIRONMENT must be sandbox or production")
+        self.paddle_webhook_secret = os.getenv("PADDLE_WEBHOOK_SECRET", "").strip()
+        self.paddle_client_token = os.getenv("PADDLE_CLIENT_TOKEN", "").strip() or None
+        if self.paddle_client_token is not None:
+            expected_prefix = PADDLE_CLIENT_TOKEN_PREFIXES[self.paddle_environment]
+            if not PADDLE_CLIENT_TOKEN_RE.fullmatch(self.paddle_client_token) or not self.paddle_client_token.startswith(expected_prefix):
+                raise RuntimeError(f"PADDLE_CLIENT_TOKEN must be a {self.paddle_environment} client-side token starting with {expected_prefix}")
+        self.paddle_price_ids: dict[str, str] = {}
+        for plan, name in (("monthly", "PADDLE_MONTHLY_PRICE_ID"), ("yearly", "PADDLE_YEARLY_PRICE_ID")):
+            value = os.getenv(name, "").strip()
+            if not value:
+                continue
+            if not PADDLE_PRICE_ID_RE.fullmatch(value):
+                raise RuntimeError(f"{name} must be a Paddle price ID (pri_...)")
+            self.paddle_price_ids[plan] = value
+        if len(set(self.paddle_price_ids.values())) != len(self.paddle_price_ids):
+            raise RuntimeError("PADDLE_MONTHLY_PRICE_ID and PADDLE_YEARLY_PRICE_ID must differ")
+        self.paddle_product_id = os.getenv("PADDLE_PRODUCT_ID", "").strip() or None
+        if self.paddle_product_id is not None and not PADDLE_PRODUCT_ID_RE.fullmatch(self.paddle_product_id):
+            raise RuntimeError("PADDLE_PRODUCT_ID must be a Paddle product ID (pro_...)")
+        try:
+            tolerance = int(os.getenv("PADDLE_WEBHOOK_TOLERANCE_SECONDS", str(DEFAULT_PADDLE_SIGNATURE_TOLERANCE_SECONDS)))
+        except ValueError as exc:
+            raise RuntimeError("PADDLE_WEBHOOK_TOLERANCE_SECONDS must be an integer") from exc
+        self.paddle_signature_tolerance_seconds = min(max(tolerance, 1), MAX_PADDLE_SIGNATURE_TOLERANCE_SECONDS)
+
+    @property
+    def paddle_price_plans(self) -> dict[str, str]:
+        return {price_id: plan for plan, price_id in self.paddle_price_ids.items()}
+
+    @property
+    def paddle_webhook_configured(self) -> bool:
+        return bool(self.paddle_webhook_secret and len(self.paddle_price_ids) == 2)
+
+    @property
+    def paddle_checkout_configured(self) -> bool:
+        return self.paddle_webhook_configured and self.paddle_client_token is not None
 
     @staticmethod
     def _read_checkout_url(name: str) -> str | None:
@@ -300,15 +493,18 @@ class LicenseStore:
 
         migrations = (
             (MIGRATION_VERSION_TRIAL_CLAIMS, "002_trial_claims.sql"),
+            (MIGRATION_VERSION_PADDLE_BILLING, "003_paddle_billing.sql"),
         )
         for version, filename in migrations:
             if version in applied_versions:
                 continue
             migration_path = Path(__file__).with_name("migrations") / filename
-            try:
-                migration_sql = migration_path.read_text(encoding="utf-8")
-            except OSError as exc:
-                raise RuntimeError(f"License database migration is unavailable: {migration_path}") from exc
+            migration_sql = EMBEDDED_MIGRATIONS.get(filename)
+            if migration_sql is None:
+                try:
+                    migration_sql = migration_path.read_text(encoding="utf-8")
+                except OSError as exc:
+                    raise RuntimeError(f"License database migration is unavailable: {migration_path}") from exc
             connection.executescript(migration_sql)
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
@@ -682,6 +878,269 @@ class LicenseStore:
         with self._write_lock, self._connect() as connection:
             connection.execute("DELETE FROM webhook_events WHERE event_id = ?", (event_id,))
 
+    @staticmethod
+    def _sync_paddle_license(connection: sqlite3.Connection, subscription_id: str, grace_days: int) -> None:
+        """Пересчитывает лицензию по сохранённому состоянию подписки Paddle.
+
+        Доступ продлевается только оплаченным периодом из transaction.completed. События
+        подписки могут лишь сократить его (отмена, пауза) или включить льготный период при
+        проблеме с оплатой. Отзыв (возврат, chargeback, администратор) не снимается.
+        """
+        subscription = connection.execute(
+            "SELECT * FROM paddle_subscriptions WHERE subscription_id = ?",
+            (subscription_id,),
+        ).fetchone()
+        if subscription is None or subscription["license_id"] is None:
+            return
+        paid_through = parse_iso_datetime(subscription["paid_through"])
+        if paid_through is None:
+            return
+        expires_at = paid_through + timedelta(days=grace_days)
+        status = "active"
+        grace_until: datetime | None = None
+        if subscription["status"] == "canceled":
+            cutoff = parse_iso_datetime(subscription["canceled_at"]) or parse_iso_datetime(subscription["last_event_at"])
+            if cutoff is not None:
+                expires_at = min(expires_at, cutoff)
+        elif subscription["status"] == "paused":
+            cutoff = parse_iso_datetime(subscription["paused_at"]) or parse_iso_datetime(subscription["last_event_at"])
+            if cutoff is not None:
+                expires_at = min(expires_at, cutoff)
+        elif subscription["status"] == "past_due":
+            status = "past_due"
+            since = parse_iso_datetime(subscription["past_due_since"]) or now_utc()
+            grace_until = since + timedelta(days=grace_days)
+        connection.execute(
+            """
+            UPDATE licenses
+            SET plan = ?, status = CASE WHEN status = 'revoked' THEN status ELSE ? END,
+                expires_at = ?, grace_until = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                subscription["plan"],
+                status,
+                iso_datetime(expires_at),
+                iso_datetime(grace_until),
+                iso_datetime(now_utc()),
+                subscription["license_id"],
+            ),
+        )
+
+    def apply_paddle_transaction(
+        self,
+        transaction_id: str,
+        subscription_id: str,
+        plan: str,
+        price_id: str,
+        paid_through: datetime,
+        source: str,
+        claim_token: str | None,
+        grace_days: int,
+    ) -> tuple[int, bool]:
+        """Фиксирует оплаченную транзакцию: создаёт лицензию при первой оплате, иначе продлевает.
+
+        Возвращает id лицензии и признак того, что она создана этим вызовом.
+        Повтор той же транзакции не создаёт второй ключ и не сдвигает срок назад.
+        """
+        timestamp = iso_datetime(now_utc())
+        with self._write_lock, self._connect() as connection:
+            subscription = connection.execute(
+                "SELECT * FROM paddle_subscriptions WHERE subscription_id = ?",
+                (subscription_id,),
+            ).fetchone()
+            if subscription is None:
+                connection.execute(
+                    """
+                    INSERT INTO paddle_subscriptions (
+                        subscription_id, license_id, plan, price_id, status, paid_through,
+                        first_transaction_id, created_at, updated_at
+                    ) VALUES (?, NULL, ?, ?, 'active', ?, ?, ?, ?)
+                    """,
+                    (subscription_id, plan, price_id, iso_datetime(paid_through), transaction_id, timestamp, timestamp),
+                )
+                license_id = None
+            else:
+                previous_paid_through = parse_iso_datetime(subscription["paid_through"])
+                new_paid_through = max(paid_through, previous_paid_through) if previous_paid_through else paid_through
+                # План и цену определяет последнее событие подписки; до него — оплаченная транзакция.
+                connection.execute(
+                    """
+                    UPDATE paddle_subscriptions
+                    SET paid_through = ?,
+                        plan = CASE WHEN last_event_at IS NULL THEN ? ELSE plan END,
+                        price_id = CASE WHEN last_event_at IS NULL THEN ? ELSE price_id END,
+                        first_transaction_id = COALESCE(first_transaction_id, ?),
+                        updated_at = ?
+                    WHERE subscription_id = ?
+                    """,
+                    (iso_datetime(new_paid_through), plan, price_id, transaction_id, timestamp, subscription_id),
+                )
+                license_id = subscription["license_id"]
+
+            created = False
+            if license_id is None:
+                note = "Paddle Sandbox" if source == "paddle-sandbox" else None
+                for _ in range(8):
+                    license_key = generate_license_key()
+                    try:
+                        cursor = connection.execute(
+                            """
+                            INSERT INTO licenses (
+                                key_hash, key_prefix, key_last4, plan, status, email, note, source,
+                                provider_license_id, provider_order_id, created_at, updated_at,
+                                expires_at, grace_until, max_activations
+                            ) VALUES (?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+                            """,
+                            (
+                                license_key_hash(license_key),
+                                license_key[:10],
+                                license_key[-4:],
+                                plan,
+                                note,
+                                source,
+                                subscription_id,
+                                transaction_id,
+                                timestamp,
+                                timestamp,
+                                PADDLE_LICENSE_MAX_ACTIVATIONS,
+                            ),
+                        )
+                    except sqlite3.IntegrityError:
+                        continue
+                    license_id = int(cursor.lastrowid)
+                    break
+                else:
+                    raise ServiceError(500, "license_generation_failed", "Не удалось сгенерировать уникальный ключ.")
+                connection.execute(
+                    "UPDATE paddle_subscriptions SET license_id = ? WHERE subscription_id = ?",
+                    (license_id, subscription_id),
+                )
+                created = True
+                if claim_token is not None:
+                    # Открытый ключ не сохраняется: в базе только шифротекст на токене покупателя.
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO paddle_key_deliveries (
+                            transaction_id, license_id, claim_hash, sealed_key, created_at, expires_at, claimed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+                        """,
+                        (
+                            transaction_id,
+                            license_id,
+                            paddle_claim_hash(claim_token),
+                            seal_license_key(license_key, claim_token, transaction_id),
+                            timestamp,
+                            iso_datetime(now_utc() + timedelta(days=PADDLE_KEY_DELIVERY_DAYS)),
+                        ),
+                    )
+            self._sync_paddle_license(connection, subscription_id, grace_days)
+            return int(license_id), created
+
+    def apply_paddle_subscription(
+        self,
+        subscription_id: str,
+        plan: str,
+        price_id: str,
+        status: str,
+        canceled_at: str | None,
+        paused_at: str | None,
+        occurred_at: datetime,
+        grace_days: int,
+    ) -> bool:
+        """Применяет состояние подписки, если событие не старше уже применённого.
+
+        Возвращает False для устаревшего события: Paddle не гарантирует порядок доставки.
+        """
+        timestamp = iso_datetime(now_utc())
+        occurred = iso_datetime(occurred_at)
+        with self._write_lock, self._connect() as connection:
+            subscription = connection.execute(
+                "SELECT * FROM paddle_subscriptions WHERE subscription_id = ?",
+                (subscription_id,),
+            ).fetchone()
+            if subscription is not None:
+                last_event_at = parse_iso_datetime(subscription["last_event_at"])
+                if last_event_at is not None and occurred_at < last_event_at:
+                    return False
+            if status != "past_due":
+                past_due_since = None
+            elif subscription is not None and subscription["status"] == "past_due" and subscription["past_due_since"]:
+                past_due_since = subscription["past_due_since"]
+            else:
+                past_due_since = occurred
+            if subscription is None:
+                connection.execute(
+                    """
+                    INSERT INTO paddle_subscriptions (
+                        subscription_id, license_id, plan, price_id, status, paid_through,
+                        canceled_at, paused_at, past_due_since, last_event_at, created_at, updated_at
+                    ) VALUES (?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (subscription_id, plan, price_id, status, canceled_at, paused_at, past_due_since, occurred, timestamp, timestamp),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE paddle_subscriptions
+                    SET plan = ?, price_id = ?, status = ?, canceled_at = ?, paused_at = ?,
+                        past_due_since = ?, last_event_at = ?, updated_at = ?
+                    WHERE subscription_id = ?
+                    """,
+                    (plan, price_id, status, canceled_at, paused_at, past_due_since, occurred, timestamp, subscription_id),
+                )
+            self._sync_paddle_license(connection, subscription_id, grace_days)
+            return True
+
+    def revoke_paddle_subscription(self, subscription_id: str) -> bool:
+        with self._write_lock, self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE licenses SET status = 'revoked', updated_at = ?
+                WHERE id = (SELECT license_id FROM paddle_subscriptions WHERE subscription_id = ?)
+                  AND status != 'revoked'
+                """,
+                (iso_datetime(now_utc()), subscription_id),
+            )
+            return cursor.rowcount > 0
+
+    def find_paddle_subscription(self, subscription_id: str) -> sqlite3.Row | None:
+        with self._connect() as connection:
+            return connection.execute(
+                "SELECT * FROM paddle_subscriptions WHERE subscription_id = ?",
+                (subscription_id,),
+            ).fetchone()
+
+    def claim_paddle_key(self, transaction_id: str, claim_token: str) -> tuple[str, sqlite3.Row]:
+        """Отдаёт ключ покупателю, который предъявил токен из своего checkout.
+
+        Неизвестная транзакция и неверный токен неразличимы снаружи: оба выглядят как
+        ещё не подтверждённая оплата, чтобы перебором нельзя было проверить чужие покупки.
+        """
+        pending = ServiceError(404, "purchase_pending", "Оплата ещё обрабатывается. Ключ появится через несколько секунд.")
+        with self._write_lock, self._connect() as connection:
+            delivery = connection.execute(
+                "SELECT * FROM paddle_key_deliveries WHERE transaction_id = ?",
+                (transaction_id,),
+            ).fetchone()
+            if delivery is None or not hmac.compare_digest(delivery["claim_hash"], paddle_claim_hash(claim_token)):
+                raise pending
+            expires_at = parse_iso_datetime(delivery["expires_at"])
+            if expires_at is None or now_utc() >= expires_at:
+                raise ServiceError(410, "key_delivery_expired", "Срок получения ключа истёк. Напишите в поддержку, чтобы получить ключ.")
+            license_key = open_license_key(delivery["sealed_key"], claim_token, transaction_id)
+            if license_key is None:
+                raise pending
+            row = connection.execute("SELECT * FROM licenses WHERE id = ?", (delivery["license_id"],)).fetchone()
+            if row is None:
+                raise pending
+            if delivery["claimed_at"] is None:
+                connection.execute(
+                    "UPDATE paddle_key_deliveries SET claimed_at = ? WHERE transaction_id = ?",
+                    (iso_datetime(now_utc()), transaction_id),
+                )
+            return license_key, row
+
 
 class RateLimiter:
     def __init__(self) -> None:
@@ -761,6 +1220,37 @@ def extract_provider_data(payload: dict[str, Any]) -> tuple[str | None, str | No
     if not isinstance(expires_at, str):
         expires_at = None
     return event_name, str(key) if key else None, str(provider_license_id) if provider_license_id else None, str(provider_order_id) if provider_order_id else None, plan, expires_at
+
+
+def paddle_plan_for_items(items: Any, price_plans: dict[str, str], product_id: str | None) -> tuple[str, str] | None:
+    """Возвращает (план, price ID) для единственной позиции Jackdaw Pro или None для чужих товаров и цен."""
+    if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+        return None
+    item = items[0]
+    price = item.get("price") if isinstance(item.get("price"), dict) else {}
+    price_id = price.get("id") or item.get("price_id")
+    if not isinstance(price_id, str) or price_id not in price_plans:
+        return None
+    if product_id is not None and price.get("product_id") != product_id:
+        return None
+    quantity = item.get("quantity", 1)
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
+        return None
+    return price_plans[price_id], price_id
+
+
+def paddle_claim_token(custom_data: Any) -> str | None:
+    if not isinstance(custom_data, dict):
+        return None
+    value = custom_data.get(PADDLE_CLAIM_CUSTOM_DATA_KEY)
+    return value if isinstance(value, str) and PADDLE_CLAIM_TOKEN_RE.fullmatch(value) else None
+
+
+def paddle_datetime(value: Any) -> str | None:
+    """Нормализует RFC 3339 из Paddle; некорректное значение считается отсутствующим."""
+    if not isinstance(value, str):
+        return None
+    return iso_datetime(parse_iso_datetime(value))
 
 
 ADMIN_HTML = """<!doctype html>
@@ -1053,12 +1543,12 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
     def _send_error(self, error: ServiceError) -> None:
         self._send_json(error.status, {"error": error.code, "message": error.message})
 
-    def _read_body(self) -> bytes:
+    def _read_body(self, max_bytes: int = MAX_BODY_BYTES) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
             raise ServiceError(400, "invalid_content_length", "Некорректный размер запроса.") from exc
-        if length <= 0 or length > MAX_BODY_BYTES:
+        if length <= 0 or length > max_bytes:
             raise ServiceError(413, "request_too_large", "Запрос слишком большой.")
         body = self.rfile.read(length)
         self._body_consumed = len(body) == length
@@ -1101,7 +1591,12 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
             if path == "/healthz":
                 self._send_json(
                     200,
-                    {"status": "ok", "product": PRODUCT, "storeConfigured": self.service.config.store_configured},
+                    {
+                        "status": "ok",
+                        "product": PRODUCT,
+                        "storeConfigured": self.service.config.store_configured,
+                        "paddleConfigured": bool(getattr(self.service.config, "paddle_checkout_configured", False)),
+                    },
                     head_only=True,
                 )
                 return
@@ -1115,19 +1610,31 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         try:
             path = urlparse(self.path).path
             if path == "/healthz":
-                self._send_json(200, {"status": "ok", "product": PRODUCT, "storeConfigured": self.service.config.store_configured})
+                self._send_json(
+                    200,
+                    {
+                        "status": "ok",
+                        "product": PRODUCT,
+                        "storeConfigured": self.service.config.store_configured,
+                        "paddleConfigured": bool(getattr(self.service.config, "paddle_checkout_configured", False)),
+                    },
+                )
                 return
             if path == "/v1/public-config":
+                paddle_configured = bool(getattr(self.service.config, "paddle_checkout_configured", False))
                 self._send_json(
                     200,
                     {
                         "product": PRODUCT,
                         "features": list(PRO_FEATURES),
                         "activation": {"method": "license-key", "emailRequired": False},
+                        # /buy/{plan} ведёт в Paddle, а без него — в Lemon Squeezy, поэтому checkout
+                        # считается настроенным при любом из провайдеров.
                         "checkout": {
-                            "monthly": {"configured": self.service.config.monthly_checkout_url is not None},
-                            "yearly": {"configured": self.service.config.yearly_checkout_url is not None},
+                            "monthly": {"configured": paddle_configured or self.service.config.monthly_checkout_url is not None},
+                            "yearly": {"configured": paddle_configured or self.service.config.yearly_checkout_url is not None},
                         },
+                        "paddle": self._paddle_public_config(paddle_configured),
                         "trial": {
                             "configured": True,
                             "durationDays": self.service.config.trial_days,
@@ -1157,7 +1664,27 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         except Exception:
             self._send_internal_error()
 
+    def _paddle_public_config(self, configured: bool) -> dict[str, Any]:
+        """Публичные значения Paddle.js. Секрет webhook и API-ключи сюда не попадают."""
+        config = self.service.config
+        if not configured:
+            return {"configured": False}
+        return {
+            "configured": True,
+            "environment": config.paddle_environment,
+            "clientToken": config.paddle_client_token,
+            "prices": dict(config.paddle_price_ids),
+        }
+
     def _handle_checkout(self, plan: str) -> None:
+        if getattr(self.service.config, "paddle_checkout_configured", False):
+            # Paddle.js работает на странице сайта, туда же ведут ссылки из приложения.
+            self.send_response(302)
+            self._security_headers()
+            self.send_header("Location", PADDLE_SITE_CHECKOUT_URL.format(plan=plan))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         checkout_url = self.service.config.monthly_checkout_url if plan == "monthly" else self.service.config.yearly_checkout_url
         if not checkout_url:
             self._send_html(
@@ -1179,6 +1706,14 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
                 # Лимит применяется только к запросам с неверной подписью, чтобы мусорный трафик
                 # не вытеснял настоящие доставки Lemon Squeezy.
                 self._handle_webhook()
+                return
+            if path == "/v1/webhooks/paddle":
+                # Как и для Lemon Squeezy, лимит действует только на запросы с неверной подписью.
+                self._handle_paddle_webhook()
+                return
+            if path == "/v1/paddle/claim":
+                self._check_rate("paddle-claim", PUBLIC_RATE_LIMIT)
+                self._handle_paddle_claim(self._read_json())
                 return
             if path in {"/v1/trial/start", "/v1/trial/refresh"}:
                 self._check_rate("trial", TRIAL_RATE_LIMIT)
@@ -1403,6 +1938,151 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
             raise
         self._send_json(200, {"ok": True})
 
+    def _handle_paddle_webhook(self) -> None:
+        config = self.service.config
+        raw_body = self._read_body(PADDLE_MAX_BODY_BYTES)
+        if not getattr(config, "paddle_webhook_configured", False) or not verify_paddle_signature(
+            self.headers.get("Paddle-Signature", ""),
+            raw_body,
+            getattr(config, "paddle_webhook_secret", ""),
+            getattr(config, "paddle_signature_tolerance_seconds", DEFAULT_PADDLE_SIGNATURE_TOLERANCE_SECONDS),
+        ):
+            self._check_rate("webhook-invalid", ADMIN_RATE_LIMIT)
+            raise ServiceError(401, "invalid_webhook_signature", "Подпись webhook недействительна.")
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ServiceError(400, "invalid_webhook_json", "Webhook содержит некорректный JSON.") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+            raise ServiceError(400, "invalid_webhook_json", "Webhook должен быть JSON-объектом с данными события.")
+        event_id = payload.get("event_id")
+        event_type = payload.get("event_type")
+        occurred_at = parse_iso_datetime(payload.get("occurred_at")) if isinstance(payload.get("occurred_at"), str) else None
+        if not isinstance(event_id, str) or not PADDLE_EVENT_ID_RE.fullmatch(event_id) or not isinstance(event_type, str) or occurred_at is None:
+            raise ServiceError(400, "invalid_webhook_event", "Webhook не содержит корректный идентификатор, тип или время события.")
+        data = payload["data"]
+        if event_type == "transaction.completed":
+            action = self._paddle_transaction_action(data)
+        elif event_type in PADDLE_SUBSCRIPTION_EVENTS:
+            action = self._paddle_subscription_action(data, occurred_at)
+        elif event_type in PADDLE_ADJUSTMENT_EVENTS:
+            action = self._paddle_adjustment_action(data)
+        else:
+            action = "event"
+        if isinstance(action, str):
+            # Чужие события не записываются: после исправления настроек Paddle сможет повторить доставку.
+            print(f"license-server: paddle webhook {event_type} ignored: {action}", flush=True)
+            self._send_json(200, {"ok": True, "ignored": action})
+            return
+        if not self.service.store.record_webhook(f"paddle:{event_id}", event_type, hashlib.sha256(raw_body).hexdigest()):
+            self._send_json(200, {"ok": True, "duplicate": True})
+            return
+        try:
+            action()
+        except Exception:
+            self.service.store.forget_webhook(f"paddle:{event_id}")
+            raise
+        self._send_json(200, {"ok": True})
+
+    def _paddle_items_plan(self, data: dict[str, Any]) -> tuple[str, str] | None:
+        config = self.service.config
+        return paddle_plan_for_items(data.get("items"), config.paddle_price_plans, getattr(config, "paddle_product_id", None))
+
+    def _paddle_transaction_action(self, data: dict[str, Any]) -> Any:
+        transaction_id = data.get("id")
+        subscription_id = data.get("subscription_id")
+        if data.get("status") != "completed":
+            return "status"
+        if not isinstance(transaction_id, str) or not PADDLE_TRANSACTION_ID_RE.fullmatch(transaction_id):
+            return "transaction"
+        if not isinstance(subscription_id, str) or not PADDLE_SUBSCRIPTION_ID_RE.fullmatch(subscription_id):
+            return "subscription"
+        plan_and_price = self._paddle_items_plan(data)
+        if plan_and_price is None:
+            return "price"
+        plan, price_id = plan_and_price
+        billing_period = data.get("billing_period") if isinstance(data.get("billing_period"), dict) else {}
+        paid_through = parse_iso_datetime(paddle_datetime(billing_period.get("ends_at")))
+        if paid_through is None:
+            paid_through = now_utc() + timedelta(days=PADDLE_FALLBACK_PERIOD_DAYS[plan])
+        claim_token = paddle_claim_token(data.get("custom_data"))
+        config = self.service.config
+        source = "paddle-sandbox" if getattr(config, "paddle_environment", "sandbox") == "sandbox" else "paddle"
+
+        def apply() -> None:
+            _license_id, created = self.service.store.apply_paddle_transaction(
+                transaction_id, subscription_id, plan, price_id, paid_through, source, claim_token, config.grace_days,
+            )
+            if created and claim_token is None:
+                # Ключ хранится только хешем, без токена покупателя его некому передать.
+                print("license-server: paddle license created without claim token; issue a replacement key in /admin", flush=True)
+
+        return apply
+
+    def _paddle_subscription_action(self, data: dict[str, Any], occurred_at: datetime) -> Any:
+        subscription_id = data.get("id")
+        status = data.get("status")
+        if not isinstance(subscription_id, str) or not PADDLE_SUBSCRIPTION_ID_RE.fullmatch(subscription_id):
+            return "subscription"
+        if status not in PADDLE_SUBSCRIPTION_STATUSES:
+            return "status"
+        plan_and_price = self._paddle_items_plan(data)
+        if plan_and_price is None:
+            return "price"
+        plan, price_id = plan_and_price
+        canceled_at = paddle_datetime(data.get("canceled_at"))
+        paused_at = paddle_datetime(data.get("paused_at"))
+        grace_days = self.service.config.grace_days
+
+        def apply() -> None:
+            self.service.store.apply_paddle_subscription(
+                subscription_id, plan, price_id, status, canceled_at, paused_at, occurred_at, grace_days,
+            )
+
+        return apply
+
+    def _paddle_adjustment_action(self, data: dict[str, Any]) -> Any:
+        subscription_id = data.get("subscription_id")
+        if data.get("action") not in PADDLE_REVOKING_ADJUSTMENT_ACTIONS or data.get("status") != "approved":
+            return "adjustment"
+        # Частичный возврат не отзывает доступ, chargeback — всегда.
+        if data.get("action") == "refund" and data.get("type") != "full":
+            return "adjustment"
+        if not isinstance(subscription_id, str) or not PADDLE_SUBSCRIPTION_ID_RE.fullmatch(subscription_id):
+            return "subscription"
+        if self.service.store.find_paddle_subscription(subscription_id) is None:
+            # Возврат обогнал оплату: ответ не 2xx, и Paddle повторит доставку позже.
+            raise ServiceError(409, "subscription_not_ready", "Подписка ещё не получена, повторите доставку позже.")
+
+        def apply() -> None:
+            self.service.store.revoke_paddle_subscription(subscription_id)
+
+        return apply
+
+    def _handle_paddle_claim(self, payload: dict[str, Any]) -> None:
+        transaction_id = payload.get("transactionId")
+        claim_token = payload.get("claimToken")
+        if not isinstance(transaction_id, str) or not PADDLE_TRANSACTION_ID_RE.fullmatch(transaction_id):
+            raise ServiceError(400, "invalid_transaction_id", "Идентификатор покупки некорректен.")
+        if not isinstance(claim_token, str) or not PADDLE_CLAIM_TOKEN_RE.fullmatch(claim_token):
+            raise ServiceError(400, "invalid_claim_token", "Токен получения ключа некорректен.")
+        license_key, row = self.service.store.claim_paddle_key(transaction_id, claim_token)
+        status = self.service.store._effective_status(row)
+        if status == "revoked":
+            raise ServiceError(403, "license_inactive", "Лицензия отозвана.")
+        self._send_json(
+            200,
+            {
+                "licenseKey": license_key,
+                "license": {
+                    "plan": row["plan"],
+                    "status": status,
+                    "validUntil": row["expires_at"],
+                    "keyLast4": row["key_last4"],
+                },
+            },
+        )
+
     def _handle_admin_create(self, payload: dict[str, Any]) -> None:
         plan = payload.get("plan", "monthly")
         if plan not in PLANS:
@@ -1517,7 +2197,8 @@ class LicenseHTTPService:
         server.service = self  # type: ignore[attr-defined]
         print(
             f"Jackdaw license server listening on {self.config.host}:{self.config.port}; "
-            f"store_configured={self.config.store_configured}",
+            f"store_configured={self.config.store_configured}; "
+            f"paddle_configured={self.config.paddle_checkout_configured} ({self.config.paddle_environment})",
             flush=True,
         )
         try:

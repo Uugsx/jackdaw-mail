@@ -5,7 +5,8 @@
 
 ## Модель доступа
 
-1. Lemon Squeezy после покупки передаёт UUID license key через подписанный webhook.
+1. Основной провайдер — Paddle Billing. Paddle не выдаёт ключи Jackdaw: после подписанного webhook `transaction.completed` сервер сам выпускает ключ `JACKDAW-PRO-...` и отдаёт его странице покупки (см. «Paddle» ниже).
+   Lemon Squeezy остаётся совместимым запасным провайдером: он передаёт UUID license key через подписанный webhook, маршрут `/v1/webhooks/lemon-squeezy` работает как раньше.
 2. Сервер хранит только SHA-256 ключа и связывает его с лимитом устройств.
 3. Пользователь вводит ключ в `Настройки → Jackdaw Pro`.
 4. Клиент активирует устройство и проверяет Ed25519-подпись entitlement встроенным публичным ключом.
@@ -31,6 +32,35 @@ Email не является учётной записью приложения �
 - `JACKDAW_TRUST_X_FORWARDED_FOR=1` — считать лимиты запросов по адресу клиента из `X-Forwarded-For`. Включать, только если перед сервисом на этом же хосте стоит reverse proxy, который дописывает адрес клиента в конец заголовка (nginx: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`, Caddy делает это сам). Без этой переменной все клиенты за прокси делят один лимит;
 - `LEMON_SQUEEZY_REJECT_TEST_MODE=1` — игнорировать webhook из Test mode. Включить перед запуском продаж, иначе покупка тестовой картой выдаст настоящий ключ;
 - `LEMON_SQUEEZY_PRODUCT_IDS` — id продуктов Jackdaw Pro через запятую. Webhook других продуктов магазина игнорируются.
+
+## Paddle
+
+Поток покупки:
+
+1. Сайт берёт клиентский токен, окружение и ID цен из `GET /v1/public-config` и открывает checkout Paddle.js с `customData.jackdaw_claim` — случайным токеном, созданным в браузере покупателя.
+2. Paddle присылает `transaction.completed` на `POST /v1/webhooks/paddle`. Сервер проверяет `Paddle-Signature` (HMAC-SHA256 над `ts:тело` по исходным байтам, сравнение постоянного времени, расхождение времени не больше `PADDLE_WEBHOOK_TOLERANCE_SECONDS`), статус `completed`, ID цены и продукта.
+3. При первой оплате подписки сервер выпускает ключ `JACKDAW-PRO-...`: в `licenses` попадает только хеш, а для выдачи сохраняется шифротекст ключа (AES-GCM, ключ шифрования выводится из токена покупателя) и хеш токена. Открытый ключ и токен в базе не хранятся.
+4. Страница покупки после события `checkout.completed` опрашивает `POST /v1/paddle/claim` с `transactionId` и токеном. Ключ отдаётся только владельцу токена; неизвестная покупка и неверный токен дают одинаковый ответ `404 purchase_pending`. Получить ключ можно 30 дней.
+5. Продление (`transaction.completed` с `origin=subscription_recurring`) сдвигает оплаченный период вперёд, но никогда назад. `subscription.*` применяются только если событие не старше уже применённого (`occurred_at`): отмена и пауза заканчивают доступ в момент `canceled_at`/`paused_at`, `past_due` включает льготный период `JACKDAW_LICENSE_GRACE_DAYS`, смена цены меняет план. Доступ без подтверждённой оплаты события подписки не выдают.
+6. Полный возврат и chargeback (`adjustment.created`/`adjustment.updated` со статусом `approved`) отзывают лицензию. Отзыв не снимается последующими событиями.
+7. Повтор того же `event_id` отвечает `duplicate` и ничего не меняет. События с чужим ID цены или продукта отвечают `200 ignored` и не записываются, поэтому после исправления настроек их можно повторить из Paddle.
+
+Если покупка прошла без токена (например, через ссылку из Paddle Dashboard), лицензия создаётся, но ключ некому передать: сервер пишет предупреждение в журнал, администратор выпускает замену в `/admin`.
+
+Переменные Paddle (все в `/etc/jackdaw-license/license.env`, значения не коммитятся):
+
+- `PADDLE_ENVIRONMENT` — `sandbox` (по умолчанию) или `production`;
+- `PADDLE_CLIENT_TOKEN` — клиентский токен Paddle.js: `test_...` для Sandbox, `live_...` для Live. Публичный, отдаётся сайту через `/v1/public-config`;
+- `PADDLE_WEBHOOK_SECRET` — секрет notification destination (`pdl_ntfset_...`). Секретный, наружу не отдаётся;
+- `PADDLE_MONTHLY_PRICE_ID`, `PADDLE_YEARLY_PRICE_ID` — ID цен `pri_...`. Для Sandbox: `pri_01m5a4y49fpvggt57sfxwaf7k4` и `pri_01m5a4yq26dcyy79600zwytjrw`;
+- `PADDLE_PRODUCT_ID` — необязательно, ID продукта `pro_...` (Sandbox: `pro_01m5a4tmfa7qet7sgepx5wdh5h`). Позиции другого продукта игнорируются;
+- `PADDLE_WEBHOOK_TOLERANCE_SECONDS` — необязательно, по умолчанию 5 (как в SDK Paddle), не больше 300.
+
+Webhook принимается при заданных секрете и обеих ценах, checkout на сайте открывается при наличии ещё и клиентского токена. Заданное, но некорректное значение (неизвестное окружение, токен `live_` в Sandbox, неверный формат ID) останавливает запуск сервиса. Лицензии из Sandbox помечены `source = paddle-sandbox` и заметкой «Paddle Sandbox»; перед запуском продаж их стоит отозвать. В Sandbox и Live разные секреты, токены и ID цен — переключение на Live меняет все пять значений вместе с `PADDLE_ENVIRONMENT=production` и `environment` в `site/billing-config.js`.
+
+Ссылки `/buy/monthly` и `/buy/yearly` (их открывает приложение) при настроенном Paddle ведут на `https://jackdaw-mail.pro/?checkout={plan}#plans`, где сайт сразу открывает checkout. Без Paddle они по-прежнему ведут в Lemon Squeezy.
+
+Миграция `migrations/003_paddle_billing.sql` (таблицы `paddle_subscriptions` и `paddle_key_deliveries`) применяется автоматически при запуске: её SQL встроен в `app.py`, потому что автодеплой загружает только этот файл. Откат: остановить сервис, выполнить `sqlite3 /var/lib/jackdaw-license/license.sqlite3 < migrations/003_paddle_billing.rollback.sql` и вернуть предыдущий `app.py` — текущая версия при запуске применит миграцию снова. Лицензии, уже выпущенные через Paddle, при откате остаются в `licenses` и продолжают работать до своего срока.
 
 Отзыв лицензии событием Lemon Squeezy (возврат, истечение или отключение ключа) или администратором не снимается последующими webhook. Вернуть лицензию можно только через `/v1/admin/licenses/restore`.
 

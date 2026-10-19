@@ -112,7 +112,7 @@ Desktop-клиент для Exchange / OWA и связанных протоко�
 
 ### Jackdaw Mail Pro
 
-Jackdaw Mail Pro включает рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр, HTML-экспорт, несколько почтовых аккаунтов, форматированные HTML-подписи с ссылками и изображениями, а также аудиозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail. Публичные цены Pro — **$9.99 / month** или **$79.99 / year**. Для международного запуска выбран внешний checkout Lemon Squeezy; платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. Первый почтовый аккаунт остаётся бесплатным, а существующие аккаунты не удаляются при окончании Pro. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
+Jackdaw Mail Pro включает рабочий календарь, таймеры, напоминания, правила очереди, архив контроля, подробный просмотр, HTML-экспорт, несколько почтовых аккаунтов, форматированные HTML-подписи с ссылками и изображениями, а также аудиозвонки и чат со сквозным шифрованием между пользователями Jackdaw Mail. Публичные цены Pro — **$9.99 / month** или **$79.99 / year**. Оплата проходит через Paddle (сейчас подключена тестовая среда Sandbox, Lemon Squeezy остаётся запасным провайдером на сервере); платёжные данные не проходят через Jackdaw Mail, а доступ выдаётся подписанным серверным entitlement. Первый почтовый аккаунт остаётся бесплатным, а существующие аккаунты не удаляются при окончании Pro. План интеграции и список обязательных шагов находятся в [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md).
 
 ### Платформы
 
@@ -249,7 +249,7 @@ Live-control settings are persisted per mailbox. The queue refreshes immediately
 
 ### Jackdaw Mail Pro
 
-Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view, HTML export, multiple mail accounts, formatted HTML signatures with links and images, and audio calls and end-to-end encrypted chat between Jackdaw Mail users. Public Pro pricing is **$9.99 / month** or **$79.99 / year**. The first mail account remains free and existing accounts are preserved after Pro expires. Lemon Squeezy is the selected hosted checkout for an international launch; payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
+Jackdaw Mail Pro covers the working calendar, timers, reminders, queue rules, tracking archive, in-app detailed view, HTML export, multiple mail accounts, formatted HTML signatures with links and images, and audio calls and end-to-end encrypted chat between Jackdaw Mail users. Public Pro pricing is **$9.99 / month** or **$79.99 / year**. The first mail account remains free and existing accounts are preserved after Pro expires. Payments go through Paddle (currently the Sandbox test environment; Lemon Squeezy stays supported on the server as a fallback); payment details never pass through Jackdaw Mail, and access is issued by a signed server entitlement. See [`docs/PRO-BILLING.md`](docs/PRO-BILLING.md) for the integration plan and launch checklist.
 
 ### Platforms
 
