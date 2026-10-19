@@ -28,10 +28,13 @@
       autofocus={true}
       on:continue={() => catchErrors(onContinue, showError)} />
   </hbox>
+  <p class="password-hint">
+    {$t`Gmail, Yandex, Mail.ru, iCloud and Outlook.com with two-step verification need an app password. Create it in the security settings of your mail account and enter it here instead of your regular password.`}
+  </p>
 {/if}
 
 {#if errorMessage}
-  <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error}
+  <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error} ex={errorEx}
     on:continue={() => errorMessage = null} />
 {/if}
 
@@ -43,6 +46,7 @@
   import { getProvider } from "../../../logic/Auth/OAuth2Util";
   import Header from "../Shared/Header.svelte";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import InfoIcon from "lucide-svelte/icons/info";
   import { Cancelled } from "../../../logic/util/flow/Abortable";
   import { catchErrors, logError } from "../../Util/error";
@@ -54,6 +58,7 @@
   export let showManualSetupHint = false;
 
   let errorMessage: string = null;
+  let errorEx: Error = null;
   $: isGoogleAccount = !!account && getProvider(account) == Provider.Google;
 
   function showError(ex: Error | string) {
@@ -65,7 +70,8 @@
     }
     console.error(ex);
     logError(ex);
-    errorMessage = ex.message;
+    errorMessage = friendlyErrorMessage(ex);
+    errorEx = ex;
   }
 
   // TODO Copy password to SMTP
@@ -81,6 +87,13 @@
   .password-row :global(input) {
     min-width: 20em;
   }
+  .password-hint {
+    max-width: 36em;
+    margin: 0 0 8px;
+    color: color-mix(in srgb, var(--main-fg, CanvasText) 72%, transparent);
+    font-size: 12px;
+    line-height: 1.45;
+  }
   .spacer1,
   .spacer2 {
     min-height: 5vh;
@@ -88,7 +101,7 @@
   .google-login-help {
     background-color: var(--offset-bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--border-radius);
     margin-block-end: 16px;
     padding: 12px 16px;
   }

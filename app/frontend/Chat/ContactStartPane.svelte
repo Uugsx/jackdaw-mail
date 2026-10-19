@@ -31,6 +31,7 @@
 </vbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../logic/util/friendlyError";
   /**
    * Контакт из адресной книги, с которым ещё нет чата: найден поиском в списке чатов.
    * Объясняет, можно ли написать и позвонить, и открывает чат Jackdaw одним нажатием.
@@ -93,7 +94,7 @@
       }
     } catch (ex) {
       if (id == checkID) {
-        errorText = ex?.message ?? String(ex);
+        errorText = friendlyErrorMessage(ex);
         state = "error";
       }
     }

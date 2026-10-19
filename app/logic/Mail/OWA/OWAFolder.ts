@@ -111,6 +111,9 @@ const kOlderHistoryPagesPerPass = 10;
 const kOlderHistoryContinuationDelayMs = 300;
 /** Не повторять завершённый или сорвавшийся обход старой истории чаще этого интервала. */
 const kOlderHistoryRetryMs = 5 * 60_000;
+/** Версия правил обхода старой истории, при которых записан его итог
+ * `olderHistoryCompletedGap`. Итог другой версии обход не останавливает. */
+const kOlderHistoryWalkVersion = 2;
 /** AQS-фильтр Exchange возвращает именно письма, полученные сегодня. */
 const kRecentDayQuery = "received:today";
 /** Каноническое значение boolean для AQS/EWS: Exchange ожидает `false`, а не `no`. */
@@ -249,6 +252,8 @@ export class OWAFolder extends ExchangeFolder {
    * Письма, которые GetItem не отдаёт, не должны запускать обход заново. */
   protected olderHistoryCompletedGap: number | null = null;
   protected olderHistoryNextAttemptAt = 0;
+  /** Explicit Logon не отдал строки папки: обход идёт в delegate-контексте */
+  protected olderHistoryViaDelegate = false;
   protected olderHistoryPumpRunOnce = new RunOnce<void>();
 
   /** Некоторые on-prem/shared OWA не умеют десериализовать AQS FindItem. */
@@ -567,7 +572,11 @@ export class OWAFolder extends ExchangeFolder {
       break;
     //case "outbox":
     }
-    if (this.specialFolder == SpecialFolder.Normal && this.name) {
+    // Папки сетевого архива по имени не угадываем: «Входящие» архива не
+    // входящие аккаунта. Иначе архив на десятки тысяч писем попадал в
+    // уведомления, приоритетный опрос и полную дельта-синхронизацию «Входящих»,
+    // занимая общую очередь запросов при каждом запуске.
+    if (this.specialFolder == SpecialFolder.Normal && this.name && !archiveMailbox) {
       let lowerName = this.name.toLowerCase().trim();
       if (lowerName == "inbox" || lowerName == "входящие") {
         this.specialFolder = SpecialFolder.Inbox;
@@ -1829,31 +1838,66 @@ export class OWAFolder extends ExchangeFolder {
     });
   }
 
+  /**
+   * Пустая или повторная страница на смещении `offset` ещё не значит, что
+   * обход дошёл до конца папки: Explicit Logon и часть Exchange обрывают
+   * выдачу раньше. Конец доказан, только когда смещение дошло до числа
+   * писем на сервере (с запасом в страницу на одновременные удаления).
+   */
+  protected olderHistoryEndedEarly(offset: number, result: any): boolean {
+    let viewTotal = Number(result?.RootFolder?.TotalItemsInView);
+    let serverTotal = Number.isFinite(viewTotal) && viewTotal > 0
+      ? Math.max(viewTotal, this.countTotal)
+      : this.countTotal;
+    return offset + kMaxFetchCount < serverTotal;
+  }
+
   /** Один шаг догрузки старой истории.
    * @returns true, если обход дошёл до конца папки или продолжать бессмысленно */
   protected async syncOlderHistoryPass(): Promise<boolean> {
     await this.readFolder();
     let found = new ArrayColl<OWAEMail>();
     let finished = false;
+    /** Обход действительно дошёл до конца папки, а не оборвался раньше */
+    let reachedEnd = false;
     let lock = await this.listMessagesLock.lock();
     try {
-      let request = owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true, this.account.isDependentAccount);
+      let request = this.olderHistoryViaDelegate
+        ? owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true)
+        : owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true, this.account.isDependentAccount);
       request.Body.Paging.Offset = this.olderHistoryResumeOffset;
       let previousSignature: string | null = null;
       for (let page = 0; page < kOlderHistoryPagesPerPass; page++) {
-        let result = await this.callFolderSyncOWA(request);
+        let result = this.olderHistoryViaDelegate
+          ? await this.callFolderDelegateOWA(request)
+          : await this.callFolderSyncOWA(request);
         let items = ensureArray(result?.RootFolder?.Items);
-        if (!items.length) {
-          finished = true;
-          break;
-        }
         let signature = items
           .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
           .join("\u0000");
-        if (signature == previousSignature) {
-          // Exchange отдаёт одну и ту же страницу при любом Offset:
-          // дальше идти бессмысленно, повторим позже с начала.
+        let pageRepeated = items.length > 0 && signature == previousSignature;
+        if ((!items.length || pageRepeated) && this.olderHistoryEndedEarly(request.Body.Paging.Offset, result)) {
+          if (this.account.isDependentAccount && !this.olderHistoryViaDelegate) {
+            // Explicit Logon общего ящика отдаёт пустую или одну и ту же
+            // страницу для папок его сетевого архива, хотя письма там есть.
+            // Как и listMessages(), перечитываем в delegate-контексте — тем же
+            // смещением, но с явной сортировкой от новых писем к старым.
+            this.olderHistoryViaDelegate = true;
+            let offset = request.Body.Paging.Offset;
+            request = owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true);
+            request.Body.Paging.Offset = offset;
+            previousSignature = null;
+            continue;
+          }
+          // Обход оборвался внутри папки: это не конец истории. Итог не
+          // запоминаем, иначе догрузка не запустилась бы больше никогда.
           finished = true;
+          break;
+        }
+        if (!items.length || pageRepeated) {
+          // Конец папки (или повтор последней страницы на её конце)
+          finished = true;
+          reachedEnd = true;
           break;
         }
         previousSignature = signature;
@@ -1874,19 +1918,29 @@ export class OWAFolder extends ExchangeFolder {
           found.addAll(loaded);
         }
         request.Body.Paging.Offset += items.length;
-        if (result?.RootFolder?.IncludesLastItemInRange === true) {
+        if (result?.RootFolder?.IncludesLastItemInRange === true &&
+            !this.olderHistoryEndedEarly(request.Body.Paging.Offset, result)) {
+          // Признаку внутри папки не верим (BasePoint=End ставит его рано):
+          // следующая страница сама покажет, есть ли письма дальше.
           finished = true;
+          reachedEnd = true;
           break;
         }
       }
       if (!finished && this.olderHistoryGap() == 0) {
         // Кеш догнал счётчик сервера: остаток папки уже загружен.
         finished = true;
+        reachedEnd = true;
       }
       if (finished) {
-        this.olderHistoryResumeOffset = 0;
-        this.olderHistoryCompletedGap = this.olderHistoryGap();
         this.olderHistoryNextAttemptAt = Date.now() + kOlderHistoryRetryMs;
+        if (reachedEnd) {
+          this.olderHistoryResumeOffset = 0;
+          this.olderHistoryCompletedGap = this.olderHistoryGap();
+        } else {
+          // Повтор продолжит с места обрыва, а не перечитает пройденное
+          this.olderHistoryResumeOffset = Math.max(0, request.Body.Paging.Offset - kMaxFetchCount);
+        }
       } else {
         // Новые письма сдвигают выдачу вниз, поэтому следующий шаг начинает
         // на страницу раньше и перекрывает стык.
@@ -1910,7 +1964,10 @@ export class OWAFolder extends ExchangeFolder {
     let resumeOffset = Number(json?.olderHistoryResumeOffset);
     this.olderHistoryResumeOffset = Number.isInteger(resumeOffset) && resumeOffset > 0 ? resumeOffset : 0;
     let completedGap = Number(json?.olderHistoryCompletedGap);
+    // Итог без версии записан обходом, который принимал обрыв выдачи
+    // (пустую страницу Explicit Logon) за конец папки: ему не верим.
     this.olderHistoryCompletedGap = json?.olderHistoryCompletedGap != null &&
+      json?.olderHistoryWalkVersion == kOlderHistoryWalkVersion &&
       Number.isInteger(completedGap) && completedGap >= 0 ? completedGap : null;
   }
 
@@ -1924,6 +1981,7 @@ export class OWAFolder extends ExchangeFolder {
     }
     if (this.olderHistoryCompletedGap != null) {
       json.olderHistoryCompletedGap = this.olderHistoryCompletedGap;
+      json.olderHistoryWalkVersion = kOlderHistoryWalkVersion;
     }
     return json;
   }
@@ -3437,6 +3495,8 @@ export class OWAFolder extends ExchangeFolder {
       }
     }
     let missingMessages: OWAEMail[] = [];
+    /** Обновлённые письма сохраняются одной транзакцией после цикла */
+    let updated: { id: string, item: any, email: OWAEMail }[] = [];
     let changed = false;
     for (let item of items ?? []) {
       let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, null);
@@ -3446,8 +3506,7 @@ export class OWAFolder extends ExchangeFolder {
           let wasUnread = !email.isRead;
           let oldTagNames = email.tags.contents.map(tag => tag.name);
           email.fromJSON(item);
-          await email.saveMetadataLocally();
-          this.markMetadataBackfillComplete(id, item, email);
+          updated.push({ id, item, email });
           let newTagNames = email.tags.contents.map(tag => tag.name);
           if (oldTagNames.length != newTagNames.length ||
               oldTagNames.some((name, i) => name != newTagNames[i])) {
@@ -3480,6 +3539,18 @@ export class OWAFolder extends ExchangeFolder {
           missingMessages.push(newEmail);
         } catch (ex) {
           this.account.errorCallback(ex);
+        }
+      }
+    }
+    if (updated.length) {
+      // Категории и флаги видимой страницы — одна транзакция вместо 5–10
+      // запросов к SQLite на каждое письмо, пока держится блокировка папки.
+      let saved = new Set(await this.saveMessagesMetadataLocally(
+        updated.map(entry => entry.email),
+        ex => this.account.errorCallback(ex)));
+      for (let entry of updated) {
+        if (saved.has(entry.email)) {
+          this.markMetadataBackfillComplete(entry.id, entry.item, entry.email);
         }
       }
     }

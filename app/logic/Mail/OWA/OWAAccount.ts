@@ -462,6 +462,14 @@ export class OWAAccount extends ExchangeMailAccount {
         await this.listFolders();
         let inbox = this.findInboxFolder();
         assert(inbox, gt`Inbox not found`);
+        // Список категорий Outlook (цвета меток) — один независимый запрос.
+        // Раньше он ждал полной сверки «Входящих», скачивания новых писем и
+        // старта общих ящиков, и метки на письмах появлялись с задержкой.
+        let categoryColors = this.isDependentAccount
+          ? null
+          : this.loadCategoryColors().catch(() => {
+            // Optional category metadata
+          });
         try {
           if (this.sharedFolderRoot) {
             if (inbox) {
@@ -484,13 +492,7 @@ export class OWAAccount extends ExchangeMailAccount {
           this.startNotifications();
         }
 
-        if (!this.isDependentAccount) {
-          try {
-            await this.loadCategoryColors();
-          } catch {
-            // Optional category metadata
-          }
-        }
+        await categoryColors;
 
         // Create primary addressbook automatically
         try {

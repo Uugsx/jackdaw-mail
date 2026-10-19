@@ -22,7 +22,7 @@
     </HeaderGroupBox>
   </vbox>
 {:catch ex}
-  {ex?.message ?? ex + ""}
+  <Notice {ex} />
 {/await}
 <ButtonsBottom
   canContinue={!!accounts.length}
@@ -37,6 +37,7 @@
 </ButtonsBottom>
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { ThunderbirdProfile } from "../../../logic/Mail/Import/Thunderbird/TBProfile";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import StatusMessage from "../Shared/StatusMessage.svelte";

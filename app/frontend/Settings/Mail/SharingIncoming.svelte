@@ -66,6 +66,7 @@
 </vbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { Account } from "../../../logic/Abstract/Account";
   import { EWSAccount } from "../../../logic/Mail/EWS/EWSAccount";
   import { OWAAccount } from "../../../logic/Mail/OWA/OWAAccount";
@@ -123,7 +124,7 @@
       }
       sharedPerson = person;
     } catch (ex) {
-      errorMessage = ex.message;
+      errorMessage = friendlyErrorMessage(ex);
     }
   }
 

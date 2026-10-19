@@ -40,7 +40,7 @@
     </hbox>
   {:else}
     <RoundButton
-      label={folder?.account?.fatalError?.message ?? $t`Get mail`}
+      label={folder?.account?.fatalError ? friendlyErrorMessage(folder.account.fatalError) : $t`Get mail`}
       icon={
         status == Status.Fetching || externalSync ? DownloadIcon :
         status == Status.New ? NewIcon :
@@ -59,6 +59,7 @@
 </hbox>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { Folder } from "../../../logic/Mail/Folder";
   import { appGlobal } from "../../../logic/app";
   import RoundButton from "../../Shared/RoundButton.svelte";

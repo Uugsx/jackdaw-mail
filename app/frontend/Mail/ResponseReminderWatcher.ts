@@ -60,6 +60,7 @@ import {
   NotificationKinds,
   SystemNotification,
 } from "../Shared/SystemNotification";
+import { notificationSubject } from "../Shared/notificationText";
 import MailIcon from "../asset/icon/appBar/mail.svg?raw";
 
 const RESPONSE_REMINDER_STATE_STORAGE_KEY =
@@ -67,6 +68,11 @@ const RESPONSE_REMINDER_STATE_STORAGE_KEY =
 const RESPONSE_REMINDER_POLL_MS = 15_000;
 const RESPONSE_REMINDER_EVALUATION_DELAY_MS = 300;
 const RESPONSE_REMINDER_INITIAL_DELAY_MS = 1_000;
+/** Пауза перед повтором, если почта менялась во время проверки. При
+ * синхронизации тысяч писем на старте проверки иначе шли вплотную одна за
+ * другой и занимали единственный поток SQLite, задерживая запись новых писем
+ * и категорий. */
+const RESPONSE_REMINDER_BUSY_DELAY_MS = 2_000;
 const MAX_RESPONSE_REMINDER_NOTIFICATIONS_PER_CHECK = 20;
 const MAX_RESPONSE_EVENT_NOTIFICATIONS_PER_CHECK = 20;
 
@@ -644,7 +650,7 @@ async function evaluateResponseReminders(): Promise<void> {
     evaluationRunning = false;
     if (evaluationPending) {
       evaluationPending = false;
-      scheduleEvaluation();
+      scheduleEvaluation(RESPONSE_REMINDER_BUSY_DELAY_MS);
     }
   }
 }
@@ -784,7 +790,7 @@ async function showResponseReminder(
       elapsedResponseMinutes(candidate, now, workingHours, slaStartedAt),
     ),
   );
-  const subject = candidate.subject.trim() || gt`(no subject)`;
+  const subject = notificationSubject(candidate.subject);
   const notification = new SystemNotification(
     new NotificationKinds(
       getLocalStorage("notifications.mail", ["popup", "sound"]).value,
@@ -812,7 +818,7 @@ async function showResponseEventNotification(
   now: Date,
 ): Promise<void> {
   const { event, candidate, targetMinutes, workingHours, slaStartedAt } = job;
-  const subject = candidate.subject.trim() || gt`(no subject)`;
+  const subject = notificationSubject(candidate.subject);
   const soundEvent =
     event == "overdue" ? "sla-overdue" : "sla-taken-in-work";
   const notification = new SystemNotification(

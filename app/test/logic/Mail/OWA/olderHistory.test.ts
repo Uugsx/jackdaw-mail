@@ -202,10 +202,86 @@ test("ошибка сервера откладывает повтор догру
 
 test("смещение и итог догрузки переживают перезапуск через JSON папки", () => {
   let { folder } = makeArchiveInbox();
-  folder.fromExtraJSON({ olderHistoryResumeOffset: 1_450, olderHistoryCompletedGap: 3 });
+  folder.fromExtraJSON({ olderHistoryResumeOffset: 1_450, olderHistoryCompletedGap: 3, olderHistoryWalkVersion: 2 });
   expect(folder.toExtraJSON().olderHistoryResumeOffset).toBe(1_450);
   expect(folder.toExtraJSON().olderHistoryCompletedGap).toBe(3);
   folder.fromExtraJSON({ olderHistoryResumeOffset: "мусор", olderHistoryCompletedGap: -1 });
   expect(folder.toExtraJSON().olderHistoryResumeOffset).toBeUndefined();
   expect(folder.toExtraJSON().olderHistoryCompletedGap).toBeUndefined();
+});
+
+/** Общий ящик: Explicit Logon отдаёт по папке его сетевого архива пустую
+ * выдачу, а delegate-контекст основного аккаунта — настоящие письма. */
+function makeSharedArchiveInbox(total: number, cached: number) {
+  let { account: main } = makeArchiveInbox();
+  let shared = new OWAAccount();
+  shared.storage = new DummyMailStorage();
+  shared.id = "shared-id";
+  shared.username = "integrators@example.test";
+  shared.emailAddress = "integrators@example.test";
+  (shared as any).hasLoggedIn = true;
+  (shared as any).sharedFolderRoot = "msgfolderroot";
+  shared.mainAccount = main;
+  let folder = shared.newFolder();
+  folder.id = "shared-archive-inbox";
+  folder.specialFolder = SpecialFolder.Inbox;
+  folder.isArchiveMailbox = true;
+  (folder as any).haveReadFolder = true;
+  shared.rootFolders.add(folder);
+  shared.folderMap.set(folder.id, folder);
+  let { stats } = setupServer(main, folder, total, cached);
+  let delegateCall = main.callOWA;
+  let explicitFindItem = 0;
+  shared.callOWA = async (request: any) => {
+    if (request.action == "FindItem") {
+      explicitFindItem++;
+      return { RootFolder: { Items: [], IncludesLastItemInRange: true, TotalItemsInView: 0 } };
+    }
+    return await delegateCall(request);
+  };
+  return { shared, folder, stats, explicit: () => explicitFindItem };
+}
+
+test("архив общего ящика: пустая выдача Explicit Logon не считается концом папки", async () => {
+  let { folder, explicit } = makeSharedArchiveInbox(3_000, 1_006);
+  expect(folder.needsOlderHistorySync()).toBe(true);
+  folder.syncOlderHistoryInBackground();
+  await (folder as any).olderHistoryPumpRunOnce.running;
+  // Пустая страница Explicit Logon переключила обход на delegate-контекст
+  expect(explicit()).toBe(1);
+  expect(folder.messages.length).toBe(3_000);
+  expect(folder.toExtraJSON().olderHistoryCompletedGap).toBe(0);
+  expect(folder.toExtraJSON().olderHistoryWalkVersion).toBe(2);
+});
+
+test("обрыв выдачи внутри папки не запоминается как завершённый обход", async () => {
+  let { account, folder } = makeArchiveInbox();
+  setupServer(account, folder, 2_000, 100);
+  let callOWA = account.callOWA;
+  account.callOWA = async (request: any) => {
+    if (request.action == "FindItem" && request.Body.Paging.Offset >= 300) {
+      // Сервер обрывает выдачу на 300-м письме из 2000
+      return { RootFolder: { Items: [], IncludesLastItemInRange: true } };
+    }
+    return await callOWA(request);
+  };
+  folder.syncOlderHistoryInBackground();
+  await (folder as any).olderHistoryPumpRunOnce.running;
+  expect(folder.messages.length).toBe(300);
+  expect(folder.toExtraJSON().olderHistoryCompletedGap).toBeUndefined();
+  // Повтор продолжит с места обрыва
+  expect(folder.toExtraJSON().olderHistoryResumeOffset).toBe(250);
+  // Повтор отложен, но не запрещён навсегда
+  expect(folder.needsOlderHistorySync()).toBe(false);
+  (folder as any).olderHistoryNextAttemptAt = 0;
+  expect(folder.needsOlderHistorySync()).toBe(true);
+});
+
+test("итог обхода из прежней версии не блокирует догрузку архива", () => {
+  let { account, folder } = makeArchiveInbox();
+  setupServer(account, folder, 21_754, 1_006);
+  // Так выглядела папка «входящие» архива общего ящика у пользователя
+  folder.fromExtraJSON({ historyVerifiedUntil: 1_792_397_346_062, olderHistoryCompletedGap: 20_748 });
+  expect(folder.toExtraJSON().olderHistoryCompletedGap).toBeUndefined();
+  expect(folder.needsOlderHistorySync()).toBe(true);
 });

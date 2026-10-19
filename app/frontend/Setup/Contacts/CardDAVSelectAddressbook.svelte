@@ -28,7 +28,7 @@
     {/each}
   </grid>
 {:catch ex}
-  {ex?.message ?? ex + ""}
+  <Notice {ex} />
 {/await}
 
 <ErrorMessageInline bind:this={errorUI} />
@@ -41,6 +41,7 @@
   />
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { CardDAVAddressbook } from "../../../logic/Contacts/CardDAV/CardDAVAddressbook";
   import { newAddressbookForProtocol } from "../../../logic/Contacts/AccountsList/Addressbooks";
   import { appGlobal } from "../../../logic/app";

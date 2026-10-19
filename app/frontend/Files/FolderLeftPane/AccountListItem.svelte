@@ -38,6 +38,7 @@
 </ContextMenu>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { FileSharingAccount } from "../../../logic/Files/FileSharingAccount";
   import AccountMenu from "./AccountMenu.svelte";
   import ContextMenu from "../../Shared/Menu/ContextMenu.svelte";
@@ -62,9 +63,9 @@
 
   $: errors = $account.errors;
   $: errorMsg = $account.fatalError
-    ? account.fatalError.message
+    ? friendlyErrorMessage(account.fatalError)
     : $errors.hasItems
-      ? errors.first.message
+      ? friendlyErrorMessage(errors.first)
       : "";
 </script>
 

@@ -8,9 +8,10 @@
       <p>{$t`Loading compose window…`}</p>
     </vbox>
   {:else if errorMessage}
-    <vbox flex class="compose-state" role="alert">
-      <p>{errorMessage}</p>
-      <button type="button" on:click={load}>{$t`Retry`}</button>
+    <vbox flex class="compose-state">
+      <!-- Свой заголовок: внутренние тексты загрузки окна не для пользователя;
+           причина и подсказка — из ошибки, исходник — в «Подробностях» -->
+      <Notice ex={loadError} message={errorMessage} onRetry={load} />
     </vbox>
   {:else if mail}
     <MailComposer {mail} standalone
@@ -21,6 +22,7 @@
 </vbox>
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { onMount } from "svelte";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
@@ -42,11 +44,13 @@
   let mail: EMail | null = null;
   let loading = true;
   let errorMessage: string | null = null;
+  let loadError: unknown = null;
   let startObjectsPromise: Promise<void> | null = null;
 
   async function load(): Promise<void> {
     loading = true;
     errorMessage = null;
+    loadError = null;
     mail = null;
     try {
       let nativeAPI = (window as any).api;
@@ -70,7 +74,8 @@
       ]);
       mail = deserializeComposeMail(payload, account);
     } catch (ex) {
-      errorMessage = ex instanceof Error ? ex.message : $t`Could not load the compose window`;
+      errorMessage = $t`Could not load the compose window`;
+      loadError = ex;
     } finally {
       loading = false;
     }
@@ -149,19 +154,5 @@
   .compose-state p {
     max-width: 560px;
     margin: 0;
-  }
-  .compose-state button {
-    min-height: 34px;
-    padding: 6px 16px;
-    border: 1px solid var(--button-border);
-    border-radius: var(--border-radius);
-    background: var(--button-bg);
-    color: var(--button-fg);
-    cursor: default;
-  }
-  .compose-state button:hover,
-  .compose-state button:focus-visible {
-    background: var(--hover-bg);
-    color: var(--hover-fg);
   }
 </style>

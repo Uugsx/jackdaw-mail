@@ -1,4 +1,4 @@
-import { Folder } from "../Folder";
+import { Folder, SpecialFolder } from "../Folder";
 import type { EMail } from "../EMail";
 import { ExchangePermission } from "./ExchangePermission";
 import { AbstractFunction } from "../../util/util";
@@ -16,6 +16,12 @@ export class ExchangeFolder extends Folder {
     super.fromExtraJSON(json);
     this.isArchiveMailbox = sanitize.boolean(json?.archiveMailbox, false);
     this.isArchiveMailboxRoot = sanitize.boolean(json?.archiveMailboxRoot, false);
+    if (this.isArchiveMailbox) {
+      // Прежние версии сохраняли папкам архива тип по имени («Входящие» →
+      // Inbox): до обновления иерархии с сервера они вели себя как папки
+      // самого ящика. У папок сетевого архива особого типа нет.
+      this.specialFolder = SpecialFolder.Normal;
+    }
   }
 
   toExtraJSON(): any {

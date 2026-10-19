@@ -59,6 +59,7 @@
 </ContextMenu>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import { openSettingsCategoryForAccount } from "../../Settings/Window/CategoriesUtils";
   import { appGlobal } from "../../../logic/app";
@@ -140,9 +141,9 @@
 
   $: errors = $account.errors;
   $: errorMsg = $account.fatalError
-    ? account.fatalError.message
+    ? friendlyErrorMessage(account.fatalError)
     : $errors.hasItems
-      ? errors.first.message
+      ? friendlyErrorMessage(errors.first)
       : "";
   $: iconSize = $appGlobal.isMobile ? "24px" : "16px";
   $: iconLogoSize = $appGlobal.isMobile ? "24px" : "18px";
