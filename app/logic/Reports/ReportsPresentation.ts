@@ -8,6 +8,7 @@ import {
   normalizeWorkingHoursSchedule,
   type WorkingHoursSchedule,
 } from "./WorkingHours";
+import { gt } from "../../l10n/l10n";
 
 export type ReportDashboardSectionId =
   | "timeline"
@@ -283,7 +284,7 @@ export function buildCategoryRhythmRows(
   return selectedNames.map((name) => {
     const accumulator = accumulators.get(name);
     if (!accumulator) {
-      throw new Error(`Не удалось построить ритм категории «${name}».`);
+      throw new Error(gt`Could not build the rhythm for the category “${name}”.`);
     }
     const peak = selectPeakSlot(accumulator.activity);
     const quietWeekday = selectQuietValue(

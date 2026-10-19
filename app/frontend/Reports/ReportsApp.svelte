@@ -14,7 +14,7 @@
   import SearchIcon from "lucide-svelte/icons/search";
   import TagsIcon from "lucide-svelte/icons/tags";
   import UsersIcon from "lucide-svelte/icons/users";
-  import { t, gt, getDateTimeLocale, getUILocale } from "../../l10n/l10n";
+  import { t, gt, getDateTimeLocale } from "../../l10n/l10n";
   import { appGlobal } from "../../logic/app";
   import {
     DEFAULT_RESPONSE_TARGET_MINUTES,
@@ -1539,19 +1539,16 @@
 
   function exportOptions() {
     return {
-      language: getUILocale().toLowerCase().startsWith("ru")
-        ? ("ru" as const)
-        : ("en" as const),
       categoryFilterLabel:
         categoryFilter == null
           ? undefined
           : `${categoryFilter.length} / ${reportCategories.length}`,
       responderColumnLabel:
-        responderAttributionMode == "category" ? "Сотрудник" : "Профиль",
+        responderAttributionMode == "category" ? $t`Employee` : $t`Profile`,
       responderMetricLabel:
         responderAttributionMode == "category"
-          ? "Подтверждённые ответы"
-          : "Отправлено",
+          ? $t`Confirmed replies`
+          : $t`Sent *=> activity report`,
       employeeCategoryNames: currentEmployeeCategoryNames(),
       rhythmCategoryNames,
       rhythmSelectedCategoryName: effectiveRhythmCategoryName,
@@ -1565,9 +1562,13 @@
   }
 
   function formatBytes(bytes: number): string {
-    const units = getDateTimeLocale().startsWith("ru")
-      ? ["Б", "КБ", "МБ", "ГБ", "ТБ"]
-      : ["B", "KB", "MB", "GB", "TB"];
+    const units = [
+      $t`B *=> bytes, short unit`,
+      $t`KB *=> kilobytes, short unit`,
+      $t`MB *=> megabytes, short unit`,
+      $t`GB *=> gigabytes, short unit`,
+      $t`TB *=> terabytes, short unit`,
+    ];
     if (!bytes) return `0 ${units[0]}`;
     const index = Math.min(
       Math.floor(Math.log(bytes) / Math.log(1024)),
@@ -4366,9 +4367,7 @@
                       {#each sortedTopics as topic}
                         <tr>
                           <th scope="row" class="topic-cell"
-                            >{topic.topic === "(без темы)"
-                              ? $t`(no subject)`
-                              : topic.topic}</th
+                            >{topic.topic}</th
                           >
                           <td class="numeric">{formatNumber(topic.requests)}</td
                           >
