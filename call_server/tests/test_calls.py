@@ -7,6 +7,7 @@ import io
 import json
 import runpy
 import sqlite3
+import ssl
 import sys
 import tempfile
 import time
@@ -933,6 +934,37 @@ class LiveKitTokenTests(unittest.TestCase):
             calls.LiveKitTokenIssuer("wss://lk.example.test", "k", "short")
         with self.assertRaises(RuntimeError):
             calls.EmailProofSigner(b"short")
+
+
+class MailerTests(unittest.TestCase):
+    def send(self, username="resend", password="pw"):
+        mailer = calls.Mailer("smtp.example.test", 2587, username, password, "noreply@example.test")
+        with mock.patch.object(calls.smtplib, "SMTP") as smtp_class:
+            mailer.send_code("alice@example.test", "123456")
+        smtp_class.assert_called_once_with("smtp.example.test", 2587, timeout=15)
+        return smtp_class.return_value.__enter__.return_value
+
+    def test_starttls_verifies_server_certificate(self):
+        smtp = self.send()
+        smtp.starttls.assert_called_once()
+        self.assertEqual(smtp.starttls.call_args.args, ())
+        context = smtp.starttls.call_args.kwargs.get("context")
+        self.assertIsInstance(context, ssl.SSLContext)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    def test_tls_comes_before_login_and_send(self):
+        smtp = self.send()
+        names = [name for name, _, _ in smtp.mock_calls]
+        self.assertEqual(names, ["starttls", "login", "send_message"])
+        smtp.login.assert_called_once_with("resend", "pw")
+        self.assertEqual(smtp.send_message.call_args.args[0]["To"], "alice@example.test")
+
+    def test_no_login_without_username(self):
+        smtp = self.send(username="", password="")
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_not_called()
+        smtp.send_message.assert_called_once()
 
 
 if __name__ == "__main__":
