@@ -480,12 +480,66 @@ function setTrayIcon(imgDataURL: string, tooltip: string, onClick: () => void) {
 
 type StatusBarMenuAction = () => void | Promise<void>;
 
+/** Пространство и его ящики в меню значка строки меню */
+interface StatusBarMenuGroup {
+  /** Пусто — единственная группа без пространства, заголовок не нужен */
+  title?: string;
+  /** Цветная точка пространства, PNG data URL */
+  iconDataURL?: string;
+  unread?: number;
+  accounts?: {
+    label: string;
+    unread?: number;
+    open?: StatusBarMenuAction;
+  }[];
+}
+
 interface StatusBarMenuActions {
   newMessage?: StatusBarMenuAction;
   fetchMail?: StatusBarMenuAction;
   openSettings?: StatusBarMenuAction;
   disableWidget?: StatusBarMenuAction;
   unreadCount?: number;
+  groups?: StatusBarMenuGroup[];
+}
+
+/** «Название — 3» или просто «Название», если непрочитанных нет */
+function withUnreadCount(label: string, unread: number | undefined): string {
+  let count = Math.max(0, Math.trunc(unread ?? 0));
+  return count ? `${label} — ${count}` : label;
+}
+
+/** Строки меню с пространствами и ящиками: видно, где непрочитанные */
+function statusBarGroupItems(groups: StatusBarMenuGroup[] | undefined): MenuItemConstructorOptions[] {
+  let items: MenuItemConstructorOptions[] = [];
+  for (let group of Array.isArray(groups) ? groups.slice(0, 20) : []) {
+    let accounts = Array.isArray(group?.accounts) ? group.accounts.slice(0, 50) : [];
+    if (!accounts.length) {
+      continue;
+    }
+    items.push({ type: "separator" });
+    if (typeof group.title == "string" && group.title) {
+      let header: MenuItemConstructorOptions = {
+        label: withUnreadCount(group.title, group.unread),
+        enabled: false,
+      };
+      if (typeof group.iconDataURL == "string" && group.iconDataURL.startsWith("data:image/png;base64,")) {
+        header.icon = nativeImage.createFromDataURL(group.iconDataURL).resize({ width: 12, height: 12 });
+      }
+      items.push(header);
+    }
+    for (let account of accounts) {
+      if (typeof account?.label != "string") {
+        continue;
+      }
+      items.push({
+        label: withUnreadCount(account.label, account.unread),
+        enabled: !!account.open,
+        click: () => runStatusBarMenuAction(account.open),
+      });
+    }
+  }
+  return items;
 }
 
 function runStatusBarMenuAction(action: StatusBarMenuAction | undefined): void {
@@ -521,6 +575,7 @@ function setStatusBarIcon(
       label: `Открыть ${appName}`,
       click: () => onClick?.(),
     },
+    ...statusBarGroupItems(menuActions.groups),
   ];
   let hasAdditionalActions = menuActions.newMessage || menuActions.fetchMail ||
     menuActions.openSettings || menuActions.disableWidget || menuActions.unreadCount !== undefined;

@@ -11,7 +11,11 @@ import { webMail } from "../../logic/build";
 import { bringAppToFront, openApp } from "../AppsBar/selectedApp";
 import { openSettingsCategoryByID } from "../Settings/Window/CategoriesUtils";
 import { mailApp } from "./MailJackdawApp";
-import { bubbleImageURL } from "../Shared/SystemNotification";
+import { bubbleImageURL, dotImageURL } from "../Shared/SystemNotification";
+import { unreadByWorkspace } from "../../logic/Mail/MailUnreadBadge";
+import { selectedWorkspace, selectWorkspace } from "../MainWindow/Selected";
+import { selectedAccount, selectedFolder } from "./Selected";
+import { get } from "svelte/store";
 import MailIcon from "../asset/icon/appBar/mail.svg?raw";
 
 export { accountInboxBadgeCount, findInboxFolder } from "../../logic/Mail/MailUnreadBadge";
@@ -28,6 +32,8 @@ let nativeMailBadgeCount: number | undefined;
 let nativeBadgeRemoteApp: any;
 let nativeBadgeUpdate = Promise.resolve();
 let nativeStatusBarCount: number | undefined;
+/** Пространства, ящики и их непрочитанные, которые сейчас показаны в меню */
+let nativeStatusBarSignature: string | undefined;
 let nativeStatusBarRemoteApp: any;
 let nativeStatusBarUpdate = Promise.resolve();
 let statusBarUpdateID = 0;
@@ -81,6 +87,47 @@ function openMailFromStatusBar(): void {
   } catch (ex) {
     backgroundError(ex);
   }
+}
+
+/** Открывает «Входящие» ящика, выбранного в меню строки меню. */
+function openAccountFromStatusBar(account: MailAccount): void {
+  try {
+    // В «Всех» ящик и так виден; в другом пространстве его нет — переключаем
+    let workspace = get(selectedWorkspace);
+    if (workspace && workspace !== account.workspace) {
+      selectWorkspace(account.workspace);
+    }
+    let inbox = findInboxFolder(account);
+    selectedAccount.set(account);
+    if (inbox) {
+      selectedFolder.set(inbox);
+    }
+    openApp(mailApp, {});
+    bringAppToFront();
+  } catch (ex) {
+    backgroundError(ex);
+  }
+}
+
+/** Пространства и ящики для меню строки меню; подпись — чтобы не пересылать
+ * меню, если в нём ничего не поменялось. */
+function statusBarGroups(): { groups: any[]; signature: string } {
+  let groups = unreadByWorkspace(appGlobal.emailAccounts.contents, appGlobal.workspaces.contents);
+  // Одна группа без пространства — заголовок не нужен
+  let showTitles = groups.length > 1 || !!groups[0]?.workspace;
+  let payload = groups.map(group => ({
+    title: showTitles ? group.workspace?.name ?? gt`Other` : "",
+    iconDataURL: showTitles && group.workspace ? dotImageURL(group.workspace.color) : undefined,
+    unread: group.unread,
+    accounts: group.accounts.map(entry => ({
+      label: entry.account.name || entry.account.emailAddress,
+      unread: entry.unread,
+      open: () => openAccountFromStatusBar(entry.account),
+    })),
+  }));
+  let signature = JSON.stringify(payload.map(group => [group.title, group.iconDataURL?.length ?? 0, group.unread,
+    group.accounts.map(account => [account.label, account.unread])]));
+  return { groups: payload, signature };
 }
 
 function composeMailFromStatusBar(): void {
@@ -151,6 +198,7 @@ export function syncMailStatusBarWidget(): void {
     }
     let updateID = ++statusBarUpdateID;
     nativeStatusBarCount = undefined;
+    nativeStatusBarSignature = undefined;
     nativeStatusBarRemoteApp = targetRemoteApp;
     if (typeof targetRemoteApp.clearStatusBarIcon != "function") {
       return;
@@ -173,9 +221,12 @@ export function syncMailStatusBarWidget(): void {
   }
 
   let nextCount = totalMailUnreadCount();
-  if (nextCount === nativeStatusBarCount && targetRemoteApp === nativeStatusBarRemoteApp) {
+  let { groups, signature } = statusBarGroups();
+  if (nextCount === nativeStatusBarCount && signature === nativeStatusBarSignature &&
+      targetRemoteApp === nativeStatusBarRemoteApp) {
     return;
   }
+  nativeStatusBarSignature = signature;
   let updateID = ++statusBarUpdateID;
   nativeStatusBarCount = nextCount;
   nativeStatusBarRemoteApp = targetRemoteApp;
@@ -204,6 +255,7 @@ export function syncMailStatusBarWidget(): void {
           openSettings: openMailSettingsFromStatusBar,
           disableWidget: disableMailStatusBarWidget,
           unreadCount: nextCount,
+          groups,
         },
       );
     })
@@ -211,6 +263,7 @@ export function syncMailStatusBarWidget(): void {
       if (updateID === statusBarUpdateID && nativeStatusBarRemoteApp === targetRemoteApp &&
           nativeStatusBarCount === nextCount) {
         nativeStatusBarCount = undefined;
+        nativeStatusBarSignature = undefined;
         nativeStatusBarRemoteApp = undefined;
         backgroundError(ex);
       }

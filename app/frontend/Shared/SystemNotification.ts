@@ -249,6 +249,20 @@ export async function bubbleImageURL(count: number, icon: string): Promise<strin
   return canvas.toDataURL("image/png");
 }
 
+/** Цветная точка пространства для меню строки меню (PNG data URL, 24×24 для Retina). */
+export function dotImageURL(color: string): string {
+  let size = 24;
+  let canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  let context = canvas.getContext("2d");
+  context.beginPath();
+  context.arc(size / 2, size / 2, size * 0.33, 0, 2 * Math.PI);
+  context.fillStyle = color;
+  context.fill();
+  return canvas.toDataURL("image/png");
+}
+
 function drawCountBubble(context: CanvasRenderingContext2D, count: number) {
   if (count <= 0) {
     return;
