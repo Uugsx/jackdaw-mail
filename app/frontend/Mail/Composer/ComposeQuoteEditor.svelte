@@ -27,6 +27,7 @@
     type QuoteEditorStyle,
   } from "./quoteEditorCommands";
   import { applyQuoteTextInput } from "./quoteEditorInput";
+  import { clearDarkColorMarks, darkColorScheme, htmlWithoutDarkColorMarks, markDarkColors } from "./composeDarkColors";
 
   /** Sanitized HTML (original message body or forward quote). */
   export let html: string;
@@ -145,23 +146,57 @@
     onChange: (html: string) => void;
   };
 
+  /** Пауза перед пересчётом цветов тёмной темы после правки цитаты. */
+  const kDarkColorsRefreshDelay = 200;
+
   function quoteEditable(node: HTMLElement, params: QuoteEditableParams) {
     let lastHtml = "";
     let syncing = false;
+    let dark = false;
+    let darkRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    // Адаптированные цвета живут в отдельной таблице стилей рядом с цитатой,
+    // поэтому HTML письма (черновик и отправка) остаётся исходным.
+    let darkStyle = document.createElement("style");
+    node.before(darkStyle);
+
+    function refreshDarkColors() {
+      if (darkRefreshTimer) {
+        clearTimeout(darkRefreshTimer);
+        darkRefreshTimer = null;
+      }
+      darkStyle.textContent = "";
+      if (dark) {
+        darkStyle.textContent = markDarkColors(node, ".compose-quote-html");
+      } else {
+        clearDarkColorMarks(node);
+      }
+    }
+
+    function scheduleDarkColorsRefresh() {
+      if (!dark) {
+        return;
+      }
+      if (darkRefreshTimer) {
+        clearTimeout(darkRefreshTimer);
+      }
+      darkRefreshTimer = setTimeout(refreshDarkColors, kDarkColorsRefreshDelay);
+    }
 
     function setHtml(nextHtml: string) {
       syncing = true;
       node.innerHTML = nextHtml;
       lastHtml = nextHtml;
       syncing = false;
+      refreshDarkColors();
     }
 
     function onInput() {
       if (syncing) {
         return;
       }
-      lastHtml = node.innerHTML;
+      lastHtml = htmlWithoutDarkColorMarks(node);
       params.onChange(lastHtml);
+      scheduleDarkColorsRefresh();
     }
 
     function update(next: QuoteEditableParams) {
@@ -171,6 +206,10 @@
       }
     }
 
+    let unsubscribeDark = darkColorScheme.subscribe(value => {
+      dark = value;
+      refreshDarkColors();
+    });
     setHtml(params.html);
     node.addEventListener("input", onInput);
 
@@ -178,6 +217,11 @@
       update,
       destroy() {
         node.removeEventListener("input", onInput);
+        unsubscribeDark();
+        if (darkRefreshTimer) {
+          clearTimeout(darkRefreshTimer);
+        }
+        darkStyle.remove();
       },
     };
   }
@@ -252,6 +296,17 @@
     border-inline-start: 3px solid #0078d4;
     padding-inline-start: 20px;
     margin-inline-start: 0;
+  }
+  /* Как в просмотре письма (content-body-dark.css): ссылки читаемые голубые. */
+  @media (prefers-color-scheme: dark) {
+    .compose-quote-html :global(a),
+    .compose-quote-html :global(a span),
+    .compose-quote-html :global(a font) {
+      color: #6cb4ff !important;
+    }
+    .compose-quote-html :global(blockquote) {
+      border-inline-start-color: #6cb4ff;
+    }
   }
   .compose-quote-html :global(img) {
     max-width: 100%;

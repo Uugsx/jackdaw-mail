@@ -8,6 +8,7 @@ import FontFamily from "@tiptap/extension-font-family";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { gt } from "../../../l10n/l10n";
+import { DarkModeColors } from "./DarkModeColors";
 import {
   normalizeMailLinkURL,
   normalizeSignatureHTML,
@@ -571,6 +572,7 @@ export const composeEditorExtensions = [
     alignments: ["left", "center", "right", "justify"],
   }),
   ...composeTableExtensions,
+  DarkModeColors,
 ];
 
 /** Signature editor in settings — inline font size and block line spacing. */
