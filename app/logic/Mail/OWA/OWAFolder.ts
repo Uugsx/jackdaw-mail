@@ -1,6 +1,6 @@
 import { ExchangeFolder } from "../EWS/ExchangeFolder";
 import { MessageFlagsPidTag } from "../EWS/ExchangeEMail";
-import { SpecialFolder, type MailTransferProgressCallback } from "../Folder";
+import { SpecialFolder, type Folder, type MailTransferProgressCallback } from "../Folder";
 import { DeleteStrategy } from "../MailAccount";
 import { computeEMailContact, type EMail } from "../EMail";
 import { getSharedPersons, ExchangePermission } from "../EWS/ExchangePermission";
@@ -120,6 +120,24 @@ function dateFromOWAListItem(item: any): Date | null {
   }
   let date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+interface MovedTwinIndex {
+  byMessageID: Map<string, OWAEMail[]>;
+  bySubjectFrom: Map<string, OWAEMail[]>;
+}
+
+function movedTwinKey(message: OWAEMail): string {
+  return (message.subject || "").trim() + "\u0000" + (message.from?.emailAddress?.toLowerCase() ?? "");
+}
+
+function pushToIndex(index: Map<string, OWAEMail[]>, key: string, message: OWAEMail): void {
+  let list = index.get(key);
+  if (list) {
+    list.push(message);
+  } else {
+    index.set(key, [message]);
+  }
 }
 
 export class OWAFolder extends ExchangeFolder {
@@ -4008,68 +4026,75 @@ export class OWAFolder extends ExchangeFolder {
     assert(sourceFolder, "Need source folder");
     assert(messages.contents.every(msg => msg.folder === sourceFolder), "All messages must be from the same folder");
 
+    // Один MoveItem/CopyItem на пачку вместо запроса, перерисовки списка и
+    // записи в БД на каждое письмо: при переносе сотен писем поштучный путь
+    // загружал CPU и подвешивал интерфейс.
     let hardError: Error | null = null;
     let needItemIdFix: OWAEMail[] = [];
     let completed = 0;
-    for (let msg of messages) {
-      let owaMsg = msg as OWAEMail;
-      let oldItemID = owaMsg.itemID;
-      if (action == "move" && oldItemID) {
-        sourceFolder.deletions.add(oldItemID);
+    let allMessages = messages.contents as OWAEMail[];
+    for (let i = 0; i < allMessages.length; i += kMoveItemBatchSize) {
+      let batch = allMessages.slice(i, i + kMoveItemBatchSize);
+      let withIDs = batch.filter(msg => !!msg.itemID);
+      if (withIDs.length < batch.length) {
+        hardError ??= new OWAError({ message: gt`This was deleted on the server` });
       }
+      if (!withIDs.length) {
+        continue;
+      }
+      let itemIDs = withIDs.map(msg => msg.itemID as string);
+      if (action == "move") {
+        for (let itemID of itemIDs) {
+          sourceFolder.deletions.add(itemID);
+        }
+      }
+      let movedIDs = new Set<string>();
       try {
-        let newItemIDs = await this.moveOrCopyMessagesReturningIDs(action, new ArrayColl([owaMsg]));
-        if (action == "move") {
-          sourceFolder.messages.remove(msg);
-          sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - 1);
-          if (!msg.isRead) {
-            sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - 1);
-            this.countUnread++;
-          }
-          this.countTotal++;
-
-          let newID = oldItemID ? newItemIDs.get(oldItemID) : null;
-          owaMsg.isDeleted = false;
-          owaMsg.folder = this;
-          if (newID) {
-            owaMsg.itemID = newID;
+        let { newItemIDs, errors } = await this.moveOrCopyMessagesReturningResults(action, withIDs);
+        let succeeded: OWAEMail[] = [];
+        let notFound: OWAEMail[] = [];
+        for (let msg of withIDs) {
+          let error = errors.get(msg);
+          if (!error) {
+            succeeded.push(msg);
+          } else if (error.type == "ErrorItemNotFound" && action == "move") {
+            notFound.push(msg);
           } else {
-            needItemIdFix.push(owaMsg);
+            hardError ??= error;
           }
-          // Keep through the next FindItem reconciles so sync cannot wipe a
-          // just-restored message before Exchange returns it in the listing.
-          this.markPreservedMoved(owaMsg);
-          // A locally deleted header can retain the old completion flag even
-          // though its row and MIME body are gone. Persist it as a header-only
-          // message; its body will be downloaded when it is opened.
-          if (owaMsg.downloadComplete && !owaMsg.dbID && !owaMsg.rawText && !owaMsg.rawHTMLDangerous) {
-            owaMsg.downloadComplete = false;
+        }
+        if (action == "move") {
+          for (let msg of [...succeeded, ...notFound]) {
+            movedIDs.add(msg.itemID as string);
           }
-          await owaMsg.saveMetadataLocally();
-          this.addMessagesIfAbsent([owaMsg]);
-          this.notifyObservers();
+          try {
+            await this.applyServerMove(sourceFolder, succeeded, notFound, newItemIDs, needItemIdFix);
+          } catch (ex) {
+            hardError ??= ex instanceof Error ? ex : new Error(String(ex));
+          }
         } else {
           // Copy leaves the source message untouched and creates a separate
           // item here. Queueing it for the ItemId repair would make the twin
           // search rewrite the *source*'s ItemId to the copy's and then delete
           // the copy locally. The next sync picks the new item up normally.
-          this.countTotal++;
-          if (!msg.isRead) {
-            this.countUnread++;
-          }
+          this.countTotal += succeeded.length;
+          this.countUnread += succeeded.filter(msg => !msg.isRead).length;
         }
-        onProgress?.(++completed);
+        if (succeeded.length || notFound.length) {
+          completed += succeeded.length + notFound.length;
+          onProgress?.(completed);
+        }
       } catch (ex) {
-        if (ex instanceof OWAError && ex.type == "ErrorItemNotFound" && action == "move") {
-          sourceFolder.messages.remove(msg);
-          await msg.deleteMessageLocally().catch(() => null);
-          onProgress?.(++completed);
-        } else {
-          hardError ??= ex instanceof Error ? ex : new Error(String(ex));
-        }
+        hardError ??= ex instanceof Error ? ex : new Error(String(ex));
       } finally {
-        if (action == "move" && oldItemID && sourceFolder instanceof OWAFolder) {
-          sourceFolder.releaseDeletionAfterGracePeriod(oldItemID);
+        if (action == "move") {
+          for (let itemID of itemIDs) {
+            if (movedIDs.has(itemID) && sourceFolder instanceof OWAFolder) {
+              sourceFolder.releaseDeletionAfterGracePeriod(itemID);
+            } else {
+              sourceFolder.deletions.delete(itemID);
+            }
+          }
         }
       }
     }
@@ -4079,6 +4104,70 @@ export class OWAFolder extends ExchangeFolder {
     }
     if (hardError) {
       throw hardError;
+    }
+  }
+
+  /**
+   * Локально отражает пачку, которую Exchange уже перенёс: убирает письма из
+   * исходной папки, переносит счётчики и сохраняет метаданные одной
+   * транзакцией. Наблюдатели папок уведомляются один раз на пачку.
+   */
+  protected async applyServerMove(
+    sourceFolder: Folder,
+    moved: OWAEMail[],
+    notFound: OWAEMail[],
+    newItemIDs: Map<string, string>,
+    needItemIdFix: OWAEMail[],
+  ): Promise<void> {
+    if (!moved.length && !notFound.length) {
+      return;
+    }
+    let sourceOWAFolder = sourceFolder instanceof OWAFolder ? sourceFolder : null;
+    let saveError: unknown = null;
+    sourceOWAFolder?.beginObserverMute();
+    this.beginObserverMute();
+    try {
+      sourceFolder.messages.removeAll([...moved, ...notFound]);
+      let unreadCount = moved.filter(msg => !msg.isRead).length;
+      sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - moved.length);
+      sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - unreadCount);
+      this.countUnread += unreadCount;
+      this.countTotal += moved.length;
+
+      for (let msg of moved) {
+        let newID = newItemIDs.get(msg.itemID as string);
+        msg.isDeleted = false;
+        msg.folder = this;
+        if (newID) {
+          msg.itemID = newID;
+        } else {
+          needItemIdFix.push(msg);
+        }
+        // Keep through the next FindItem reconciles so sync cannot wipe a
+        // just-restored message before Exchange returns it in the listing.
+        this.markPreservedMoved(msg);
+        // A locally deleted header can retain the old completion flag even
+        // though its row and MIME body are gone. Persist it as a header-only
+        // message; its body will be downloaded when it is opened.
+        if (msg.downloadComplete && !msg.dbID && !msg.rawText && !msg.rawHTMLDangerous) {
+          msg.downloadComplete = false;
+        }
+      }
+      // Сервер уже перенёс письма: показываем их в целевой папке, даже если
+      // локальная запись не удалась, — следующая синхронизация её починит.
+      await this.saveMessagesMetadataLocally(moved, ex => saveError ??= ex);
+      this.addMessagesIfAbsent(moved);
+      for (let msg of notFound) {
+        await msg.deleteMessageLocally().catch(() => null);
+      }
+    } finally {
+      this.endObserverMute();
+      sourceOWAFolder?.endObserverMute();
+      sourceFolder.notifyObservers();
+      this.notifyObservers();
+    }
+    if (saveError) {
+      throw saveError;
     }
   }
 
@@ -4135,38 +4224,74 @@ export class OWAFolder extends ExchangeFolder {
     if (!optimistic.length) {
       return;
     }
+    // Другие оптимистично перенесённые письма — не серверные двойники:
+    // письма с одинаковой темой и отправителем иначе «чинили» бы друг друга.
+    let skip = new Set<OWAEMail>(optimistic);
     // Prefer a cheap first-page FindItem over a full getNewMessages (can stall).
-    let recent = await this.listMessages(true, true);
+    let recent = this.indexMovedTwinCandidates(await this.listMessages(true, true));
+    let local = this.indexMovedTwinCandidates(this.messages);
+    let unresolved: OWAEMail[] = [];
     for (let moved of optimistic) {
-      let twin = this.findMovedTwin(moved, recent) ?? this.findMovedTwin(moved, this.messages);
-      if (twin && twin !== moved && twin.itemID) {
-        if (moved.itemID != twin.itemID) {
-          moved.itemID = twin.itemID;
-          await moved.saveMetadataLocally();
-          this.messages.remove(twin);
-          await this.storage.deleteMessage(twin).catch(() => null);
-        }
-        this.markPreservedMoved(moved);
+      let twin = this.findIndexedTwin(moved, recent, skip) ?? this.findIndexedTwin(moved, local, skip);
+      if (!twin) {
+        unresolved.push(moved);
         continue;
       }
-      // Fallback: full delta may surface Creates
-      await this.getNewMessages(true);
-      twin = this.findMovedTwin(moved, this.messages);
-      if (twin && twin !== moved && twin.itemID) {
-        moved.itemID = twin.itemID;
-        await moved.saveMetadataLocally();
-        this.messages.remove(twin);
-        await this.storage.deleteMessage(twin).catch(() => null);
-        this.markPreservedMoved(moved);
+      await this.adoptMovedTwin(moved, twin, skip);
+    }
+    if (!unresolved.length) {
+      return;
+    }
+    // Fallback: full delta may surface Creates. Один раз на все письма, а не
+    // на каждое: при массовом переносе это были сотни полных синхронизаций.
+    await this.getNewMessages(true);
+    local = this.indexMovedTwinCandidates(this.messages);
+    for (let moved of unresolved) {
+      let twin = this.findIndexedTwin(moved, local, skip);
+      if (twin) {
+        await this.adoptMovedTwin(moved, twin, skip);
       }
     }
   }
 
+  /** Переносит серверный ItemId двойника в оптимистичное письмо и убирает двойника. */
+  protected async adoptMovedTwin(moved: OWAEMail, twin: OWAEMail, skip: Set<OWAEMail>): Promise<void> {
+    skip.add(twin);
+    if (moved.itemID != twin.itemID) {
+      moved.itemID = twin.itemID;
+      await moved.saveMetadataLocally();
+      this.messages.remove(twin);
+      await this.storage.deleteMessage(twin).catch(() => null);
+    }
+    this.markPreservedMoved(moved);
+  }
+
   protected findMovedTwin(moved: OWAEMail, pool: { contents?: OWAEMail[] } | Iterable<OWAEMail>): OWAEMail | undefined {
+    return this.findIndexedTwin(moved, this.indexMovedTwinCandidates(pool), new Set());
+  }
+
+  /** Индекс кандидатов-двойников по Message-ID и по теме с отправителем. */
+  protected indexMovedTwinCandidates(pool: { contents?: OWAEMail[] } | Iterable<OWAEMail>): MovedTwinIndex {
     let list: OWAEMail[] = (pool as any).contents
       ?? (Array.isArray(pool) ? pool : [...(pool as Iterable<OWAEMail>)]);
+    let index: MovedTwinIndex = { byMessageID: new Map(), bySubjectFrom: new Map() };
+    for (let message of list) {
+      if (!message.itemID) {
+        continue;
+      }
+      if (message.id) {
+        pushToIndex(index.byMessageID, message.id, message);
+      }
+      pushToIndex(index.bySubjectFrom, movedTwinKey(message), message);
+    }
+    return index;
+  }
+
+  /** Первый подходящий двойник в порядке списка, как прежний линейный поиск. */
+  protected findIndexedTwin(moved: OWAEMail, index: MovedTwinIndex, skip: Set<OWAEMail>): OWAEMail | undefined {
+    let usable = (m: OWAEMail) => m !== moved && !skip.has(m) && !!m.itemID;
     if (moved.id) {
-      let byMid = list.find(m => m !== moved && !!m.itemID && m.id == moved.id);
+      let byMid = index.byMessageID.get(moved.id)?.find(usable);
       if (byMid) {
         return byMid;
       }
@@ -4177,14 +4302,8 @@ export class OWAFolder extends ExchangeFolder {
     if (!subject && !from) {
       return undefined;
     }
-    return list.find(m => {
-      if (m === moved || !m.itemID) {
-        return false;
-      }
-      if ((m.subject || "").trim() != subject) {
-        return false;
-      }
-      if ((m.from?.emailAddress?.toLowerCase() ?? "") != from) {
+    return index.bySubjectFrom.get(movedTwinKey(moved))?.find(m => {
+      if (!usable(m)) {
         return false;
       }
       if (sent && m.sent && Math.abs(m.sent.getTime() - sent) > 2000) {
@@ -4204,12 +4323,65 @@ export class OWAFolder extends ExchangeFolder {
    * @returns old ItemId → new ItemId, for the messages the server reported.
    */
   protected async moveOrCopyMessagesReturningIDs(action: "move" | "copy", messages: Collection<OWAEMail>): Promise<Map<string, string>> {
-    let actionVerb = sanitize.translate(action, { move: "Move", copy: "Copy" }) as "Move" | "Copy";
     let withIDs = messages.contents.filter(msg => !!msg.itemID);
     if (!withIDs.length) {
       throw new OWAError({ message: gt`This was deleted on the server` });
     }
-    let sourceAccount = messages.first.folder.account;
+    let results = await this.callMoveOrCopyItems(action, withIDs);
+    let responseItems = results?.ResponseMessages?.Items
+      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []);
+    for (let result of ensureArray(responseItems)) {
+      if (result.ResponseClass == "Error") {
+        throw new OWAError({ json: result });
+      }
+    }
+    // Without ReturnNewItemIds the map is empty — callers relocate anyway.
+    return this.extractMovedItemIds(withIDs, results);
+  }
+
+  /**
+   * Как `moveOrCopyMessagesReturningIDs()`, но ошибка одного письма не
+   * отменяет результат остальных: Exchange отвечает по элементу на каждый
+   * ItemId, и пачка может перенестись частично.
+   * @returns old ItemId → new ItemId для перенесённых писем и ошибки по письмам
+   */
+  protected async moveOrCopyMessagesReturningResults(action: "move" | "copy", withIDs: OWAEMail[]): Promise<{
+    newItemIDs: Map<string, string>,
+    errors: Map<OWAEMail, OWAError>,
+  }> {
+    let results = await this.callMoveOrCopyItems(action, withIDs);
+    let responseItems = ensureArray(results?.ResponseMessages?.Items
+      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []));
+    let newItemIDs = new Map<string, string>();
+    let errors = new Map<OWAEMail, OWAError>();
+    if (responseItems.length != withIDs.length) {
+      // Ответ не сопоставить с письмами: ошибка относится ко всей пачке.
+      let error = responseItems.find(result => result?.ResponseClass == "Error");
+      if (error) {
+        throw new OWAError({ json: error });
+      }
+      return { newItemIDs, errors };
+    }
+    let succeeded: OWAEMail[] = [];
+    let succeededResults: any[] = [];
+    responseItems.forEach((result, index) => {
+      if (result?.ResponseClass == "Error") {
+        errors.set(withIDs[index], new OWAError({ json: result }));
+      } else {
+        succeeded.push(withIDs[index]);
+        succeededResults.push(result);
+      }
+    });
+    if (succeeded.length) {
+      newItemIDs = this.extractMovedItemIds(succeeded, { ResponseMessages: { Items: succeededResults } });
+    }
+    return { newItemIDs, errors };
+  }
+
+  /** Один запрос MoveItem/CopyItem с откатом, если сервер не умеет ReturnNewItemIds. */
+  protected async callMoveOrCopyItems(action: "move" | "copy", withIDs: OWAEMail[]): Promise<any> {
+    let actionVerb = sanitize.translate(action, { move: "Move", copy: "Copy" }) as "Move" | "Copy";
+    let sourceAccount = withIDs[0].folder.account;
     let results: any;
     if (sourceAccount.supportsReturnNewItemIds) {
       try {
@@ -4228,15 +4400,7 @@ export class OWAFolder extends ExchangeFolder {
       results = await sourceAccount.callOWA(
         owaMoveOrCopyMsgsIntoFolderRequest(actionVerb, this.id, withIDs, false));
     }
-    let responseItems = results?.ResponseMessages?.Items
-      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []);
-    for (let result of ensureArray(responseItems)) {
-      if (result.ResponseClass == "Error") {
-        throw new OWAError({ json: result });
-      }
-    }
-    // Without ReturnNewItemIds the map is empty — callers relocate anyway.
-    return this.extractMovedItemIds(withIDs, results);
+    return results;
   }
 
   protected extractMovedItemIds(withIDs: OWAEMail[], results: any): Map<string, string> {
