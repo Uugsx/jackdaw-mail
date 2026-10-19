@@ -211,18 +211,25 @@
     clearPrimaryWatchTimer();
     clearMetadataWatchTimer();
     let folder = $selectedFolder;
-    if (folder instanceof OWAFolder && folder.account instanceof OWAAccount && folder.account.isLoggedIn) {
+    // Таймеры ставим и до входа: папка, выбранная при запуске (до логина),
+    // иначе не обновлялась бы и не догружала историю до повторного выбора.
+    // Каждый тик сам проверяет isLoggedIn.
+    if (folder instanceof OWAFolder && folder.account instanceof OWAAccount) {
       let tick = () => {
         if ($selectedFolder !== folder || !folder.account.isLoggedIn) {
           return;
         }
         catchErrors(async () => {
-          await folder.refreshOpenFolder(true);
-          folder.notifyObservers();
-          folder.syncRecentDayMessagesInBackground();
-          // Большие папки (сетевой архив) догружают старую историю, пока открыты.
-          folder.syncOlderHistoryInBackground(() =>
-            $selectedFolder === folder && folder.account.isLoggedIn);
+          try {
+            await folder.refreshOpenFolder(true);
+            folder.notifyObservers();
+            folder.syncRecentDayMessagesInBackground();
+          } finally {
+            // Большие папки (сетевой архив) догружают старую историю, пока
+            // открыты, даже если обновление свежих писем сорвалось.
+            folder.syncOlderHistoryInBackground(() =>
+              $selectedFolder === folder && folder.account.isLoggedIn);
+          }
         });
       };
       let metadataTick = () => {
