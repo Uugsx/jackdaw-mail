@@ -1,4 +1,5 @@
 import json
+import ssl
 import sys
 import threading
 import unittest
@@ -162,6 +163,7 @@ class FormattingTests(unittest.TestCase):
 
 class FakeSMTP:
     sent = []
+    tls_contexts = []
 
     def __init__(self, host, port, timeout):
         self.host = host
@@ -173,7 +175,7 @@ class FakeSMTP:
         return False
 
     def starttls(self, context):
-        pass
+        FakeSMTP.tls_contexts.append(context)
 
     def login(self, user, password):
         pass
@@ -205,6 +207,17 @@ class DelivererTests(unittest.TestCase):
         self.assertNotIn("parse_mode", calls[1][1])
         self.assertEqual(calls[0][2]["Authorization"], "Bearer GH")
         self.assertEqual(FakeSMTP.sent[0]["Reply-To"], "user@example.com")
+
+    def test_email_starttls_verifies_server_certificate(self):
+        FakeSMTP.sent = []
+        FakeSMTP.tls_contexts = []
+        results = fb.Deliverer(self.settings(), post=lambda *args: {"ok": True}, smtp_factory=FakeSMTP).deliver(fb.parse_feedback(valid()))
+        self.assertEqual(results["email"], "ok")
+        self.assertEqual(len(FakeSMTP.tls_contexts), 1)
+        context = FakeSMTP.tls_contexts[0]
+        self.assertIsInstance(context, ssl.SSLContext)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
 
     def test_idea_does_not_create_issue(self):
         urls = []

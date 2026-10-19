@@ -28,6 +28,7 @@ import re
 import secrets
 import smtplib
 import sqlite3
+import ssl
 import time
 import traceback
 import uuid
@@ -462,7 +463,8 @@ class Mailer:
             "Если это были не вы, просто удалите письмо: без кода адрес не подключится.\n"
         )
         with smtplib.SMTP(self.host, self.port, timeout=15) as smtp:
-            smtp.starttls()
+            # Без context starttls не проверяет сертификат: MITM перехватил бы пароль SMTP и коды.
+            smtp.starttls(context=ssl.create_default_context())
             if self.username:
                 smtp.login(self.username, self.password)
             smtp.send_message(message)
