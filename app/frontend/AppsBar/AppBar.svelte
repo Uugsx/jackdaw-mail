@@ -66,8 +66,11 @@
    * readonly */
   export let showApps: Collection<JackdawApp>;
 
-  $: _mailUnreadEpoch = $mailUnreadEpoch;
-  $: mailUnreadTotal = totalMailUnreadCount();
+  // Эпоха — аргумент: иначе `$:` не знает о смене счётчиков и считает один раз
+  $: mailUnreadTotal = totalAtEpoch($mailUnreadEpoch);
+  function totalAtEpoch(_epoch: number): number {
+    return totalMailUnreadCount();
+  }
   $: settingsApp = $showApps.find(app => app.id === "settings");
 
   function onSelectApp(app: JackdawApp) {
