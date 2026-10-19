@@ -1,6 +1,7 @@
 import { notifications, Notification, NotificationSeverity } from "../MainWindow/Notification";
 import { production } from "../../logic/build";
 import { UserCancelled } from "../../logic/util/util";
+import { friendlyErrorMessage } from "../../logic/util/friendlyError";
 import * as Sentry from "@sentry/svelte";
 
 export function showError(ex: Error) {
@@ -15,7 +16,7 @@ export function showError(ex: Error) {
     return;
   }
   if (shouldShow(ex)) {
-    notifications.add(new Notification(errorMessage(ex), NotificationSeverity.Error, ex));
+    notifications.add(new Notification(userMessage(ex), NotificationSeverity.Error, ex));
     logErrorToServer(ex);
   }
 }
@@ -39,13 +40,13 @@ export function backgroundError(ex: Error) {
     return;
   }
   if (shouldShow(ex)) {
-    notifications.add(new Notification(errorMessage(ex), NotificationSeverity.Warning, ex));
+    notifications.add(new Notification(userMessage(ex), NotificationSeverity.Warning, ex));
     logErrorToServer(ex);
   }
 }
 
 export function showUserError(ex: Error, autoDisappearAfterSeconds?: number): { remove(): void } {
-  let notification = new Notification(errorMessage(ex), NotificationSeverity.Error, ex);
+  let notification = new Notification(userMessage(ex), NotificationSeverity.Error, ex);
   notifications.add(notification);
   if (autoDisappearAfterSeconds) {
     setTimeout(() => {
@@ -67,7 +68,7 @@ function shouldShow(ex: Error): boolean {
   }
   return ex?.message &&
     !(ex as any).doNotShow &&
-    !notifications.find(noti => noti.message == errorMessage(ex)); // don't repeat
+    !notifications.find(noti => noti.message == userMessage(ex)); // don't repeat
 }
 
 /** The account name, for errors of a specific account.
@@ -75,6 +76,15 @@ function shouldShow(ex: Error): boolean {
  * send it to the error log server. @see `addAccountName()` */
 function errorMessage(ex: Error): string {
   let message = ex?.message ?? ex + "";
+  let accountName = (ex as any)?.accountName;
+  return accountName ? `${accountName}: ${message}` : message;
+}
+
+/** Текст для пользователя: понятное описание вместо технического,
+ * с именем аккаунта. Исходная ошибка остаётся в `Notification.ex`
+ * и уходит в лог и Sentry без изменений. */
+export function userMessage(ex: Error): string {
+  let message = friendlyErrorMessage(ex);
   let accountName = (ex as any)?.accountName;
   return accountName ? `${accountName}: ${message}` : message;
 }

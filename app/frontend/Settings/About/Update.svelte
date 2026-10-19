@@ -55,7 +55,7 @@
     </hbox>
   {:else if phase === "unsupported"}
     <div class="status">
-      {errorEx?.message ?? updateUnsupportedMessage()}
+      {errorEx ? friendlyErrorMessage(errorEx) : updateUnsupportedMessage()}
     </div>
     <hbox class="actions">
       <Button label={$t`Check for update`} onClick={() => checkForUpdate(true)} errorCallback={showError} />
@@ -75,6 +75,7 @@
   {/if}
 
   {#if errorEx && phase !== "unsupported"}
+    <!-- «Повторить» не дублируем: «Проверить обновления» стоит прямо над сообщением -->
     <ErrorMessageInline ex={errorEx} />
   {/if}
 </vbox>
@@ -90,6 +91,8 @@
     updateUnsupportedMessage,
   } from "./updateMessages";
   import { consumeAboutUpdateFlow } from "./updateNavigation";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
+  import { UserError } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
 
   type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "uptodate" | "unsupported";
@@ -263,13 +266,21 @@
       readyToInstall = obj.readyToInstall;
     }
     if (obj.error) {
-      errorEx = new Error(
-        messageForUpdateError(obj.error, isMac ? ".dmg" : "setup.exe") ?? obj.error,
-      );
+      errorEx = updateErrorFromBackend(obj.error);
     } else if (obj.error === null) {
       errorEx = undefined;
     }
     syncWatchdogForPhase();
+  }
+
+  /** Известные ошибки обновления — нашим текстом, остальные (например,
+   * «read ETIMEDOUT») описывает общий слой. Исходный текст бэкенда
+   * сохраняется в причине и виден в «Подробностях». */
+  function updateErrorFromBackend(raw: string): Error {
+    let known = messageForUpdateError(raw, isMac ? ".dmg" : "setup.exe");
+    return known
+      ? new UserError(known, { cause: new Error(raw) })
+      : new Error(raw);
   }
 
   onDestroy(() => {

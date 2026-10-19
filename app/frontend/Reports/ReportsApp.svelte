@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { friendlyErrorMessage, technicalErrorDetails } from "../../logic/util/friendlyError";
   import { onDestroy, onMount, tick } from "svelte";
   import ActivityIcon from "lucide-svelte/icons/activity";
   import CalendarIcon from "lucide-svelte/icons/calendar-days";
@@ -2279,7 +2280,10 @@
       <p>
         {$t`The local data store returned an error. Try again; your messages are not uploaded anywhere.`}
       </p>
-      <p class="technical-error">{error.message}</p>
+      <details class="technical-error">
+        <summary>{$t`Details for support`}</summary>
+        <pre>{technicalErrorDetails(error)}</pre>
+      </details>
       <button type="button" class="primary-button" on:click={runReport}>
         <RefreshIcon size="16px" />
         <span>{$t`Try again`}</span>
@@ -2469,7 +2473,7 @@
         {#if exportError}
           <p class="export-error" role="alert">
             {$t`The report could not be exported.`}
-            {exportError.message}
+            {friendlyErrorMessage(exportError)}
           </p>
         {/if}
         {#if exportNotice}
@@ -3313,7 +3317,7 @@
                     {#if responseOpenError}
                       <p class="response-open-error" role="alert">
                         {$t`The message could not be opened.`}
-                        {responseOpenError.message}
+                        {friendlyErrorMessage(responseOpenError)}
                       </p>
                     {/if}
                   </div>
@@ -6044,13 +6048,31 @@
   }
 
   .technical-error {
+    max-width: 100%;
+    text-align: start;
+  }
+  .technical-error summary {
+    width: fit-content;
+    margin-inline: auto;
+    cursor: pointer;
+    font-size: 12px;
+    color: color-mix(in srgb, currentColor 72%, transparent);
+  }
+  .technical-error summary:focus-visible {
+    outline: 2px solid var(--input-focus, Highlight);
+    outline-offset: 2px;
+  }
+  .technical-error pre {
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    margin: 6px 0 0;
     padding: 8px 10px;
+    border: 1px solid var(--border);
     border-radius: var(--border-radius);
-    background: color-mix(in srgb, var(--danger-fg, #b84e3b) 8%, transparent);
+    background: var(--main-bg, Canvas);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 12px !important;
-    text-align: left;
+    user-select: text;
   }
 
   .loading-panel {

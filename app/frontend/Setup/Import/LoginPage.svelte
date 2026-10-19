@@ -22,7 +22,7 @@
       message={$t`Verifying that the configuration works...`} />
   {/if}
   {#if errorMessage}
-    <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error}
+    <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error} ex={errorEx}
       on:continue={() => errorMessage = null} />
   {/if}
 
@@ -51,6 +51,7 @@
   import Header from "../Shared/Header.svelte";
   import StatusMessage from "../Shared/StatusMessage.svelte";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import ButtonsBottom from "../Shared/ButtonsBottom.svelte";
   import Button from "../../Shared/Button.svelte";
   import { Cancelled } from "../../../logic/util/flow/Abortable";
@@ -68,6 +69,7 @@
   let validating = false;
   let validated = false;
   let errorMessage: string = null;
+  let errorEx: Error = null;
   $: console.log("account", account);
   resetForAccount();
 
@@ -112,7 +114,8 @@
     }
     console.error(ex);
     logError(ex);
-    errorMessage = ex.message;
+    errorMessage = friendlyErrorMessage(ex);
+    errorEx = ex;
   }
 </script>
 

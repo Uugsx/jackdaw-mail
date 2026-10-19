@@ -3,11 +3,14 @@ import { appGlobal } from "../../logic/app";
 import logo from '../asset/icon/general/logo.svg?raw';
 import { getOSName } from "../Util/util";
 import { backgroundError } from "../Util/error";
+import { notificationBody, notificationTitle, tidyNotificationText } from "./notificationText";
 import {
   playNotificationSound as playSelectedNotificationSound,
   type NotificationSoundEvent,
   type NotificationSoundSelection,
 } from "./NotificationSound";
+
+const kMaxSubtitleLength = 80;
 
 /** Tells the user about a new mail, a meeting reminder etc.
  * outside of our app window: a popup in the screen corner and in the
@@ -71,6 +74,7 @@ export class SystemNotification {
   /** Notifies the user in the `kinds` ways.
    * If one of them fails, the others are still shown. */
   async show() {
+    this.tidyText();
     await this.showPopups();
 
     if (this.kinds.taskbar && this.updatesTaskbarBadge) {
@@ -99,6 +103,14 @@ export class SystemNotification {
         backgroundError(ex);
       }
     }
+  }
+
+  /** Без пустого заголовка, лишних пробелов и переводов строк из текста
+   * писем — ОС показывает их как есть. */
+  protected tidyText() {
+    this.title = notificationTitle(this.title);
+    this.body = notificationBody(this.body);
+    this.subtitle = tidyNotificationText(this.subtitle, kMaxSubtitleLength) || null;
   }
 
   async showPopups() {

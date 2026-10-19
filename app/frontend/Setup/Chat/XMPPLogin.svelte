@@ -3,7 +3,7 @@
   subtitle={$t`Import your existing XMPP or Jabber account`}
 />
 {#if errorMessage}
-  <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error}
+  <ErrorMessage {errorMessage} errorGravity={ErrorGravity.Error} ex={errorEx}
     on:continue={() => errorMessage = null} />
 {/if}
 <vbox flex class="account">
@@ -36,6 +36,7 @@
   import Header from "../Shared/Header.svelte";
   import { t } from "../../../l10n/l10n";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import { logError } from "../../Util/error";
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
 
@@ -75,10 +76,12 @@
   }
 
   let errorMessage: string | null = null;
+  let errorEx: Error | null = null;
   function showError(ex: Error) {
     console.error(ex);
     logError(ex);
-    errorMessage = ex.message ?? ex + "";
+    errorMessage = friendlyErrorMessage(ex);
+    errorEx = ex;
   }
 </script>
 

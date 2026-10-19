@@ -16,11 +16,12 @@
 {:catch ex}
   <hbox class="error">
     {ex instanceof UserError ? null : showError(ex), ""}
-    {ex?.message  ?? ex + ""}
+    <Notice {ex} compact />
   </hbox>
 {/await}
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { Participant } from "../../../logic/Calendar/Participant";
   import { Event } from "../../../logic/Calendar/Event";
   import { Calendar } from "../../../logic/Calendar/Calendar";
@@ -145,7 +146,6 @@
     max-width: 16px;
   }
   .error {
-    color: darkred;
     margin-block-start: 8px;
   }
 </style>

@@ -6,7 +6,7 @@
         on:continue={onContinue} />
     {/if}
     {#if errorMessage}
-      <ErrorMessage {errorMessage} {errorGravity}
+      <ErrorMessage {errorMessage} {errorGravity} ex={errorEx}
         on:continue={clearError} />
     {/if}
     {#if step == Step.FindConfig}
@@ -77,6 +77,7 @@
   import ManualConfigPage from "../../Settings/Mail/Manual/ManualConfigPage.svelte";
   import Instructions from "./Instructions.svelte";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import Footer from "../Shared/Footer.svelte";
   import ButtonsBottom from "../Shared/ButtonsBottom.svelte";
   import BackgroundVideo from "../Shared/BackgroundVideo.svelte";
@@ -222,6 +223,7 @@
 
   let errorMessage: string | null = null;
   let errorGravity: ErrorGravity = ErrorGravity.OK;
+  let errorEx: Error | null = null;
 
   function showError(ex: Error | string) {
     if (typeof (ex) == "string") {
@@ -232,12 +234,14 @@
     }
     console.error(ex);
     logError(ex);
-    errorMessage = ex.message;
+    errorMessage = friendlyErrorMessage(ex);
+    errorEx = ex;
     errorGravity = ErrorGravity.Error;
   }
 
   function clearError() {
     errorMessage = null;
+    errorEx = null;
     errorGravity = ErrorGravity.OK;
   }
 

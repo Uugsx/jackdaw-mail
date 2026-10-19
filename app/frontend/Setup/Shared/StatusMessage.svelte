@@ -1,4 +1,6 @@
-<hbox flex class="status {status}">
+<hbox flex class="status {status}"
+  role={status == "error" ? "alert" : "status"}
+  aria-live={status == "error" ? "assertive" : "polite"}>
   {#if status == "processing"}
     <hbox class="spinner">
       <Spinner size="24px" />
@@ -30,11 +32,17 @@
     margin-block-end: 8px;
   }
   .box {
-    border-radius: 8px;
+    --status-tone: var(--info-fg, #3C6E91);
+    align-items: center;
+    gap: 6px;
+    border-radius: var(--border-radius, 6px);
     justify-content: start;
     margin-inline-start: 8px;
     margin-inline-end: 24px;
     padding: 6px 16px 6px 12px;
+    border: 1px solid transparent;
+    color: var(--main-fg, CanvasText);
+    line-height: 1.45;
   }
   .spinner {
     margin: 4px;
@@ -45,41 +53,33 @@
   .message {
     overflow-wrap: anywhere;
   }
+  /* Плоская поверхность с тонкой рамкой в тоне состояния; текст — основной цвет,
+   * поэтому контраст не зависит от тона (WCAG AA в светлой и тёмной теме). */
   .success .box {
-    background-color: #E7F9EC;
-    color: #044f1a;
-    border: 1px solid #0BC24180;
+    --status-tone: var(--success-fg, #2F7A3E);
+  }
+  .warning .box {
+    --status-tone: var(--warning-fg, #8A5A00);
+  }
+  .error .box {
+    --status-tone: var(--danger-fg, #B84E3B);
+  }
+  .success .box,
+  .warning .box,
+  .error .box {
+    background-color: color-mix(in srgb, var(--status-tone) 7%, var(--main-bg, Canvas));
+    border-color: color-mix(in srgb, var(--status-tone) 38%, var(--border));
   }
   .processing .box {
     background-color: var(--offset-bg);
     color: var(--main-fg);
     margin-inline-start: 16px;
   }
-  .warning .box,
-  .error .box {
-    background-color: #F8FFD2;
-    color: #DD0000;
-    border: 1px solid #FFC83A;
-  }
-  .error .box :global(.button) {
-    color: #AA0000;
-  }
-  @media (prefers-color-scheme: dark) {
-    .success .box,
-    .processing .box,
-    .warning .box,
-    .error .box {
-      background-color: unset;
-    }
-    .warning .box,
-    .error .box {
-      color: #FF3333;
-    }
-    .error .box :global(.button) {
-      color: #FFC83A;
-    }
-  }
   .icon {
-    margin-inline-end: 6px;
+    display: flex;
+    color: var(--status-tone);
+  }
+  .icon:empty {
+    display: none;
   }
 </style>

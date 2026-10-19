@@ -7,9 +7,10 @@
       <p>{$t`Loading message…`}</p>
     </vbox>
   {:else if errorMessage}
-    <vbox flex class="message-state" role="alert">
-      <p>{errorMessage}</p>
-      <button type="button" on:click={load}>{$t`Retry`}</button>
+    <vbox flex class="message-state">
+      <!-- Свой заголовок: внутренние тексты загрузки окна не для пользователя;
+           причина и подсказка — из ошибки, исходник — в «Подробностях» -->
+      <Notice ex={loadError} message={errorMessage} onRetry={load} />
     </vbox>
   {:else if message}
     <MessageDisplay
@@ -21,6 +22,7 @@
 </vbox>
 
 <script lang="ts">
+  import Notice from "../../Shared/Notice.svelte";
   import { onMount } from "svelte";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { appGlobal } from "../../../logic/app";
@@ -38,11 +40,13 @@
   let message: EMail | null = null;
   let loading = true;
   let errorMessage: string | null = null;
+  let loadError: unknown = null;
   let startObjectsPromise: Promise<void> | null = null;
 
   async function load(): Promise<void> {
     loading = true;
     errorMessage = null;
+    loadError = null;
     message = null;
     try {
       let nativeAPI = (window as any).api;
@@ -70,7 +74,8 @@
         void message.loadBody().catch(() => undefined);
       }
     } catch (ex) {
-      errorMessage = ex instanceof Error ? ex.message : $t`Could not load the message window`;
+      errorMessage = $t`Could not load the message window`;
+      loadError = ex;
       backgroundError(ex);
     } finally {
       loading = false;
@@ -126,19 +131,5 @@
   .message-state p {
     max-width: 560px;
     margin: 0;
-  }
-  .message-state button {
-    min-height: 34px;
-    padding: 6px 16px;
-    border: 1px solid var(--button-border);
-    border-radius: var(--border-radius);
-    background: var(--button-bg);
-    color: var(--button-fg);
-    cursor: default;
-  }
-  .message-state button:hover,
-  .message-state button:focus-visible {
-    background: var(--hover-bg);
-    color: var(--hover-fg);
   }
 </style>

@@ -34,7 +34,7 @@
     {#await loadMailChatMessage(message)}
       <span class="body-state">{$t`Loading...`}</span>
     {:catch ex}
-      <span class="body-state">{ex.message ?? ex + ""}</span>
+      <span class="body-state" role="alert">{friendlyErrorMessage(ex)}</span>
     {:then}
       {@html displayHtml(stripMailChatQuote($message.html), darkTheme)}
     {/await}
@@ -47,6 +47,7 @@
 </div>
 
 <script lang="ts">
+  import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { Message } from "../../../logic/Abstract/Message";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import { EMail } from "../../../logic/Mail/EMail";
