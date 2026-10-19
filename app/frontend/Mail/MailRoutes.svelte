@@ -220,6 +220,9 @@
           await folder.refreshOpenFolder(true);
           folder.notifyObservers();
           folder.syncRecentDayMessagesInBackground();
+          // Большие папки (сетевой архив) догружают старую историю, пока открыты.
+          folder.syncOlderHistoryInBackground(() =>
+            $selectedFolder === folder && folder.account.isLoggedIn);
         });
       };
       let metadataTick = () => {

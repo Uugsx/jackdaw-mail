@@ -103,6 +103,14 @@ const kHistoryVerifyOverlapMs = 60 * 60_000;
 const kHistoryVerifyIntervalMs = 60_000;
 /** Страниц FindItem за один проход проверки истории (40 × 50 = 2000 заголовков). */
 const kHistoryVerifyPagesPerPass = 40;
+/** Страниц FindItem за один шаг догрузки старой истории (10 × 50 = 500 заголовков).
+ * Шаг держит `listMessagesLock`, поэтому он короткий: опрос открытой папки не ждёт. */
+const kOlderHistoryPagesPerPass = 10;
+/** Пауза между шагами догрузки старой истории: запросы идут строго по одному,
+ * а опрос папки и действия пользователя успевают пройти между шагами. */
+const kOlderHistoryContinuationDelayMs = 300;
+/** Не повторять завершённый или сорвавшийся обход старой истории чаще этого интервала. */
+const kOlderHistoryRetryMs = 5 * 60_000;
 /** AQS-фильтр Exchange возвращает именно письма, полученные сегодня. */
 const kRecentDayQuery = "received:today";
 /** Каноническое значение boolean для AQS/EWS: Exchange ожидает `false`, а не `no`. */
@@ -215,6 +223,15 @@ export class OWAFolder extends ExchangeFolder {
   /** Смещение FindItem, на котором остановился прерванный по лимиту проход. */
   protected historyVerifyResumeOffset = 0;
   protected historyVerifyRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
+  /** Смещение FindItem (от новых писем к старым), с которого продолжится
+   * догрузка старой истории. Хранится в БД, чтобы после перезапуска не
+   * перечитывать уже пройденные страницы десятков тысяч писем. */
+  protected olderHistoryResumeOffset = 0;
+  /** Разница «счётчик сервера − строки в кеше» после последнего полного обхода.
+   * Письма, которые GetItem не отдаёт, не должны запускать обход заново. */
+  protected olderHistoryCompletedGap: number | null = null;
+  protected olderHistoryNextAttemptAt = 0;
+  protected olderHistoryPumpRunOnce = new RunOnce<void>();
 
   /** Некоторые on-prem/shared OWA не умеют десериализовать AQS FindItem. */
   protected isRecentDayQueryUnsupportedError(ex: unknown): boolean {
@@ -1741,16 +1758,154 @@ export class OWAFolder extends ExchangeFolder {
     return found;
   }
 
+  /** Сколько писем папки есть на сервере, но ещё нет в локальном кеше. */
+  protected olderHistoryGap(): number {
+    return Math.max(0, this.countTotal - this.messages.length);
+  }
+
+  /** Нужна ли догрузка старой истории: кеш отстаёт от счётчика сервера.
+   * Быстрые пути синхронизации и проверка истории читают только свежие
+   * страницы, поэтому без этого обхода большая папка (например, сетевой
+   * архив на 20 000+ писем) навсегда оставалась на первой тысяче строк. */
+  needsOlderHistorySync(): boolean {
+    if (!this.id || !this.account.isLoggedIn || this.messages.isEmpty) {
+      // Пустую папку заполняет первичная синхронизация.
+      return false;
+    }
+    if (Date.now() < this.olderHistoryNextAttemptAt) {
+      return false;
+    }
+    // Расхождение меньше страницы закрывают быстрые пути (дельта, свежая
+    // страница, unread): иначе каждое новое письмо запускало бы полный обход.
+    return this.olderHistoryGap() - (this.olderHistoryCompletedGap ?? 0) >= kMaxFetchCount;
+  }
+
+  /**
+   * Догружает в фоне заголовки, которых нет в кеше, постранично от новых
+   * писем к старым. Шаги идут строго последовательно с паузой, без шторма
+   * запросов; каждый шаг сразу добавляет строки в список и сохраняет их в БД.
+   * @param shouldContinue Останавливает обход, например, когда пользователь
+   *   ушёл из папки. Прерванный обход продолжится с сохранённого смещения.
+   */
+  syncOlderHistoryInBackground(shouldContinue: () => boolean = () => true): void {
+    if (this.olderHistoryPumpRunOnce.running || !this.needsOlderHistorySync()) {
+      return;
+    }
+    void this.olderHistoryPumpRunOnce.runOnce(async () => {
+      try {
+        while (shouldContinue() && this.account.isLoggedIn) {
+          let finished = await this.syncOlderHistoryPass();
+          if (finished) {
+            return;
+          }
+          await sleep(kOlderHistoryContinuationDelayMs / 1000);
+        }
+      } catch (ex) {
+        this.olderHistoryNextAttemptAt = Date.now() + kOlderHistoryRetryMs;
+        throw ex;
+      }
+    }).catch(ex => {
+      if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+        this.account.handleBackgroundSyncError(ex);
+      }
+    });
+  }
+
+  /** Один шаг догрузки старой истории.
+   * @returns true, если обход дошёл до конца папки или продолжать бессмысленно */
+  protected async syncOlderHistoryPass(): Promise<boolean> {
+    await this.readFolder();
+    let found = new ArrayColl<OWAEMail>();
+    let finished = false;
+    let lock = await this.listMessagesLock.lock();
+    try {
+      let request = owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true, this.account.isDependentAccount);
+      request.Body.Paging.Offset = this.olderHistoryResumeOffset;
+      let previousSignature: string | null = null;
+      for (let page = 0; page < kOlderHistoryPagesPerPass; page++) {
+        let result = await this.callFolderSyncOWA(request);
+        let items = ensureArray(result?.RootFolder?.Items);
+        if (!items.length) {
+          finished = true;
+          break;
+        }
+        let signature = items
+          .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
+          .join("\u0000");
+        if (signature == previousSignature) {
+          // Exchange отдаёт одну и ту же страницу при любом Offset:
+          // дальше идти бессмысленно, повторим позже с начала.
+          finished = true;
+          break;
+        }
+        previousSignature = signature;
+        let missingIDs: string[] = [];
+        for (let item of items) {
+          let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "");
+          if (id && !this.deletions.has(id) && !this.getEmailByItemID(id)) {
+            missingIDs.push(id);
+          }
+        }
+        if (missingIDs.length) {
+          let loaded = await this.getNewMessageHeaders(missingIDs);
+          for (let email of loaded) {
+            // Это догрузка прошлого, а не новая почта: без уведомлений и бейджа «новые».
+            email.isNewArrived = false;
+          }
+          this.addMessagesIfAbsent(loaded);
+          found.addAll(loaded);
+        }
+        request.Body.Paging.Offset += items.length;
+        if (result?.RootFolder?.IncludesLastItemInRange === true) {
+          finished = true;
+          break;
+        }
+      }
+      if (!finished && this.olderHistoryGap() == 0) {
+        // Кеш догнал счётчик сервера: остаток папки уже загружен.
+        finished = true;
+      }
+      if (finished) {
+        this.olderHistoryResumeOffset = 0;
+        this.olderHistoryCompletedGap = this.olderHistoryGap();
+        this.olderHistoryNextAttemptAt = Date.now() + kOlderHistoryRetryMs;
+      } else {
+        // Новые письма сдвигают выдачу вниз, поэтому следующий шаг начинает
+        // на страницу раньше и перекрывает стык.
+        this.olderHistoryResumeOffset = Math.max(0, request.Body.Paging.Offset - kMaxFetchCount);
+      }
+    } finally {
+      lock.release();
+    }
+    if (found.hasItems) {
+      this.refreshMessageContacts();
+      this.notifyObservers();
+    }
+    await this.storage.saveFolderProperties(this);
+    return finished;
+  }
+
   fromExtraJSON(json: any) {
     super.fromExtraJSON(json);
     let verifiedUntil = Number(json?.historyVerifiedUntil);
     this.historyVerifiedUntil = Number.isFinite(verifiedUntil) && verifiedUntil > 0 ? verifiedUntil : null;
+    let resumeOffset = Number(json?.olderHistoryResumeOffset);
+    this.olderHistoryResumeOffset = Number.isInteger(resumeOffset) && resumeOffset > 0 ? resumeOffset : 0;
+    let completedGap = Number(json?.olderHistoryCompletedGap);
+    this.olderHistoryCompletedGap = json?.olderHistoryCompletedGap != null &&
+      Number.isInteger(completedGap) && completedGap >= 0 ? completedGap : null;
   }
 
   toExtraJSON(): any {
     let json = super.toExtraJSON();
     if (this.historyVerifiedUntil != null) {
       json.historyVerifiedUntil = this.historyVerifiedUntil;
+    }
+    if (this.olderHistoryResumeOffset > 0) {
+      json.olderHistoryResumeOffset = this.olderHistoryResumeOffset;
+    }
+    if (this.olderHistoryCompletedGap != null) {
+      json.olderHistoryCompletedGap = this.olderHistoryCompletedGap;
     }
     return json;
   }
