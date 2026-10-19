@@ -68,28 +68,126 @@ export async function deleteMessagesWithUndo(
   showDeleteUndoToast(entries);
 }
 
+/** Индекс копий в Корзине по Message-ID; каждую копию можно выдать только один раз. */
+class TrashCopyIndex {
+  protected byMessageID: Map<string, EMail[]> | null = null;
+  protected taken = new Set<EMail>();
+  protected synced = false;
+
+  constructor(protected readonly trash: Folder) {
+  }
+
+  take(message: EMail): EMail | null {
+    if (!this.byMessageID) {
+      this.byMessageID = new Map();
+      for (let candidate of this.trash.messages.contents) {
+        if (candidate.isDeleted || !candidate.messageID) {
+          continue;
+        }
+        let copies = this.byMessageID.get(candidate.messageID);
+        if (!copies) {
+          copies = [];
+          this.byMessageID.set(candidate.messageID, copies);
+        }
+        copies.push(candidate);
+      }
+    }
+    let copy = this.byMessageID.get(message.messageID)?.find(candidate =>
+      candidate !== message && !this.taken.has(candidate)) ?? null;
+    if (copy) {
+      this.taken.add(copy);
+    }
+    return copy;
+  }
+
+  /** Синхронизирует Корзину не больше одного раза за отмену. */
+  async syncOnce(): Promise<boolean> {
+    if (this.synced) {
+      return false;
+    }
+    this.synced = true;
+    await this.trash.fetchNewMailQuick();
+    this.byMessageID = null;
+    return true;
+  }
+}
+
 /**
- * Находит письмо, которое удаление перенесло в Корзину.
+ * Находит письма, которые удаление перенесло в Корзину.
  * OWA переносит сам объект (меняет `message.folder`), а IMAP, EWS, JMAP и Graph
  * создают в Корзине новую копию с другим ID — её ищем по Message-ID.
+ * Каждая Корзина синхронизируется не больше одного раза, даже для сотен писем.
  */
-async function findDeletedMessage(entry: DeletedEntry): Promise<EMail | null> {
-  let message = entry.message;
-  if (message.folder && message.folder !== entry.sourceFolder) {
-    return message;
+async function findDeletedMessages(entries: readonly DeletedEntry[]): Promise<(EMail | null)[]> {
+  let found: (EMail | null)[] = entries.map(() => null);
+  let indexes = new Map<Folder, TrashCopyIndex>();
+  let pending: { position: number, index: TrashCopyIndex }[] = [];
+  entries.forEach((entry, position) => {
+    let message = entry.message;
+    if (message.folder && message.folder !== entry.sourceFolder) {
+      found[position] = message;
+      return;
+    }
+    let trash = entry.sourceFolder.account?.getSpecialFolder(SpecialFolder.Trash);
+    if (!trash || trash === entry.sourceFolder || !message.messageID) {
+      return;
+    }
+    let index = indexes.get(trash);
+    if (!index) {
+      index = new TrashCopyIndex(trash);
+      indexes.set(trash, index);
+    }
+    found[position] = index.take(message);
+    if (!found[position]) {
+      pending.push({ position, index });
+    }
+  });
+  if (!pending.length) {
+    return found;
   }
-  let trash = entry.sourceFolder.account?.getSpecialFolder(SpecialFolder.Trash);
-  if (!trash || trash === entry.sourceFolder || !message.messageID) {
-    return null;
+  await Promise.all([...new Set(pending.map(item => item.index))].map(index => index.syncOnce()));
+  for (let { position, index } of pending) {
+    found[position] = index.take(entries[position].message);
   }
-  let findCopy = () => trash.messages.contents.find(candidate =>
-    candidate !== message && !candidate.isDeleted && candidate.messageID == message.messageID) ?? null;
-  let copy = findCopy();
-  if (!copy) {
-    await trash.fetchNewMailQuick();
-    copy = findCopy();
+  return found;
+}
+
+/**
+ * Возвращает письма группами: одна пачка на пару «папка назначения + текущая папка»,
+ * так как `moveMessagesHere()` требует общую исходную папку.
+ * @returns последнее (в порядке удаления) восстановленное письмо
+ */
+async function restoreDeletedMessages(entries: readonly DeletedEntry[], found: readonly (EMail | null)[]): Promise<EMail | null> {
+  let groups = new Map<Folder, Map<Folder, EMail[]>>();
+  let seen = new Set<EMail>();
+  let last: EMail | null = null;
+  entries.forEach((entry, position) => {
+    let message = found[position];
+    if (!message?.folder || seen.has(message)) {
+      return;
+    }
+    seen.add(message);
+    let bySource = groups.get(entry.sourceFolder);
+    if (!bySource) {
+      bySource = new Map();
+      groups.set(entry.sourceFolder, bySource);
+    }
+    let group = bySource.get(message.folder);
+    if (!group) {
+      group = [];
+      bySource.set(message.folder, group);
+    }
+    group.push(message);
+    last = message;
+  });
+  let moves: Promise<void>[] = [];
+  for (let [targetFolder, bySource] of groups) {
+    for (let group of bySource.values()) {
+      moves.push(targetFolder.moveMessagesHere(new ArrayColl(group)));
+    }
   }
-  return copy;
+  throwFirstBulkActionError(await Promise.allSettled(moves));
+  return last;
 }
 
 function showDeleteUndoToast(entries: DeletedEntry[]) {
@@ -105,18 +203,11 @@ function showDeleteUndoToast(entries: DeletedEntry[]) {
     id,
     label,
     undo: async () => {
-      let last: EMail | null = null;
       let notFound = 0;
       try {
-        for (let entry of entries) {
-          let message = await findDeletedMessage(entry);
-          if (!message) {
-            notFound++;
-            continue;
-          }
-          await entry.sourceFolder.moveMessageHere(message);
-          last = message;
-        }
+        let found = await findDeletedMessages(entries);
+        notFound = found.filter(message => !message).length;
+        let last = await restoreDeletedMessages(entries, found);
         if (last) {
           await openEMailMessage(last);
         }
