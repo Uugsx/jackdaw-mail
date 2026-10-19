@@ -148,11 +148,15 @@
     "plans.yearly.note": "$6.67 a month, a third less than paying monthly.",
     "plans.checkout": "Buy a key",
     "plans.trialNote": "You can try Pro free for 7 days. The trial starts inside the app and needs no card. While it runs, the app needs internet access because the trial is checked online.",
-    "plans.paymentNote": "Payment is handled by Lemon Squeezy, and the key is sent to the email used for the purchase. Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
+    "plans.paymentNote": "Payment is handled by Paddle. The key appears on this page as soon as the payment is confirmed, so save it somewhere safe. Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
     "billing.unavailable": "The purchase link is not configured yet.",
     "billing.storeUnavailable": "The payment store is not connected yet.",
     "billing.checking": "Checking the payment store…",
     "billing.network": "The payment status is temporarily unavailable.",
+    "purchase.title": "Jackdaw Pro key",
+    "purchase.copy": "Copy",
+    "purchase.hint": "Paste the key into Jackdaw Mail: Settings → Jackdaw Pro. Save it: you will need it to connect another device.",
+    "purchase.close": "Done",
     "downloads.title": "Download",
     "downloads.aside": "Builds are published on GitHub.",
     "downloads.header.system": "System",
@@ -201,6 +205,15 @@
     "billing.available": "Откроется защищённая страница покупки.",
     "billing.unavailableTitle": "Ссылка на покупку ещё не настроена.",
     "billing.availableTitle": "Откроется защищённая страница покупки.",
+    "billing.paddleAvailable": "Оплата откроется в защищённом окне Paddle.",
+    "billing.paddleSandbox": "Тестовая среда Paddle Sandbox: настоящие деньги не списываются.",
+    "purchase.waiting": "Оплата получена. Ждём подтверждения от Paddle и выпускаем ключ…",
+    "purchase.ready": "Ключ готов.",
+    "purchase.copied": "Ключ скопирован.",
+    "purchase.timeout": "Подтверждение оплаты задерживается. Обновите страницу через минуту — ключ появится здесь же.",
+    "purchase.failed": "Не удалось открыть оплату. Обновите страницу и попробуйте ещё раз.",
+    "purchase.revoked": "Эта покупка отменена или возвращена, ключ неактивен.",
+    "purchase.expired": "Срок получения ключа на этой странице истёк. Напишите в поддержку, чтобы получить ключ.",
     "downloads.hero.mac": "Скачать для macOS",
     "downloads.hero.windows": "Скачать для Windows",
     "downloads.hero.other": "Перейти к загрузкам",
@@ -221,6 +234,15 @@
     "billing.storeUnavailable": "The payment store is not connected yet.",
     "billing.checking": "Checking the payment store…",
     "billing.network": "The payment status is temporarily unavailable.",
+    "billing.paddleAvailable": "Payment opens in a secure Paddle window.",
+    "billing.paddleSandbox": "Paddle Sandbox test environment: no real money is charged.",
+    "purchase.waiting": "Payment received. Waiting for Paddle to confirm it and issuing your key…",
+    "purchase.ready": "Your key is ready.",
+    "purchase.copied": "Key copied.",
+    "purchase.timeout": "Payment confirmation is taking longer than usual. Reload the page in a minute and the key will appear here.",
+    "purchase.failed": "The payment window could not be opened. Reload the page and try again.",
+    "purchase.revoked": "This purchase was cancelled or refunded, so the key is inactive.",
+    "purchase.expired": "The key can no longer be collected on this page. Contact support to receive it.",
     "downloads.hero.mac": "Download for macOS",
     "downloads.hero.windows": "Download for Windows",
     "downloads.hero.other": "Go to downloads",
@@ -402,6 +424,33 @@
     : '';
   const ownBillingHosts = new Set(['jackdaw-mail.pro', 'www.jackdaw-mail.pro', 'license.jackdaw-mail.pro']);
   const billingStates = [];
+  const paddleSiteConfig = window.JACKDAW_BILLING_CONFIG && window.JACKDAW_BILLING_CONFIG.paddle
+    ? window.JACKDAW_BILLING_CONFIG.paddle
+    : null;
+  // Окружение Paddle задаёт префикс клиентского токена: test_ для Sandbox, live_ для Live.
+  const PADDLE_TOKEN_PREFIXES = { sandbox: 'test_', production: 'live_' };
+  const PADDLE_TOKEN_RE = /^(?:test|live)_[A-Za-z0-9_]{8,128}$/;
+  const PADDLE_PRICE_RE = /^pri_[a-z0-9]{26}$/;
+  const PADDLE_TRANSACTION_RE = /^txn_[a-z0-9]{26}$/;
+  const PADDLE_SCRIPT_HOST = 'cdn.paddle.com';
+  const CLAIM_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+  const LICENSE_KEY_RE = /^JACKDAW-PRO-(?:[A-Z0-9]{4}-){3}[A-Z0-9]{4}$/;
+  const PURCHASE_STORAGE_KEY = 'jackdaw-paddle-purchase';
+  const PURCHASE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+  const CLAIM_POLL_INTERVAL_MS = 3000;
+  const CLAIM_POLL_ATTEMPTS = 40;
+  const purchaseResult = document.getElementById('purchase-result');
+  const purchaseMessage = document.getElementById('purchase-result-message');
+  const purchaseKeyRow = document.getElementById('purchase-key-row');
+  const purchaseKey = document.getElementById('purchase-key');
+  const purchaseKeyHint = document.getElementById('purchase-key-hint');
+  const purchaseCopy = document.getElementById('purchase-key-copy');
+  const purchaseClose = document.getElementById('purchase-result-close');
+  let paddleLoading = null;
+  let paddleCheckout = null;
+  let currentPurchase = null;
+  let purchaseMessageKey = '';
+  let purchaseFinal = false;
 
   function validCheckoutURL(value) {
     if (typeof value !== 'string' || !value.trim()) return null;
@@ -420,10 +469,12 @@
   }
 
   function updateBillingCopy() {
-    billingStates.forEach(({ link, status, state }) => {
-      const available = state === 'available';
+    billingStates.forEach(({ link, status, state, mode }) => {
+      const paddleStatusKey = paddleCheckout && paddleCheckout.environment === 'sandbox'
+        ? 'billing.paddleSandbox'
+        : 'billing.paddleAvailable';
       const statusKey = state === 'available'
-        ? 'billing.available'
+        ? (mode === 'paddle' ? paddleStatusKey : 'billing.available')
         : state === 'checking'
           ? 'billing.checking'
           : state === 'store-unavailable'
@@ -431,7 +482,9 @@
             : state === 'network-error'
               ? 'billing.network'
               : 'billing.unavailable';
-      const titleKey = state === 'available' ? 'billing.availableTitle' : statusKey;
+      const titleKey = state === 'available'
+        ? (mode === 'paddle' ? 'billing.paddleAvailable' : 'billing.availableTitle')
+        : statusKey;
       link.setAttribute('title', getLocalized(titleKey));
       if (status) {
         status.textContent = getLocalized(statusKey);
@@ -449,7 +502,14 @@
   function linkState(item, available) {
     const { link, checkoutURL } = item;
     link.classList.toggle('is-unavailable', !available);
-    if (available) {
+    if (available && item.mode === 'paddle') {
+      // Paddle.js открывает checkout поверх страницы, переход по ссылке не нужен.
+      link.setAttribute('href', '#plans');
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+      link.removeAttribute('aria-disabled');
+      link.removeAttribute('tabindex');
+    } else if (available) {
       link.setAttribute('href', checkoutURL);
       link.setAttribute('target', '_blank');
       link.setAttribute('rel', 'noopener noreferrer');
@@ -492,6 +552,21 @@
       });
       const config = await response.json().catch(() => null);
       if (!response.ok || !config || typeof config.checkout !== 'object') throw new Error('billing-config');
+      const paddle = resolvePaddleConfig(config.paddle);
+      if (paddle) {
+        await loadPaddle(paddle);
+        pending.forEach((item) => {
+          item.mode = 'paddle';
+          setBillingState(item, 'available');
+        });
+        openRequestedCheckout();
+        return;
+      }
+      if (config.paddle && config.paddle.configured === true) {
+        // Сервер настроен на другое окружение или другие цены: webhook не выдал бы ключ.
+        pending.forEach((item) => setBillingState(item, 'unavailable'));
+        return;
+      }
       pending.forEach((item) => {
         const configured = config.checkout?.[item.plan]?.configured === true;
         setBillingState(item, configured ? 'available' : 'store-unavailable');
@@ -503,6 +578,250 @@
     }
   }
 
+  function resolvePaddleConfig(serverConfig) {
+    if (!paddleSiteConfig || !serverConfig || serverConfig.configured !== true) return null;
+    const environment = paddleSiteConfig.environment;
+    const expectedPrefix = PADDLE_TOKEN_PREFIXES[environment];
+    const token = serverConfig.clientToken;
+    const prices = paddleSiteConfig.prices || {};
+    const serverPrices = serverConfig.prices || {};
+    if (!expectedPrefix || serverConfig.environment !== environment) return null;
+    if (typeof token !== 'string' || !PADDLE_TOKEN_RE.test(token) || !token.startsWith(expectedPrefix)) return null;
+    const pricesMatch = ['monthly', 'yearly'].every((plan) => PADDLE_PRICE_RE.test(prices[plan] || '')
+      && serverPrices[plan] === prices[plan]);
+    if (!pricesMatch) return null;
+    let scriptUrl;
+    try {
+      scriptUrl = new URL(paddleSiteConfig.scriptUrl);
+    } catch (_error) {
+      return null;
+    }
+    if (scriptUrl.protocol !== 'https:' || scriptUrl.hostname !== PADDLE_SCRIPT_HOST) return null;
+    return {
+      environment,
+      token,
+      prices: { monthly: prices.monthly, yearly: prices.yearly },
+      scriptUrl: scriptUrl.toString(),
+    };
+  }
+
+  function loadPaddle(paddle) {
+    if (paddleLoading) return paddleLoading;
+    paddleLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = paddle.scriptUrl;
+      script.async = true;
+      script.onload = () => {
+        const Paddle = window.Paddle;
+        if (!Paddle || !Paddle.Checkout || !Paddle.Environment || typeof Paddle.Initialize !== 'function') {
+          reject(new Error('paddle-unavailable'));
+          return;
+        }
+        try {
+          // Paddle.Initialize допускается только один раз на странице.
+          if (paddle.environment === 'sandbox') Paddle.Environment.set('sandbox');
+          Paddle.Initialize({ token: paddle.token, eventCallback: handlePaddleEvent });
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        paddleCheckout = paddle;
+        resolve(paddle);
+      };
+      script.onerror = () => reject(new Error('paddle-unavailable'));
+      document.head.appendChild(script);
+    });
+    return paddleLoading;
+  }
+
+  function createClaimToken() {
+    if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') return null;
+    const bytes = window.crypto.getRandomValues(new Uint8Array(32));
+    let binary = '';
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function savePurchase(purchase) {
+    currentPurchase = purchase;
+    try {
+      localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify(purchase));
+    } catch (_error) {
+      // Без хранилища ключ всё равно выдаётся в этой вкладке.
+    }
+  }
+
+  function forgetPurchase() {
+    currentPurchase = null;
+    try {
+      localStorage.removeItem(PURCHASE_STORAGE_KEY);
+    } catch (_error) {
+      // Удалять нечего, если хранилище недоступно.
+    }
+  }
+
+  function readPurchase() {
+    try {
+      const purchase = JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null');
+      if (!purchase || !CLAIM_TOKEN_RE.test(purchase.claimToken || '')) return null;
+      if (typeof purchase.startedAt !== 'number' || Date.now() - purchase.startedAt > PURCHASE_MAX_AGE_MS) return null;
+      return purchase;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function showPurchaseMessage(messageKey) {
+    if (!purchaseResult || !purchaseMessage) return;
+    purchaseMessageKey = messageKey;
+    purchaseMessage.textContent = getLocalized(messageKey);
+    purchaseResult.hidden = false;
+  }
+
+  function showPurchaseKey(licenseKey) {
+    if (!purchaseKey || !purchaseKeyRow) return;
+    purchaseKey.textContent = licenseKey;
+    purchaseKeyRow.hidden = false;
+    if (purchaseKeyHint) purchaseKeyHint.hidden = false;
+    purchaseFinal = true;
+    showPurchaseMessage('purchase.ready');
+  }
+
+  function finishPurchase(messageKey) {
+    purchaseFinal = true;
+    forgetPurchase();
+    showPurchaseMessage(messageKey);
+  }
+
+  async function claimPurchaseKey(purchase, attempt) {
+    const apiURL = validBillingAPIURL(billingApiBaseUrl);
+    if (!apiURL || currentPurchase !== purchase) return;
+    let status = 0;
+    let payload = null;
+    try {
+      const response = await fetch(`${apiURL}/v1/paddle/claim`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ transactionId: purchase.transactionId, claimToken: purchase.claimToken }),
+      });
+      status = response.status;
+      payload = await response.json().catch(() => null);
+    } catch (_error) {
+      status = 0;
+    }
+    if (currentPurchase !== purchase) return;
+    if (status === 200 && payload && LICENSE_KEY_RE.test(payload.licenseKey || '')) {
+      showPurchaseKey(payload.licenseKey);
+      return;
+    }
+    if (status === 403) {
+      finishPurchase('purchase.revoked');
+      return;
+    }
+    if (status === 410) {
+      finishPurchase('purchase.expired');
+      return;
+    }
+    // Webhook Paddle может прийти позже события checkout.completed: ждём и повторяем.
+    if (attempt + 1 >= CLAIM_POLL_ATTEMPTS) {
+      showPurchaseMessage('purchase.timeout');
+      return;
+    }
+    window.setTimeout(() => {
+      void claimPurchaseKey(purchase, attempt + 1);
+    }, CLAIM_POLL_INTERVAL_MS);
+  }
+
+  function startPurchaseClaim(purchase) {
+    purchaseFinal = false;
+    if (purchaseKeyRow) purchaseKeyRow.hidden = true;
+    if (purchaseKeyHint) purchaseKeyHint.hidden = true;
+    showPurchaseMessage('purchase.waiting');
+    void claimPurchaseKey(purchase, 0);
+  }
+
+  function handlePaddleEvent(event) {
+    if (!event || !currentPurchase) return;
+    if (event.name === 'checkout.completed') {
+      const transactionId = event.data && event.data.transaction_id;
+      if (typeof transactionId !== 'string' || !PADDLE_TRANSACTION_RE.test(transactionId)) return;
+      const purchase = { ...currentPurchase, transactionId };
+      savePurchase(purchase);
+      startPurchaseClaim(purchase);
+    } else if (event.name === 'checkout.closed' && !currentPurchase.transactionId) {
+      forgetPurchase();
+    }
+  }
+
+  function openPaddleCheckout(plan) {
+    const priceId = paddleCheckout && paddleCheckout.prices[plan];
+    const claimToken = createClaimToken();
+    if (!priceId || !claimToken || !window.Paddle) {
+      showPurchaseMessage('purchase.failed');
+      return;
+    }
+    savePurchase({ claimToken, plan, transactionId: null, startedAt: Date.now() });
+    try {
+      window.Paddle.Checkout.open({
+        items: [{ priceId, quantity: 1 }],
+        // Токен только связывает оплату с этой вкладкой. Ключ выдаёт сервер
+        // после подписанного webhook, а не по данным из браузера.
+        customData: { jackdaw_claim: claimToken },
+        settings: {
+          displayMode: 'overlay',
+          theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+          locale: currentLanguage,
+          allowLogout: true,
+        },
+      });
+    } catch (_error) {
+      forgetPurchase();
+      showPurchaseMessage('purchase.failed');
+    }
+  }
+
+  function openRequestedCheckout() {
+    // Ссылки /buy/{plan} из приложения ведут сюда с ?checkout=monthly|yearly.
+    let requestedPlan = null;
+    try {
+      const url = new URL(window.location.href);
+      requestedPlan = url.searchParams.get('checkout');
+      if (requestedPlan) {
+        url.searchParams.delete('checkout');
+        window.history.replaceState(null, '', url.toString());
+      }
+    } catch (_error) {
+      requestedPlan = null;
+    }
+    if (requestedPlan === 'monthly' || requestedPlan === 'yearly') {
+      openPaddleCheckout(requestedPlan);
+    }
+  }
+
+  purchaseCopy?.addEventListener('click', async () => {
+    const licenseKey = purchaseKey ? purchaseKey.textContent || '' : '';
+    if (!licenseKey) return;
+    try {
+      await navigator.clipboard.writeText(licenseKey);
+      showPurchaseMessage('purchase.copied');
+    } catch (_error) {
+      // Без доступа к буферу обмена выделяем ключ, чтобы его скопировали вручную.
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(purchaseKey);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+  });
+
+  purchaseClose?.addEventListener('click', () => {
+    if (purchaseFinal) forgetPurchase();
+    if (purchaseResult) purchaseResult.hidden = true;
+  });
+
   billingCheckoutLinks.forEach((link) => {
     const plan = link.getAttribute('data-billing-plan');
     const checkoutURL = validCheckoutURL(billingCheckout[plan]);
@@ -510,16 +829,33 @@
     const state = checkoutURL
       ? (new URL(checkoutURL).hostname.endsWith('.lemonsqueezy.com') ? 'available' : 'checking')
       : 'unavailable';
-    const item = { link, status, plan, checkoutURL, state };
+    const item = { link, status, plan, checkoutURL, state, mode: 'link' };
     billingStates.push(item);
     linkState(item, state === 'available');
     link.addEventListener('click', (event) => {
-      if (item.state !== 'available') event.preventDefault();
+      if (item.state !== 'available') {
+        event.preventDefault();
+      } else if (item.mode === 'paddle') {
+        event.preventDefault();
+        openPaddleCheckout(plan);
+      }
     });
   });
   updateBillingCopy();
   void resolveOwnCheckoutAvailability();
   languageListeners.push(updateBillingCopy);
+  languageListeners.push(() => {
+    if (purchaseMessageKey && purchaseMessage) purchaseMessage.textContent = getLocalized(purchaseMessageKey);
+  });
+
+  // Покупка, начатая до перезагрузки страницы, продолжает ждать ключ.
+  const resumedPurchase = readPurchase();
+  if (resumedPurchase && PADDLE_TRANSACTION_RE.test(resumedPurchase.transactionId || '')) {
+    currentPurchase = resumedPurchase;
+    startPurchaseClaim(resumedPurchase);
+  } else {
+    forgetPurchase();
+  }
 
   // 2. Showcase Tab Switcher
   const tabs = document.querySelectorAll('.showcase-tab');

@@ -17,7 +17,7 @@
 
     <main class="legal-content">
       <h1>Privacy Policy</h1>
-      <p class="legal-meta">Effective date: October 17, 2026</p>
+      <p class="legal-meta">Effective date: October 19, 2026</p>
 
       <div class="callout">
         <p>Jackdaw Mail is designed so that mail content, account passwords and local mail databases stay between the application, the user’s computer and the user’s selected mail provider. The license service does not need access to the user’s messages or addresses.</p>
@@ -27,7 +27,7 @@
       <p>Jackdaw Mail is an independent software project maintained by <a href="https://github.com/Uugsx">Uugsx</a>. Questions about this policy or a privacy request can be sent through the <a href="https://github.com/Uugsx/jackdaw-mail/issues">Jackdaw Mail issue tracker</a>. Please do not publish passwords, mail contents or license keys in a public issue.</p>
 
       <h2>2. What this policy covers</h2>
-      <p>This policy covers the Jackdaw Mail product website, the desktop application, the Jackdaw Mail license service, the Pro activation flow, the Jackdaw calls and chat service and the in-app feedback form. Lemon Squeezy operates the hosted checkout and processes payment information under its own <a href="https://www.lemonsqueezy.com/privacy">Privacy Policy</a>.</p>
+      <p>This policy covers the Jackdaw Mail product website, the desktop application, the Jackdaw Mail license service, the Pro activation flow, the Jackdaw calls and chat service and the in-app feedback form. Paddle operates the checkout and processes payment information under its own <a href="https://www.paddle.com/legal/privacy">Privacy Policy</a>. Subscriptions purchased earlier through Lemon Squeezy remain under the <a href="https://www.lemonsqueezy.com/privacy">Lemon Squeezy Privacy Policy</a>.</p>
 
       <h2>3. Data processed by the desktop application</h2>
       <table>
@@ -81,6 +81,7 @@
         <li>a hashed device identifier, a short device prefix, a device name and activation timestamps;</li>
         <li>the plan, status, expiry, activation limit and provider order identifier;</li>
         <li>an email address when Lemon Squeezy supplies it as an optional service label; email is not required for in-app activation;</li>
+        <li>for a Paddle purchase, the Paddle transaction and subscription identifiers, plan, subscription status and paid period, and a hash of a one-time claim token created by the buyer’s browser; the license key is stored only in encrypted form that the claim token opens, and the delivery record expires after 30 days;</li>
         <li>for a trial, a hashed device identifier, device name, status and start, last-seen and expiry timestamps;</li>
         <li>technical webhook event identifiers, event names, receipt timestamps and payload hashes for idempotency and fraud prevention.</li>
       </ul>
@@ -94,7 +95,8 @@
 
       <h2>7. Service providers and disclosures</h2>
       <ul>
-        <li><strong>Lemon Squeezy:</strong> hosted checkout, payment processing, tax handling, subscription management and license-key delivery. See its <a href="https://www.lemonsqueezy.com/privacy">privacy notice</a> and <a href="https://www.lemonsqueezy.com/buyer-terms">buyer terms</a>.</li>
+        <li><strong>Paddle:</strong> checkout, payment processing, tax handling and subscription management as merchant of record. See its <a href="https://www.paddle.com/legal/privacy">privacy notice</a> and <a href="https://www.paddle.com/legal/checkout-buyer-terms">buyer terms</a>.</li>
+        <li><strong>Lemon Squeezy:</strong> payment processing, subscription management and license-key delivery for subscriptions purchased earlier through Lemon Squeezy. See its <a href="https://www.lemonsqueezy.com/privacy">privacy notice</a> and <a href="https://www.lemonsqueezy.com/buyer-terms">buyer terms</a>.</li>
         <li><strong>Mail, calendar and identity providers:</strong> the providers selected by the user, such as an Exchange/OWA, IMAP, Google, Microsoft or other supported service. Their own terms and privacy notices apply.</li>
         <li><strong>GitHub:</strong> source code, releases, issue-based support, update downloads and public issues created from bug reports. GitHub’s terms and privacy statement apply to those services.</li>
         <li><strong>Resend:</strong> delivery of address-confirmation codes and feedback emails. It processes the recipient address and the email content.</li>
@@ -111,11 +113,11 @@
       <p>License keys and device identifiers are hashed in the license database. Entitlements are signed by a private server-side Ed25519 key and verified by the client. The license service validates input, applies rate limits and uses HTTPS in its public deployment. No internet transmission or storage system can be guaranteed to be completely secure, so users should keep their operating system, mail provider and backups protected.</p>
 
       <h2>10. Cookies and analytics</h2>
-      <p>The product website does not include advertising cookies or third-party analytics code. It uses browser local storage for language and theme preferences. The hosted Lemon Squeezy checkout and external services may use their own cookies, logs or similar technologies under their own policies.</p>
+      <p>The product website does not include advertising cookies or third-party analytics code. It uses browser local storage for language and theme preferences and, after a purchase starts, for the claim token that lets the browser receive the license key. Paddle.js is loaded from Paddle only when the pricing section can open a checkout. The Paddle checkout and external services may use their own cookies, logs or similar technologies under their own policies.</p>
 
       <h2>11. Your choices and rights</h2>
-      <p>You may request access to, correction of or deletion of personal data that Jackdaw Mail controls, subject to legal, security and license-enforcement limits. You may stop using the application and cancel a subscription through Lemon Squeezy. You can remove a local account, delete local application data or deactivate a license from the application where those controls are available. Contact us through the <a href="https://github.com/Uugsx/jackdaw-mail/issues">issue tracker</a> for a privacy request; do not include confidential data in the public issue.</p>
-      <p>Depending on your location, you may also have the right to restrict or object to processing, request portability, withdraw consent, or complain to a data protection authority. Lemon Squeezy handles the payment data it controls under its own policy.</p>
+      <p>You may request access to, correction of or deletion of personal data that Jackdaw Mail controls, subject to legal, security and license-enforcement limits. You may stop using the application and cancel a subscription through Paddle, or through Lemon Squeezy for a subscription purchased there. You can remove a local account, delete local application data or deactivate a license from the application where those controls are available. Contact us through the <a href="https://github.com/Uugsx/jackdaw-mail/issues">issue tracker</a> for a privacy request; do not include confidential data in the public issue.</p>
+      <p>Depending on your location, you may also have the right to restrict or object to processing, request portability, withdraw consent, or complain to a data protection authority. Paddle and Lemon Squeezy handle the payment data they control under their own policies.</p>
 
       <h2>12. Children</h2>
       <p>Jackdaw Mail is a professional mail and productivity application and is not directed to children. We do not knowingly collect personal data from children through the product website or license service.</p>
