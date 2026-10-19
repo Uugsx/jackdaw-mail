@@ -61,6 +61,7 @@
 <script lang="ts">
   import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
+  import type { Folder } from "../../../logic/Mail/Folder";
   import { openSettingsCategoryForAccount } from "../../Settings/Window/CategoriesUtils";
   import { appGlobal } from "../../../logic/app";
   import Icon from "svelte-icon/Icon.svelte";
@@ -88,24 +89,31 @@
   const dispatch = createEventDispatcher<{ select: MailAccount; toggleExpand: MailAccount }>();
   let failedAccountIcon: string | null = null;
 
-  /** Re-run when folders load, counts change, or selection moves. */
-  $: _epoch = $mailUnreadEpoch;
-  $: _account = $account;
   $: accountIcon = typeof $account.icon == "string" ? $account.icon : null;
   $: if (failedAccountIcon && failedAccountIcon != accountIcon) {
     failedAccountIcon = null;
   }
-  $: inboxFolder = findInboxFolder(account);
-  $: inboxBadge = (() => {
-    let inbox = findInboxFolder(account);
+  /* Счётчики и папки передаются аргументами: в legacy-режиме `$:` пересчитывается
+   * только по переменным, упомянутым в самом выражении. Раньше `$mailUnreadEpoch`
+   * стоял отдельной строкой, и число на строке ящика оставалось старым, пока не
+   * менялся выбор папки. */
+  $: inboxFolder = inboxAtEpoch($mailUnreadEpoch, $account);
+  $: inboxBadge = inboxBadgeAtEpoch($mailUnreadEpoch, $account, $selectedAccount, $selectedFolder);
+
+  function inboxAtEpoch(_epoch: number, mailAccount: MailAccount) {
+    return findInboxFolder(mailAccount);
+  }
+
+  function inboxBadgeAtEpoch(_epoch: number, mailAccount: MailAccount, activeAccount: MailAccount, activeFolder: Folder): number {
+    let inbox = findInboxFolder(mailAccount);
     if (!inbox) {
       return 0;
     }
-    return accountInboxBadgeCount(account, $selectedAccount, $selectedFolder, {
+    return accountInboxBadgeCount(mailAccount, activeAccount, activeFolder, {
       countUnread: inbox.countUnread,
       countNewArrived: inbox.countNewArrived,
     });
-  })();
+  }
 
   async function login() {
     await account.login(true);

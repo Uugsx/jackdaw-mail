@@ -46,8 +46,11 @@
   import { getLocalStorage } from "../../../Util/LocalStorage";
   import { t } from "../../../../l10n/l10n";
 
-  $: _mailUnreadEpoch = $mailUnreadEpoch;
-  $: mailUnreadTotal = totalMailUnreadCount();
+  // Эпоха — аргумент: иначе `$:` не знает о смене счётчиков и считает один раз
+  $: mailUnreadTotal = totalAtEpoch($mailUnreadEpoch);
+  function totalAtEpoch(_epoch: number): number {
+    return totalMailUnreadCount();
+  }
   let mailNotificationsSetting = getLocalStorage<string[]>("notifications.mail", ["popup", "sound"]);
   $: appbarBadgeEnabled = ($mailNotificationsSetting.value ?? []).includes("appbar");
 
