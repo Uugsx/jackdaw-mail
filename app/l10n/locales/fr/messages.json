@@ -2619,5 +2619,12 @@
   "aPUAgM": "Appels audio et vidéo entre utilisateurs de Jackdaw Mail, par adresse e-mail. Le son et la vidéo passent par le serveur d'appels Jackdaw, pas par votre fournisseur de messagerie.",
   "9rnFEa": "Appels",
   "bADaFX": "Pour passer des appels, confirmez votre adresse dans Paramètres → Jackdaw Pro → Appels.",
-  "NWZAgc": "Les autres utilisateurs de Jackdaw Mail peuvent vous appeler sur une adresse confirmée tant que Jackdaw est ouvert. Nous envoyons un code à cette adresse pour vérifier qu'elle vous appartient."
+  "NWZAgc": "Les autres utilisateurs de Jackdaw Mail peuvent vous appeler sur une adresse confirmée tant que Jackdaw est ouvert. Nous envoyons un code à cette adresse pour vérifier qu'elle vous appartient.",
+  "hxsJJ8": "Pas de connexion · synchro {0}",
+  "0GA0y/": "Pas de connexion au serveur",
+  "ODihF3": "Pas de connexion depuis {0}.",
+  "ch1zQT": "Dernière synchronisation réussie : {0}.",
+  "q4IwMP": "Dernière synchronisation réussie : inconnue.",
+  "kZ1n4K": "Les nouveaux messages arriveront dès que le serveur répondra à nouveau. Jackdaw réessaie automatiquement.",
+  "ISsBIA": "{0} : pas de connexion au serveur"
 }

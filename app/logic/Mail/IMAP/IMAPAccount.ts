@@ -150,6 +150,10 @@ export class IMAPAccount extends MailAccount {
         await connection.connect();
       } catch (ex) {
         let msg = ex?.responseText || ex?.message || "";
+        // Ошибки входа показывает запрос пароля, состояние связи — остальные
+        if (!ex.authenticationFailed && ex.code != "EAUTH" && ex.code != "ClosedAfterConnectTLS") {
+          this.connectionStatus.reportFailure(ex);
+        }
         if (ex.authenticationFailed) {
           throw this.fatalError = new LoginError(ex,
             "Check your login, username, and password.\n" + msg);
@@ -165,6 +169,7 @@ export class IMAPAccount extends MailAccount {
           throw this.fatalError = new ConnectError(ex, msg);
         }
       }
+      this.connectionStatus.reportSuccess();
       this.connections.set(purpose, connection);
       this.connectionLock.set(connection, new Lock());
       if (purpose == ConnectionPurpose.Main) {

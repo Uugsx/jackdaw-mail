@@ -268,6 +268,7 @@ export class OWAAccount extends ExchangeMailAccount {
       };
       if (this.authorizationHeader) {
         let response = await fetch(url, options);
+        this.reportServerResponse({ status: response.status, statusText: response.statusText });
         if ([401, 440].includes(response.status)) {
           return false;
         }
@@ -279,6 +280,7 @@ export class OWAAccount extends ExchangeMailAccount {
         }
       }
       let response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
+      this.reportServerResponse(response);
       if ([401, 440].includes(response.status)) {
         return false;
       }
@@ -287,6 +289,7 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       return Boolean(response.ok || response.json);
     } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
       if (isNetworkError(ex)) {
         this.scheduleNetworkRecovery(ex);
       }
@@ -2063,6 +2066,20 @@ export class OWAAccount extends ExchangeMailAccount {
     }
   }
 
+  /** Сервер ответил: связь есть, если только это не отказ самого сервера —
+   * 502/503/504 или 5xx со страницей ошибки вместо ответа OWA. HTTP 500 с JSON
+   * OWA отдаёт и на обычные ошибки вроде удалённого письма, сервер при этом работает. */
+  protected reportServerResponse(response: { status?: number, statusText?: string, json?: any }): void {
+    let status = Number(response?.status) || 0;
+    if ([502, 503, 504].includes(status) || (status >= 500 && !response.json)) {
+      let ex = new Error(`HTTP ${status} ${response.statusText ?? ""}`.trim());
+      (ex as any).httpCode = status;
+      this.connectionStatus.reportFailure(ex);
+    } else {
+      this.connectionStatus.reportSuccess();
+    }
+  }
+
   async callOWAShared(url: string, options: RequestInit, throttleRetries = 0, sessionRetried = false) {
     if (!this.hasLoggedIn) {
       throw new LoginError(null, gt`Please login`);
@@ -2095,11 +2112,13 @@ export class OWAAccount extends ExchangeMailAccount {
         response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
       }
     } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
       this.scheduleNetworkRecovery(ex);
       throw ex;
     } finally {
       lock.release();
     }
+    this.reportServerResponse(response);
     if (this.isMailboxSessionLimitError(response)) {
       let headers = options.headers as Record<string, string>;
       let mailbox = headers?.["x-owa-explicitlogonuser"]
