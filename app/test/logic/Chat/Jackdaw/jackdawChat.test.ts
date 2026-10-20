@@ -15,6 +15,7 @@ import {
 } from "../../../../logic/Chat/Jackdaw/JackdawChatCrypto";
 import { parseChatPayload } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
 import { JackdawChatAccount } from "../../../../logic/Chat/Jackdaw/JackdawChatAccount";
+import { JackdawChatConnectionError } from "../../../../logic/Chat/Jackdaw/chatConnectionProblem";
 import type { JackdawChatRoom } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
 import { DummyChatStorage } from "../../../../logic/Chat/SQL/DummyChatStorage";
 import { DeliveryStatus } from "../../../../logic/Chat/ChatMessage";
@@ -171,13 +172,28 @@ class FakeServer {
 
 class FakeClient {
   isOnline = true;
+  status = "online";
+  lastError: string | null = null;
+  offlineSince: number | null = null;
   deviceId = "";
   listeners = new Set<(m: any) => void>();
+  observers = new Set<(o: any) => void>();
+  /** Что делает `restart()`: по умолчанию ничего */
+  onRestart: () => void = () => {};
   waiters: { match: (m: any) => boolean; resolve: (m: any) => void; reject: (e: Error) => void }[] = [];
   counter = 0;
   constructor(public server: FakeServer, public verifiedEmails: string[]) {}
   addListener(fn: (m: any) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  subscribe(fn: (o: any) => void) { fn(this); return () => {}; }
+  subscribe(fn: (o: any) => void) { fn(this); this.observers.add(fn); return () => this.observers.delete(fn); }
+  /** Состояние соединения, как у настоящего клиента: наблюдатели узнают о смене */
+  setStatus(status: string, lastError: string | null = null, offlineSince: number | null = null) {
+    this.status = status;
+    this.isOnline = status == "online";
+    this.lastError = lastError;
+    this.offlineSince = offlineSince;
+    for (let fn of [...this.observers]) fn(this);
+  }
+  restart() { this.onRestart(); }
   nextRequestID(prefix: string) { return `${prefix}-${++this.counter}`; }
   send(msg: any) { queueMicrotask(() => this.server.handle(this, JSON.parse(JSON.stringify(msg)))); }
   request(msg: any, match: (m: any) => boolean) {
@@ -632,6 +648,79 @@ describe("надёжность чата", () => {
     await alice.account.devicesFor(["alice@example.com"], true);
     expect(alice.account.keyWarnings).toHaveLength(1);
     expect(alice.account.keyWarnings[0]).toMatch(/Your address alice@example.com/);
+  });
+
+  test("отказ сервера без причины: честный текст, «Переподключить» входит заново и досылает неотправленное", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    alice.client.setStatus("rejected");
+    expect(alice.account.isOnline).toBe(false);
+    let msg = room.newMessage();
+    msg.text = "после отказа";
+    let error = await room.sendMessage(msg).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("rejected");
+    expect(error.canReconnect).toBe(true);
+    expect(error.message).toMatch(/refused the connection/);
+    expect(error.message).not.toMatch(/No connection/);
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Failed);
+
+    let restarts = 0;
+    alice.client.onRestart = () => {
+      restarts++;
+      alice.client.setStatus("connecting");
+      queueMicrotask(() => {
+        alice.client.setStatus("online");
+        // Сервер приветствует, чат регистрирует устройство заново — как после настоящего входа
+        alice.client.emit({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+      });
+    };
+    await alice.account.reconnect();
+    expect(restarts).toBe(1);
+    expect(alice.account.isOnline).toBe(true);
+    await settle();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    expect(bobRoom.messages.contents.map((m: any) => m.text)).toEqual(["после отказа"]);
+  });
+
+  test("«Переподключить» без связи: ошибка с причиной и временем, сообщение ждёт", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let since = Date.now() - 60_000;
+    alice.client.setStatus("offline", null, since);
+    let msg = room.newMessage();
+    msg.text = "ждёт";
+    await expect(room.sendMessage(msg)).rejects.toThrow(/No connection to the Jackdaw server since/);
+    alice.client.onRestart = () => {
+      alice.client.setStatus("connecting", null, since);
+      queueMicrotask(() => alice.client.setStatus("offline", "The Jackdaw server could not process the request. Try again later.", since));
+    };
+    let error = await alice.account.reconnect().catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("offline");
+    expect(error.message).toMatch(/since .+ Server response: The Jackdaw server could not process/);
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Failed);
+  });
+
+  test("«Переподключить» ждёт не дольше заданного и называет состояние", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.client.setStatus("offline");
+    alice.client.onRestart = () => alice.client.setStatus("connecting");
+    let error = await alice.account.reconnect(20).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("connecting");
+  });
+
+  test("без Pro на устройстве — своя причина, а не «нет связи»", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.client.setStatus("disabled");
+    let error = await alice.account.devicesFor(["bob@example.com"], true).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(["no-pro", "checking-pro"]).toContain(error.kind);
+    expect(error.message).not.toMatch(/No connection/);
   });
 
   test("без связи и без подтверждённого адреса — разные ошибки", async () => {

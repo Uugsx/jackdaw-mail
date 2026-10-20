@@ -23,7 +23,8 @@ export type JackdawCallStatus =
   | "online"
   /** Сеть или сервис недоступны, идёт переподключение */
   | "offline"
-  /** Сервис отклонил лицензию: переподключаться бессмысленно до её смены */
+  /** Сервис отклонил лицензию: сам клиент не переподключается до её смены, возврата сети,
+   * пробуждения системы или кнопки «Переподключить» (`restart()`) */
   | "rejected";
 
 /** Минимум WebSocket, который нужен клиенту. Позволяет тестам подставить свой транспорт. */
@@ -74,8 +75,15 @@ const LOOKUP_DEBOUNCE_MS = 250;
 const LOOKUP_BATCH = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const HEARTBEAT_MS = 25_000;
-/** Сервис закрывает соединение кодом 1008 при отзыве лицензии или нарушении протокола. */
-const POLICY_VIOLATION_CLOSE = 1008;
+/** Сколько ждать `welcome` после начала подключения: иначе молчащий сервер оставил бы клиент «подключающимся» навсегда */
+const HANDSHAKE_TIMEOUT_MS = 20_000;
+/**
+ * Ошибки входа, которыми сервис действительно отказывает этому устройству (call_server/calls.py,
+ * `CredentialVerifier.verify`): без новой лицензии повторять вход бессмысленно.
+ * Остальные (`service_unavailable`, `rate_limited`, `internal_error`) временные.
+ * Закрытие кодом 1008 без `error` — тоже не отказ: так сервер закрывает и «slow consumer», и «closed by server».
+ */
+const REJECTING_HELLO_ERRORS = new Set(["license_inactive", "device_not_activated", "invalid_credential"]);
 
 interface Waiter {
   match(message: JackdawServerMessage): boolean;
@@ -90,6 +98,9 @@ export class JackdawCallClient extends Observable {
   /** Последняя ошибка сервиса, для показа в настройках */
   @notifyChangedProperty
   lastError: string | null = null;
+  /** С какого момента нет связи (`now()`, мс), null — связь есть или клиент выключен */
+  @notifyChangedProperty
+  offlineSince: number | null = null;
   /** Адреса, подтверждённые для звонков и сейчас зарегистрированные на сервере */
   @notifyChangedProperty
   verifiedEmails: string[] = [];
@@ -103,6 +114,7 @@ export class JackdawCallClient extends Observable {
   protected attempt = 0;
   protected reconnectTimer: unknown = null;
   protected heartbeatTimer: unknown = null;
+  protected handshakeTimer: unknown = null;
   protected lookupTimer: unknown = null;
   protected readonly lookupQueue = new Set<string>();
   protected readonly reachable = new Map<string, { value: boolean; at: number }>();
@@ -151,15 +163,25 @@ export class JackdawCallClient extends Observable {
     this.reconnectTimer = null;
     this.closeSocket();
     this.status = "disabled";
+    this.offlineSince = null;
     this.verifiedEmails = [];
     this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
   }
 
-  /** После смены лицензии или сети: переподключиться сразу. */
+  /** После смены лицензии или сети, по кнопке «Переподключить»: переподключиться сразу.
+   * Время потери связи сохраняется: пока вход не удался, связи по-прежнему нет. */
   restart(): void {
+    let offlineSince = this.offlineSince;
     this.stop();
+    this.offlineSince = offlineSince;
     this.attempt = 0;
     this.start();
+  }
+
+  /** Связь потеряна: клиент переподключается сам или ждёт `restart()` */
+  protected markOffline(status: "offline" | "rejected"): void {
+    this.offlineSince ??= this.now();
+    this.status = status;
   }
 
   protected connect(): void {
@@ -181,6 +203,13 @@ export class JackdawCallClient extends Observable {
       return;
     }
     this.socket = socket;
+    this.handshakeTimer = this.setTimer(() => {
+      this.handshakeTimer = null;
+      if (this.socket != socket || this.status == "online") return;
+      this.closeSocket();
+      this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
+      this.scheduleReconnect();
+    }, HANDSHAKE_TIMEOUT_MS);
     socket.onopen = () => {
       if (this.socket != socket) return;
       let excluded = this.readExcluded();
@@ -203,24 +232,20 @@ export class JackdawCallClient extends Observable {
     socket.onerror = () => {
       // Подробности придут в onclose; сам браузер не раскрывает причину ошибки.
     };
-    socket.onclose = event => {
+    socket.onclose = () => {
       if (this.socket != socket) return;
       this.socket = null;
-      this.clearTimer(this.heartbeatTimer);
-      this.heartbeatTimer = null;
+      this.clearSocketTimers();
       this.verifiedEmails = [];
       this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
-      if (this.stopped) return;
-      if (this.status == "rejected" || (event as { code?: number })?.code == POLICY_VIOLATION_CLOSE && this.status != "online") {
-        this.status = "rejected";
-        return;
-      }
+      if (this.stopped || this.status == "rejected") return;
+      // Код закрытия не различает отказ и временный сбой: отказ приходит отдельным `error` на `hello`.
       this.scheduleReconnect();
     };
   }
 
   protected scheduleReconnect(): void {
-    this.status = "offline";
+    this.markOffline("offline");
     let delay = reconnectDelay(this.attempt++);
     this.reconnectTimer = this.setTimer(() => this.connect(), delay);
   }
@@ -228,8 +253,7 @@ export class JackdawCallClient extends Observable {
   protected closeSocket(): void {
     let socket = this.socket;
     this.socket = null;
-    this.clearTimer(this.heartbeatTimer);
-    this.heartbeatTimer = null;
+    this.clearSocketTimers();
     if (socket) {
       try {
         socket.close(1000, "client stopped");
@@ -237,6 +261,13 @@ export class JackdawCallClient extends Observable {
         // Соединение уже закрыто.
       }
     }
+  }
+
+  protected clearSocketTimers(): void {
+    this.clearTimer(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    this.clearTimer(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   protected scheduleHeartbeat(): void {
@@ -266,6 +297,9 @@ export class JackdawCallClient extends Observable {
       case "welcome":
         this.attempt = 0;
         this.lastError = null;
+        this.offlineSince = null;
+        this.clearTimer(this.handshakeTimer);
+        this.handshakeTimer = null;
         this.verifiedEmails = message.emails;
         this.forgetUnacceptedProofs(message.emails, message.proofs);
         this.status = "online";
@@ -304,11 +338,17 @@ export class JackdawCallClient extends Observable {
         break;
       case "error":
         if (message.requestType == "hello") {
-          this.status = "rejected";
           this.lastError = serverErrorMessage(message.code);
-          // Сокет закроется сервером или здесь; без новой лицензии повторять вход бессмысленно.
+          // Сокет закроется сервером или здесь.
           this.closeSocket();
+          this.verifiedEmails = [];
           this.failAllWaiters(new JackdawCallServiceError(message.code));
+          if (REJECTING_HELLO_ERRORS.has(message.code)) {
+            // Без новой лицензии повторять вход бессмысленно.
+            this.markOffline("rejected");
+          } else if (!this.stopped) {
+            this.scheduleReconnect();
+          }
           return;
         }
         if (message.callId) {

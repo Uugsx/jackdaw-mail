@@ -1,10 +1,10 @@
 /**
  * Точка входа звонков Jackdaw ↔ Jackdaw: один клиент сигналинга на приложение.
  */
-import { JackdawCallClient } from "./JackdawCallClient";
+import { JackdawCallClient, type JackdawCallStatus } from "./JackdawCallClient";
 import { JackdawCall, JackdawCallAccount } from "./JackdawCall";
 import { callServiceURL, normalizeCallEmail, type JackdawServerMessage } from "./JackdawCallProtocol";
-import { getProCallCredential, proEntitlement, refreshProEntitlement } from "../../Billing/ProEntitlement";
+import { getProCallCredential, proEntitlement, refreshProEntitlement, type ProCallCredential } from "../../Billing/ProEntitlement";
 import { BILLING_LICENSE_API_URL } from "../../Billing/Billing";
 import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
@@ -12,6 +12,7 @@ import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
 import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
 import { UserError } from "../../util/util";
+import { getComputerOn, type ComputerOn } from "../../util/backend-wrapper";
 import { gt } from "../../../l10n/l10n";
 
 /** Статусы entitlement, при которых сервис звонков примет устройство */
@@ -93,35 +94,76 @@ export function getJackdawCallAccount(): JackdawCallAccount {
 
 let stopWatching: (() => void) | null = null;
 
+/** Состояния, из которых стоит переподключиться сразу, не дожидаясь паузы или новой лицензии */
+const STALLED_STATUSES = new Set<JackdawCallStatus>(["offline", "rejected"]);
+
+/** Отличает учётные данные: новый ключ при том же статусе лицензии тоже требует нового входа */
+function credentialKey(credential: ProCallCredential | null): string {
+  return credential ? `${credential.kind}:${credential.kind == "license" ? credential.licenseKey : ""}` : "";
+}
+
+function computerOnOrNull(): ComputerOn | null {
+  try {
+    return getComputerOn() ?? null;
+  } catch {
+    return null; // Нет связи с процессом приложения (тесты, ранний запуск): остаётся событие `online`
+  }
+}
+
+/**
+ * Сеть вернулась или система проснулась: соединение без связи или с отказом пробует войти сразу.
+ * @param computerOn для тестов
+ * @returns отписка
+ */
+export function watchCallReconnectTriggers(callClient: JackdawCallClient, computerOn = computerOnOrNull()): () => void {
+  let reconnectIfStalled = () => {
+    if (STALLED_STATUSES.has(callClient.status)) {
+      callClient.restart();
+    }
+  };
+  globalThis.addEventListener?.("online", reconnectIfStalled);
+  let wasSleeping = computerOn?.isSleeping ?? false;
+  let stopWake = computerOn?.subscribe(() => {
+    let woke = wasSleeping && !computerOn.isSleeping;
+    wasSleeping = computerOn.isSleeping;
+    if (woke) {
+      reconnectIfStalled();
+    }
+  });
+  return () => {
+    globalThis.removeEventListener?.("online", reconnectIfStalled);
+    stopWake?.();
+  };
+}
+
 /** Подключает звонки и следит за лицензией: при её смене соединение переоткрывается. */
 export function startJackdawCalls(): () => void {
   let callClient = getJackdawCallClient();
   if (!stopWatching) {
     let lastStatus: string | null = null;
+    let lastCredential: string | null = null;
     let unsubscribe = proEntitlement.subscribe(() => {
       let status = proEntitlement.value.status;
-      if (status == lastStatus) return;
+      let credential = credentialKey(getProCallCredential());
+      if (status == lastStatus && credential == lastCredential) return;
       let wasAllowed = lastStatus != null && CALL_ENTITLEMENT_STATUSES.has(lastStatus);
+      let credentialChanged = lastCredential != null && credential != lastCredential;
       lastStatus = status;
+      lastCredential = credential;
       if (CALL_ENTITLEMENT_STATUSES.has(status)) {
         // Смена ключа или переход с пробного на платный тоже меняет учётные данные.
-        wasAllowed ? callClient.start() : callClient.restart();
+        wasAllowed && !credentialChanged ? callClient.start() : callClient.restart();
       } else if (status != "checking") {
         callClient.stop();
       }
     });
-    let onOnline = () => {
-      if (callClient.status == "offline") {
-        callClient.restart();
-      }
-    };
-    globalThis.addEventListener?.("online", onOnline);
+    let stopTriggers = watchCallReconnectTriggers(callClient);
     // Чат идёт по тому же соединению и включается вместе со звонками.
     let stopChat = startJackdawChat(callClient);
     stopWatching = () => {
       unsubscribe();
       stopChat();
-      globalThis.removeEventListener?.("online", onOnline);
+      stopTriggers();
       stopWatching = null;
     };
   }
