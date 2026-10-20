@@ -2,6 +2,7 @@
   <hbox class="top buttons">
     <Button plain
       label={$t`Delete`}
+      tooltip={$t`Delete`}
       onClick={onDelete}
       icon={DeleteIcon}
       />

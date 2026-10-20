@@ -32,7 +32,7 @@
       icon={UploadIcon}
       onClick={chooseFile} />
     {#if customSoundDataURL}
-      <span class="file-name">{customSoundLabel()}</span>
+      <span class="file-name" title={customSoundLabel()}>{customSoundLabel()}</span>
       <Button
         label={$t`Remove custom sound`}
         icon={DeleteIcon}

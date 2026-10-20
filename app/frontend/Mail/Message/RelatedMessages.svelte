@@ -315,7 +315,7 @@
                             <span class="reply-status">{$t`Received message`}</span>
                           {/if}
                           {#if sharedContextLabel(match)}
-                            <span class="identifier">{sharedContextLabel(match)}</span>
+                            <span class="identifier" title={sharedContextLabel(match)}>{sharedContextLabel(match)}</span>
                           {/if}
                         </div>
                       </button>

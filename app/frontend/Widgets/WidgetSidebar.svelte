@@ -2,7 +2,7 @@
   <vbox flex class="widget-panel" class:collapsed={!$widgetsExpanded.value}>
     {#if activeWidget && $widgetsExpanded.value}
       <hbox class="widget-header">
-        <hbox flex class="widget-title font-smallest">{activeWidget.name}</hbox>
+        <hbox flex class="widget-title font-smallest" title={activeWidget.name}>{activeWidget.name}</hbox>
         {#if activeWidget.kind === "web" && activeWidget.url}
           <ButtonMenu label={$t`Panel settings`} boundaryElSel="body" placement="bottom-end">
             <WidgetWebSettingsMenu widget={activeWidget} on:edit={() => openEditDialog(activeWidget)} />

@@ -4,7 +4,7 @@
   on:swiperight={onNextMessage}
   >
   <hbox class="subject-line">
-    <value class="subject">{$message.subject}</value>
+    <value class="subject" title={$message.subject}>{$message.subject}</value>
     <hbox flex />
     <hbox class="subject-tools">
       {#key $message.dbID ?? $message.messageID}

@@ -41,7 +41,10 @@
     </hbox>
   {/if}
   <vbox class="label-box">
-    <hbox class="label font-small">{$account.name}</hbox>
+    <!-- Имя может обрезаться; подсказка строки о связи важнее и не перекрывается. -->
+    <hbox class="label font-small"
+      title={connectionDetails || !$account.isLoggedIn ? undefined : $account.name}
+      >{$account.name}</hbox>
     {#if connectionProblem}
       <hbox class="connection-status font-smallest">{connectionLine}</hbox>
     {/if}

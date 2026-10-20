@@ -1,6 +1,7 @@
 <button type="button" class="mail-list-topic-separator"
   aria-expanded={!collapsed}
   aria-label={`${prefix}: ${displayLabel} (${countLabel})`}
+  title={`${prefix}: ${displayLabel}`}
   on:click|stopPropagation={() => dispatch("toggle")}
   >
   <span class="chevron" class:collapsed>

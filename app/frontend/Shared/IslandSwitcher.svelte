@@ -45,8 +45,21 @@
   .island :global(button:hover) {
     z-index: 1;
   }
+  .island {
+    max-width: 100%;
+    min-width: 0;
+  }
+  /* В узкой панели сжимается только кнопка с подписью: подпись получает
+     многоточие (и подсказку), а кнопки-иконки сохраняют размер. */
+  .island :global(button:has(.label)) {
+    min-width: 0;
+  }
   .island :global(button .label) {
+    display: block;
+    min-width: 0;
     margin-inline-end: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
   .island :global(svg) {

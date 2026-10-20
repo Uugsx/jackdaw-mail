@@ -1,6 +1,6 @@
 <vbox class="smart-views">
   <hbox class="smart-views-header">
-    <hbox class="section-title">{$t`Smart Views`}</hbox>
+    <hbox class="section-title" title={$t`Smart Views`}>{$t`Smart Views`}</hbox>
     <hbox flex />
     <ButtonMenu
       label={$t`Customize smart views`}

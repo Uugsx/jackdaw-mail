@@ -6,6 +6,8 @@ const interactiveSelector = "button, a, select, [role=\"button\"]";
 const showDelayMs = 420;
 const hideAnimationMs = 140;
 const edgeGapPx = 8;
+/** Длиннее — это уже не подпись кнопки, а содержимое; такое не подсказываем. */
+const maxAutoTooltipLength = 200;
 const installedTooltipHiders = new Set<() => void>();
 
 /** Скрывает открытые делегированные подсказки после программного действия. */
@@ -100,7 +102,46 @@ export function installTooltips(doc: Document = document): () => void {
     if (text) {
       return text;
     }
-    return isInteractive(element) ? textValue(element.getAttribute("aria-label")) : null;
+    if (!isInteractive(element)) {
+      return null;
+    }
+    text = textValue(element.getAttribute("aria-label"));
+    if (text) {
+      return text;
+    }
+    // Подпись кнопки обрезана узкой панелью: показываем её целиком. Только для
+    // самих кнопок: у строк списков с role="button" текст складывался бы из всех ячеек.
+    if (element.tagName != "BUTTON" || !isTextTruncated(element)) {
+      return null;
+    }
+    const visibleText = normalizedText(element.textContent);
+    return visibleText && visibleText.length <= maxAutoTooltipLength ? visibleText : null;
+  }
+
+  /**
+   * Есть ли внутри элемента текст, обрезанный многоточием, ограничением строк
+   * или переполнением. Прокручиваемые области обрезкой не считаются.
+   */
+  function isTextTruncated(element: Element): boolean {
+    const candidates = [element, ...element.querySelectorAll("*")];
+    for (const candidate of candidates) {
+      if (!(candidate instanceof view.HTMLElement) || !candidate.textContent?.trim()) {
+        continue;
+      }
+      const overflowsX = candidate.scrollWidth > candidate.clientWidth + 1;
+      const overflowsY = candidate.scrollHeight > candidate.clientHeight + 1;
+      if (!overflowsX && !overflowsY) {
+        continue;
+      }
+      const style = view.getComputedStyle(candidate);
+      const clips = (value: string) => value == "hidden" || value == "clip";
+      const clipsX = overflowsX && clips(style.overflowX || style.overflow);
+      const clipsY = overflowsY && clips(style.overflowY || style.overflow);
+      if (clipsX || clipsY) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function normalizedText(value: string | null): string | null {
@@ -113,7 +154,9 @@ export function installTooltips(doc: Document = document): () => void {
       return false;
     }
     const visibleText = normalizedText(element.textContent);
-    return visibleText != null && visibleText == normalizedText(text);
+    // Обрезанная подпись не дублирует подсказку: видна только её часть.
+    return visibleText != null && visibleText == normalizedText(text) &&
+      !isTextTruncated(element);
   }
 
   function findTooltipTarget(eventTarget: EventTarget | null): TooltipTarget {

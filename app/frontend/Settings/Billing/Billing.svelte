@@ -621,4 +621,26 @@
       flex-direction: column;
     }
   }
+
+  /* Справа от списка разделов настроек места меньше, чем ширина окна. */
+  @container settings-page (max-width: 720px) {
+    .access-layout,
+    .plans,
+    .feature-list li {
+      grid-template-columns: 1fr;
+    }
+
+    .activation-row {
+      flex-direction: column;
+    }
+
+    :global(.activation-button) {
+      align-self: flex-start;
+    }
+
+    .trial-panel {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
 </style>
