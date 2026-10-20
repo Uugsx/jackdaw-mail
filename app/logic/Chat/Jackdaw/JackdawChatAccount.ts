@@ -25,10 +25,12 @@ import {
   type RemoteDevice,
 } from "./JackdawChatCrypto";
 import { ciphertextBytes, parseChatPayload, type ChatPayload, type ChatRoomRef, MAX_ACK_IDS, MAX_CIPHERTEXT_BYTES, MAX_GROUP_MEMBERS } from "./JackdawChatProtocol";
-import { JackdawCallServiceError, type JackdawCallClient } from "../../Meet/Jackdaw/JackdawCallClient";
+import { JackdawCallServiceError, type JackdawCallClient, type JackdawCallStatus } from "../../Meet/Jackdaw/JackdawCallClient";
 import type { JackdawServerMessage } from "../../Meet/Jackdaw/JackdawCallProtocol";
 import { normalizeCallEmail } from "../../Meet/Jackdaw/JackdawCallProtocol";
 import { getPassword, setPassword } from "../../Auth/passwordLocalStorage";
+import { proEntitlement } from "../../Billing/ProEntitlement";
+import { chatConnectionProblem, JackdawChatConnectionError, type ChatConnectionProblem } from "./chatConnectionProblem";
 import { notifyChangedProperty } from "../../util/Observable";
 import { UserError, assert } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
@@ -62,6 +64,11 @@ export class JackdawChatPerson extends ChatPersonUID {
     return !!person?.emailAddresses.find(entry => entry.value?.toLowerCase() == email);
   }
 }
+
+/** Сколько кнопка «Переподключить» ждёт входа и регистрации устройства */
+const RECONNECT_WAIT_MS = 30_000;
+/** Состояния, в которых переподключение ещё идёт */
+const WAITING_PROBLEMS = new Set<ChatConnectionProblem["kind"]>(["connecting", "registering"]);
 
 export class JackdawChatAccount extends ChatAccount {
   readonly protocol: string = JACKDAW_CHAT_PROTOCOL;
@@ -310,22 +317,64 @@ export class JackdawChatAccount extends ChatAccount {
     }
   }
 
-  /** Соединение с сервером для запроса. Нет связи или чат не подключён — понятная ошибка. */
+  /** Почему чат сейчас не на связи. null — можно отправлять. */
+  connectionProblem(): ChatConnectionProblem | null {
+    let client = this.client;
+    let status: JackdawCallStatus | null = !client ? null
+      : client.isOnline ? "online"
+      : client.status && client.status != "online" ? client.status : "offline";
+    return chatConnectionProblem({
+      status,
+      proChecking: proEntitlement.value.status == "checking",
+      proMessage: proEntitlement.value.message,
+      lastError: client?.lastError ?? null,
+      offlineSince: client?.offlineSince != null ? new Date(client.offlineSince) : null,
+      hasVerifiedEmail: !!client?.verifiedEmails.length,
+      isRegistered: this.registeredEmails.length > 0,
+    });
+  }
+
+  /** Соединение с сервером для запроса. Нет связи или чат не подключён — понятная ошибка
+   * с причиной; баннер с ней предлагает переподключиться. */
   requireOnline(): JackdawCallClient {
-    if (!this.client?.isOnline) {
-      // Лицензию отклонили — переподключение не поможет, говорим почему
-      if (this.client?.status == "rejected" && this.client.lastError) {
-        throw new UserError(this.client.lastError);
+    let problem = this.connectionProblem();
+    if (problem) {
+      throw new JackdawChatConnectionError(problem, this);
+    }
+    return this.client!; // без соединения `connectionProblem()` вернул бы причину
+  }
+
+  /**
+   * Кнопка «Переподключить»: входит заново сразу, без паузы и после отказа.
+   * Неотправленное досылается после регистрации устройства, как при любом переподключении (`onReconnected`).
+   * @param timeoutMs сколько ждать связи
+   * @throws JackdawChatConnectionError с причиной, если связь не появилась
+   */
+  async reconnect(timeoutMs = RECONNECT_WAIT_MS): Promise<void> {
+    this.client?.restart();
+    await new Promise<void>((resolve, reject) => {
+      let done = false;
+      let stops: (() => void)[] = [];
+      let finish = (problem: ChatConnectionProblem | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        // Не во время рассылки наблюдателям: отписка посреди неё пропустила бы следующего наблюдателя
+        queueMicrotask(() => stops.forEach(stop => stop()));
+        problem ? reject(new JackdawChatConnectionError(problem, this)) : resolve();
+      };
+      let check = () => {
+        let problem = this.isOnline ? null : this.connectionProblem();
+        // Подключение и регистрация устройства идут: ждём их результата
+        if (problem && WAITING_PROBLEMS.has(problem.kind)) return;
+        finish(problem);
+      };
+      let timer = setTimeout(() => finish(this.connectionProblem()), timeoutMs);
+      stops.push(this.subscribe(check));
+      if (this.client) {
+        stops.push(this.client.subscribe(check));
       }
-      throw new UserError(gt`No connection to the Jackdaw server. Unsent messages will be sent automatically when the connection is restored.`);
-    }
-    if (!this.client.verifiedEmails.length) {
-      throw new UserError(gt`The chat is not connected. Confirm your address in Settings → Jackdaw Pro → Calls and chat.`);
-    }
-    if (!this.registeredEmails.length) {
-      throw new UserError(gt`The chat is still connecting. Try again in a moment.`);
-    }
-    return this.client;
+    });
   }
 
   // --- ключи устройств --------------------------------------------------------

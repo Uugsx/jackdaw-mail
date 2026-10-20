@@ -296,6 +296,139 @@ describe("клиент сигналинга", () => {
     expect(reconnected).toEqual([["call-0001", false], ["call-0002", true]]);
   });
 
+  test("закрытие 1008 до welcome без error не останавливает клиент: переподключение с паузой", () => {
+    // Сервер закрывает 1008 и при «slow consumer» / «closed by server» — это не отказ в лицензии.
+    client.start();
+    socket().open();
+    socket().drop(1008);
+    expect(client.status).toBe("offline");
+    expect(client.lastError).toBeNull();
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+  });
+
+  test("повторные закрытия 1008 до welcome — паузы растут, клиент не сдаётся", () => {
+    client.start();
+    for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length + 2; attempt++) {
+      socket().open();
+      socket().drop(1008);
+      expect(client.status).toBe("offline");
+      timers.advance(reconnectDelay(attempt));
+    }
+    expect(sockets).toHaveLength(RECONNECT_DELAYS_MS.length + 3);
+  });
+
+  test("перезапуск сервера: закрытие 1001 и обрыв до welcome ведут к переподключению", () => {
+    connectOnline();
+    socket().drop(1001);
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    // Сервис ещё не поднялся: прокси обрывает соединение до открытия.
+    socket().drop(1006);
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[1]);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    expect(sockets).toHaveLength(3);
+  });
+
+  test("временная ошибка входа (сервис лицензий недоступен) — переподключение с причиной", () => {
+    for (let code of ["service_unavailable", "rate_limited", "internal_error"]) {
+      sockets = [];
+      client = makeClient();
+      client.start();
+      socket().open();
+      socket().receive({ type: "error", code, message: "x", requestType: "hello" });
+      expect(client.status, code).toBe("offline");
+      expect(client.lastError, code).toBeTruthy();
+      expect(socket().closed, code).toBeTruthy();
+      timers.advance(RECONNECT_DELAYS_MS[0]);
+      expect(sockets, code).toHaveLength(2);
+      socket().open();
+      socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+      expect(client.status, code).toBe("online");
+      expect(client.lastError, code).toBeNull();
+      client.stop();
+    }
+  });
+
+  test("отказ устройству или неверные учётные данные — тоже окончательный отказ", () => {
+    for (let code of ["device_not_activated", "invalid_credential"]) {
+      sockets = [];
+      client = makeClient();
+      client.start();
+      socket().open();
+      socket().receive({ type: "error", code, message: "x", requestType: "hello" });
+      expect(client.status, code).toBe("rejected");
+      timers.advance(120_000);
+      expect(sockets, code).toHaveLength(1);
+    }
+  });
+
+  test("отзыв лицензии у подключённого клиента: error на hello, затем закрытие 1008 — отказ", () => {
+    connectOnline();
+    socket().receive({ type: "error", code: "license_inactive", message: "x", requestType: "hello" });
+    socket().drop(1008);
+    expect(client.status).toBe("rejected");
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  test("после отказа restart() подключается снова", () => {
+    client.start();
+    socket().open();
+    socket().receive({ type: "error", code: "license_inactive", message: "x", requestType: "hello" });
+    expect(client.status).toBe("rejected");
+    client.restart();
+    expect(client.status).toBe("connecting");
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    expect(client.lastError).toBeNull();
+  });
+
+  test("сервер не отвечает на hello — соединение пересоздаётся по таймауту", () => {
+    client.start();
+    socket().open();
+    expect(client.status).toBe("connecting");
+    timers.advance(20_000);
+    expect(client.status).toBe("offline");
+    expect(sockets[0].closed).toBeTruthy();
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    // После входа таймаут не срабатывает.
+    let count = sockets.length;
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(count);
+    expect(client.status).toBe("online");
+  });
+
+  test("время потери связи: с первого обрыва, не сбрасывается кнопкой, сбрасывается после входа", () => {
+    timers.now = 1_000_000;
+    connectOnline();
+    expect(client.offlineSince).toBeNull();
+    socket().drop();
+    expect(client.offlineSince).toBe(1_000_000);
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    socket().drop();
+    expect(client.offlineSince).toBe(1_000_000);
+    client.restart();
+    expect(client.offlineSince).toBe(1_000_000);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.offlineSince).toBeNull();
+    client.stop();
+    expect(client.offlineSince).toBeNull();
+  });
+
   test("stop() не переподключается", () => {
     connectOnline();
     client.stop();
