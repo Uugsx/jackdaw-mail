@@ -10,6 +10,7 @@ import { RawFilesAttachment } from "./Store/RawFilesAttachment";
 import { EMailProcessorList, ProcessingStartOn } from "./EMailProcessor";
 import type { ExtraData } from "./ExtraData";
 import type { SMLData } from "./SML/SMLData";
+import type { FollowUpChoice } from "./FollowUp/FollowUpReminder";
 import type { PublicKey } from "./Encryption/PublicKey";
 import { Event } from "../Calendar/Event";
 import { InvitationMessage, type iCalMethod } from "../Calendar/Invitation/InvitationStatus";
@@ -69,6 +70,9 @@ export class EMail extends Message {
   importanceLevel: MailImportanceLevel = "normal";
   /** Пользователь удалил подпись в редакторе: при отправке её не возвращаем. */
   signatureRemovedByUser = false;
+  /** For composer/send only: «Напомнить, если не ответят». Not persisted. */
+  @notifyChangedProperty
+  followUpReminder: FollowUpChoice | null = null;
   /** Request a read receipt when sending (OWA/EWS + MDN header). */
   @notifyChangedProperty
   requestReadReceipt = false;

@@ -594,10 +594,31 @@ export class ComposeActions {
     void playNotificationSound("mail-outgoing");
 
     await this.markComposeSourceFlags();
+    await this.startFollowUpAfterSend(account.dbID);
 
     this.email.folder = previousFolder;
     this.deleteDrafts(previousDrafts)
       .catch(backgroundError);
+  }
+
+  /** Письмо уже ушло: ошибка напоминания не должна выглядеть как ошибка отправки. */
+  protected async startFollowUpAfterSend(accountID: number | string | null): Promise<void> {
+    let choice = this.email.followUpReminder;
+    if (!choice) {
+      return;
+    }
+    try {
+      // Динамически: модуль тянет mail.db, а ComposeActions загружается вместе с EMail.
+      let { startFollowUpForEMail } = await import("./FollowUp/trackFollowUp");
+      await startFollowUpForEMail(this.email, choice, {
+        accountId: accountID,
+        sentAt: new Date(),
+        emailId: null,
+      });
+      this.email.followUpReminder = null;
+    } catch (ex) {
+      backgroundError(ex);
+    }
   }
 
   async saveAsDraft(): Promise<void> {

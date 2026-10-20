@@ -106,6 +106,7 @@
       requestReadReceipt={mail.requestReadReceipt}
       requestDeliveryReceipt={mail.requestDeliveryReceipt}
       isFlagged={mail.isStarred}
+      followUpReminder={$mail.followUpReminder}
       {showEmojis}
       spellcheckOn={$spellcheckEnabled.value}
       {editorZoom}
@@ -119,6 +120,7 @@
       on:toggleReadReceipt={() => mail.requestReadReceipt = !mail.requestReadReceipt}
       on:toggleDeliveryReceipt={() => mail.requestDeliveryReceipt = !mail.requestDeliveryReceipt}
       on:toggleFlag={() => mail.isStarred = !mail.isStarred}
+      on:setFollowUp={event => mail.followUpReminder = event.detail}
       on:saveDraft={() => catchErrors(onSaveDraft)}
       on:toggleEmojis={() => showEmojis = !showEmojis}
       on:toggleSpellcheck={() => spellcheckEnabled.value = !spellcheckEnabled.value}

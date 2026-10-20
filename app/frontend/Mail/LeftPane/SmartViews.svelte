@@ -32,20 +32,45 @@
 
   {#if expanded}
     {#each orderedViews as view (view.id)}
-      <button type="button" class="smart-view"
-        class:active={isActive(view.id, $quickSearch)}
-        title={view.label()}
-        aria-pressed={isActive(view.id, $quickSearch)}
-        disabled={!folder}
-        on:contextmenu={(event) => openViewMenu(event, view.id)}
-        on:click={() => catchErrors(() => activate(view.id))}>
-        <svelte:component this={view.icon} size="14px" />
-        <span>{view.label()}</span>
-        <hbox flex />
-        {#if isActive(view.id, $quickSearch)}
-          <CheckIcon size="13px" />
+      {#if view.id == "awaiting-reply"}
+        <!-- Не фильтр папки, а список отслеживаемых писем всех ящиков со сроками -->
+        <button type="button" class="smart-view"
+          class:active={$awaitingReplyExpanded.value}
+          title={view.label()}
+          aria-expanded={$awaitingReplyExpanded.value}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => awaitingReplyExpanded.value = !awaitingReplyExpanded.value}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if $followUpSnapshot.reminders.length}
+            <span class="count" class:overdue={awaitingOverdueCount > 0}
+              title={awaitingOverdueCount > 0
+                ? $t`${awaitingOverdueCount} overdue of ${$followUpSnapshot.reminders.length}`
+                : null}>
+              {awaitingOverdueCount > 0 ? awaitingOverdueCount : $followUpSnapshot.reminders.length}
+            </span>
+          {/if}
+        </button>
+        {#if $awaitingReplyExpanded.value}
+          <AwaitingReplyList />
         {/if}
-      </button>
+      {:else}
+        <button type="button" class="smart-view"
+          class:active={isActive(view.id, $quickSearch)}
+          title={view.label()}
+          aria-pressed={isActive(view.id, $quickSearch)}
+          disabled={!folder}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => catchErrors(() => activate(view.id))}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if isActive(view.id, $quickSearch)}
+            <CheckIcon size="13px" />
+          {/if}
+        </button>
+      {/if}
     {/each}
   {/if}
 </vbox>
@@ -81,6 +106,11 @@
   import MailIcon from "lucide-svelte/icons/mail";
   import FlagIcon from "lucide-svelte/icons/flag";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
+  import HourglassIcon from "lucide-svelte/icons/hourglass";
+  import AwaitingReplyList from "../FollowUp/AwaitingReplyList.svelte";
+  import { followUpSnapshot } from "../FollowUp/followUpReminders";
+  import { getLocalStorage } from "../../Util/LocalStorage";
+  import { onMount } from "svelte";
   import CheckIcon from "lucide-svelte/icons/check";
   import ChevronUpIcon from "lucide-svelte/icons/chevron-up";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
@@ -122,7 +152,17 @@
     { id: "unread", label: () => $t`Unread`, icon: MailIcon },
     { id: "starred", label: () => $t`Flagged`, icon: FlagIcon },
     { id: "attachments", label: () => $t`Attachments`, icon: AttachmentIcon },
+    { id: "awaiting-reply", label: () => $t`Waiting for a reply`, icon: HourglassIcon },
   ];
+
+  const awaitingReplyExpanded = getLocalStorage("mail.smart-views.awaiting-reply.expanded", false);
+  let minuteTick = Date.now();
+  onMount(() => {
+    let interval = setInterval(() => minuteTick = Date.now(), 60_000);
+    return () => clearInterval(interval);
+  });
+  $: awaitingOverdueCount = $followUpSnapshot.reminders
+    .filter(reminder => reminder.dueAt.getTime() <= minuteTick).length;
 
   let contextMenu: ContextMenu;
   let contextViewId: SmartViewId | null = null;
@@ -365,5 +405,22 @@
   }
   .smart-view:disabled {
     opacity: 0.45;
+  }
+  .count {
+    flex: 0 0 auto;
+    min-width: 18px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--leftbar-fg) 12%, transparent);
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .count.overdue {
+    background: var(--danger-fg, #c62828);
+    color: #fff;
+    font-weight: 600;
   }
 </style>

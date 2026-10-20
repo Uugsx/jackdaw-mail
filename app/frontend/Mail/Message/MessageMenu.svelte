@@ -105,6 +105,14 @@
     {/each}
   </SubMenu>
 {/if}
+{#if canFollowUpMessage(message)}
+  <SubMenu label={$t`Remind me if nobody replies`} icon={BellRingIcon}>
+    <FollowUpMenuItems
+      dueAt={followUp?.dueAt ?? null}
+      onSelect={choice => setFollowUpForMessage(message, choice)}
+      onClear={() => followUp ? cancelFollowUp(followUp) : undefined} />
+  </SubMenu>
+{/if}
 <MenuItem
   onClick={toggleImportant}
   label={$message.isImportant ? $t`Mark as not important` : $t`Mark as important`}
@@ -196,10 +204,21 @@
   // #endif
 
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import FollowUpMenuItems from "../FollowUp/FollowUpMenuItems.svelte";
+  import BellRingIcon from "lucide-svelte/icons/bell-ring";
+  import {
+    cancelFollowUp,
+    canFollowUpMessage,
+    findFollowUpForMessage,
+    followUpSnapshot,
+    setFollowUpForMessage,
+  } from "../FollowUp/followUpReminders";
 
   export let message: EMail;
   export let printE: Print | null = null;
   export let onMove: (() => void) | null = null;
+
+  $: followUp = findFollowUpForMessage($followUpSnapshot.reminders, message);
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
