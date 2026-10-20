@@ -4,7 +4,13 @@ import { normalizeRelatedSubject } from "../../logic/Mail/RelatedEMail";
 import { getMailDayGroupLabel, getMailListGroupKey } from "../Util/date";
 import { gt } from "../../l10n/l10n";
 import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
+import { writable } from "svelte/store";
 import { messagesRepresentSameMail } from "./mailReadActions";
+import {
+  buildAlertIncidents,
+  isAlertIncidentActive,
+  type AlertIncident,
+} from "../../logic/Mail/AlertIncident";
 
 export type MailListDayRow = {
   kind: "day";
@@ -34,9 +40,37 @@ export type MailListMessageRow = {
   kind: "message";
   id: string;
   message: EMail;
+  /** Письмо раскрытой карточки инцидента */
+  incidentID?: string;
 };
 
-export type MailListRow = MailListDayRow | MailListTopicRow | MailListSenderRow | MailListMessageRow;
+/** Карточка инцидента: однотипные письма-алерты папки алертов */
+export type MailListIncidentRow = {
+  kind: "incident";
+  id: string;
+  incident: AlertIncident;
+  expanded: boolean;
+};
+
+export type MailListRow = MailListDayRow | MailListTopicRow | MailListSenderRow | MailListMessageRow | MailListIncidentRow;
+
+/** Режим «папка алертов» для списка писем */
+export interface MailListIncidentMode {
+  quietMs: number;
+  activeOnly: boolean;
+  patterns?: readonly RegExp[];
+  closedAt?: (key: string) => number | null | undefined;
+  now?: () => number;
+}
+
+export interface MailListIncidentSummary {
+  total: number;
+  active: number;
+}
+
+/** Таймер не дольше суток: статус «затихло» пересчитываем к нужному моменту */
+const kMaxIncidentTimerMs = 24 * 60 * 60 * 1000;
+const kMinIncidentTimerMs = 1000;
 
 const subjectPrefixPattern = /^(?:(?:re|fw|fwd|aw|ответ|пересылка)\s*:\s*)+/iu;
 
@@ -201,6 +235,82 @@ export function buildMailListRows(
   return rows;
 }
 
+function incidentRowID(incident: AlertIncident): string {
+  return `incident:${incident.key}`;
+}
+
+function sortIncidents(incidents: AlertIncident[], sort: MailListSort): AlertIncident[] {
+  switch (sort) {
+  case "date-asc":
+    return incidents.sort((a, b) => a.lastEventAt - b.lastEventAt || compareText(a.label, b.label));
+  case "sender":
+    return incidents.sort((a, b) => compareText(a.senderLabel.toLowerCase(), b.senderLabel.toLowerCase()) ||
+      b.lastEventAt - a.lastEventAt);
+  case "subject":
+    return incidents.sort((a, b) => compareText(a.label.toLowerCase(), b.label.toLowerCase()) ||
+      b.lastEventAt - a.lastEventAt);
+  default:
+    // buildAlertIncidents уже вернул новые первыми
+    return incidents;
+  }
+}
+
+/**
+ * Строки папки алертов: карточка на инцидент, под раскрытой карточкой — её
+ * письма. Без заголовков дней: карточка сама показывает первое и последнее
+ * срабатывание.
+ */
+export function buildAlertIncidentRows(
+  messages: readonly EMail[],
+  mode: MailListIncidentMode,
+  expandedIncidentIds: ReadonlySet<string> = new Set(),
+  sort: MailListSort = "date-desc",
+): { rows: MailListRow[]; nextTransitionAt: number | null; summary: MailListIncidentSummary } {
+  let incidents = buildAlertIncidents(messages, {
+    now: mode.now?.() ?? Date.now(),
+    quietMs: mode.quietMs,
+    patterns: mode.patterns,
+    closedAt: mode.closedAt,
+  });
+  let rows: MailListRow[] = [];
+  let nextTransitionAt: number | null = null;
+  let summary: MailListIncidentSummary = { total: incidents.length, active: 0 };
+  for (let incident of sortIncidents(incidents, sort)) {
+    if (incident.nextTransitionAt != null) {
+      nextTransitionAt = Math.min(nextTransitionAt ?? Infinity, incident.nextTransitionAt);
+    }
+    if (isAlertIncidentActive(incident)) {
+      summary.active++;
+    }
+    if (mode.activeOnly && !isAlertIncidentActive(incident)) {
+      continue;
+    }
+    let id = incidentRowID(incident);
+    let expanded = expandedIncidentIds.has(id);
+    rows.push({ kind: "incident", id, incident, expanded });
+    if (expanded) {
+      for (let message of incident.messages) {
+        rows.push({ kind: "message", id: `msg:${messageRowID(message)}`, message, incidentID: id });
+      }
+    }
+  }
+  return { rows, nextTransitionAt, summary };
+}
+
+/** Письма строки: у карточки инцидента — все письма группы. */
+export function mailListRowMessages(row: MailListRow | null | undefined): EMail[] {
+  if (!row) {
+    return [];
+  }
+  if (row.kind == "message") {
+    return [row.message];
+  }
+  if (row.kind == "incident") {
+    return row.incident.messages;
+  }
+  return [];
+}
+
 /** Письмо с заранее посчитанными ключами сортировки */
 type MailSortItem = {
   message: EMail;
@@ -255,9 +365,14 @@ function senderName(email: EMail): string {
  */
 export class MailListRows {
   readonly rows = new ArrayColl<MailListRow>();
+  /** Число инцидентов и активных из них; null — обычный список */
+  readonly incidentSummary = writable<MailListIncidentSummary | null>(null);
   protected source: Collection<EMail> | null = null;
   protected sort: MailListSort = "date-desc";
   protected collapsedGroupIds = new Set<string>();
+  protected expandedIncidentIds = new Set<string>();
+  protected incidentMode: MailListIncidentMode | null = null;
+  protected incidentTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly observer: CollectionObserver<EMail>;
 
   constructor() {
@@ -282,17 +397,49 @@ export class MailListRows {
       source?.registerObserver(this.observer);
       this.source = source;
       this.collapsedGroupIds.clear();
+      this.expandedIncidentIds.clear();
     }
     this.sort = sort;
     this.rebuild();
   }
 
+  /** Включает карточки инцидентов (папка алертов) или возвращает обычный список. */
+  setIncidentMode(mode: MailListIncidentMode | null): void {
+    if (!mode && !this.incidentMode) {
+      return;
+    }
+    if (!mode) {
+      this.expandedIncidentIds.clear();
+    }
+    this.incidentMode = mode;
+    this.rebuild();
+  }
+
+  get isIncidentMode(): boolean {
+    return !!this.incidentMode;
+  }
+
+  /** Пересчитать карточки: изменилась прочитанность писем, а не состав папки. */
+  refreshIncidents(): void {
+    if (this.incidentMode) {
+      this.rebuild();
+    }
+  }
+
   dispose() {
     this.source?.unregisterObserver(this.observer);
     this.source = null;
+    this.clearIncidentTimer();
   }
 
   toggleGroup(groupID: string): void {
+    if (groupID.startsWith("incident:")) {
+      if (!this.expandedIncidentIds.delete(groupID)) {
+        this.expandedIncidentIds.add(groupID);
+      }
+      this.rebuild();
+      return;
+    }
     if (this.collapsedGroupIds.has(groupID)) {
       this.collapsedGroupIds.delete(groupID);
     } else {
@@ -305,7 +452,34 @@ export class MailListRows {
     this.toggleGroup(topicID);
   }
 
+  protected clearIncidentTimer() {
+    if (this.incidentTimer) {
+      clearTimeout(this.incidentTimer);
+      this.incidentTimer = null;
+    }
+  }
+
   protected rebuild() {
+    this.clearIncidentTimer();
+    if (this.incidentMode) {
+      let mode = this.incidentMode;
+      let { rows, nextTransitionAt, summary } = buildAlertIncidentRows(this.source ? this.source.contents : [],
+        mode, this.expandedIncidentIds, this.sort);
+      if (nextTransitionAt != null) {
+        // «Идёт» сам по себе становится «затихло»: пересобираем к этому моменту
+        let now = mode.now?.() ?? Date.now();
+        let delay = Math.min(Math.max(nextTransitionAt - now, kMinIncidentTimerMs), kMaxIncidentTimerMs);
+        this.incidentTimer = setTimeout(() => {
+          this.incidentTimer = null;
+          this.rebuild();
+        }, delay);
+      }
+      this.incidentSummary.set(summary);
+      this.rows.clear();
+      this.rows.addAll(rows);
+      return;
+    }
+    this.incidentSummary.set(null);
     let messages = sortMessages(this.source ? this.source.contents : [], this.sort);
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
     let byTopic = this.sort == "subject";
@@ -322,7 +496,7 @@ export class MailListRows {
 }
 
 export function mailListRowSelectable(row: MailListRow | null | undefined): boolean {
-  return !!row && row.kind == "message";
+  return !!row && (row.kind == "message" || row.kind == "incident");
 }
 
 /**
@@ -367,6 +541,63 @@ export function findMailListRowForMessage(rows: Collection<MailListRow>, message
   }
   return rows.contents.find((row): row is MailListMessageRow =>
     row.kind == "message" && messagesRepresentSameMail(row.message, message)) ?? null;
+}
+
+/**
+ * Строка, на которой видно письмо: его собственная или свёрнутая карточка
+ * инцидента, в которую оно входит.
+ */
+export function findMailListRowShowingMessage(
+  rows: Collection<MailListRow>,
+  message: EMail | null | undefined,
+): MailListMessageRow | MailListIncidentRow | null {
+  let row = findMailListRowForMessage(rows, message);
+  if (row || !message) {
+    return row;
+  }
+  return rows.contents.find((candidate): candidate is MailListIncidentRow =>
+    candidate.kind == "incident" && !candidate.expanded &&
+    candidate.incident.messages.some(member => messagesRepresentSameMail(member, message))) ?? null;
+}
+
+/**
+ * Как `findMailListRowsForMessages`, но письма свёрнутых карточек инцидентов
+ * дают карточку (одну на инцидент).
+ */
+export function findMailListRowsShowingMessages(
+  messages: Collection<EMail>,
+  rows: Collection<MailListRow>,
+): (MailListMessageRow | MailListIncidentRow)[] {
+  let messageRows = findMailListRowsForMessages(messages, rows);
+  let collapsed = rows.contents.filter((row): row is MailListIncidentRow =>
+    row.kind == "incident" && !row.expanded);
+  if (!collapsed.length) {
+    return messageRows;
+  }
+  // Письмо входит ровно в один инцидент, а у свёрнутой карточки нет строк писем
+  let byObject = new Map<EMail, MailListIncidentRow>();
+  let byDBID = new Map<unknown, MailListIncidentRow>();
+  for (let row of collapsed) {
+    for (let member of row.incident.messages) {
+      byObject.set(member, row);
+      if (member.dbID != null) {
+        byDBID.set(member.dbID, row);
+      }
+    }
+  }
+  let result: (MailListMessageRow | MailListIncidentRow)[] = [...messageRows];
+  let added = new Set<MailListIncidentRow>();
+  for (let message of messages.contents) {
+    if (!message) {
+      continue;
+    }
+    let row = byObject.get(message) ?? (message.dbID != null ? byDBID.get(message.dbID) : undefined);
+    if (row && !added.has(row)) {
+      added.add(row);
+      result.push(row);
+    }
+  }
+  return result;
 }
 
 export function findMailListRowsForMessages(
