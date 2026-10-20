@@ -19,6 +19,7 @@ import { notifyChangedProperty } from "../util/Observable";
 import { RunOnce } from "../util/flow/RunOnce";
 import { Collection, ArrayColl } from 'svelte-collections';
 import { gt } from "../../l10n/l10n";
+import { ConnectionStatus } from "./connectionStatus";
 
 export class MailAccount extends TCPAccount {
   readonly protocol: string = "mail";
@@ -50,6 +51,12 @@ export class MailAccount extends TCPAccount {
 
   readonly rootFolders: Collection<Folder> = new ArrayColl<Folder>();
   readDBRunOnce = new RunOnce();
+  /** Есть ли связь с сервером. Сбой показывается в списке аккаунтов.
+   * Общие ящики сообщают о связи через основной аккаунт: @see `connectionStatusSource` */
+  readonly connectionStatus = new ConnectionStatus(
+    () => this.notifyObservers(),
+    () => this.name,
+    () => this.id);
 
   async startup() {
     await super.startup();
@@ -81,6 +88,13 @@ export class MailAccount extends TCPAccount {
   }
   findFolder(findFunc: (folder: Folder) => boolean): Folder | null {
     return findSubFolderFromList(this.rootFolders, findFunc);
+  }
+
+  /** Чьё состояние связи показывать у этого аккаунта: общий ящик OWA
+   * ходит на сервер через основной аккаунт, своих запросов у него нет. */
+  get connectionStatusSource(): MailAccount {
+    let main = this.mainAccount;
+    return main instanceof MailAccount ? main : this;
   }
 
   get inbox(): Folder | null {

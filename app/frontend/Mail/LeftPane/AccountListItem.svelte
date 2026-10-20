@@ -4,7 +4,7 @@
   role="button"
   tabindex="0"
   aria-expanded={expanded}
-  title={!$account.isLoggedIn ? errorMsg : ""}
+  title={connectionDetails || (!$account.isLoggedIn ? errorMsg : "")}
   on:contextmenu={contextMenu.onContextMenu}
   on:click={onRowClick}
   on:keydown={onRowKeyDown}
@@ -23,7 +23,11 @@
       <hbox class="expand-placeholder" />
     {/if}
   </hbox>
-  {#if $account.isLoggedIn}
+  {#if connectionProblem}
+    <hbox class="icon connection-problem">
+      <OfflineIcon size={iconSize} aria-hidden="true" />
+    </hbox>
+  {:else if $account.isLoggedIn}
     <hbox class="icon">
       {#if accountIcon && failedAccountIcon != accountIcon}
         <img src={accountIcon} width={iconLogoSize} height={iconLogoSize} alt="" class="logo" on:error={onAccountIconError} />
@@ -36,7 +40,12 @@
       <Icon data={MailXIcon} size={iconSize} />
     </hbox>
   {/if}
-  <hbox class="label font-small">{$account.name}</hbox>
+  <vbox class="label-box">
+    <hbox class="label font-small">{$account.name}</hbox>
+    {#if connectionProblem}
+      <hbox class="connection-status font-smallest">{connectionLine}</hbox>
+    {/if}
+  </vbox>
   <hbox class="trailing">
     {#if inboxBadge}
       <hbox class="count mail-folder-count">{inboxBadge}</hbox>
@@ -72,6 +81,8 @@
   import MailIcon from "../../asset/icon/appBar/mail.svg?raw";
   import MailXIcon from "../../asset/icon/mail/mail-question.svg?raw";
   import DisconnectedIcon from "lucide-svelte/icons/unplug";
+  import OfflineIcon from "lucide-svelte/icons/cloud-off";
+  import { connectionProblemDetails, connectionProblemLine } from "../connectionProblemNotice";
   import SettingsIcon from "lucide-svelte/icons/settings";
   import ExpandIcon from "lucide-svelte/icons/chevron-right";
   import CollapseIcon from "lucide-svelte/icons/chevron-down";
@@ -153,6 +164,15 @@
     : $errors.hasItems
       ? friendlyErrorMessage(errors.first)
       : "";
+  /* Общий ящик OWA ходит на сервер через основной аккаунт: его состояние и показываем */
+  $: connectionAccount = account.connectionStatusSource;
+  $: connectionProblem = $connectionAccount.connectionStatus.problem;
+  $: connectionLine = connectionProblem
+    ? connectionProblemLine($connectionAccount.connectionStatus.lastSuccessAt)
+    : "";
+  $: connectionDetails = connectionProblem
+    ? connectionProblemDetails(connectionProblem, $connectionAccount.connectionStatus.lastSuccessAt)
+    : "";
   $: iconSize = $appGlobal.isMobile ? "24px" : "16px";
   $: iconLogoSize = $appGlobal.isMobile ? "24px" : "18px";
 </script>
@@ -209,16 +229,39 @@
   .logo {
     border-radius: 2px;
   }
+  .label-box {
+    grid-column: 3;
+    margin-inline-start: 4px;
+    min-width: 0;
+  }
   .label {
     /* Многоточие работает только у блочного элемента, не у flex. */
     display: block;
-    grid-column: 3;
-    margin-inline-start: 4px;
     font-weight: 400;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .connection-status {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--warning-fg, #8A5A00);
+  }
+  .icon.connection-problem {
+    color: var(--warning-fg, #8A5A00);
+  }
+  /* Перекрывает общий цвет обводки иконок строки выше */
+  .icon.connection-problem :global(path),
+  .icon.connection-problem :global(line) {
+    stroke: currentColor;
+  }
+  .account-row.selected .connection-status,
+  .account-row.selected .icon.connection-problem {
+    color: inherit;
   }
   .trailing {
     grid-column: 4;

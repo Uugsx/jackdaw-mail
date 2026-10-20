@@ -2557,5 +2557,12 @@
   "Uoa4o2": "Local data is damaged.",
   "vqfLdA": "Restart Jackdaw. If it happens again, send the details below to support.",
   "dMBO5w": "Could not read or save local data.",
-  "iD6QNq": "Try again. If it happens again, restart Jackdaw."
+  "iD6QNq": "Try again. If it happens again, restart Jackdaw.",
+  "hxsJJ8": "No connection · synced {0}",
+  "0GA0y/": "No connection to the server",
+  "ODihF3": "No connection since {0}.",
+  "ch1zQT": "Last successful sync: {0}.",
+  "q4IwMP": "Last successful sync: unknown.",
+  "kZ1n4K": "New mail will arrive as soon as the server responds again. Jackdaw keeps trying automatically.",
+  "ISsBIA": "{0}: no connection to the server"
 }
