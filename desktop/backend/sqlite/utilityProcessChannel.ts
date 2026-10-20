@@ -36,6 +36,9 @@ export function createUtilityProcessChannel(workerPath: string): SQLiteChannelFa
         terminated = true;
         child.kill();
       },
+      get pid() {
+        return child.pid;
+      },
     };
   };
 }

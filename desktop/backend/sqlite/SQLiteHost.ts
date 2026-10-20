@@ -6,6 +6,8 @@ import { deserializeError, type SQLiteOperation, type SQLiteRequest, type SQLite
 export interface SQLiteChannel {
   send(request: SQLiteRequest): void;
   terminate(): void;
+  /** PID процесса базы, если он запущен отдельным процессом */
+  readonly pid?: number;
 }
 
 export interface SQLiteChannelHandlers {
@@ -66,6 +68,11 @@ export class SQLiteHost {
   #leakedDatabases = new FinalizationRegistry<DatabaseHandle>(handle => this.closeHandle(handle));
 
   constructor(protected readonly createChannel: SQLiteChannelFactory) {
+  }
+
+  /** PID живого процесса базы, если он отдельный и запущен. */
+  get processID(): number | undefined {
+    return this.#current?.alive ? this.#current.channel.pid : undefined;
   }
 
   /** Поколение живого процесса базы или -1, если процесс не запущен. */

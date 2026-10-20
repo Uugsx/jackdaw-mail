@@ -2639,5 +2639,8 @@
   "PS8soM": "Message le plus récent dans la boîte de réception : {0}.",
   "Gqwpt9": "Impossible d’ouvrir la page.",
   "kZ1n4K": "Les nouveaux messages arriveront dès que le serveur répondra à nouveau. Jackdaw réessaie automatiquement.",
-  "ISsBIA": "{0} : pas de connexion au serveur"
+  "ISsBIA": "{0} : pas de connexion au serveur",
+  "63iWwk": "Impossible de charger vos comptes.",
+  "fxuUHa": "Chargement de vos comptes. Les données locales sont occupées, en attente de leur libération…",
+  "Nh0W3E": "Chargement de vos comptes…"
 }

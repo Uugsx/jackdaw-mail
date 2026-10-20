@@ -19,6 +19,7 @@ import { catchErrors, logError, showError } from '../frontend/Util/error';
 import { OWAAccount } from './Mail/OWA/OWAAccount';
 import { assert, sleep } from './util/util';
 import { refreshProEntitlement } from './Billing/ProEntitlement';
+import { retryWhileDatabaseBusy, type DatabaseBusyCallback } from './util/retryWhileDatabaseBusy';
 
 /** Read JPC secret from frontent URL hash `jpcSecret=password`.
  * Before svelte-navigator `<Router>` mounts and rewrites `location.hash` */
@@ -76,33 +77,62 @@ async function connectToBackend(jpc: JPCWebSocket, secret: string, port: number)
   throw lastEx ?? new Error("JPC: Could not connect to backend");
 }
 
-export async function getStartObjects(): Promise<void> {
-  const secret = await getJPCSecret();
-  let jpc = new JPCWebSocket(null);
-  await connectToBackend(jpc, secret, production ? 5455 : 5453);
-  jpc.errorCallback = showError;
-  jpc.reconnectCallback = checkAccounts;
-  console.log("Connected to backend");
-  appGlobal.remoteApp = await jpc.getRemoteStartObject();
-  await loadWorkspaces();
-  appGlobal.emailAccounts.addAll(await readMailAccounts());
-  appGlobal.chatAccounts.addAll(await readChatAccounts());
-  appGlobal.meetAccounts.addAll(await readMeetAccounts());
-  appGlobal.fileSharingAccounts.addAll(await readFileSharingAccounts());
-  appGlobal.addressbooks.addAll(await readAddressbooks());
-  appGlobal.calendars.addAll(await readCalendars());
-  appGlobal.topicAccounts.addAll(await readTopicAccounts());
-  setMainAccounts();
-
-  // TODO Save the address book type and ensure that they are of the right type
-  appGlobal.personalAddressbook = appGlobal.addressbooks.first;
-  appGlobal.collectedAddressbook = appGlobal.addressbooks.get(1);
-  readSavedSearches();
-  await loadTagsList();
-  await loadTagCombinations();
+/**
+ * Подключается к бэкенду и читает аккаунты из локальных баз.
+ *
+ * Если база занята (SQLITE_BUSY, например её ещё закрывает прошлая версия
+ * после обновления), чтение повторяется с нарастающей паузой.
+ * Повторный вызов после ошибки продолжает с невыполненного шага:
+ * подключение и уже прочитанные аккаунты не повторяются.
+ *
+ * @param onDatabaseBusy Вызывается перед каждой паузой, пока база занята
+ */
+export async function getStartObjects(onDatabaseBusy?: DatabaseBusyCallback): Promise<void> {
+  if (!appGlobal.remoteApp) {
+    const secret = await getJPCSecret();
+    let jpc = new JPCWebSocket(null);
+    await connectToBackend(jpc, secret, production ? 5455 : 5453);
+    jpc.errorCallback = showError;
+    jpc.reconnectCallback = checkAccounts;
+    console.log("Connected to backend");
+    appGlobal.remoteApp = await jpc.getRemoteStartObject();
+  }
+  await retryWhileDatabaseBusy(readStartObjects, onDatabaseBusy);
   // Отдельные окна письма и редактора — свой JS-контекст. Без проверки статус Pro
   // в них навсегда остаётся «checking», и подпись Pro вырезается из письма.
   void refreshProEntitlement().catch(logError);
+}
+
+/** Шаги чтения стартовых объектов по порядку. Каждый шаг добавляет
+ * в списки только после успешного чтения, поэтому его можно повторить. */
+const kStartObjectSteps: (() => Promise<void> | void)[] = [
+  () => loadWorkspaces(),
+  async () => appGlobal.emailAccounts.addAll(await readMailAccounts()),
+  async () => appGlobal.chatAccounts.addAll(await readChatAccounts()),
+  async () => appGlobal.meetAccounts.addAll(await readMeetAccounts()),
+  async () => appGlobal.fileSharingAccounts.addAll(await readFileSharingAccounts()),
+  async () => appGlobal.addressbooks.addAll(await readAddressbooks()),
+  async () => appGlobal.calendars.addAll(await readCalendars()),
+  async () => appGlobal.topicAccounts.addAll(await readTopicAccounts()),
+  () => {
+    setMainAccounts();
+
+    // TODO Save the address book type and ensure that they are of the right type
+    appGlobal.personalAddressbook = appGlobal.addressbooks.first;
+    appGlobal.collectedAddressbook = appGlobal.addressbooks.get(1);
+    readSavedSearches();
+  },
+  () => loadTagsList(),
+  () => loadTagCombinations(),
+];
+/** Сколько шагов `kStartObjectSteps` уже выполнено */
+let startObjectStepsDone = 0;
+
+async function readStartObjects(): Promise<void> {
+  while (startObjectStepsDone < kStartObjectSteps.length) {
+    await kStartObjectSteps[startObjectStepsDone]();
+    startObjectStepsDone++;
+  }
 }
 
 /**

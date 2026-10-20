@@ -149,7 +149,9 @@ Auth: `autoUpdater.addAuthHeader('token …')` — **do not use `setFeedURL()`**
 
   1. Spawn detached bash script
   2. **Quit** running app (`shutdownBackend`, `app.exit`)
-  3. Script waits for PID, mounts DMG, `ditto` to `/Applications/Jackdaw Mail.app`, `open` new app
+  3. Script waits for PID, mounts DMG, `ditto` to `/Applications/Jackdaw Mail.app`, `open` new app.
+     It also waits (≤ 30 s) for the SQLite utilityProcess: it can outlive the main process while it
+     checkpoints the WAL of `mail.db`, and the new version would otherwise start with `SQLITE_BUSY`.
 - **Metadata on release:** `latest-mac.yml`, `.zip` (for metadata); user-facing install path is **DMG**
 
 The optional `JACKDAW_GH_UPDATE_TOKEN` is used when available, but a `401` from GitHub
@@ -202,6 +204,7 @@ Or push to `main` touching monitored paths.
 | Mac: code signature / ShipIt error | Tried `quitAndInstall` on ad-hoc build | Use DMG install path (current code) |
 | Mac: app didn’t restart after update | Install ran while app still open | Use `scheduleMacDmgInstallAndQuit` (quit first, then script) |
 | `JPC: Could not connect to ws://localhost:5455` after OTA | UI loaded before backend | `await startupBackend()` before `loadFile`; retry JPC connect |
+| `SQLITE_BUSY` / “Local data is busy” right after OTA, empty mail | Previous version’s SQLite process still closing `mail.db`, or a second connection switching the journal mode | busy_timeout 30 s in `SQLiteServer`, startup retries in `getStartObjects`, “Try again” banner; install script waits for the SQLite PID |
 | Infinite “Checking…” on About tab | Remount / race on `checkForUpdate(true)` | Poll status; don’t force new check while `checking` |
 | Windows: “Automatic updates are not configured” | Portable/dir build or an installer without `app-update.yml` | Install the latest `setup.exe` from GitHub Releases, or use **Download latest installer** on the About page |
 | `422` / duplicate tag on publish | Tag missing before publish | `prepare` creates tag + release before mac/win |

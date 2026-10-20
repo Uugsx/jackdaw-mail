@@ -2,19 +2,23 @@ import { appGlobal } from "../../app";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { meetDatabaseSchema } from "./createDatabase";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 // <copied from="Mail/SQL/Account/SQLDatabase.ts">
 
 let meetDatabase: Database;
 
+const openMeetDatabase = openDatabaseOnce(() => getSQLiteDatabase("meet.db"), async database => {
+  await database.migrate(meetDatabaseSchema);
+  await database.pragma('foreign_keys = true');
+  await database.pragma('journal_mode = WAL');
+});
+
 export async function getDatabase(): Promise<Database> {
   if (meetDatabase) {
     return meetDatabase;
   }
-  meetDatabase = await getSQLiteDatabase("meet.db");
-  await meetDatabase.migrate(meetDatabaseSchema);
-  await meetDatabase.pragma('foreign_keys = true');
-  await meetDatabase.pragma('journal_mode = WAL');
+  meetDatabase = await openMeetDatabase();
   return meetDatabase;
 }
 
