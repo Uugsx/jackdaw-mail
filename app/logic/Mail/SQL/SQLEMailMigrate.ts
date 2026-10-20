@@ -178,3 +178,48 @@ export const dedupeEMailsWithoutPID = sql`
 
   DROP TABLE temp."emailDuplicate";
 `;
+
+/**
+ * «Напомнить, если не ответят»: отслеживаемые исходящие письма. Отдельная
+ * таблица без изменения `email`: создаётся мгновенно и на базе больше 1 ГБ.
+ *
+ * `messageID` — Message-ID отправленного письма, `emailID` — найденная
+ * отправленная копия (null, пока её не сохранила синхронизация; строки email
+ * пересоздаются при пересинхронизации, поэтому связь — по Message-ID).
+ * Время — unixtime в секундах, как в `email`.
+ */
+export const createFollowUpReminderTable = sql`
+  CREATE TABLE IF NOT EXISTS "followUpReminder" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    "messageID" TEXT not null,
+    "threadID" TEXT default null,
+    "emailID" INTEGER default null,
+    "subject" TEXT not null default '',
+    -- JSON-массив адресов получателей в нижнем регистре
+    "recipients" TEXT not null default '[]',
+    "sentAt" INTEGER not null,
+    "dueAt" INTEGER not null,
+    -- 'calendar' | 'working' | 'date'
+    "scheduleMode" TEXT not null default 'calendar',
+    "durationDays" INTEGER default null,
+    -- 'waiting' | 'replied' | 'cancelled'
+    "status" TEXT not null default 'waiting',
+    "notifiedAt" INTEGER default null,
+    "repliedAt" INTEGER default null,
+    "replyEmailID" INTEGER default null,
+    "createdAt" INTEGER not null,
+    UNIQUE("accountID", "messageID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_followUpReminder_status_dueAt
+  ON followUpReminder (status, dueAt);
+`;
+
+/** Откат createFollowUpReminderTable для инструментов обслуживания базы. */
+export const rollbackFollowUpReminderTable = sql`
+  DROP INDEX IF EXISTS index_followUpReminder_status_dueAt;
+  DROP TABLE IF EXISTS "followUpReminder";
+`;

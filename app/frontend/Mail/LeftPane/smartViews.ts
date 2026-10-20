@@ -1,7 +1,7 @@
 import { writable } from "svelte/store";
 import { getLocalStorage } from "../../Util/LocalStorage";
 
-export type SmartViewId = "unread" | "starred" | "attachments";
+export type SmartViewId = "unread" | "starred" | "attachments" | "awaiting-reply";
 
 interface SmartViewPreferences {
   order: SmartViewId[];
@@ -9,7 +9,7 @@ interface SmartViewPreferences {
 }
 
 const defaultPreferences: SmartViewPreferences = {
-  order: ["unread", "starred", "attachments"],
+  order: ["unread", "starred", "attachments", "awaiting-reply"],
   hidden: [],
 };
 
@@ -21,7 +21,8 @@ const preferencesSetting = getLocalStorage<unknown>(
 export const smartViewPreferencesEpoch = writable(0);
 
 function isSmartViewId(value: unknown): value is SmartViewId {
-  return value == "unread" || value == "starred" || value == "attachments";
+  return value == "unread" || value == "starred" || value == "attachments" ||
+    value == "awaiting-reply";
 }
 
 function readPreferences(): SmartViewPreferences {

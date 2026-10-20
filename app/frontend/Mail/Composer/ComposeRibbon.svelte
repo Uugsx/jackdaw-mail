@@ -302,6 +302,14 @@
               on:click={() => dispatch("toggleFlag")}>
               <FlagIcon size="18px" />
             </button>
+            <button type="button" class="ribbon-btn" title={$t`Remind me if nobody replies`}
+              class:on={!!followUpReminder}
+              aria-haspopup="menu"
+              aria-expanded={followUpMenuOpen}
+              bind:this={followUpMenuAnchor}
+              on:click={() => followUpMenuOpen = !followUpMenuOpen}>
+              <BellRingIcon size="18px" />
+            </button>
             <button type="button" class="ribbon-btn" title={$t`Emoji`}
               class:on={showEmojis}
               on:click={() => dispatch("toggleEmojis")}>
@@ -411,6 +419,15 @@
   {#if sendMenuAnchor}
     <Menu bind:isMenuOpen={sendMenuOpen} anchor={sendMenuAnchor} boundaryElSel=".mail-composer-window">
       <MenuItem label={$t`Save draft`} onClick={() => { sendMenuOpen = false; dispatch("saveDraft"); }} />
+    </Menu>
+  {/if}
+
+  {#if followUpMenuAnchor}
+    <Menu bind:isMenuOpen={followUpMenuOpen} anchor={followUpMenuAnchor} boundaryElSel=".mail-composer-window">
+      <FollowUpMenuItems
+        selected={followUpReminder}
+        onSelect={choice => { dispatch("setFollowUp", choice); }}
+        onClear={() => { dispatch("setFollowUp", null); }} />
     </Menu>
   {/if}
 
@@ -536,6 +553,9 @@
   import CheckIcon from "lucide-svelte/icons/check";
   import ListChecksIcon from "lucide-svelte/icons/list-checks";
   import FlagIcon from "lucide-svelte/icons/flag";
+  import BellRingIcon from "lucide-svelte/icons/bell-ring";
+  import FollowUpMenuItems from "../FollowUp/FollowUpMenuItems.svelte";
+  import type { FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
   import Menu from "../../Shared/Menu/Menu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
@@ -555,6 +575,8 @@
   export let requestReadReceipt = false;
   export let requestDeliveryReceipt = false;
   export let isFlagged = false;
+  /** «Напомнить, если не ответят», выбранное для этого письма. */
+  export let followUpReminder: FollowUpChoice | null = null;
   export let showEmojis = false;
   export let spellcheckOn = false;
   export let editorZoom = 100;
@@ -577,7 +599,10 @@
     toggleSpellcheck: void;
     setZoom: number;
     openActions: void;
+    setFollowUp: FollowUpChoice | null;
   }>();
+  let followUpMenuOpen = false;
+  let followUpMenuAnchor: HTMLButtonElement;
 
   let activeTab: "message" | "options" = "message";
   const zoomLevels = [90, 100, 125];

@@ -9,6 +9,7 @@ import {
   dedupeEMailPersons,
   createEMailLookupIndexes,
   dedupeEMailsWithoutPID,
+  createFollowUpReminderTable,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -31,6 +32,8 @@ export const mailDatabaseMigrations = [
   createEMailLookupIndexes,
   dedupeEMailPersons,
   dedupeEMailsWithoutPID,
+  // Десятая: «Напомнить, если не ответят».
+  createFollowUpReminderTable,
 ];
 
 const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
@@ -60,6 +63,7 @@ export async function makeTestDatabase(): Promise<Database> {
     createReportReplyIndexes,
     createResponseReminderIndexes,
     createEMailLookupIndexes,
+    createFollowUpReminderTable,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

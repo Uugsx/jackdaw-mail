@@ -8,11 +8,13 @@ import {
   composeWindowMaxAttachmentBytes,
   isComposeWindowPayload,
   type ComposeWindowAttachment,
+  type ComposeWindowFollowUp,
   type ComposeWindowMail,
   type ComposeWindowPerson,
   type ComposeWindowSource,
 } from "../../../logic/Mail/Composer/ComposeWindowProtocol";
 import { blobToBase64, assert, base64ToUint8Array } from "../../../logic/util/util";
+import { normalizeFollowUpChoice, type FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
 
 function serializeDate(date: Date | null | undefined): string | null {
   return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
@@ -140,6 +142,7 @@ export async function serializeComposeMail(
     requestReadReceipt: !!mail.requestReadReceipt,
     requestDeliveryReceipt: !!mail.requestDeliveryReceipt,
     signatureRemovedByUser: !!mail.signatureRemovedByUser,
+    followUpReminder: serializeFollowUp(mail.followUpReminder),
     isDraft: !!mail.isDraft,
     isDeleted: !!mail.isDeleted,
     shouldEncrypt: !!mail.shouldEncrypt,
@@ -155,6 +158,15 @@ export async function serializeComposeMail(
     assert(isComposeWindowPayload(payload), "Compose window: payload is too large or malformed");
   }
   return payload;
+}
+
+function serializeFollowUp(choice: FollowUpChoice | null): ComposeWindowFollowUp | null {
+  if (!choice) {
+    return null;
+  }
+  return choice.mode == "date"
+    ? { mode: "date", dueAt: choice.dueAt.toISOString() }
+    : { mode: choice.mode, days: choice.days };
 }
 
 function deserializeSource(folder: ReturnType<MailAccount["getSpecialFolder"]>, source: ComposeWindowSource): EMail {
@@ -221,6 +233,7 @@ export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail)
   mail.requestReadReceipt = payload.requestReadReceipt;
   mail.requestDeliveryReceipt = payload.requestDeliveryReceipt;
   mail.signatureRemovedByUser = payload.signatureRemovedByUser === true;
+  mail.followUpReminder = normalizeFollowUpChoice(payload.followUpReminder);
   mail.isDraft = payload.isDraft;
   mail.isDeleted = payload.isDeleted;
   mail.shouldEncrypt = payload.shouldEncrypt;
