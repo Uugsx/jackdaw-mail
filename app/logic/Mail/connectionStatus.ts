@@ -1,4 +1,4 @@
-import { describeError, type FriendlyErrorKind } from "../util/friendlyError";
+import { describeError, httpStatus, type FriendlyErrorKind } from "../util/friendlyError";
 
 /**
  * Состояние связи почтового аккаунта с сервером.
@@ -166,6 +166,39 @@ export class ConnectionStatus {
     this.problem = null;
     this.notifiedThisEpisode = false;
     this.onChange();
+  }
+
+  /**
+   * Сервер ответил по HTTP. Связь есть, если только это не отказ самого
+   * сервера: 502/503/504 или 5xx без ответа протокола (страница ошибки
+   * балансировщика вместо SOAP/JSON). 5xx с ответом протокола серверы
+   * отдают и на обычные ошибки вроде удалённого письма, сервер при этом работает.
+   * Ошибки входа (401) — тоже ответ сервера, их показывает запрос пароля.
+   * @param hasProtocolBody в ответе есть тело протокола (SOAP, JSON, WBXML)
+   */
+  reportHTTPResponse(status: number, statusText = "", hasProtocolBody = false, now = new Date()): void {
+    if ([502, 503, 504].includes(status) || (status >= 500 && status < 600 && !hasProtocolBody)) {
+      let ex = new Error(`HTTP ${status} ${statusText}`.trim());
+      (ex as any).httpCode = status;
+      this.reportFailure(ex, now);
+    } else {
+      this.reportSuccess(now);
+    }
+  }
+
+  /**
+   * Запрос не удался. Для HTTP-клиентов, которые бросают исключение и на
+   * ответ сервера с ошибкой (ky): если у ошибки есть HTTP-статус, сервер
+   * ответил — @see `reportHTTPResponse`; иначе это сбой сети или таймаут.
+   */
+  reportRequestError(ex: unknown, hasProtocolBody = false, now = new Date()): void {
+    let status = httpStatus(ex);
+    if (status) {
+      let error = ex as any;
+      this.reportHTTPResponse(status, error?.httpStatusText ?? error?.statusText ?? "", hasProtocolBody, now);
+    } else {
+      this.reportFailure(ex, now);
+    }
   }
 
   /** Одно уведомление на эпизод и только если сбой не кратковременный.

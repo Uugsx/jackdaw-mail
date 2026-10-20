@@ -275,9 +275,14 @@ export class ActiveSyncAccount extends ExchangeMailAccount {
     let response: any;
     try {
       response = await fetch(url, options);
+    } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
+      throw ex;
     } finally {
       lock.release();
     }
+    this.connectionStatus.reportHTTPResponse(response.status, response.statusText,
+      /vnd\.ms-sync/i.test(response.headers?.get("Content-Type") ?? ""));
     this.fatalError = null;
     if (response.ok) {
       // response.bytes() not supported yet. This ctor does not copy, but creates another view.

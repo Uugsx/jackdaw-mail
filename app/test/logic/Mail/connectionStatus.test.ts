@@ -237,3 +237,41 @@ describe("уведомление о сбое", () => {
     expect(status.isConnected).toBe(false);
   });
 });
+
+describe("ответы HTTP", () => {
+  test.each([
+    [502, false, false],
+    [503, true, false],
+    [504, true, false],
+    [500, false, false],
+    [500, true, true],
+    [401, false, true],
+    [404, false, true],
+    [200, false, true],
+  ])("HTTP %i, тело протокола: %s → связь есть: %s", (code, hasProtocolBody, connected) => {
+    let { status } = newStatus();
+    status.reportHTTPResponse(code, "", hasProtocolBody, at(0));
+    expect(status.isConnected).toBe(connected);
+    expect(status.lastSuccessAt !== null).toBe(connected);
+  });
+
+  test("ошибка ky с HTTP-статусом — ответ сервера, без статуса — сбой сети", () => {
+    let { status } = newStatus();
+    status.reportRequestError(httpError(404), false, at(0));
+    expect(status.isConnected).toBe(true);
+
+    status.reportRequestError(codeError("ECONNREFUSED"), false, at(kIgnoreFailureAfterSuccessMs));
+    expect(status.problem?.kind).toBe("server-unreachable");
+
+    status.reportRequestError(httpError(503), false, at(kIgnoreFailureAfterSuccessMs + 1));
+    expect(status.problem?.kind).toBe("server");
+  });
+
+  test("ошибка, не связанная с сетью, состояние не меняет", () => {
+    let { status, onChange } = newStatus();
+    status.reportRequestError(new Error("Unexpected token < in JSON"), false, at(0));
+    expect(status.isConnected).toBe(true);
+    expect(status.lastSuccessAt).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

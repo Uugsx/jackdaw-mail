@@ -403,6 +403,9 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       response = this.authMethod == AuthMethod.NTLM
         ? await this.ntlm.request(this.request2XML(aRequest), { headers: { 'Content-Type': kXMLContentType } })
         : await fetch(this.url, this.createRequestOptions({ body: this.request2XML(aRequest) }));
+    } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
+      throw ex;
     } finally {
       lock.release();
     }
@@ -411,6 +414,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     } catch (ex) {
       response.responseText = "";
     }
+    // SOAP-ответ с ошибкой (HTTP 500) — ответ работающего сервера,
+    // страница ошибки балансировщика — нет
+    this.connectionStatus.reportHTTPResponse(response.status, response.statusText,
+      /<(?:\w+:)?Envelope\b/.test(response.responseText));
     this.fatalError = null;
     if (response.status == 200) {
       try {

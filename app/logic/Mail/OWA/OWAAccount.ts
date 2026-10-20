@@ -2070,14 +2070,7 @@ export class OWAAccount extends ExchangeMailAccount {
    * 502/503/504 или 5xx со страницей ошибки вместо ответа OWA. HTTP 500 с JSON
    * OWA отдаёт и на обычные ошибки вроде удалённого письма, сервер при этом работает. */
   protected reportServerResponse(response: { status?: number, statusText?: string, json?: any }): void {
-    let status = Number(response?.status) || 0;
-    if ([502, 503, 504].includes(status) || (status >= 500 && !response.json)) {
-      let ex = new Error(`HTTP ${status} ${response.statusText ?? ""}`.trim());
-      (ex as any).httpCode = status;
-      this.connectionStatus.reportFailure(ex);
-    } else {
-      this.connectionStatus.reportSuccess();
-    }
+    this.connectionStatus.reportHTTPResponse(Number(response?.status) || 0, response?.statusText ?? "", !!response?.json);
   }
 
   async callOWAShared(url: string, options: RequestInit, throttleRetries = 0, sessionRetried = false) {
