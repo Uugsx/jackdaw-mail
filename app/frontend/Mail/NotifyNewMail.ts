@@ -27,6 +27,7 @@ import {
   stopMailFolderNotificationPolling,
   syncMailFolderNotificationPolling,
 } from "./mailFolderNotificationSettings";
+import { filterAlertIncidentNotifications } from "./alertIncidentSettings";
 
 export async function newMailListener() {
   appGlobal.emailAccounts.registerObserver(accountsObserver);
@@ -54,6 +55,8 @@ export async function showNewMail(messages: EMail[]) {
     }
     return notify;
   });
+  // Папка алертов: уведомляем о новом инциденте или возобновлении, а не о каждом письме
+  messages = filterAlertIncidentNotifications(messages);
   if (!messages.length) {
     return;
   }
