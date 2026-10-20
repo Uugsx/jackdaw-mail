@@ -96,6 +96,8 @@ let stopWatching: (() => void) | null = null;
 
 /** Состояния, из которых стоит переподключиться сразу, не дожидаясь паузы или новой лицензии */
 const STALLED_STATUSES = new Set<JackdawCallStatus>(["offline", "rejected"]);
+/** После сна или смены сети ответа живого соединения ждём недолго: пользователь сразу пишет в чат */
+const WAKE_PONG_TIMEOUT_MS = 5_000;
 
 /** Отличает учётные данные: новый ключ при том же статусе лицензии тоже требует нового входа */
 function credentialKey(credential: ProCallCredential | null): string {
@@ -111,7 +113,8 @@ function computerOnOrNull(): ComputerOn | null {
 }
 
 /**
- * Сеть вернулась или система проснулась: соединение без связи или с отказом пробует войти сразу.
+ * Сеть вернулась или система проснулась: соединение без связи или с отказом пробует войти сразу,
+ * а соединение на связи проверяет, живо ли оно: сокет мог пережить сон «открытым» при мёртвом TCP.
  * @param computerOn для тестов
  * @returns отписка
  */
@@ -119,6 +122,9 @@ export function watchCallReconnectTriggers(callClient: JackdawCallClient, comput
   let reconnectIfStalled = () => {
     if (STALLED_STATUSES.has(callClient.status)) {
       callClient.restart();
+    } else if (callClient.status == "online") {
+      // Не restart(): он оборвал бы идущий звонок. Живое соединение ответит и останется.
+      callClient.checkConnection(WAKE_PONG_TIMEOUT_MS);
     }
   };
   globalThis.addEventListener?.("online", reconnectIfStalled);
