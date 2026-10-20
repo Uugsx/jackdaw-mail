@@ -5,6 +5,7 @@ import { mount, tick, unmount } from "svelte";
 let AccountListItem: any;
 let OWAAccount: any;
 let connectionProblemLine: (lastSuccessAt: Date | null) => string;
+let notice: typeof import("../../../frontend/Mail/connectionProblemNotice");
 let mounted: ReturnType<typeof mount>[] = [];
 
 beforeAll(async () => {
@@ -19,7 +20,8 @@ beforeAll(async () => {
   (appGlobal as any).remoteApp = { OWA: {} };
   AccountListItem = (await import("../../../frontend/Mail/LeftPane/AccountListItem.svelte")).default;
   OWAAccount = (await import("../../../logic/Mail/OWA/OWAAccount")).OWAAccount;
-  connectionProblemLine = (await import("../../../frontend/Mail/connectionProblemNotice")).connectionProblemLine;
+  notice = await import("../../../frontend/Mail/connectionProblemNotice");
+  connectionProblemLine = notice.connectionProblemLine;
 }, 120_000);
 
 afterEach(() => {
@@ -140,5 +142,52 @@ describe("Системное уведомление о сбое", () => {
       vi.doUnmock("../../../frontend/Util/LocalStorage");
       vi.resetModules();
     }
+  });
+});
+
+describe("Подсказка о сбое связи", () => {
+  function problem(kind: string, hint: string | null) {
+    return { kind, message: "Сбой.", hint, technical: "", since: new Date(2026, 9, 20, 11, 48) } as any;
+  }
+
+  test("не советует повторить вручную: Jackdaw повторяет сам", () => {
+    let details = notice.connectionProblemDetails(problem("connection-lost", "Повторите попытку."), null);
+    expect(details).not.toContain("Повторите попытку.");
+    expect(details.split("\n")[0]).toBe("Сбой.");
+  });
+
+  test("оставляет подсказку, когда пользователю есть что проверить", () => {
+    for (let kind of ["certificate", "server-not-found"]) {
+      expect(notice.connectionProblemDetails(problem(kind, "Проверьте адрес."), null)).toContain("Сбой. Проверьте адрес.");
+    }
+  });
+
+  test("без сохранённой синхронизации показывает время самого нового письма, а не «неизвестно»", () => {
+    let newest = new Date(2026, 9, 20, 11, 40);
+    let lines = notice.connectionProblemDetails(problem("timeout", null), null, newest).split("\n");
+    expect(lines).toHaveLength(4);
+    expect(lines.some(line => /unknown|неизвестно/i.test(line))).toBe(false);
+
+    let withoutAny = notice.connectionProblemDetails(problem("timeout", null), null).split("\n");
+    expect(withoutAny).toHaveLength(3);
+    expect(withoutAny.some(line => /unknown|неизвестно/i.test(line))).toBe(false);
+  });
+
+  test("время синхронизации важнее времени письма", () => {
+    let lastSync = new Date(2026, 9, 20, 11, 45);
+    let newest = new Date(2026, 9, 20, 11, 40);
+    let withSync = notice.connectionProblemDetails(problem("timeout", null), lastSync, newest);
+    let withMailOnly = notice.connectionProblemDetails(problem("timeout", null), null, newest);
+    expect(withSync).not.toBe(withMailOnly);
+    expect(withSync).toBe(notice.connectionProblemDetails(problem("timeout", null), lastSync));
+  });
+
+  test("время самого нового письма в папке", () => {
+    let older = new Date(2026, 9, 19, 9, 0);
+    let newer = new Date(2026, 9, 20, 11, 40);
+    let folder = { messages: { contents: [{ received: older }, { received: newer }, { received: null }] } } as any;
+    expect(notice.newestMessageTime(folder)).toEqual(newer);
+    expect(notice.newestMessageTime({ messages: { contents: [] } } as any)).toBeNull();
+    expect(notice.newestMessageTime(null)).toBeNull();
   });
 });

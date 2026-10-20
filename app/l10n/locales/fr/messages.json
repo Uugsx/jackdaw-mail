@@ -2625,6 +2625,8 @@
   "ODihF3": "Pas de connexion depuis {0}.",
   "ch1zQT": "Dernière synchronisation réussie : {0}.",
   "q4IwMP": "Dernière synchronisation réussie : inconnue.",
+  "PS8soM": "Message le plus récent dans la boîte de réception : {0}.",
+  "Gqwpt9": "Impossible d’ouvrir la page.",
   "kZ1n4K": "Les nouveaux messages arriveront dès que le serveur répondra à nouveau. Jackdaw réessaie automatiquement.",
   "ISsBIA": "{0} : pas de connexion au serveur"
 }

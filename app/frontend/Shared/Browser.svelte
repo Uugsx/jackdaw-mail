@@ -20,15 +20,32 @@
   </hbox>
 {/if}
 
+<vbox class="page">
 // #if [!WEBMAIL && !MOBILE]
-<webview bind:this={webviewE} src={url} {title} {partition} />
+  <webview bind:this={webviewE} src={url} {title} {partition} />
 // #else
-<iframe bind:this={webviewE} src={url} {title} sandbox="allow-scripts allow-forms" />
+  <iframe bind:this={webviewE} src={url} {title} sandbox="allow-scripts allow-forms" />
 // #endif
+  {#if loadError}
+    <!-- Без этого при недоступном сервере остаётся пустая белая страница -->
+    <vbox class="load-error" role="alert">
+      <div class="load-error-title">{$t`The page could not be opened.`}</div>
+      <div>{loadError.message}</div>
+      {#if loadError.hint}
+        <div class="load-error-hint">{loadError.hint}</div>
+      {/if}
+      <hbox class="load-error-buttons">
+        <Button label={$t`Try again`} onClick={onRetry} />
+      </hbox>
+    </vbox>
+  {/if}
+</vbox>
 
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import RoundButton from './RoundButton.svelte';
+  import Button from './Button.svelte';
+  import { describeError, type FriendlyError } from '../../logic/util/friendlyError';
   import Loader from './Loader.svelte';
   import CloseIcon from "lucide-svelte/icons/x";
   import { getBaseDomainFromHost } from '../../logic/util/netUtil';
@@ -58,7 +75,12 @@
     return getBaseDomainFromHost(new URL(url).hostname);
   }
 
+  /** Chromium `net::ERR_ABORTED`: загрузку прервал переход на другую страницу. */
+  const kAbortedErrorCode = -3;
+
   let isLoading = true;
+  /** Страница не загрузилась: сервер не ответил, не найден и т.п. */
+  let loadError: FriendlyError | null = null;
   let currentURL: URLString = url;
 
   let webviewE: HTMLIFrameElement = null;
@@ -90,6 +112,15 @@
     });
     webviewE.addEventListener("did-start-loading", () => {
       isLoading = true;
+      loadError = null;
+    });
+    webviewE.addEventListener("did-fail-load", (e: any) => {
+      // Прерванная загрузка (переход по редиректу) — не ошибка; сбой картинки или фрейма страницу не ломает
+      if (e.isMainFrame === false || e.errorCode == kAbortedErrorCode) {
+        return;
+      }
+      loadError = describeError(new Error(`net::${e.errorDescription} (${e.errorCode}) ${e.validatedURL ?? ""}`.trim()));
+      isLoading = false;
     });
     webviewE.addEventListener("did-stop-loading", () => {
       isLoading = false;
@@ -99,14 +130,46 @@
     });
   }
 
+  function onRetry() {
+    loadError = null;
+    (webviewE as any).reload?.();
+  }
+
   function onClose() {
     dispatch("close");
   }
 </script>
 
 <style>
-  webview {
+  .page {
     flex: 1 0 0;
+    position: relative;
+  }
+  webview,
+  iframe {
+    flex: 1 0 0;
+  }
+  .load-error {
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px;
+    text-align: center;
+    background-color: var(--bg);
+    color: var(--fg);
+  }
+  .load-error-title {
+    font-weight: 600;
+    font-size: 1.15em;
+  }
+  .load-error-hint {
+    max-width: 480px;
+    opacity: 0.8;
+  }
+  .load-error-buttons {
+    margin-block-start: 8px;
   }
   .toolbar {
     background-color: var(--leftbar-bg);

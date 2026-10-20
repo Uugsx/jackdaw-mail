@@ -82,7 +82,7 @@
   import MailXIcon from "../../asset/icon/mail/mail-question.svg?raw";
   import DisconnectedIcon from "lucide-svelte/icons/unplug";
   import OfflineIcon from "lucide-svelte/icons/cloud-off";
-  import { connectionProblemDetails, connectionProblemLine } from "../connectionProblemNotice";
+  import { connectionProblemDetails, connectionProblemLine, newestMessageTime } from "../connectionProblemNotice";
   import SettingsIcon from "lucide-svelte/icons/settings";
   import ExpandIcon from "lucide-svelte/icons/chevron-right";
   import CollapseIcon from "lucide-svelte/icons/chevron-down";
@@ -171,7 +171,8 @@
     ? connectionProblemLine($connectionAccount.connectionStatus.lastSuccessAt)
     : "";
   $: connectionDetails = connectionProblem
-    ? connectionProblemDetails(connectionProblem, $connectionAccount.connectionStatus.lastSuccessAt)
+    ? connectionProblemDetails(connectionProblem, $connectionAccount.connectionStatus.lastSuccessAt,
+        newestMessageTime($account.inbox))
     : "";
   $: iconSize = $appGlobal.isMobile ? "24px" : "16px";
   $: iconLogoSize = $appGlobal.isMobile ? "24px" : "18px";
@@ -259,8 +260,11 @@
   .icon.connection-problem :global(line) {
     stroke: currentColor;
   }
-  .account-row.selected .connection-status,
-  .account-row.selected .icon.connection-problem {
+  /* На десктопе цвет предупреждения одинаков у выбранной и обычной строки
+     (контраст на фоне выбора ≥ 4.5:1 в обеих темах). На мобильном фон выбора
+     янтарный, предупреждение на нём не читается — там цвет строки. */
+  :global(.main-window.mobile) .account-row.selected .connection-status,
+  :global(.main-window.mobile) .account-row.selected .icon.connection-problem {
     color: inherit;
   }
   .trailing {

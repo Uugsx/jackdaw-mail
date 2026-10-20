@@ -2563,6 +2563,8 @@
   "ODihF3": "No connection since {0}.",
   "ch1zQT": "Last successful sync: {0}.",
   "q4IwMP": "Last successful sync: unknown.",
+  "PS8soM": "Newest message in Inbox: {0}.",
+  "Gqwpt9": "The page could not be opened.",
   "kZ1n4K": "New mail will arrive as soon as the server responds again. Jackdaw keeps trying automatically.",
   "ISsBIA": "{0}: no connection to the server"
 }
