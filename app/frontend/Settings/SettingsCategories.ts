@@ -14,6 +14,7 @@ import GlobalKeyboardShortcuts from "./Global/KeyboardShortcuts.svelte";
 import MailAppearance from "./Mail/Appearance.svelte";
 import MailNotifications from "./Mail/Notifications.svelte";
 import MailRead from "./Mail/Read.svelte";
+import MailAlertIncidents from "./Mail/AlertIncidents.svelte";
 import MailSend from "./Mail/Send.svelte";
 import MailTags from "./Mail/Tags.svelte";
 import MailRules from "./Mail/Rules.svelte";
@@ -81,6 +82,7 @@ mailSettings.subCategories.addAll([
   new SettingsCategory("mail-read", gt`Read *=> in the sense of to read emails`, MailRead),
   new SettingsCategory("mail-send", gt`Send *=> send emails`, MailSend),
   new SettingsCategory("mail-tags", gt`Categories`, MailTags),
+  new SettingsCategory("mail-alert-incidents", gt`Alert incidents`, MailAlertIncidents),
 ]);
 mailSettings.accounts = appGlobal.emailAccounts;
 // #if [!WEBMAIL]
