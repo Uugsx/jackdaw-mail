@@ -1,7 +1,7 @@
 {#if withURLbar}
   <hbox class="toolbar">
     <slot name="urlbar-left" />
-    <hbox class="urlbar" flex>
+    <hbox class="urlbar" flex title={currentURL}>
       {getDomain(currentURL)}
     </hbox>
     <hbox class="buttons right">

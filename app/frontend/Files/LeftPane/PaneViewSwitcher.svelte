@@ -2,6 +2,7 @@
   <IslandSwitcher faint={false}>
     <Button
       label={$t`Cloud storage`}
+      tooltip={$t`Cloud storage`}
       icon={CloudIcon}
       iconSize="16px"
       iconOnly={active != FilesView.CloudStorage}
@@ -10,6 +11,7 @@
       />
     <Button
       label={$t`Persons`}
+      tooltip={$t`Persons`}
       icon={PersonIcon}
       classes="vertical"
       iconSize="16px"
@@ -55,10 +57,13 @@
 </script>
 
 <style>
+  /* Название вкладки в одну строку с многоточием: раньше слово рвалось по буквам
+     и обрезалось по высоте. Полное название — в подсказке кнопки. */
   .island :global(.button .label) {
-    max-height: 16px;
-    overflow-y: hidden;
-    overflow-wrap: anywhere;
-    /* max-width: calc((100% - 100px) * 9999); /* px is the minimum width */
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

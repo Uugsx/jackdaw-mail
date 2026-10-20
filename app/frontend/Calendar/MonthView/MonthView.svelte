@@ -117,6 +117,17 @@
       padding-inline: 4px;
     }
   }
+  /* Колонка уже ~35px: «ПН» и «ВТ» иначе слипаются в одну строку букв. */
+  @container (max-width: 260px) {
+    .weekday {
+      justify-content: center;
+      min-width: 0;
+      padding-inline: 0;
+      overflow: hidden;
+      font-size: 11px;
+      letter-spacing: 0;
+    }
+  }
   .day {
     overflow: hidden;
   }

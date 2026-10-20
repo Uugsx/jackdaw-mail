@@ -222,6 +222,12 @@
     background-color: #494558;
     color: white;
   }
+  /* Рядом панель истории или виджетов: окно широкое, а места под две карточки
+     по 400px нет. Карточки переносятся и не шире доступного места. */
+  .boxes {
+    flex-wrap: wrap;
+    align-content: center;
+  }
   @media (max-width: 800px) {
     .boxes {
       flex-direction: column;
@@ -237,13 +243,13 @@
     color: var(--inverted-fg);
   }
   .box {
-    min-width: 400px;
+    min-width: min(400px, 100%);
     max-width: 400px;
     max-height: 400px;
     padding: 40px;
   }
   .device-setup {
-    min-width: 400px;
+    min-width: min(400px, 100%);
     max-width: 400px;
     max-height: 440px;
     padding: 20px 0px;

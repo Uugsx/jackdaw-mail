@@ -3,7 +3,7 @@
     <button type="button" class="nav-btn" title={$t`Previous month`} on:click={previousMonth}>
       <ChevronLeftIcon size="16px" />
     </button>
-    <hbox flex class="month-label font-smallest">{monthTitle}</hbox>
+    <hbox flex class="month-label font-smallest" title={monthTitle}>{monthTitle}</hbox>
     <button type="button" class="nav-btn" title={$t`Next month`} on:click={nextMonth}>
       <ChevronRightIcon size="16px" />
     </button>
@@ -23,6 +23,7 @@
         class:today={isSameDay(day, today)}
         class:selected={isSameDay(day, $selectedDate)}
         class:has-events={eventDayStamps.has(startOfDay(day).getTime())}
+        title={formatFullDate(day)}
         on:click={() => selectDay(day)}>
         {#if !isSameMonth(day, visibleMonth)}
           <span class="day-num with-month">{formatDayWithMonth(day)}</span>
@@ -157,6 +158,11 @@
       cursor.setDate(cursor.getDate() + 1);
     }
     return days;
+  }
+
+  /** В узкой колонке «1 нояб.» может обрезаться: полная дата — в подсказке. */
+  function formatFullDate(day: Date): string {
+    return day.toLocaleDateString(getDateTimeLocale(), { day: "numeric", month: "long", year: "numeric" });
   }
 
   function formatDayWithMonth(day: Date): string {

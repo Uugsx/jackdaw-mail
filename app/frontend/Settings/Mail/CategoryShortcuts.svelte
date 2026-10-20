@@ -27,7 +27,7 @@
               <span class="tag-dot" style="--tag-color: {row.color}" aria-hidden="true" />
             {/if}
             <span class="target-kind">{row.kind == "tag" ? $t`Category` : $t`Combination`}</span>
-            <span class="target-label">{row.label}</span>
+            <span class="target-label" title={row.label}>{row.label}</span>
           </hbox>
           <hbox flex />
           {#if row.shortcut}

@@ -28,7 +28,7 @@
               <p class="empty font-smallest">{$t`No events scheduled`}</p>
             {:else}
               {#each dayGroup.events as event (event.id)}
-                <button type="button" class="event-card" on:click={() => openEvent(event)}>
+                <button type="button" class="event-card" title={[event.title, eventDetail(event)].filter(Boolean).join("\n")} on:click={() => openEvent(event)}>
                   <vbox class="event-time-col font-smallest tabular-nums">
                     {#if event.allDay}
                       <span class="time-main">{$t`All day`}</span>

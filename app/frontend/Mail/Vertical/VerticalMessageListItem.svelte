@@ -26,7 +26,7 @@
         <hbox class="action-date font-smallest">{actionDate}</hbox>
       {/if}
     </hbox>
-    <hbox class="contact font-small">{contactName}</hbox>
+    <hbox class="contact font-small" title={contactName}>{contactName}</hbox>
     <hbox flex />
     <hbox class="date font-smallest">{getDateTimeString($message.listDisplayDate())}</hbox>
     <hbox class="unread-dot button" class:unread={!$message.isRead}>
@@ -41,7 +41,7 @@
     </hbox>
   </hbox>
   <hbox class="bottom-row">
-    <hbox class="subject font-small">{$message.subject}</hbox>
+    <hbox class="subject font-small" title={$message.subject}>{$message.subject}</hbox>
     <MessageTags tags={$tags} />
     {#if !isMobile}
       <hbox class="move button">

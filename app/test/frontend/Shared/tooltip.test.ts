@@ -21,6 +21,13 @@ function hover(element: HTMLElement): void {
   element.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
 }
 
+/** happy-dom не считает раскладку: задаём размеры, как у обрезанной подписи. */
+function makeTruncated(element: HTMLElement, visibleWidth = 40, fullWidth = 120): void {
+  element.style.overflow = "hidden";
+  Object.defineProperty(element, "clientWidth", { configurable: true, value: visibleWidth });
+  Object.defineProperty(element, "scrollWidth", { configurable: true, value: fullWidth });
+}
+
 describe("renderer tooltips", () => {
   test("shows a stable body-level tooltip for a native title", () => {
     const button = document.createElement("button");
@@ -139,6 +146,70 @@ describe("renderer tooltips", () => {
 
     vi.advanceTimersByTime(140);
     expect(tooltip?.hidden).toBe(true);
+  });
+
+  test("показывает подсказку, равную подписи, если подпись обрезана", () => {
+    const button = document.createElement("button");
+    button.title = "Ответить всем";
+    const label = document.createElement("span");
+    label.textContent = "Ответить всем";
+    makeTruncated(label);
+    button.append(label);
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Ответить всем");
+    expect(tooltip?.dataset.visible).toBe("true");
+  });
+
+  test("у кнопки без title обрезанная подпись показывается в подсказке целиком", () => {
+    const button = document.createElement("button");
+    const label = document.createElement("span");
+    label.textContent = "Облачное хранилище";
+    makeTruncated(label);
+    button.append(label);
+    document.body.append(button);
+
+    hover(label);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Облачное хранилище");
+    expect(tooltip?.dataset.visible).toBe("true");
+
+    button.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
+    vi.advanceTimersByTime(140);
+    expect(button.hasAttribute("title")).toBe(false);
+    expect(button.hasAttribute("data-jackdaw-tooltip")).toBe(false);
+  });
+
+  test("без обрезки и без title у кнопки с подписью подсказки нет", () => {
+    const button = document.createElement("button");
+    button.textContent = "Сохранить";
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
+  });
+
+  test("строка с role=button не получает автоподсказку из всего своего текста", () => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "button");
+    const subject = document.createElement("span");
+    subject.textContent = "Очень длинная тема письма";
+    makeTruncated(subject);
+    row.append(subject);
+    document.body.append(row);
+
+    hover(subject);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
   });
 
   test("не показывает подсказку во время выделения текста в почтовом WebView", () => {

@@ -22,5 +22,7 @@
 <style>
   .settings-content {
     max-width: 98%; /* HACK for account name page*/
+    /* Страницы подстраиваются под ширину правой части настроек, а не окна. */
+    container: settings-page / inline-size;
   }
 </style>

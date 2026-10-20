@@ -1,7 +1,7 @@
 {#if $mailUndoToast}
   <hbox class="mail-undo-toast" role="status">
     <Trash2Icon size="16px" aria-hidden="true" />
-    <span class="label">{$mailUndoToast.label}</span>
+    <span class="label" title={$mailUndoToast.label}>{$mailUndoToast.label}</span>
     <button type="button" class="undo" on:click={() => catchErrors(onUndo)}>
       {$t`Undo`}
     </button>

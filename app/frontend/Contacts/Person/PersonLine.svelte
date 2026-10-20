@@ -5,7 +5,7 @@
     <PersonPicture {person} size={pictureSize} />
   <vbox flex class="main">
     <hbox class="first-row">
-      <hbox flex class="name {fontClass}">{$person.name}</hbox>
+      <hbox flex class="name {fontClass}" title={$person.name}>{$person.name}</hbox>
       <slot name="top-right" {person} />
     </hbox>
     <hbox class="second-row">
