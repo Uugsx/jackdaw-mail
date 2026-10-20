@@ -75,6 +75,9 @@ const LOOKUP_DEBOUNCE_MS = 250;
 const LOOKUP_BATCH = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
 const HEARTBEAT_MS = 25_000;
+/** Сколько ждать `pong` на `ping`. После сна системы или смены сети сокет остаётся «открытым»,
+ * хотя TCP уже мёртв, и ОС закрывает его лишь через минуты. */
+const PONG_TIMEOUT_MS = 10_000;
 /** Сколько ждать `welcome` после начала подключения: иначе молчащий сервер оставил бы клиент «подключающимся» навсегда */
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 /**
@@ -115,6 +118,9 @@ export class JackdawCallClient extends Observable {
   protected reconnectTimer: unknown = null;
   protected heartbeatTimer: unknown = null;
   protected handshakeTimer: unknown = null;
+  /** Ожидание `pong`: до `pongDeadline` (`now()`, мс) */
+  protected pongTimer: unknown = null;
+  protected pongDeadline = 0;
   protected lookupTimer: unknown = null;
   protected readonly lookupQueue = new Set<string>();
   protected readonly reachable = new Map<string, { value: boolean; at: number }>();
@@ -268,14 +274,42 @@ export class JackdawCallClient extends Observable {
     this.heartbeatTimer = null;
     this.clearTimer(this.handshakeTimer);
     this.handshakeTimer = null;
+    this.clearTimer(this.pongTimer);
+    this.pongTimer = null;
   }
 
   protected scheduleHeartbeat(): void {
     this.clearTimer(this.heartbeatTimer);
     this.heartbeatTimer = this.setTimer(() => {
-      this.sendRaw({ type: "ping" });
+      this.checkConnection();
       this.scheduleHeartbeat();
     }, HEARTBEAT_MS);
+  }
+
+  /**
+   * Проверяет, живо ли соединение на связи: шлёт `ping` и переподключается, если `pong` не пришёл за `timeoutMs`.
+   * Повторная проверка до ответа срок не продлевает, только сокращает.
+   * Идущий звонок не обрывается, пока соединение отвечает.
+   */
+  checkConnection(timeoutMs = PONG_TIMEOUT_MS): void {
+    let socket = this.socket;
+    if (!socket || this.status != "online") return;
+    let deadline = this.now() + timeoutMs;
+    // Срок ставится до отправки: ответ не может обогнать собственное ожидание.
+    if (this.pongTimer == null || deadline < this.pongDeadline) {
+      this.clearTimer(this.pongTimer);
+      this.pongDeadline = deadline;
+      this.pongTimer = this.setTimer(() => {
+        this.pongTimer = null;
+        if (this.socket != socket) return;
+        // Сокет «открыт», но сервер не отвечает: ждать закрытия TCP от ОС — минуты.
+        this.closeSocket();
+        this.verifiedEmails = [];
+        this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
+        this.scheduleReconnect();
+      }, timeoutMs);
+    }
+    this.sendRaw({ type: "ping" });
   }
 
   protected sendRaw(message: Record<string, unknown>): boolean {
@@ -308,6 +342,10 @@ export class JackdawCallClient extends Observable {
         this.scheduleHeartbeat();
         this.flushLookups();
         this.notifyCallsReconnected(message.resumedCalls);
+        break;
+      case "pong":
+        this.clearTimer(this.pongTimer);
+        this.pongTimer = null;
         break;
       case "verified":
         this.saveProof(message.email, message.proof);

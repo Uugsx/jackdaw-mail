@@ -12,13 +12,19 @@ class FakeSocket implements CallSocket {
   readyState = 0;
   sent: any[] = [];
   closed: { code?: number } | null = null;
+  /** Живой сервер отвечает на ping. false — TCP мёртв, хотя сокет ещё «открыт» */
+  answersPings = true;
   onopen: ((event: unknown) => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: unknown) => void) | null = null;
   onerror: ((event: unknown) => void) | null = null;
 
   send(data: string) {
-    this.sent.push(JSON.parse(data));
+    let message = JSON.parse(data);
+    this.sent.push(message);
+    if (message.type == "ping" && this.answersPings) {
+      this.receive({ type: "pong" });
+    }
   }
   close(code?: number) {
     this.readyState = 3;
@@ -590,6 +596,85 @@ describe("клиент сигналинга", () => {
     connectOnline();
     timers.advance(25_000);
     expect(socket().last()).toEqual({ type: "ping" });
+  });
+
+  test("сервер отвечает на ping — живое соединение не рвётся часами", () => {
+    connectOnline();
+    // Три часа: таймеры здесь отсчитываются от конца шага, поэтому шаг — один интервал сердцебиения.
+    for (let i = 0; i < 3 * 60 * 60 / 25; i++) {
+      timers.advance(25_000);
+    }
+    expect(sockets).toHaveLength(1);
+    expect(socket().closed).toBeNull();
+    expect(client.status).toBe("online");
+    expect(socket().sent.filter(m => m.type == "ping").length).toBe(3 * 60 * 60 / 25);
+  });
+
+  test("pong не пришёл — сокет закрывается и клиент переподключается, ожидания отклоняются", async () => {
+    connectOnline();
+    let dead = socket();
+    dead.answersPings = false;
+    let pending = client.request({ type: "chat-send" }, reply => reply.type == "chat-sent" as any);
+    timers.advance(25_000);
+    expect(dead.last()).toEqual({ type: "ping" });
+    timers.advance(9_999);
+    expect(client.status).toBe("online");
+    timers.advance(1);
+    expect(dead.closed).toBeTruthy();
+    expect(client.status).toBe("offline");
+    expect(client.verifiedEmails).toEqual([]);
+    await expect(pending).rejects.toBeInstanceOf(JackdawCallServiceError);
+    // Запоздалое закрытие мёртвого сокета ничего не ломает.
+    dead.drop();
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  test("запоздалый pong отменяет переподключение", () => {
+    connectOnline();
+    socket().answersPings = false;
+    timers.advance(25_000 + 5_000);
+    socket().receive({ type: "pong" });
+    timers.advance(10_000);
+    expect(client.status).toBe("online");
+    expect(sockets).toHaveLength(1);
+  });
+
+  test("проверка соединения: короткий срок, звонок не обрывается, повторная проверка срок не продлевает", () => {
+    connectOnline();
+    let signals: any[] = [];
+    client.register({ callID: "call-0001", onSignal: message => signals.push(message) });
+    client.checkConnection(5_000);
+    expect(socket().last()).toEqual({ type: "ping" });
+    expect(socket().closed).toBeNull();
+    expect(sockets).toHaveLength(1);
+    socket().receive({ type: "signal", callId: "call-0001", kind: "ice", candidate: null });
+    expect(signals).toHaveLength(1);
+
+    socket().answersPings = false;
+    client.checkConnection(5_000);
+    timers.advance(4_000);
+    client.checkConnection(5_000);
+    timers.advance(1_000);
+    expect(client.status).toBe("offline");
+    expect(socket().closed).toBeTruthy();
+  });
+
+  test("проверка соединения вне связи ничего не шлёт", () => {
+    client.checkConnection();
+    client.start();
+    socket().open();
+    client.checkConnection();
+    expect(socket().sent.filter(m => m.type == "ping")).toHaveLength(0);
+    client.stop();
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(1);
   });
 });
 
