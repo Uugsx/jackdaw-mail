@@ -1086,9 +1086,15 @@ set -euo pipefail
 DMG=${JSON.stringify(dmgPath)}
 DEST=${JSON.stringify(destApp)}
 PID=${process.pid}
+DB_PID=${sqliteHost.processID ?? ""}
 MOUNT=$(mktemp -d /tmp/jackdaw-update.XXXXXX)
 
 while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+# Процесс базы может пережить главный ещё на время контрольной точки WAL:
+# новая версия тогда получила бы при запуске SQLITE_BUSY. Ждём не дольше 30 с.
+if [ -n "$DB_PID" ]; then
+  for _ in $(seq 150); do kill -0 "$DB_PID" 2>/dev/null || break; sleep 0.2; done
+fi
 sleep 0.5
 
 cleanup() {

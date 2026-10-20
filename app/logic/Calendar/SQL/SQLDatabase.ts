@@ -3,19 +3,23 @@ import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { calendarDatabaseSchema } from "./createDatabase";
 import { addEventAttachmentTable } from "./SQLEventMigrate";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 // <copied from="Mail/SQL/Account/SQLDatabase.ts">
 
 let calendarDatabase: Database;
 
+const openCalendarDatabase = openDatabaseOnce(() => getSQLiteDatabase("calendar.db"), async database => {
+  await database.migrate(calendarDatabaseSchema, addEventAttachmentTable);
+  await database.pragma('foreign_keys = true');
+  await database.pragma('journal_mode = WAL');
+});
+
 export async function getDatabase(): Promise<Database> {
   if (calendarDatabase) {
     return calendarDatabase;
   }
-  calendarDatabase = await getSQLiteDatabase("calendar.db");
-  await calendarDatabase.migrate(calendarDatabaseSchema, addEventAttachmentTable);
-  await calendarDatabase.pragma('foreign_keys = true');
-  await calendarDatabase.pragma('journal_mode = WAL');
+  calendarDatabase = await openCalendarDatabase();
   return calendarDatabase;
 }
 

@@ -92,6 +92,7 @@
   import { getStartObjects as getWebMailStartObjects, loginOnStartup as loginWebMailOnStartup } from "../../logic/WebMail/startup";
   // #endif
   import { notifications } from "./Notification";
+  import { loadStartObjects } from "./startObjectsNotice";
   import { selectedAccount } from "../Mail/Selected";
   import { restoreSelectedWorkspace } from "./Selected";
   import {
@@ -271,6 +272,17 @@
     // #if [MOBILE]
     SplashScreen.hide();
     // #endif
+    // #if [!WEBMAIL]
+    // Если база занята дольше, чем ждут повторы, — ошибка с кнопкой «Повторить»,
+    // и остальной запуск выполнится после успешной загрузки
+    await loadStartObjects(getDesktopStartObjects, afterStartObjects);
+    // #else
+    await getWebMailStartObjects();
+    await afterStartObjects();
+    // #endif
+  }
+
+  async function afterStartObjects() {
     await startup();
     restoreSelectedWorkspace(appGlobal.workspaces);
     changeTheme($themeSetting.value);
@@ -279,15 +291,12 @@
 
   async function startup() {
     // #if [!WEBMAIL]
-    await getDesktopStartObjects();
     if (isDemoMode()) {
       const { testDataOn } = await import("../../logic/testData");
       await testDataOn();
       $selectedAccount = appGlobal.emailAccounts.first;
       return;
     }
-    // #else
-    await getWebMailStartObjects();
     // #endif
     startUpdateNotificationWatcher();
     if (appGlobal.emailAccounts.isEmpty && appGlobal.chatAccounts.isEmpty) {

@@ -17,11 +17,22 @@ export interface SQLiteEngine {
 export type OpenSQLiteEngine = (filename: string | null, options: any, buffer?: Uint8Array) => SQLiteEngine;
 
 /**
+ * Сколько соединение с файловой базой ждёт чужую блокировку, прежде чем
+ * вернуть SQLITE_BUSY. Хватает, например, на контрольную точку WAL большой
+ * mail.db, которую при обновлении ещё делает процесс базы прошлой версии.
+ * Явный `timeout` в параметрах открытия (импорт чужих баз) важнее.
+ */
+export const kBusyTimeoutMs = 30_000;
+const kBusyTimeoutPragmaRE = /^\s*busy_timeout\s*=\s*(\d+)\s*;?\s*$/i;
+
+/**
  * Исполняет запросы к открытым базам. Не знает о транспорте:
  * в приложении работает в utilityProcess (`worker.ts`), в тестах — напрямую.
  */
 export class SQLiteServer {
   protected readonly databases = new Map<number, SQLiteEngine>();
+  /** busy_timeout каждой файловой базы: migrate() библиотеки сбрасывает его на 5 с */
+  protected readonly busyTimeouts = new Map<number, number>();
   protected nextDatabaseID = 1;
 
   constructor(protected readonly openEngine: OpenSQLiteEngine) {
@@ -41,14 +52,23 @@ export class SQLiteServer {
   protected async execute(request: SQLiteRequest): Promise<any> {
     switch (request.op) {
       case "open": {
-        let engine = this.openEngine(request.filename, request.options, request.buffer);
+        let options = request.options;
+        if (request.filename && options?.timeout == null) {
+          options = { ...options, timeout: kBusyTimeoutMs };
+        }
+        let engine = this.openEngine(request.filename, options, request.buffer);
         let dbID = this.nextDatabaseID++;
         this.databases.set(dbID, engine);
+        let busyTimeout = Number(options?.timeout);
+        if (request.filename && Number.isInteger(busyTimeout)) {
+          this.busyTimeouts.set(dbID, busyTimeout);
+        }
         return dbID;
       }
       case "close": {
         let engine = this.databases.get(request.dbID);
         this.databases.delete(request.dbID);
+        this.busyTimeouts.delete(request.dbID);
         engine?.close();
         return null;
       }
@@ -61,6 +81,10 @@ export class SQLiteServer {
         // таблицы. Сами миграции выполняет главный процесс: функции миграций
         // живут в renderer и обращаются к базе обычными запросами.
         await engine.migrate();
+        let busyTimeout = this.busyTimeouts.get(request.dbID);
+        if (busyTimeout != null) {
+          engine.pragma(`busy_timeout = ${busyTimeout}`);
+        }
         return engine.pragma("user_version", { simple: true });
       }
       case "execute":
@@ -72,8 +96,14 @@ export class SQLiteServer {
         return this.database(request.dbID).get(withBuffers(request.query));
       case "all":
         return this.database(request.dbID).all(withBuffers(request.query));
-      case "pragma":
-        return this.database(request.dbID).pragma(request.source, request.options);
+      case "pragma": {
+        let result = this.database(request.dbID).pragma(request.source, request.options);
+        let busyTimeout = kBusyTimeoutPragmaRE.exec(String(request.source));
+        if (busyTimeout && this.busyTimeouts.has(request.dbID)) {
+          this.busyTimeouts.set(request.dbID, Number(busyTimeout[1]));
+        }
+        return result;
+      }
       case "batch":
         return this.batch(this.database(request.dbID), request.steps);
       default:
@@ -106,6 +136,7 @@ export class SQLiteServer {
       }
     }
     this.databases.clear();
+    this.busyTimeouts.clear();
   }
 
   protected database(dbID: number): SQLiteEngine {

@@ -211,6 +211,18 @@ function isNetworkLike(err: any, message: string, codes: string[]): boolean {
     /network ?error|failed to fetch|fetch failed|load failed|operation was aborted|request was aborted/i.test(message);
 }
 
+/** SQLITE_BUSY или SQLITE_LOCKED: базу держит другое соединение, и повтор
+ * чуть позже, скорее всего, удастся. Код ищется и в причинах (`cause`), и в
+ * тексте: класс ошибки и её поля не всегда переживают JPC. */
+export function isDatabaseBusyError(ex: unknown): boolean {
+  if (!ex) {
+    return false;
+  }
+  let message = rawErrorMessage(ex);
+  return errorCodes(ex, message).some(code => /^SQLITE_(BUSY|LOCKED)/.test(code)) ||
+    /\bdatabase (?:table )?is locked\b/i.test(message);
+}
+
 function sqliteKind(codes: string[]): FriendlyErrorKind {
   if (codes.some(code => /^SQLITE_(BUSY|LOCKED)/.test(code))) {
     return "database-busy";

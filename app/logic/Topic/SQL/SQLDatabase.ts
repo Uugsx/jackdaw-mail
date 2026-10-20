@@ -1,19 +1,23 @@
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { topicDatabaseSchema } from "./createDatabase";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 // <copied from="Chat/SQL/SQLDatabase.ts">
 
 let topicDatabase: Database;
 
+const openTopicDatabase = openDatabaseOnce(() => getSQLiteDatabase("topic.db"), async database => {
+  await database.migrate(topicDatabaseSchema);
+  await database.pragma('foreign_keys = true');
+  await database.pragma('journal_mode = WAL');
+});
+
 export async function getDatabase(): Promise<Database> {
   if (topicDatabase) {
     return topicDatabase;
   }
-  topicDatabase = await getSQLiteDatabase("topic.db");
-  await topicDatabase.migrate(topicDatabaseSchema);
-  await topicDatabase.pragma('foreign_keys = true');
-  await topicDatabase.pragma('journal_mode = WAL');
+  topicDatabase = await openTopicDatabase();
   return topicDatabase;
 }
 
