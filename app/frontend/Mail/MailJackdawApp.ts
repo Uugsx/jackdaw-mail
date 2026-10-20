@@ -17,6 +17,8 @@ import { resolveComposeRecipients } from "../../logic/Mail/composeResolveRecipie
 import { deserializeMessageWindowMail } from "./Message/messageWindow";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
+import { confirmReplyCollision, replyCollisionWarning } from "./Collision/replyCollisionWarning";
+import { backgroundError } from "../Util/error";
 import { assert } from "../../logic/util/util";
 
 export class MailJackdawApp extends JackdawApp {
@@ -25,7 +27,15 @@ export class MailJackdawApp extends JackdawApp {
   icon = mailIcon;
   appURL = "/mail";
 
-  writeMail(mail: EMail, options: { nativeWindowID?: string; forceMainWindow?: boolean } = {}) {
+  /** @param options.collisionChecked предупреждение об ответе коллеги уже показано */
+  writeMail(mail: EMail, options: { nativeWindowID?: string; forceMainWindow?: boolean; collisionChecked?: boolean } = {}) {
+    // Ответ из отдельного окна письма: диалог в главном окне там не виден, поэтому не показываем его.
+    if (!options.collisionChecked && !options.nativeWindowID && replyCollisionWarning(mail)) {
+      confirmReplyCollision(mail)
+        .then(reply => reply && this.writeMail(mail, { ...options, collisionChecked: true }))
+        .catch(backgroundError);
+      return;
+    }
     let composerApp = new WriteMailJackdawApp();
     composerApp.title = derived(mail, () => mail.subject ?? composerApp.name);
     composerApp.windowParams = {

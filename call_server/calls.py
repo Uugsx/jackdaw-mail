@@ -6,7 +6,8 @@
 - подтверждает владение email кодом из письма и выдаёт подписанное подтверждение;
 - держит в памяти, какие подтверждённые адреса сейчас в сети;
 - передаёт приглашение, ответ, отказ и завершение звонка;
-- пересылает между двумя участниками звонка описание сессии WebRTC (SDP) и ICE-кандидаты.
+- пересылает между двумя участниками звонка описание сессии WebRTC (SDP) и ICE-кандидаты;
+- раздаёт членам общего ящика, кто из коллег читает письмо или отвечает на него (presence.py).
 
 Аудио идёт напрямую между клиентами (P2P WebRTC, шифрование DTLS-SRTP). Через этот
 сервис проходит только сигналинг, контент звонка — нет. Если заданы настройки LiveKit,
@@ -105,6 +106,9 @@ RATE_LIMITS = {
     "chat-pull": 60,
     "blob-put": 600,
     "blob-get": 600,
+    # Присутствие в общих ящиках: открытие письма — «читает» и снятие с предыдущего, листают стрелками.
+    "presence-watch": 20,
+    "presence-set": 240,
     "default": 120,
 }
 # Отправка кода на один адрес ограничена отдельно от соединения: иначе можно засыпать чужой ящик письмами.
@@ -637,6 +641,7 @@ class CallHub:
         verified_store: Any = None,
         turn: TurnCredentialIssuer | None = None,
         executor: Any = None,
+        presence: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -664,6 +669,8 @@ class CallHub:
         self.verified_store = verified_store
         # Пул потоков для блокирующих шагов; None — пул цикла событий по умолчанию
         self.executor = executor
+        # PresenceService из presence.py; None — без присутствия в общих ящиках
+        self.presence = presence
         # Фоновые шаги без соединения (запись подтверждения из SMTP-приёма): ссылка нужна, чтобы задачу не собрал GC
         self._background: set[asyncio.Task[None]] = set()
 
@@ -677,6 +684,8 @@ class CallHub:
         self._forget_subject(peer)
         if self.chat is not None:
             self.chat.disconnected(peer)
+        if self.presence is not None:
+            self.presence.disconnected(peer)
         for email in list(peer.emails):
             self._unregister(peer, email)
         for call in list(self.calls.values()):
@@ -784,6 +793,7 @@ class CallHub:
                 "hangup": self._hangup,
                 "signal": self._signal,
                 **(self.chat.handlers() if self.chat is not None else {}),
+                **(self.presence.handlers() if self.presence is not None else {}),
             }.get(request_type)
             if handler is None:
                 raise CallError("unknown_type", "Неизвестный тип сообщения.")
@@ -828,6 +838,8 @@ class CallHub:
                 self._unregister(peer, email)
             if self.chat is not None:
                 self.chat.credential_lost(peer)
+            if self.presence is not None:
+                self.presence.credential_lost(peer)
             # До обнуления credential: по нему соединение находится в peers_by_subject.
             self._forget_subject(peer)
             peer.credential = None
@@ -860,6 +872,9 @@ class CallHub:
         if self.chat is not None:
             # Адреса могли измениться: клиент регистрирует устройство чата заново после `welcome`.
             self.chat.credential_lost(peer)
+        if self.presence is not None:
+            # Адреса могли измениться: клиент заново сообщает, какие общие ящики смотрит.
+            self.presence.credential_lost(peer)
         self._forget_subject(peer)
         peer.credential = credential
         self.peers_by_subject.setdefault(credential.subject, set()).add(peer)
@@ -1288,6 +1303,7 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
         future.add_done_callback(finished)
 
     from chat import ChatService, ChatStore
+    from presence import PresenceService
 
     data_dir = Path(os.getenv("JACKDAW_CALLS_DATA_DIR", "/var/lib/jackdaw-calls"))
     chat = ChatService(ChatStore(data_dir / "chat.sqlite3", data_dir / "blobs"))
@@ -1300,7 +1316,7 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
         send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
-        verified_store=chat.store, turn=turn,
+        verified_store=chat.store, turn=turn, presence=PresenceService(),
         executor=concurrent.futures.ThreadPoolExecutor(max_workers=DATABASE_THREADS, thread_name_prefix="jackdaw-calls-db"),
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"

@@ -2642,5 +2642,22 @@
   "ISsBIA": "{0} : pas de connexion au serveur",
   "63iWwk": "Impossible de charger vos comptes.",
   "fxuUHa": "Chargement de vos comptes. Les données locales sont occupées, en attente de leur libération…",
-  "Nh0W3E": "Chargement de vos comptes…"
+  "Nh0W3E": "Chargement de vos comptes…",
+  "nwPvU0": "Répond : {0}",
+  "4zVimH": "A répondu : {0}, {1}",
+  "08/VWB": "Lit : {0}",
+  "qU8VP9": "Un collègue",
+  "mb7SnH": "{0} rédige déjà une réponse à ce message de la boîte partagée. Le client risque de recevoir deux réponses.",
+  "u36ssB": "{0} a déjà répondu à ce message de la boîte partagée : {1}.",
+  "tctS5B": "Un collègue s’en occupe déjà",
+  "Jewe3R": "Répondre quand même",
+  "EzvRoS": "Ouvrir le chat avec le collègue",
+  "NLN/DV": "Confirmez l’adresse de la boîte partagée dans Paramètres → Appels et chat pour voir les collègues qui traitent ses messages.",
+  "6I7cJR": "Ouvrir le chat",
+  "HTtErD": "Boîtes partagées",
+  "l0BCFX": "Les collègues qui ont confirmé la même boîte partagée voient quand vous lisez un de ses messages ou y répondez, et vous les voyez. Le serveur ne reçoit que l’adresse de la boîte et un code du message, sans objet ni texte.",
+  "XsTtGG": "Afficher qui lit les messages des boîtes partagées ou y répond",
+  "2bc3pa": "boîte partagée",
+  "FVGwnd": "boîte personnelle",
+  "MJXtpf": "Confirmez cette adresse ci-dessus pour voir vos collègues."
 }

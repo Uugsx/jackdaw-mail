@@ -42,6 +42,7 @@
   </hbox>
   <hbox class="bottom-row">
     <hbox class="subject font-small" title={$message.subject}>{$message.subject}</hbox>
+    <CollisionBadge {message} compact />
     <MessageTags tags={$tags} />
     {#if !isMobile}
       <hbox class="move button">
@@ -110,6 +111,7 @@
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
 
   export let message: EMail;
 
