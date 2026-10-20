@@ -772,6 +772,9 @@
           <span>{$t`Mail account`}</span>
           <select
             bind:value={selectedMailAccountId}
+            title={selectedMailAccount
+              ? `${selectedMailAccount.accountName}${selectedMailAccount.email ? ` — ${selectedMailAccount.email}` : ""}`
+              : undefined}
             disabled={mailAccountsLoading}
             on:change={onAccountChange}
           >
@@ -789,6 +792,7 @@
           <span>{$t`Mail folder`}</span>
           <select
             bind:value={selectedMailFolderId}
+            title={selectedMailFolder?.name}
             disabled={selectedMailAccountId == null || mailFoldersLoading}
             on:change={onFolderChange}
           >
@@ -876,7 +880,10 @@
         >
           <summary>
             <span>{$t`Settings`}</span>
-            <span class="live-settings-summary-text">
+            <span
+              class="live-settings-summary-text"
+              title={`${$t`Who answers`}: ${responderSummary}`}
+            >
               {$t`Who answers`}: {responderSummary}
             </span>
           </summary>
