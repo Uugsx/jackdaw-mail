@@ -115,6 +115,8 @@
       </ul>
     {/if}
   </HeaderGroupBox>
+
+  <CollisionSettings />
 </vbox>
 
 <script context="module" lang="ts">
@@ -201,6 +203,7 @@
   import Button from "../../Shared/Button.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
+  import CollisionSettings from "../../Mail/Collision/CollisionSettings.svelte";
   import CheckIcon from "lucide-svelte/icons/check";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
   import { t } from "../../../l10n/l10n";

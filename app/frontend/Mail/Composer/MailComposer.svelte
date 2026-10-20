@@ -91,6 +91,10 @@
         <span class="label">{$t`Subject`}</span>
         <input type="text" bind:value={mail.subject} tabindex={1} placeholder={$t`Subject`} class="font-normal" />
       </hbox>
+      {#if mail.composeSource && mail.inReplyTo}
+        <!-- Коллега по общему ящику тоже отвечает на это письмо или уже ответил -->
+        <CollisionBadge message={mail.composeSource} />
+      {/if}
     </vbox>
     {#if $mail.shouldEncrypt}
       <EncryptionDetails {mail} identity={fromIdentity} bind:encryptionError />
@@ -196,6 +200,7 @@
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { MailIdentity } from "../../../logic/Mail/MailIdentity";
   import { WriteMailJackdawApp, mailApp } from "../MailJackdawApp";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { SpecialFolder } from "../../../logic/Mail/Folder";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { goBack } from "../../AppsBar/selectedApp";

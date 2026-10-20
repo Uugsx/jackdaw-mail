@@ -23,6 +23,9 @@
     </hbox>
   </hbox>
   <ShowReplyBanner {message} />
+  {#if !readOnly}
+    <CollisionBadge {message} />
+  {/if}
   <hbox class="message-meta">
     {#if $message.contact instanceof Person && $message.contact.picture}
       <PersonPicture person={$message.contact} size={avatarSize} />
@@ -123,6 +126,8 @@
   import EncryptionDetails from "./EncryptionDetails.svelte";
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
   import ShowReplyBanner from "./ShowReplyBanner.svelte";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
+  import { beginCollisionActivity } from "../Collision/collisionPresence";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import RemoveIcon from "lucide-svelte/icons/x";
   import { getLocalStorage } from "../../Util/LocalStorage";
@@ -168,6 +173,20 @@
   onDestroy(() => {
     clearTimeout(readTimeout);
   });
+
+  // «Читает» для коллег по общему ящику, пока письмо открыто
+  let stopViewing: () => void = () => {};
+  let viewing: EMail | null = null;
+  $: trackViewing(readOnly ? null : message);
+  function trackViewing(viewed: EMail | null) {
+    if (viewed === viewing) return;
+    viewing = viewed;
+    // Сначала новое, затем снятие старого: то же письмо не мигает у коллег «закрыл — открыл».
+    let stopPrevious = stopViewing;
+    stopViewing = beginCollisionActivity(viewed, "viewing");
+    stopPrevious();
+  }
+  onDestroy(() => stopViewing());
 
   let isEncryptionExpanded = false;
   $: $message, closeEncryption()

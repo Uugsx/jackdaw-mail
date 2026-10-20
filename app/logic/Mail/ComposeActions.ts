@@ -20,6 +20,7 @@ import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
 import { normalizeSignatureHTML } from "./SignatureHTML";
 import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
 import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
+import { notifyMailSent } from "./Collision/mailSent";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -592,6 +593,7 @@ export class ComposeActions {
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
     await account.send(mail);
     void playNotificationSound("mail-outgoing");
+    notifyMailSent(this.email);
 
     await this.markComposeSourceFlags();
 
