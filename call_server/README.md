@@ -37,6 +37,17 @@ STUN помогает клиентам за обычным домашним ил
 - Группы: до 50 участников. Состав и название меняет только создатель группы; сообщения от не-участников отбрасываются клиентом.
 - Клиент запоминает ключи собеседников и предупреждает о новом устройстве или смене ключа.
 
+## Общие ящики: кто читает и отвечает
+
+Защита от двух ответов клиенту из одного общего ящика (`presence.py`, клиент — `app/logic/Mail/Collision/`).
+
+- Клиент сообщает `presence-watch` со списком общих ящиков, для которых функция включена, и `presence-set` с состоянием письма: `viewing` (открыто), `replying` (пишется ответ), `replied` (ответ отправлен), `none` (снять).
+- Ящик принимается, только если соединение само подтвердило этот адрес (код из письма или обратное подтверждение, как для звонков). Чужой и несуществующий ящики дают одну и ту же ошибку `presence_not_member`; снимок и обновления получают только соединения, подтвердившие тот же адрес. Своё устройство о себе не узнаёт.
+- Письмо — метка `tag`: HMAC-SHA256 от Message-ID, ключ — SHA-256 от адреса ящика. Тема, отправитель, текст и сам Message-ID на сервер не попадают. **Ограничение:** адрес ящика серверу известен, поэтому секрета, скрытого от сервера, нет: метка не раскрывает письмо, но сервер может проверить письмо, Message-ID которого уже знает. Ключ команды, неизвестный серверу (раздача через сквозной чат), — следующий шаг.
+- Сервер видит: адрес ящика, метку, имя коллеги из `hello`, его подтверждённый личный адрес (`from`, для «Открыть чат с коллегой»), время.
+- Всё только в памяти. `viewing` и `replying` живут 150 с без продления (клиент продлевает раз в минуту) и снимаются при разрыве соединения, смене лицензии или выходе ящика из `presence-watch`. `replied` переживает разрыв и живёт 24 часа, до 2000 на ящик. До 16 активных состояний на соединение; лишние вытесняются. Лимиты: 20 `presence-watch` и 240 `presence-set` в минуту на соединение.
+- Ответы: `presence-snapshot` на `presence-watch` (`mailboxes`: ящик → список состояний) и `presence` на каждое изменение (`state: none` — снято). Продление без изменений не рассылается.
+
 ## Модель доступа
 
 1. **Лицензия.** Клиент при входе передаёт тот же ключ и `deviceId`, что и сервису лицензий (или `deviceId` пробного периода). Сервис проверяет их по базе лицензий через соединение с `PRAGMA query_only` — записать в базу он не может. Каждые 15 минут проверка повторяется; отозванная лицензия отключает клиента.
@@ -83,7 +94,7 @@ IP-адреса собеседников видны друг другу в ICE-�
 2. Файлы сервиса:
    ```bash
    sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls /opt/jackdaw-calls/migrations /var/lib/jackdaw-calls
-   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py call_server/requirements.txt /opt/jackdaw-calls/
+   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py call_server/inbound.py call_server/presence.py call_server/requirements.txt /opt/jackdaw-calls/
    sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/migrations/*.sql /opt/jackdaw-calls/migrations/
    sudo -u jackdaw-license python3 -m venv /opt/jackdaw-calls/venv
    sudo -u jackdaw-license /opt/jackdaw-calls/venv/bin/pip install -r /opt/jackdaw-calls/requirements.txt
@@ -110,7 +121,7 @@ IP-адреса собеседников видны друг другу в ICE-�
 
 Схема БД сервиса лицензий не меняется. База чата (`/var/lib/jackdaw-calls/chat.sqlite3`, `JACKDAW_CALLS_DATA_DIR`) создаётся и мигрирует при старте сервиса. Откат: `sudo systemctl disable --now jackdaw-calls`, убрать маршрут `/v1/calls` из Caddy; при необходимости откатить миграции в обратном порядке: `sqlite3 chat.sqlite3 < migrations/003_message_sender_subject.rollback.sql` (нужен SQLite 3.35+), затем `… < migrations/002_verified_emails.rollback.sql`, затем `… < migrations/001_chat.rollback.sql`.
 
-Обновление: повторить шаг 2 для изменённых файлов и `sudo systemctl restart jackdaw-calls`. Состояние звонков хранится в памяти: уже соединённый голос P2P продолжит идти, но сервис о таких звонках забудет, поэтому перезапускать лучше в спокойное время.
+Обновление: повторить шаг 2 для изменённых файлов и `sudo systemctl restart jackdaw-calls`. Без `presence.py` рядом с `calls.py` сервис не запустится (`ModuleNotFoundError`). Состояние звонков хранится в памяти: уже соединённый голос P2P продолжит идти, но сервис о таких звонках забудет, поэтому перезапускать лучше в спокойное время.
 
 ## Необязательно: LiveKit SFU
 
