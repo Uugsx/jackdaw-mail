@@ -36,7 +36,10 @@
     {:catch ex}
       <span class="body-state" role="alert">{friendlyErrorMessage(ex)}</span>
     {:then}
-      {@html displayHtml(stripMailChatQuote($message.html), darkTheme)}
+      {#if translationAvailable}
+        <MessageTranslateBar {message} compact suggest={false} />
+      {/if}
+      {@html displayHtml(translatedHTML ?? bodyHTML, darkTheme)}
     {/await}
   </svelte:fragment>
   <svelte:fragment slot="menu">
@@ -53,6 +56,8 @@
   import { EMail } from "../../../logic/Mail/EMail";
   import { isOutgoingMail } from "./MailChatRoom";
   import { stripMailChatQuote } from "../Message/mailChatBody";
+  import MessageTranslateBar from "../Message/MessageTranslateBar.svelte";
+  import { getMessageTranslation, getTranslationEngineSetting, isMailTranslationAvailable } from "../Message/messageTranslation";
   import MessageBubble from "../../Chat/MessageView/Message.svelte";
   import Toolbar from "./MailChatToolbar.svelte";
   import { t } from "../../../l10n/l10n";
@@ -79,6 +84,16 @@
   function displayHtml(html: string, dark: boolean): string {
     return dark ? adaptEmailHtmlForDarkMode(html) : html;
   }
+
+  // Перевод — вместо текста пузыря; цитата прошлых писем не переводится, её здесь нет
+  let translationEngineSetting = getTranslationEngineSetting();
+  $: translationAvailable = isMailTranslationAvailable($translationEngineSetting.value);
+  $: translation = getMessageTranslation(message);
+  $: bodyHTML = stripMailChatQuote($message.html);
+  $: if ($message.loadedBody) {
+    translation.setDisplayed("html", bodyHTML);
+  }
+  $: translatedHTML = $translation ? translation.resultFor("html", bodyHTML) : null;
 
   async function loadMailChatMessage(mail: EMail): Promise<void> {
     await mail.loadForDisplay();

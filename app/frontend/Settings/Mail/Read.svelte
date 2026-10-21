@@ -32,10 +32,13 @@
       </label>
     </vbox>
   </HeaderGroupBox>
+
+  <Translation />
 </hbox>
 
 <script lang="ts">
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
+  import Translation from "./Translation.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import T from '../../../l10n/T.svelte';
   import { t } from "../../../l10n/l10n";

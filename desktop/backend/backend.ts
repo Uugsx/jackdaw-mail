@@ -32,6 +32,15 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import https from "node:https";
 import { RunOnce } from '../../app/logic/util/flow/RunOnce';
+import {
+  deleteMailTranslationModels,
+  getMailTranslationLanguages,
+  getMailTranslationModelInfo,
+  getMailTranslationModelsSize,
+  getMailTranslationProgress,
+  translateMailTexts,
+  translateMailTextsWithDeepL,
+} from "./translation";
 const { autoUpdater } = electronUpdater;
 
 const kMaxMailImageBytes = 25 * 1024 * 1024;
@@ -197,6 +206,13 @@ async function createSharedAppObject() {
     isSecretEncryptionAvailable,
     encryptSecret,
     decryptSecret,
+    getMailTranslationLanguages,
+    getMailTranslationModelInfo,
+    getMailTranslationModelsSize,
+    getMailTranslationProgress,
+    translateMailTexts,
+    translateMailTextsWithDeepL,
+    deleteMailTranslationModels,
     // openFileInExternalApp,
     createIMAPFlowConnection,
     getSQLiteDatabase,
