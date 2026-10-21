@@ -20,7 +20,7 @@
         </button>
       {/if}
       <hbox class="search-wrap">
-        <SearchField bind:searchTerm={$globalSearchTerm} variant="toolbar" />
+        <SearchField bind:searchTerm={$globalSearchTerm} variant="toolbar" busy={$mailSearchInProgress} />
         <button type="button" class="search-filters-btn"
           class:active={filtersOpen || usingAdvancedSearch}
           title={$t`Search filters`}
@@ -76,6 +76,7 @@
   import type { EMail } from "../../logic/Mail/EMail";
   import { newSearchEMail } from "../../logic/Mail/Store/setStorage";
   import SearchField from "../Shared/SearchField.svelte";
+  import { mailSearchInProgress } from "./Search/searchProgress";
   import CreateItemMenu from "./CreateItemMenu.svelte";
   import QuickFilterBar from "./LeftPane/QuickFilterBar.svelte";
   import ClassicRibbon from "./3pane/ClassicRibbon.svelte";
@@ -138,11 +139,13 @@
       // для нового.
       advancedSearchMessages = new ArrayColl<EMail>();
       $selectedMessageStore = null;
+      $mailSearchInProgress = true;
       refreshAdvancedSearchDebounced();
       return;
     }
     globalSearch = newCurrentMailboxSearch();
     if ($globalSearchTerm) {
+      $mailSearchInProgress = true;
       runGlobalSearchDebounced();
     }
   }
@@ -174,9 +177,12 @@
     globalSearch = newCurrentMailboxSearch();
     if ($globalSearchTerm) {
       globalSearchResults = null;
+      // Индикатор сразу при вводе, ещё до паузы перед запуском поиска
+      $mailSearchInProgress = true;
       runGlobalSearchDebounced();
     } else {
       globalSearchResults = null;
+      $mailSearchInProgress = false;
     }
   }
 
@@ -192,11 +198,16 @@
       searchGeneration++;
       refreshAdvancedSearchDebounced.cancel();
     }
+    // Отложенный поиск отменён, а новый запустится только по «Применить»
+    $mailSearchInProgress = false;
   }
 
   async function runGlobalSearch() {
     if (!$globalSearchTerm || usingAdvancedSearch) {
       globalSearchResults = null;
+      if (!usingAdvancedSearch) {
+        $mailSearchInProgress = false;
+      }
       return;
     }
     let generation = ++searchGeneration;
@@ -212,6 +223,11 @@
       $selectedMessageStore = globalSearchResults?.first ?? null;
     } catch (ex) {
       showError(ex);
+    } finally {
+      // Устаревший запуск индикатор не гасит: идёт более новый поиск
+      if (generation == searchGeneration) {
+        $mailSearchInProgress = false;
+      }
     }
   }
 
@@ -234,11 +250,18 @@
   async function executeAdvancedSearch(): Promise<ArrayColl<EMail> | undefined> {
     let generation = ++searchGeneration;
     let activeSearch = globalSearch;
-    let results = await activeSearch.startSearch(200);
-    if (generation != searchGeneration || globalSearch !== activeSearch) {
-      return undefined;
+    $mailSearchInProgress = true;
+    try {
+      let results = await activeSearch.startSearch(200);
+      if (generation != searchGeneration || globalSearch !== activeSearch) {
+        return undefined;
+      }
+      return results;
+    } finally {
+      if (generation == searchGeneration) {
+        $mailSearchInProgress = false;
+      }
     }
-    return results;
   }
 
   function clearAdvancedSearch() {
@@ -251,6 +274,7 @@
     usingAdvancedSearch = false;
     $globalSearchTerm = null;
     $selectedMessageStore = null;
+    $mailSearchInProgress = false;
     filtersOpen = false;
   }
 
@@ -274,6 +298,7 @@
   onDestroy(() => {
     runGlobalSearchDebounced.cancel();
     refreshAdvancedSearchDebounced.cancel();
+    $mailSearchInProgress = false;
   });
 </script>
 

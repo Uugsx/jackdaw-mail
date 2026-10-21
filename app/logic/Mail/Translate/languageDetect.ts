@@ -213,14 +213,43 @@ function detectHan(text: string): string {
   return traditional > simplified ? "zh-Hant" : "zh-Hans";
 }
 
+/** Строка, с которой начинается цитата прошлых писем (Outlook, Gmail, Thunderbird) */
+const kQuoteStartLine = new RegExp([
+  String.raw`^\s*(?:from|от|de|von|van|da|od|från|fra|lähettäjä|kimden)\s*:\s*\S`,
+  String.raw`^\s*-{2,}\s*(?:original message|исходное сообщение|ursprüngliche nachricht|message d'origine|mensaje original|forwarded message|пересылаемое сообщение)`,
+  String.raw`(?:wrote|писал|писала|написал|написала|schrieb|a écrit|escribió|ha scritto)\s*(?:\(а\))?\s*:\s*$`,
+].join("|"), "i");
+/** Строка подписи: «--» или прощание отдельной строкой, часто на другом языке */
+const kSignatureStartLine = new RegExp([
+  String.raw`^\s*--\s*$`,
+  String.raw`^\s*(?:с уважением|с наилучшими пожеланиями|всего доброго|best regards|kind regards|warm regards|regards|best wishes|many thanks|thanks and regards|br|mit freundlichen grüßen|viele grüße|cordialement|bien cordialement|saludos|un saludo|atentamente|cordiali saluti|z poważaniem|s pozdravem)\s*[,.!]?\s*$`,
+].join("|"), "i");
+
 /**
- * @param text обычный текст письма, лучше без цитаты прошлых писем
+ * Основной текст письма: до первой строки цитаты или подписи.
+ * Русская подпись и цепочка прошлых писем под английским ответом иначе
+ * перевешивают сам ответ, и язык не определяется.
+ */
+export function mainBodyText(text: string): string {
+  let lines = text.split(/\r?\n/);
+  let end = lines.findIndex(line => kQuoteStartLine.test(line) || kSignatureStartLine.test(line));
+  return end > 0 ? lines.slice(0, end).join("\n") : text;
+}
+
+/**
+ * @param text обычный текст письма. Сначала язык определяется по основному
+ *   тексту до подписи и цитаты, если его мало или он неясен — по всему тексту.
  * @returns язык, или null, если текста мало или язык не ясен
  */
 export function detectLanguage(text: string | null | undefined): DetectedLanguage | null {
   if (!text) {
     return null;
   }
+  let main = mainBodyText(text);
+  return (main != text ? detectSample(main) : null) ?? detectSample(text);
+}
+
+function detectSample(text: string): DetectedLanguage | null {
   let sample = cleanSample(text);
   let { counts, letters } = countScripts(sample);
   if (letters < kMinLetters) {
