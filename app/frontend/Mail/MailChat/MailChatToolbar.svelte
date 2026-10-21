@@ -40,6 +40,19 @@
     plain
     />
 </hbox>
+{#if translationAvailable}
+  <hbox class="translate" class:translated={translatedShown}>
+    <Button
+      icon={LanguagesIcon}
+      iconSize="20px"
+      iconOnly
+      label={translatedShown ? $t`Show original` : $t`Translate this email`}
+      onClick={() => translation.toggle()}
+      disabled={$translation.status == "translating"}
+      plain
+      />
+  </hbox>
+{/if}
 <hbox class="open">
   <Button
     icon={OpenIcon}
@@ -82,6 +95,8 @@
   import OpenIcon from "lucide-svelte/icons/maximize-2";
   import CopyIcon from "lucide-svelte/icons/copy";
   import CheckIcon from "lucide-svelte/icons/check";
+  import LanguagesIcon from "lucide-svelte/icons/languages";
+  import { getMessageTranslation, getTranslationEngineSetting, isMailTranslationAvailable } from "../Message/messageTranslation";
   import { sleep } from "../../../logic/util/util";
   import { selectedMessage } from "../Selected";
   import { getMessageContentRenderingSetting } from "../Message/messageViewerAppearance";
@@ -91,6 +106,11 @@
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
 
   export let message: EMail;
+
+  let translationEngineSetting = getTranslationEngineSetting();
+  $: translationAvailable = isMailTranslationAvailable($translationEngineSetting.value);
+  $: translation = getMessageTranslation(message);
+  $: translatedShown = $translation.status == "translated" && !$translation.showOriginal;
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
@@ -150,6 +170,9 @@
   }
   .unread:not(.read) :global(svg) {
     fill: green;
+  }
+  .translate.translated :global(svg) {
+    color: var(--icon-primary);
   }
   .menu {
     width: 16px;

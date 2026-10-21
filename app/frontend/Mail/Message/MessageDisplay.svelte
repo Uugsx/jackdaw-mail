@@ -10,6 +10,9 @@
   <MessageHeader bind:message {readOnly} {onReply} {onReplyAll} />
   <MessageAttachments attachments={message.attachments} />
   <SMLDisplayKinds {message} sml={message.sml} />
+  {#if translationAvailable}
+    <MessageTranslateBar {message} />
+  {/if}
   <vbox class="body" flex>
     <Paper>
       <MessageBody {message} {zoom} on:zoomwheel={onZoomWheelFromBody} />
@@ -29,6 +32,8 @@
   import MessageBody from "./MessageBody.svelte";
   import SMLDisplayKinds from "../SML/SMLDisplayKinds.svelte";
   import MessageDisplayBarM from "./MessageDisplayBarM.svelte";
+  import MessageTranslateBar from "./MessageTranslateBar.svelte";
+  import { getTranslationEngineSetting, isMailTranslationAvailable } from "./messageTranslation";
   import Paper from "../../Shared/Paper.svelte";
   import { catchErrors } from "../../Util/error";
   import {
@@ -48,6 +53,9 @@
   export let readOnly = false;
   export let onReply: (() => void | Promise<void>) | null = null;
   export let onReplyAll: (() => void | Promise<void>) | null = null;
+
+  let translationEngineSetting = getTranslationEngineSetting();
+  $: translationAvailable = isMailTranslationAvailable($translationEngineSetting.value);
 
   let messageBackgroundSetting = getMessageViewerBackgroundSetting();
   $: messageBackground = normalizeMessageViewerBackground($messageBackgroundSetting.value);

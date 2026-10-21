@@ -12,6 +12,8 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  # Движок перевода писем: поток worker_threads читает скрипт и WASM с диска
+  - node_modules/@browsermt/bergamot-translator/worker/**
 win:
   target:
     - nsis
