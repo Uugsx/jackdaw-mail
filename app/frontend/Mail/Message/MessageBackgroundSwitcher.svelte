@@ -15,6 +15,7 @@
   import SunIcon from "lucide-svelte/icons/sun";
   import SunMoonIcon from "lucide-svelte/icons/sun-moon";
   import { getLocalStorage } from "../../Util/LocalStorage";
+  import { darkColorScheme } from "../Composer/composeDarkColors";
   import { t } from "../../../l10n/l10n";
   import {
     cycleMessageViewerBackground,
@@ -25,7 +26,9 @@
 
   let backgroundSetting = getMessageViewerBackgroundSetting();
   let appThemeSetting = getLocalStorage("appearance.theme", "system");
-  $: appThemeIsDark = resolveDarkTheme($appThemeSetting.value);
+  // Автотема меняет системную схему без смены настройки: подписываемся на неё
+  const systemDark = darkColorScheme;
+  $: appThemeIsDark = resolveDarkTheme($appThemeSetting.value, $systemDark);
   $: storedBackground = normalizeMessageViewerBackground($backgroundSetting.value);
   $: background = appThemeIsDark && storedBackground == "theme" ? "dark" : storedBackground;
   $: nextBackground = cycleMessageViewerBackground(background, !appThemeIsDark);
@@ -48,15 +51,14 @@
     backgroundSetting.value = nextBackground;
   }
 
-  function resolveDarkTheme(theme: string): boolean {
+  function resolveDarkTheme(theme: string, isSystemDark: boolean): boolean {
     if (theme == "dark") {
       return true;
     }
     if (theme == "light") {
       return false;
     }
-    return typeof window != "undefined"
-      && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return isSystemDark;
   }
 </script>
 

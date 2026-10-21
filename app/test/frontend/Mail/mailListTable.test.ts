@@ -103,6 +103,25 @@ describe("строка табличного вида", () => {
     await tick();
     expect(message.markStarred).toHaveBeenCalledWith(true);
   });
+
+  test("непрочитанное отмечено точкой, как в Outlook; после ответа — значком ответа", async () => {
+    let message = createMessage();
+    message.isRead = false;
+    let target = mountInto(VerticalMessageListItem, { message, columns: ["status", "from", "subject"] });
+    await tick();
+
+    expect(target.querySelector(".message")?.classList.contains("unread")).toBe(true);
+    expect(target.querySelector(".t-status")?.classList.contains("dot")).toBe(true);
+
+    message.isReplied = true;
+    await tick();
+    expect(target.querySelector(".t-status")?.classList.contains("dot")).toBe(false);
+    expect(target.querySelector(".t-status")?.classList.contains("unread")).toBe(true);
+
+    message.isRead = true;
+    await tick();
+    expect(target.querySelector(".message")?.classList.contains("unread")).toBe(false);
+  });
 });
 
 describe("заголовки столбцов", () => {

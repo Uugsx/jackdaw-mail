@@ -63,6 +63,7 @@
   import { t } from "../../../l10n/l10n";
   import { adaptEmailHtmlForDarkMode } from "../Message/emailDarkMode";
   import { getLocalStorage } from "../../Util/LocalStorage";
+  import { darkColorScheme } from "../Composer/composeDarkColors";
 
   export let message: EMail;
   export let previousMessage: Message;
@@ -78,9 +79,9 @@
   // Как в обычном просмотре: тёмно-синий текст подписи и т. п. в тёмной теме
   // осветляется, иначе он не читается на тёмном пузыре
   let themeSetting = getLocalStorage("appearance.theme", "system");
-  let systemDark = typeof window != "undefined" &&
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  $: darkTheme = $themeSetting.value == "dark" || ($themeSetting.value == "system" && systemDark);
+  // Автотема меняет системную схему без смены настройки: подписываемся на неё
+  const systemDark = darkColorScheme;
+  $: darkTheme = $themeSetting.value == "dark" || ($themeSetting.value == "system" && $systemDark);
   function displayHtml(html: string, dark: boolean): string {
     return dark ? adaptEmailHtmlForDarkMode(html) : html;
   }
