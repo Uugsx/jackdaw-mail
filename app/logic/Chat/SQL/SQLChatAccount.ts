@@ -43,6 +43,20 @@ export class SQLChatAccount {
       `);
   }
 
+  /** @returns число комнат аккаунта в базе, или `null`, если аккаунт в базе не найден */
+  static async countRooms(acc: ChatAccount): Promise<number | null> {
+    if (!acc.dbID) {
+      return null;
+    }
+    let row = await (await getDatabase()).get(sql`
+      SELECT
+        COUNT(*) AS count
+      FROM chatRoom
+      WHERE accountID = ${acc.dbID}
+      `) as any;
+    return Number(row?.count ?? 0);
+  }
+
   static async read(accountRow: AccountDBRow, acc: ChatAccount) {
     await SQLAccount.read(accountRow, acc);
 

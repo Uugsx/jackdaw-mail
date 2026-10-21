@@ -1,6 +1,7 @@
 import { appGlobal } from './app';
 import { readMailAccounts } from './Mail/AccountsList/MailAccounts';
 import { readChatAccounts } from './Chat/AccountsList/ChatAccounts';
+import { markChatAccountsRead } from './Chat/Jackdaw/JackdawChats';
 import { readAddressbooks } from './Contacts/AccountsList/Addressbooks';
 import { readCalendars } from './Calendar/AccountsList/Calendars';
 import { readMeetAccounts } from './Meet/AccountsList/MeetAccounts';
@@ -108,7 +109,10 @@ export async function getStartObjects(onDatabaseBusy?: DatabaseBusyCallback): Pr
 const kStartObjectSteps: (() => Promise<void> | void)[] = [
   () => loadWorkspaces(),
   async () => appGlobal.emailAccounts.addAll(await readMailAccounts()),
-  async () => appGlobal.chatAccounts.addAll(await readChatAccounts()),
+  async () => {
+    appGlobal.chatAccounts.addAll(await readChatAccounts());
+    markChatAccountsRead();
+  },
   async () => appGlobal.meetAccounts.addAll(await readMeetAccounts()),
   async () => appGlobal.fileSharingAccounts.addAll(await readFileSharingAccounts()),
   async () => appGlobal.addressbooks.addAll(await readAddressbooks()),

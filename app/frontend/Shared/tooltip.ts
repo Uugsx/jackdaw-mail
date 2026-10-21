@@ -48,6 +48,12 @@ export function installTooltips(doc: Document = document): () => void {
   let removedNativeTitle = false;
   let addedInternalTooltip = false;
   let disposed = false;
+  /** Элемент, на котором нажали мышью: подсказка не возвращается, пока мышь на нём. */
+  let dismissedTarget: TooltipTarget = null;
+  /** Фокус пришёл от нажатия мыши, а не с клавиатуры. Такой фокус подсказку
+   * не держит: иначе она висела бы, пока строка в фокусе, хотя мышь давно
+   * ушла, например в контекстное меню. */
+  let pointerInitiatedFocus = false;
 
   function clearShowTimer(): void {
     if (showTimer != null) {
@@ -275,6 +281,9 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function scheduleTooltip(target: TooltipTarget, delay = showDelayMs): void {
+    if (target == dismissedTarget) {
+      return;
+    }
     const text = getTooltipText(target);
     if (!text) {
       return;
@@ -315,6 +324,44 @@ export function installTooltips(doc: Document = document): () => void {
     }, delay);
   }
 
+  /** Наведённый элемент сменился: снятие подсказки нажатием больше не действует. */
+  function setHoveredTarget(target: TooltipTarget): void {
+    if (target != dismissedTarget) {
+      dismissedTarget = null;
+    }
+    hoveredTarget = target;
+  }
+
+  /** Закрывает подсказку до ухода мыши с элемента. Системный title при этом
+   * остаётся снятым, чтобы вместо нашей подсказки не всплыла нативная. */
+  function dismissTooltip(target: TooltipTarget): void {
+    hideTooltip();
+    clearTransitionTimer();
+    tooltip.hidden = true;
+    tooltip.textContent = "";
+    dismissedTarget = target;
+    const text = target ? getTooltipText(target) : null;
+    if (target && text) {
+      currentTarget = target;
+      suppressNativeTitle(target, text);
+    }
+  }
+
+  function onPointerDown(event: PointerEvent): void {
+    pointerInitiatedFocus = true;
+    focusedTarget = null;
+    dismissTooltip(findTooltipTarget(event.target));
+  }
+
+  function onContextMenu(event: MouseEvent): void {
+    focusedTarget = null;
+    dismissTooltip(findTooltipTarget(event.target) ?? currentTarget);
+  }
+
+  function onKeyDown(): void {
+    pointerInitiatedFocus = false;
+  }
+
   function maybeHideTooltip(): void {
     if (currentTarget && !hasActivePointerOrFocus(currentTarget)) {
       hideTooltip();
@@ -335,7 +382,7 @@ export function installTooltips(doc: Document = document): () => void {
     if (hoveredTarget == target) {
       return;
     }
-    hoveredTarget = target;
+    setHoveredTarget(target);
     scheduleTooltip(target);
   }
 
@@ -347,7 +394,7 @@ export function installTooltips(doc: Document = document): () => void {
     if (target == hoveredTarget) {
       return;
     }
-    hoveredTarget = target;
+    setHoveredTarget(target);
     if (target) {
       scheduleTooltip(target);
     } else {
@@ -370,16 +417,19 @@ export function installTooltips(doc: Document = document): () => void {
     }
     const relatedTooltipTarget = findTooltipTarget(relatedTarget);
     if (relatedTooltipTarget) {
-      hoveredTarget = relatedTooltipTarget;
+      setHoveredTarget(relatedTooltipTarget);
       scheduleTooltip(relatedTooltipTarget);
     } else {
-      hoveredTarget = null;
+      setHoveredTarget(null);
       maybeHideTooltip();
     }
   }
 
   function onFocusIn(event: FocusEvent): void {
     if (isMailWebViewPointerDown()) {
+      return;
+    }
+    if (pointerInitiatedFocus) {
       return;
     }
     const target = findTooltipTarget(event.target);
@@ -435,6 +485,9 @@ export function installTooltips(doc: Document = document): () => void {
   doc.addEventListener("pointerout", onPointerOut);
   doc.addEventListener("focusin", onFocusIn);
   doc.addEventListener("focusout", onFocusOut);
+  doc.addEventListener("pointerdown", onPointerDown, true);
+  doc.addEventListener("contextmenu", onContextMenu, true);
+  doc.addEventListener("keydown", onKeyDown, true);
   view.addEventListener("resize", onViewportChange);
   view.addEventListener("scroll", onViewportChange, true);
   view.addEventListener("blur", onWindowBlur);
@@ -446,6 +499,9 @@ export function installTooltips(doc: Document = document): () => void {
     doc.removeEventListener("pointerout", onPointerOut);
     doc.removeEventListener("focusin", onFocusIn);
     doc.removeEventListener("focusout", onFocusOut);
+    doc.removeEventListener("pointerdown", onPointerDown, true);
+    doc.removeEventListener("contextmenu", onContextMenu, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
     view.removeEventListener("resize", onViewportChange);
     view.removeEventListener("scroll", onViewportChange, true);
     view.removeEventListener("blur", onWindowBlur);
