@@ -4,7 +4,8 @@ import type { EMail } from "../../logic/Mail/EMail";
 import { QuickSearchEMail } from "../../logic/Mail/Store/QuickSearchEMail";
 import { SearchView } from "./LeftPane/SearchSwitcher.svelte";
 import { ArrayColl, type Collection } from "svelte-collections";
-import { writable, type Writable } from "svelte/store";
+import { get, writable, type Writable } from "svelte/store";
+import type { MailListRow } from "./mailListRows";
 
 export const selectedAccount = writable<MailAccount>();
 export const selectedFolder = writable<Folder>();
@@ -29,6 +30,34 @@ function writableArrayColl<T>(): Writable<ArrayColl<T>> {
 
 export const selectedMessages = writableArrayColl<EMail>();
 export const selectedSearchTab = writable<SearchView>(SearchView.Folder);
+
+/** Строки списка писем в порядке на экране: сортировка, группы, фильтр, поиск. */
+export const listRowsInView = writable<Collection<MailListRow> | null>(null);
+
+/**
+ * Соседнее письмо в том порядке, который видит пользователь.
+ * `folder.messages` хранится в порядке загрузки, поэтому при сортировке по
+ * отправителю, в поиске и в фильтре «следующее» оттуда было не тем письмом.
+ * @param previous true — строка выше, false — ниже, не задано — письмо,
+ *   которое встанет на место удаляемого или перемещаемого
+ * @returns null, если список пуст. Стрелка у края списка оставляет то же письмо.
+ */
+export function neighbourMessage(message: EMail, previous?: boolean): EMail | null {
+  let rows = get(listRowsInView)?.contents;
+  let ordered = rows?.flatMap(row => row.kind == "message" ? [row.message] : []) ?? [];
+  let i = ordered.indexOf(message);
+  if (i < 0) {
+    // Письмо не в видимом списке (например, внутри свёрнутого инцидента)
+    return message.nextMessage(previous);
+  }
+  if (previous === true) {
+    return ordered[i - 1] ?? message;
+  }
+  if (previous === false) {
+    return ordered[i + 1] ?? message;
+  }
+  return ordered[i + 1] ?? ordered[i - 1] ?? null;
+}
 
 /** Messages currently shown in the list (after filters). Used for Ctrl/Cmd+A outside FastList. */
 export const listVisibleMessages = writable<Collection<EMail> | null>(null);

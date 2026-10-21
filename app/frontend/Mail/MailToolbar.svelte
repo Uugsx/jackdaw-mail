@@ -220,7 +220,9 @@
         return;
       }
       globalSearchResults = results;
-      $selectedMessageStore = globalSearchResults?.first ?? null;
+      // Первый результат не открываем сами: через 0,2 с он помечался прочитанным,
+      // и каждое уточнение запроса незаметно «читало» ещё одно письмо
+      $selectedMessageStore = null;
     } catch (ex) {
       showError(ex);
     } finally {
@@ -241,7 +243,7 @@
         return;
       }
       advancedSearchMessages = results;
-      $selectedMessageStore = results.first ?? null;
+      $selectedMessageStore = null;
     } catch (ex) {
       showError(ex);
     }
@@ -288,7 +290,7 @@
       }
       advancedSearchMessages = results;
       usingAdvancedSearch = true;
-      $selectedMessageStore = results.first ?? null;
+      $selectedMessageStore = null;
       filtersOpen = false;
     } catch (ex) {
       showError(ex);

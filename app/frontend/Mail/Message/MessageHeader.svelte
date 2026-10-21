@@ -117,6 +117,7 @@
   import { Person } from "../../../logic/Abstract/Person";
   import type { PersonOrGroup } from "../../Contacts/Person/PersonOrGroup";
   import { selectedPerson } from "../../Contacts/Person/Selected";
+  import { neighbourMessage } from "../Selected";
   import type { Tag } from "../../../logic/Abstract/Tag";
   import { appGlobal } from "../../../logic/app";
   import MessageToolbar from "./MessageToolbar.svelte";
@@ -161,6 +162,9 @@
   $: catchErrors(() => markMessageAsRead(message, readDelay), backgroundError);
   let readTimeout: NodeJS.Timeout;
   function markMessageAsRead(message: EMail, readDelay: number) {
+    // Иначе таймер прошлого письма срабатывает после перехода на прочитанное письмо
+    // или в ручном режиме и помечает прочитанным письмо, которое уже не открыто
+    clearTimeout(readTimeout);
     if (message.isRead) {
       return;
     }
@@ -170,7 +174,6 @@
     if (readDelay == 0) {
       readDelay = 0.2; // Avoid that normal scrolling marks all msgs as read
     }
-    clearTimeout(readTimeout);
     readTimeout = setTimeout(() => {
       message.markRead(true)
         .catch(message.folder.account.errorCallback);
@@ -219,10 +222,10 @@
   }
 
   function onNextMessage() {
-    message = message.nextMessage(false);
+    message = neighbourMessage(message, false) ?? message;
   }
   function onPreviousMessage() {
-    message = message.nextMessage(true);
+    message = neighbourMessage(message, true) ?? message;
   }
 </script>
 

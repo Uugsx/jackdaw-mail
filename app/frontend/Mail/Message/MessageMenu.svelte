@@ -194,12 +194,12 @@
   import { runMailActions } from "../mailBulkActions";
   import { moveMessagesToArchive } from "../mailArchiveActions";
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
-  import { selectedMessage, selectedMessages } from "../Selected";
+  import { neighbourMessage, selectedMessage, selectedMessages } from "../Selected";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
   // #if [!PRODUCTION]
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { openMessageDOMInspector } from "./messageDOMInspector";
   // #endif
 
@@ -222,6 +222,7 @@
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   $: {
     replyAllUnsub?.();
     replyAllUnsub = subscribeCanReplyAll(message, () => replyAllRev++);
@@ -366,7 +367,7 @@
   }
 
   function goToNextMessage(anchor: EMail = message) {
-    let next = anchor?.nextMessage();
+    let next = anchor ? neighbourMessage(anchor) : null;
     // Mutate rather than replace: FastList and the ribbon observe this exact
     // collection, and a new instance would silently detach them.
     $selectedMessages.replaceAll(next ? [next] : []);

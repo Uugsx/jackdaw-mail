@@ -6,8 +6,8 @@ import { appGlobal } from "../../app";
 import type { EMail } from "../EMail";
 import { ConnectError, LoginError } from "../../Abstract/Account";
 import { SpecialFolder, MailShareCombinedPermissions, MailShareIndividualPermissions } from "../Folder";
-import { assert, NotReached, SpecificError } from "../../util/util";
-import { retryOnTransientError } from "../../util/netUtil";
+import { assert, NotReached, SpecificError, sleep } from "../../util/util";
+import { retryOnTransientError, waitUntilOnline } from "../../util/netUtil";
 import { Lock } from "../../util/flow/Lock";
 import { Throttle } from "../../util/flow/Throttle";
 import { RunOnce } from "../../util/flow/RunOnce";
@@ -17,6 +17,10 @@ import { ArrayColl, MapColl, type Collection } from "svelte-collections";
 import type { ImapFlow } from "../../../../desktop/backend/node_modules/imapflow";
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { gt } from "../../../l10n/l10n";
+
+/** Пауза перед фоновым переподключением растёт на столько секунд с каждой попыткой */
+const kBackgroundReconnectFirstDelayS = 30;
+const kBackgroundReconnectMaxDelayS = 5 * 60;
 
 export class IMAPAccount extends MailAccount {
   readonly protocol: string = "imap";
@@ -60,6 +64,7 @@ export class IMAPAccount extends MailAccount {
   }
 
   async login(interactive: boolean): Promise<void> {
+    this.startupForLogin = null;
     await super.login(interactive);
     if (!this.dbID) {
       await this.storage.saveAccount(this);
@@ -70,7 +75,20 @@ export class IMAPAccount extends MailAccount {
     await this.startup();
   }
 
+  /** startup() текущего входа. login() уже вызывает startup(), а запуск
+   * приложения и проверка после сна вызывают его ещё раз сразу после login():
+   * NAMESPACE, LIST/STATUS, опрос и IDLE шли дважды. */
+  protected startupForLogin: Promise<void> | null = null;
+
   async startup() {
+    this.startupForLogin ??= this.startupOnce().catch(ex => {
+      this.startupForLogin = null;
+      throw ex;
+    });
+    await this.startupForLogin;
+  }
+
+  protected async startupOnce() {
     this.namespaces = await this.getNamespaces();
     await super.startup();
     this.notifyObservers();
@@ -193,6 +211,10 @@ export class IMAPAccount extends MailAccount {
       } catch (ex) {
         this.fatalError = new ConnectError(ex,
           `Reconnection failed after connection closed:\n${ex.message}\n${this.hostname} IMAP server`);
+        // Неверный пароль повтор не исправит, его покажет запрос пароля
+        if (!ex?.authFail) {
+          this.reconnectMainInBackground(connection);
+        }
       }
     });
     connection.on("error", async (ex: any) => {
@@ -273,6 +295,41 @@ export class IMAPAccount extends MailAccount {
         await this.startIDLE(newConn);
       }
       return newConn;
+    });
+  }
+
+  /** Растёт при logout(): фоновое переподключение после выхода не должно входить снова */
+  protected logoutCount = 0;
+  protected backgroundReconnect: Promise<void> | null = null;
+
+  /** Основное соединение не вернулось за несколько быстрых попыток: VPN или Wi‑Fi
+   * поднимаются дольше, а события `online` при обрыве VPN нет. Без этого IDLE
+   * не возвращался до следующего сна, и новая почта приходила раз в 10 минут. */
+  protected reconnectMainInBackground(closed: ImapFlow): void {
+    if (this.backgroundReconnect) {
+      return;
+    }
+    let logoutCount = this.logoutCount;
+    let isCancelled = () => this.logoutCount != logoutCount || this.isLoggedIn;
+    this.backgroundReconnect = (async () => {
+      for (let attempt = 1; !isCancelled(); attempt++) {
+        await sleep(Math.min(kBackgroundReconnectFirstDelayS * attempt, kBackgroundReconnectMaxDelayS));
+        await waitUntilOnline();
+        if (isCancelled()) {
+          return;
+        }
+        try {
+          await this.reconnect(closed, ConnectionPurpose.Main);
+          return;
+        } catch (ex) {
+          if (ex?.authFail) {
+            this.errorCallback(ex);
+            return;
+          }
+        }
+      }
+    })().finally(() => {
+      this.backgroundReconnect = null;
     });
   }
 
@@ -452,6 +509,8 @@ export class IMAPAccount extends MailAccount {
 
   async logout(alsoOAuth2 = true): Promise<void> {
     this.stopPolling();
+    this.startupForLogin = null;
+    this.logoutCount++;
     for (let purpose of connectionPurposes) {
       let conn = this.connections.get(purpose);
       if (!conn) {

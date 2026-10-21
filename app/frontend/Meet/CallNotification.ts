@@ -20,6 +20,8 @@ export class CallNotification extends SystemNotification {
       title: this.title,
       body: this.body,
       urgency: this.urgency,
+      // Звонит рингтон экрана вызова, сигнал ОС поверх него не нужен
+      silent: true,
     });
     if (this.onClick) {
       popup.on("click", event => this.onClick(event));

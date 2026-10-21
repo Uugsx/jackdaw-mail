@@ -8,7 +8,7 @@
         <IdentitySelector bind:selectedIdentity={fromIdentity}
           bind:fromAddress={mail.from.emailAddress}
           bind:fromName={mail.from.name}
-          workspace={standalone ? mail.folder?.account.workspace : $selectedWorkspace}
+          workspace={composeWorkspace}
           compact />
         <EncryptionButtons {mail} identity={fromIdentity} />
         <hbox flex class="spacer" />
@@ -264,12 +264,20 @@
   import { t, gt } from "../../../l10n/l10n";
   import { onDestroy, tick } from "svelte";
   import { selectedWorkspace } from "../../MainWindow/Selected";
+  import { get } from "svelte/store";
   import type { Editor } from '@tiptap/core';
   import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
 
   export let mail: EMail;
   export let floating = false;
   export let standalone = false;
+  /** Пространство на момент открытия письма. Плавающий редактор глобальный:
+   * при переключении пространства выбор личностей сужался, и «От» с подписью
+   * молча менялись на личность другого пространства. */
+  $: composeWorkspace = standalone ? mail.folder?.account.workspace : workspaceWhenOpened(mail);
+  function workspaceWhenOpened(_mail: EMail) {
+    return get(selectedWorkspace);
+  }
   /** Detached windows delegate the actual send to the owning renderer. */
   export let sendInOwner: (() => Promise<void>) | null = null;
   /** Detached windows use the owner's authenticated directory for lookups. */
@@ -364,6 +372,7 @@
     showBCCForce = mail.bcc.hasItems;
     identityDefaultsFor = null;
     identityDefaultsAdded = [];
+    copyToSelfAdded = null;
     ensureCopyToSelf();
     // setAuthor() called
 
@@ -816,11 +825,21 @@
     showBCCForce ||= mail.bcc.hasItems;
   }
 
+  /** Адрес «копия себе», добавленный редактором. При смене отправителя прежний
+   * адрес иначе оставался в Cc: письмо уходило и на него, и получатели его видели. */
+  let copyToSelfAdded: PersonUID | null = null;
   function ensureCopyToSelf() {
-    if (!fromIdentity?.account.copyToSelf || !mail?.from?.emailAddress) {
+    let address = mail?.from?.emailAddress?.toLowerCase();
+    if (copyToSelfAdded && copyToSelfAdded.emailAddress?.toLowerCase() != address) {
+      mail.cc.remove(copyToSelfAdded);
+      copyToSelfAdded = null;
+    }
+    if (!fromIdentity?.account.copyToSelf || !address) {
       return;
     }
+    let before = new Set(mail.cc.contents);
     addSenderToCC(mail);
+    copyToSelfAdded = mail.cc.contents.find(person => !before.has(person)) ?? copyToSelfAdded;
     showCCForce = mail.cc.hasItems;
   }
 

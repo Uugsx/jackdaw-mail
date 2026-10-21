@@ -465,7 +465,12 @@ export async function listenNotificationStream(
           if (messages.length > 0) {
             try {
               await onMessage(messages);
-            } catch {
+            } catch (ex) {
+              // Поток уведомлений не прерываем, но потерянное уведомление должно оставить след:
+              // иначе расхождение списка с сервером не объяснить. Без содержимого писем.
+              let message = `OWA notification handler failed: ${(ex as Error)?.message ?? ex}`;
+              console.warn(message);
+              logOWADiagnostic(message);
             }
           }
         }
