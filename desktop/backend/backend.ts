@@ -5,6 +5,7 @@ import JPCWebSocket from '../../lib/jpc-ws';
 import * as OWA from './owa';
 import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
+import { pickMacDmgAsset } from './updateAssets';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
 import { SQLiteHost, type RemoteSQLiteDatabase } from "./sqlite/SQLiteHost";
@@ -1145,9 +1146,9 @@ async function downloadMacDmgUpdate(version: string | null | undefined) {
   }
   return macDmgDownloadRunOnce.runOnce(async () => {
     let release = await fetchReleaseByTag(version);
-    let dmgAsset = release.assets.find(asset => asset.name.endsWith(".dmg") && /jackdaw/i.test(asset.name));
+    let dmgAsset = pickMacDmgAsset(release.assets, version);
     if (!dmgAsset) {
-      throw new Error(`No .dmg found in release v${version}`);
+      throw new Error(`No .dmg for version ${version} in its release`);
     }
     let cacheDir = path.join(app.getPath("cache"), "jackdaw-updates");
     await fsPromises.mkdir(cacheDir, { recursive: true });
