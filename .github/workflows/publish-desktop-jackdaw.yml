@@ -244,6 +244,32 @@ jobs:
               -f body="Jackdaw Mail desktop prerelease." \
               -f name="${BASE}-dev.${OTA_BUILD_SUFFIX}"
           fi
+      - name: Remove other-version assets of a rebuilt platform
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
+        # Если сборка платформы упала, carry-forward кладёт её файлы прошлой версии,
+        # а перезапущенная сборка добавляет новые рядом. Старые версии приложения
+        # берут первый DMG и снова ставят себя же. Файлы прошлой версии удаляются,
+        # только когда для этой платформы уже есть установщик текущей версии.
+        run: |
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
+          VERSION="${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          TAG="v${VERSION}"
+          NAMES=$(gh release view "$TAG" --repo Uugsx/jackdaw-mail --json assets -q '.assets[].name' 2>/dev/null || true)
+          remove_stale() {
+            echo "$NAMES" | grep -E "$1" | grep -v -F "$VERSION" | while read -r NAME; do
+              [ -n "$NAME" ] || continue
+              echo "Removing stale asset $NAME"
+              gh release delete-asset "$TAG" "$NAME" --repo Uugsx/jackdaw-mail -y
+            done
+          }
+          if echo "$NAMES" | grep -qx "jackdaw-mail-${VERSION}.dmg"; then
+            remove_stale '(\.dmg|\.dmg\.blockmap|-mac\.zip|-mac\.zip\.blockmap|\.pkg)$'
+          fi
+          if echo "$NAMES" | grep -qx "jackdaw-mail-${VERSION}-setup.exe"; then
+            remove_stale '(-setup\.exe|-setup\.exe\.blockmap|\.msi)$'
+          fi
 
   cleanup-empty-release:
     needs: [prepare, mac, windows, carry-forward, finalize]

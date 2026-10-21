@@ -201,6 +201,7 @@ Or push to `main` touching monitored paths.
 | Two GitHub releases, same version | Parallel publish without `prepare` release shell | Ensure `prepare` creates release first; run `finalize` dedupe |
 | Windows: metadata error, latest release empty | CI `prepare` created release; build **cancelled** (`concurrency`) before upload | Delete empty release; CI now runs `cleanup-empty-release`; retry check after a successful Actions run |
 | Mac: `unsupported` | Missing `app-update.yml` or token in `.app` | Reinstall from CI `.dmg` |
+| Mac: update downloads and “installs”, but the version stays the same; the update is offered again | Mac job failed, `carry-forward` added the previous Mac assets, the rerun added the new ones: the release had two DMGs and the updater took the first (old) one | Updater picks the DMG whose name has the update version (`desktop/backend/updateAssets.ts`); `finalize` removes other-version assets of a platform that has a current-version installer |
 | Mac: code signature / ShipIt error | Tried `quitAndInstall` on ad-hoc build | Use DMG install path (current code) |
 | Mac: app didn’t restart after update | Install ran while app still open | Use `scheduleMacDmgInstallAndQuit` (quit first, then script) |
 | `JPC: Could not connect to ws://localhost:5455` after OTA | UI loaded before backend | `await startupBackend()` before `loadFile`; retry JPC connect |
