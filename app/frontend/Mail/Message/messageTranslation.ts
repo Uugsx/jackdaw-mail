@@ -108,6 +108,10 @@ export function languageSampleFromHTML(html: string | null | undefined): string 
   for (let el of doc.querySelectorAll("style, script, code, pre")) {
     el.remove();
   }
+  // Строки нужны, чтобы отделить подпись и цитату: письмо может быть свёрстано в одну строку
+  for (let el of doc.querySelectorAll("p, div, br, li, tr, h1, h2, h3, h4, h5, h6, blockquote, hr")) {
+    el.after(doc.createTextNode("\n"));
+  }
   return doc.body?.textContent ?? "";
 }
 

@@ -1,6 +1,11 @@
 <!-- Appears above the msg list; height matches the account row so lists line up -->
 <hbox class="folder-header font-small">
-  {#if searchMessages}
+  {#if $mailSearchInProgress}
+    <hbox class="folder-name searching" role="status">
+      <Loader size={12} stroke={2} />
+      <span>{$t`Searching…`}</span>
+    </hbox>
+  {:else if searchMessages}
     <hbox class="folder-name">{$t`Search results`}</hbox>
   {:else if folder}
     <hbox class="folder-name" title={folder.name}>{folder.name}</hbox>
@@ -34,6 +39,8 @@
   import ListViewIcon from "lucide-svelte/icons/table-properties";
   import ButtonMenu from '../../Shared/Menu/ButtonMenu.svelte';
   import MailListViewOptions from '../Vertical/MailListViewOptions.svelte';
+  import Loader from '../../Shared/Loader.svelte';
+  import { mailSearchInProgress } from '../Search/searchProgress';
   import { t } from '../../../l10n/l10n';
   import type { ArrayColl } from 'svelte-collections';
 
@@ -48,6 +55,14 @@
 </script>
 
 <style>
+  .folder-name.searching {
+    align-items: center;
+    gap: 6px;
+    color: var(--icon-primary, currentColor);
+  }
+  .folder-name.searching span {
+    color: var(--main-fg, var(--fg));
+  }
   .folder-header {
     align-items: center;
     min-height: 40px;
