@@ -23,10 +23,10 @@
         {/if}
       </hbox>
     {:else if column == "status"}
-      <hbox class="cell icon-cell t-status button" class:unread={!$message.isRead}>
+      <hbox class="cell icon-cell t-status button" class:unread={!$message.isRead} class:dot={unreadDot}>
         <Button
-          icon={$message.isReplied ? ReplyIcon : $message.isForwarded ? ForwardIcon : $message.isRead ? MailOpenIcon : MailIcon}
-          iconSize="14px"
+          icon={$message.isReplied ? ReplyIcon : $message.isForwarded ? ForwardIcon : $message.isRead ? MailOpenIcon : CircleIcon}
+          iconSize={unreadDot ? "9px" : "14px"}
           iconOnly
           label={statusTitle}
           onClick={toggleRead}
@@ -160,7 +160,6 @@
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
   import FolderActionsIcon from "lucide-svelte/icons/folder-dot";
   import FlagIcon from "lucide-svelte/icons/flag";
-  import MailIcon from "lucide-svelte/icons/mail";
   import MailOpenIcon from "lucide-svelte/icons/mail-open";
   import { isMobile } from "../../../logic/build";
   import { getDateTimeString, getFormattedDateString } from "../../Util/date";
@@ -196,6 +195,8 @@
   $: sizeLabel = columns ? mailSizeLabel($message.size) : "";
   $: readTitle =$message.isRead ? $t`Mark this message as unread` : $t`Mark this message as read`;
   $: statusTitle = actionTitle ? `${actionTitle}. ${readTitle}` : readTitle;
+  /** Непрочитанное без ответа и пересылки: залитая точка, как в Outlook */
+  $: unreadDot = !$message.isRead && !$message.isReplied && !$message.isForwarded;
 
   async function toggleRead() {
     await message.markRead(!message.isRead);
@@ -253,6 +254,8 @@
 
 <style>
   .message {
+    /* Ссылочный цвет темы контрастен фону и в светлой, и в тёмной теме */
+    --unread-fg: var(--link-fg, var(--icon-primary));
     padding: 4px 12px 4px 8px !important;
     justify-content: baseline;
     align-items: baseline;
@@ -305,8 +308,13 @@
   .unread .date {
     font-weight: 700;
   }
-  .unread .subject {
-    color: var(--main-fg, var(--fg));
+  .unread .subject,
+  .unread .date {
+    color: var(--unread-fg);
+  }
+  :global(.row.selected) .unread .subject,
+  :global(.row.selected) .unread .date {
+    color: inherit;
   }
   :global(.row.selected) .subject {
     color: inherit;
@@ -523,8 +531,16 @@
   .unread .t-date {
     font-weight: 700;
   }
-  .unread .t-subject {
-    color: var(--main-fg, var(--fg));
+  /* Непрочитанные заметны в любой теме, как в Outlook: цвет акцента темы */
+  .unread .t-from,
+  .unread .t-subject,
+  .unread .t-date {
+    color: var(--unread-fg);
+  }
+  :global(.row.selected) .unread .t-from,
+  :global(.row.selected) .unread .t-subject,
+  :global(.row.selected) .unread .t-date {
+    color: inherit;
   }
   :global(.row.selected) .t-subject {
     color: inherit;
@@ -547,7 +563,10 @@
     opacity: 0.55;
   }
   .t-status.unread :global(svg) {
-    color: var(--icon-primary);
+    color: var(--unread-fg);
+  }
+  .t-status.dot :global(svg) {
+    fill: currentColor;
   }
   .t-flag.starred :global(svg) {
     color: crimson;
