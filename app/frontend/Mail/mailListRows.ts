@@ -246,8 +246,14 @@ function sortIncidents(incidents: AlertIncident[], sort: MailListSort): AlertInc
   case "sender":
     return incidents.sort((a, b) => compareText(a.senderLabel.toLowerCase(), b.senderLabel.toLowerCase()) ||
       b.lastEventAt - a.lastEventAt);
+  case "sender-desc":
+    return incidents.sort((a, b) => compareText(b.senderLabel.toLowerCase(), a.senderLabel.toLowerCase()) ||
+      b.lastEventAt - a.lastEventAt);
   case "subject":
     return incidents.sort((a, b) => compareText(a.label.toLowerCase(), b.label.toLowerCase()) ||
+      b.lastEventAt - a.lastEventAt);
+  case "subject-desc":
+    return incidents.sort((a, b) => compareText(b.label.toLowerCase(), a.label.toLowerCase()) ||
       b.lastEventAt - a.lastEventAt);
   default:
     // buildAlertIncidents уже вернул новые первыми
@@ -317,7 +323,51 @@ type MailSortItem = {
   timestamp: number;
   subjectKey: string;
   senderKey: string;
+  /** Значение столбца для сортировки по размеру, категориям или признаку (1/0) */
+  columnKey: number | string;
 };
+
+/** Сортировки по признаку письма: сначала письма с признаком (desc) или без него (asc) */
+const flagSortKeys: Partial<Record<MailListSort, (message: EMail) => boolean>> = {
+  "flag-desc": message => !!message.isStarred,
+  "flag-asc": message => !!message.isStarred,
+  "importance-desc": message => !!message.isImportant,
+  "importance-asc": message => !!message.isImportant,
+  "attachment-desc": message => !!message.hasVisibleAttachments,
+  "attachment-asc": message => !!message.hasVisibleAttachments,
+};
+
+function messageSize(message: EMail): number {
+  let size = Number(message.size);
+  return Number.isFinite(size) && size > 0 ? size : 0;
+}
+
+/** Категории письма одной строкой, как в столбце «Категории» */
+export function mailCategoriesKey(message: EMail): string {
+  let tags = message.tags?.contents ?? [];
+  return tags.map(tag => tag?.name ?? "").filter(Boolean).join("; ").toLowerCase();
+}
+
+function columnKeyFor(message: EMail, sort: MailListSort): number | string {
+  if (sort == "size-desc" || sort == "size-asc") {
+    return messageSize(message);
+  }
+  if (sort == "categories" || sort == "categories-desc") {
+    return mailCategoriesKey(message);
+  }
+  let flag = flagSortKeys[sort];
+  return flag ? (flag(message) ? 1 : 0) : 0;
+}
+
+/** Письма без категорий — в конце при любом направлении, как пустые значения в Outlook */
+function compareCategories(a: MailSortItem, b: MailSortItem, direction: 1 | -1): number {
+  let aKey = a.columnKey as string;
+  let bKey = b.columnKey as string;
+  if (!aKey != !bKey) {
+    return aKey ? -1 : 1;
+  }
+  return direction * compareText(aKey, bKey);
+}
 
 function sortComparator(sort: MailListSort): (a: MailSortItem, b: MailSortItem) => number {
   switch (sort) {
@@ -327,10 +377,33 @@ function sortComparator(sort: MailListSort): (a: MailSortItem, b: MailSortItem) 
   case "sender":
     return (a, b) => compareText(a.senderKey, b.senderKey) ||
       b.timestamp - a.timestamp;
+  case "sender-desc":
+    return (a, b) => compareText(b.senderKey, a.senderKey) ||
+      b.timestamp - a.timestamp;
   case "subject":
     return (a, b) => compareText(a.subjectKey, b.subjectKey) ||
       b.timestamp - a.timestamp ||
       compareText(a.senderKey, b.senderKey);
+  case "subject-desc":
+    return (a, b) => compareText(b.subjectKey, a.subjectKey) ||
+      b.timestamp - a.timestamp ||
+      compareText(a.senderKey, b.senderKey);
+  case "categories":
+    return (a, b) => compareCategories(a, b, 1) || b.timestamp - a.timestamp;
+  case "categories-desc":
+    return (a, b) => compareCategories(a, b, -1) || b.timestamp - a.timestamp;
+  case "size-asc":
+  case "flag-asc":
+  case "importance-asc":
+  case "attachment-asc":
+    return (a, b) => (a.columnKey as number) - (b.columnKey as number) ||
+      b.timestamp - a.timestamp;
+  case "size-desc":
+  case "flag-desc":
+  case "importance-desc":
+  case "attachment-desc":
+    return (a, b) => (b.columnKey as number) - (a.columnKey as number) ||
+      b.timestamp - a.timestamp;
   default:
     return (a, b) => b.timestamp - a.timestamp ||
       compareText(a.subjectKey, b.subjectKey);
@@ -345,6 +418,7 @@ function sortMessages(messages: readonly EMail[], sort: MailListSort): EMail[] {
     timestamp: listDisplayTimestamp(message),
     subjectKey: subjectGroupKey(message.subject),
     senderKey: senderName(message),
+    columnKey: columnKeyFor(message, sort),
   }));
   items.sort(sortComparator(sort));
   return items.map(item => item.message);
@@ -482,8 +556,8 @@ export class MailListRows {
     this.incidentSummary.set(null);
     let messages = sortMessages(this.source ? this.source.contents : [], this.sort);
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
-    let byTopic = this.sort == "subject";
-    let bySender = this.sort == "sender";
+    let byTopic = this.sort == "subject" || this.sort == "subject-desc";
+    let bySender = this.sort == "sender" || this.sort == "sender-desc";
     let nextRows = buildMailListRows(messages, byDate, byTopic, this.collapsedGroupIds, bySender);
     // При полной пересборке строки всегда создаются заново. `ArrayColl.replaceAll`
     // в таком случае сравнивает каждый новый объект со всеми старыми (O(n²)),

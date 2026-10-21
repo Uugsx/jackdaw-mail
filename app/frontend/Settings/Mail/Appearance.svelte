@@ -5,6 +5,11 @@
   </HeaderGroupBox>
 
   <HeaderGroupBox>
+    <hbox slot="header">{$t`Message list`}</hbox>
+    <MessageListAppearance />
+  </HeaderGroupBox>
+
+  <HeaderGroupBox>
     <hbox slot="header">{$t`Message viewer`}</hbox>
     <hbox class="subtitle">
       {$t`Choose the default way to display messages. You can override it for each mailbox in that account's settings.`}
@@ -36,6 +41,7 @@
   import ViewSwitcher from "../../Mail/LeftPane/ViewSwitcher.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import MessageContentRenderingOptions from "./MessageContentRenderingOptions.svelte";
+  import MessageListAppearance from "./MessageListAppearance.svelte";
   import {
     getMessageContentRenderingSetting,
     getMessageViewerBackgroundSetting,
