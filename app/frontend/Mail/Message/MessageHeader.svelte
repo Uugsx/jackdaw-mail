@@ -95,13 +95,19 @@
     </vbox>
   </hbox>
   {#if message.to.isEmpty || message.from.emailAddress == kDummyPerson.emailAddress}
+  <!-- После загрузки тела (например, повтором в MessageBody) шапка тоже пробует снова -->
+  {#key `${headerLoadAttempt}:${$message.loadedBody}`}
   {#await message.loadForDisplay()}
     <!-- Subject etc. are loaded by search,
       and body is loaded by MessageBody calling message.loadBody(),
       but not to/from etc. -->
   {:catch ex}
-    <ErrorMessageInline {ex} />
+    <!-- Пока тело не загрузилось, ту же ошибку связи уже показывает MessageBody -->
+    {#if $message.loadedBody}
+      <ErrorMessageInline {ex} onRetry={() => headerLoadAttempt++} />
+    {/if}
   {/await}
+  {/key}
 {/if}
 </vbox>
 
@@ -189,6 +195,8 @@
   onDestroy(() => stopViewing());
 
   let isEncryptionExpanded = false;
+  /** Повтор загрузки получателей после сбоя */
+  let headerLoadAttempt = 0;
   $: $message, closeEncryption()
   function closeEncryption() {
     isEncryptionExpanded = false;

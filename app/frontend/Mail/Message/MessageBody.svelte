@@ -1,14 +1,16 @@
 <vbox flex class="message-body" style:zoom={plaintextZoom} style:width={plaintextZoomWidth}>
   {#if !$message.loadedBody}
-    {#await loadMessageBody()}
-      {#await sleep(1)}
-        <hbox></hbox>
-      {:then}
-        {$t`Loading...`}
+    {#key loadAttempt}
+      {#await loadMessageBody()}
+        {#await sleep(1)}
+          <hbox></hbox>
+        {:then}
+          {$t`Loading...`}
+        {/await}
+      {:catch ex}
+        <ErrorMessage {ex} onRetry={retryLoad} />
       {/await}
-    {:catch ex}
-      <ErrorMessage {ex} />
-    {/await}
+    {/key}
   {:else if mode == DisplayMode.HTML}
     <HTMLDisplay html={$message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />
   {:else if mode == DisplayMode.HTMLWithExternal}
@@ -53,6 +55,12 @@
   $: message.loadExternalImages = mode == DisplayMode.HTMLWithExternal;
   $: plaintextZoom = mode == DisplayMode.Plaintext || mode == DisplayMode.Source ? zoom / 100 : undefined;
   $: plaintextZoomWidth = plaintextZoom && plaintextZoom != 1 ? `calc(100% / ${plaintextZoom})` : undefined;
+
+  /** Повтор после сбоя: `{#key}` запускает загрузку заново */
+  let loadAttempt = 0;
+  function retryLoad() {
+    loadAttempt++;
+  }
 
   async function loadMessageBody(): Promise<void> {
     // The account can become available between component creation and the
