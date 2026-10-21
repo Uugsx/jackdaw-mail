@@ -88,6 +88,7 @@
     alertCloseActionSetting,
     alertFolderNameRulesSetting,
     alertIncidentFolderSetting,
+    alertIncidentsEnabledSetting,
     alertPatterns,
     alertPatternsSetting,
     alertQuietMinutesSetting,
@@ -161,10 +162,11 @@
 
   /* Папка алертов: карточки инцидентов только для собственных писем папки,
    * не для результатов поиска или фильтра — иначе статусы считались бы по части писем. */
-  $: alertBarFolder = folder && messages === folder.messages && canGroupAlertFolder(folder) ? folder : null;
+  $: alertBarFolder = folder && messages === folder.messages &&
+    canGroupAlertFolder(folder, $alertIncidentsEnabledSetting.value) ? folder : null;
   $: alertFolderSetting = alertIncidentFolderSetting(folder);
   $: incidentMode = alertBarFolder && isAlertIncidentFolder(alertBarFolder, $alertFolderSetting.value,
-    $alertFolderNameRulesSetting.value)
+    $alertFolderNameRulesSetting.value, $alertIncidentsEnabledSetting.value)
     ? incidentModeFor($alertFolderSetting.value, $alertQuietMinutesSetting.value, $alertPatternsSetting.value)
     : null;
   // До setSource: папка алертов сразу строится карточками, без лишней сборки обычного списка

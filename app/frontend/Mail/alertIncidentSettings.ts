@@ -31,6 +31,8 @@ const kQuietMinutesChoices = [15, 30, 60, 180, 720] as const;
 /* Папки, где группировка алертов не имеет смысла */
 const kExcludedSpecialFolders = new Set(["sent", "drafts", "trash", "spam", "outbox", "all", "search"]);
 
+/** Общий выключатель: выключен — ни карточек, ни предложений, уведомления как обычно */
+export const alertIncidentsEnabledSetting = getLocalStorage<boolean>("mail.alertIncidents.enabled", true);
 export const alertQuietMinutesSetting = getLocalStorage<number>("mail.alertIncidents.quietMinutes", 60);
 export const alertCloseActionSetting = getLocalStorage<AlertIncidentCloseAction>("mail.alertIncidents.closeAction", "read");
 /** Шаблоны изменчивых частей темы, по одному регулярному выражению на строку */
@@ -79,8 +81,11 @@ export function updateAlertIncidentFolderSettings(
   };
 }
 
-export function canGroupAlertFolder(folder: Folder | null | undefined): boolean {
-  return hasFolderKey(folder) && !kExcludedSpecialFolders.has(folder.specialFolder);
+export function canGroupAlertFolder(
+  folder: Folder | null | undefined,
+  globalEnabled: unknown = alertIncidentsEnabledSetting.value,
+): boolean {
+  return globalEnabled !== false && hasFolderKey(folder) && !kExcludedSpecialFolders.has(folder.specialFolder);
 }
 
 /** Группировать ли письма папки в инциденты. */
@@ -88,8 +93,9 @@ export function isAlertIncidentFolder(
   folder: Folder | null | undefined,
   settingsValue: unknown = alertIncidentFolderSetting(folder).value,
   nameRules: unknown = alertFolderNameRulesSetting.value,
+  globalEnabled: unknown = alertIncidentsEnabledSetting.value,
 ): boolean {
-  if (!canGroupAlertFolder(folder)) {
+  if (!canGroupAlertFolder(folder, globalEnabled)) {
     return false;
   }
   let settings = readAlertIncidentFolderSettings(settingsValue);
@@ -142,6 +148,9 @@ export function markAlertIncidentClosed(folder: Folder | null | undefined, key: 
  * Письма других папок проходят без изменений.
  */
 export function filterAlertIncidentNotifications(messages: EMail[]): EMail[] {
+  if (alertIncidentsEnabledSetting.value === false) {
+    return messages;
+  }
   let byFolder = new Map<Folder, EMail[]>();
   let checkedFolders = new Map<Folder, boolean>();
   for (let message of messages) {
