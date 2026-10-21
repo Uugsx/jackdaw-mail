@@ -17,7 +17,23 @@ export type QuickFilterId =
   | "bySender"
   | "bySubject";
 
-export type MailListSort = "date-desc" | "date-asc" | "sender" | "subject";
+export type MailListSort =
+  | "date-desc" | "date-asc"
+  | "sender" | "sender-desc"
+  | "subject" | "subject-desc"
+  | "size-desc" | "size-asc"
+  | "categories" | "categories-desc"
+  | "flag-desc" | "flag-asc"
+  | "importance-desc" | "importance-asc"
+  | "attachment-desc" | "attachment-asc";
+
+/** Все варианты сортировки: первые четыре — из меню, остальные — щелчок по заголовку столбца. */
+export const allMailListSorts: readonly MailListSort[] = [
+  "date-desc", "date-asc", "sender", "subject",
+  "sender-desc", "subject-desc", "size-desc", "size-asc",
+  "categories", "categories-desc", "flag-desc", "flag-asc",
+  "importance-desc", "importance-asc", "attachment-desc", "attachment-asc",
+];
 
 export interface QuickFilterDef {
   id: QuickFilterId;
@@ -48,7 +64,7 @@ const folderSortSetting = getLocalStorage<Record<string, MailListSort>>(
   {},
 );
 
-const validSorts = new Set<MailListSort>(["date-desc", "date-asc", "sender", "subject"]);
+const validSorts = new Set<MailListSort>(allMailListSorts);
 const initialSort = validSorts.has(sortSetting.value)
   ? sortSetting.value
   : defaultSort;

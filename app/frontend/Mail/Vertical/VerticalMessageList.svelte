@@ -1,9 +1,16 @@
 <vbox flex class="message-list"
+  class:table-layout={!!tableColumns}
+  class:dividers
+  style="--mail-list-grid: {gridTemplate};"
+  bind:clientWidth={listWidth}
   on:keydown={event => catchErrors(() => onKeyOnList(event))}
   tabindex={0}
   >
   {#if alertBarFolder}
     <AlertIncidentBar folder={alertBarFolder} incidentMode={!!incidentMode} summary={$incidentSummary} {messages} />
+  {/if}
+  {#if tableColumns}
+    <MailListHeader columns={tableColumns} sort={$mailListSort} {folder} onSort={sortByColumn} />
   {/if}
   {#if $folderSyncing && $listRows.isEmpty}
     <vbox class="empty-list">
@@ -61,7 +68,7 @@
           <VerticalMessageListItem message={item.message} on:click />
         </div>
       {:else if item.kind == "message"}
-        <VerticalMessageListItem message={item.message} on:click />
+        <VerticalMessageListItem message={item.message} columns={tableColumns} on:click />
       {/if}
     </svelte:fragment>
   </FastList>
@@ -72,12 +79,27 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import type { Folder } from "../../../logic/Mail/Folder";
   import { onKeyOnList } from "../Message/MessageKeyboard";
-  import { activateMailListSort, mailListSort, type MailListSort } from "../LeftPane/quickFilters";
+  import { activateMailListSort, mailListSort, setMailListSort, type MailListSort } from "../LeftPane/quickFilters";
   import FastList from "../../Shared/FastList.svelte";
   import VerticalMessageListItem from "./VerticalMessageListItem.svelte";
   import MailListTopicSeparator from "./MailListTopicSeparator.svelte";
   import MailListIncidentCard from "./MailListIncidentCard.svelte";
   import AlertIncidentBar from "./AlertIncidentBar.svelte";
+  import MailListHeader from "./MailListHeader.svelte";
+  import {
+    mailListColumnsSetting,
+    mailListDividersSetting,
+    mailListGridTemplate,
+    mailListLayoutSetting,
+    nextMailListSort,
+    normalizeMailListColumnPrefs,
+    normalizeMailListDividers,
+    normalizeMailListLayout,
+    resolveMailListLayout,
+    visibleMailListColumns,
+    type MailListSortColumn,
+  } from "../mailListColumns";
+  import { isMobile } from "../../../logic/build";
   import Button from "../../Shared/Button.svelte";
   import {
     MailListRows, findMailListRowShowingMessage, findMailListRowsShowingMessages, mailListRowSelectable,
@@ -124,6 +146,8 @@
   let scrollRequestVersion = 0;
   let lastScrolledMessage: EMail | null = null;
   let lastScrolledSort: MailListSort | null = null;
+  /** Ширина списка: в режиме «Авто» узкий список показывается карточками */
+  let listWidth = 0;
 
   const rowsModel = new MailListRows();
   const listRows = rowsModel.rows;
@@ -181,6 +205,16 @@
   $: syncRowsFromMessages(selectedMessages, $listRows);
   $: observeSelectedMessages(selectedMessages);
   $: scrollSelectedMessageIntoView($listRows, selectedMessage, $mailListSort);
+  $: columnPrefs = normalizeMailListColumnPrefs($mailListColumnsSetting.value);
+  $: gridTemplate = mailListGridTemplate(columnPrefs, listWidth);
+  $: dividers = normalizeMailListDividers($mailListDividersSetting.value);
+  $: listLayout = resolveMailListLayout(normalizeMailListLayout($mailListLayoutSetting.value), listWidth,
+    { mobile: isMobile, incidents: !!incidentMode, prefs: columnPrefs });
+  $: tableColumns = listLayout == "table" ? visibleMailListColumns(columnPrefs) : null;
+
+  function sortByColumn(column: MailListSortColumn) {
+    setMailListSort(folder, nextMailListSort($mailListSort, column));
+  }
 
   function incidentModeFor(settingsValue: unknown, quietMinutes: unknown, patterns: unknown): MailListIncidentMode {
     let settings = readAlertIncidentFolderSettings(settingsValue);
@@ -361,6 +395,26 @@
 <style>
   .message-list {
     position: relative;
+    /* От цвета текста, а не рамки: в тёмной теме рамка почти сливается с фоном */
+    --mail-list-divider: color-mix(in srgb, var(--main-fg) 13%, transparent);
+    --mail-list-column-gap: 8px;
+    --mail-list-row-padding-start: 8px;
+    --mail-list-row-padding-end: 8px;
+    --mail-list-table-row-height: 26px;
+  }
+  :global(.ui-density-extra-compact) .message-list {
+    --mail-list-table-row-height: 22px;
+  }
+  :global(.ui-density-compact) .message-list {
+    --mail-list-table-row-height: 24px;
+  }
+  :global(.ui-density-large) .message-list {
+    --mail-list-table-row-height: 30px;
+  }
+  /* Тонкая полоса между письмами, как в Outlook. Тень, а не рамка:
+   * высота строки не меняется, а FastList требует одинаковых строк. */
+  .message-list.dividers :global(.row > *:not(.incident-member)) {
+    box-shadow: inset 0 -1px 0 var(--mail-list-divider);
   }
   .message-list :global(.fast-list) {
     padding-inline-start: 0;
@@ -411,6 +465,10 @@
   }
   .incident-member {
     box-shadow: inset 3px 0 0 color-mix(in srgb, var(--main-fg) 14%, transparent);
+  }
+  /* Фон вложенной строки письма закрывает тень обёртки: полоса — на самой строке */
+  .message-list.dividers .incident-member :global(.message) {
+    box-shadow: inset 0 -1px 0 var(--mail-list-divider);
   }
   .message-list .incident-member :global(.message) {
     padding-inline-start: 20px !important;

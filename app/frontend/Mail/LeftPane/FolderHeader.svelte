@@ -15,6 +15,14 @@
   {:else if folder}
     <FolderMsgCount {folder} {searchMessages} />
   {/if}
+  {#if folder || searchMessages}
+    <hbox class="list-view-menu">
+      <ButtonMenu label={$t`Message list view`} buttonIcon={ListViewIcon} placement="bottom-end"
+        dismissOnPointerLeave={false}>
+        <MailListViewOptions />
+      </ButtonMenu>
+    </hbox>
+  {/if}
 </hbox>
 
 <script lang="ts">
@@ -23,6 +31,9 @@
   import FolderMsgCount from './FolderMsgCount.svelte';
   import Button from '../../Shared/Button.svelte';
   import DisconnectedIcon from "lucide-svelte/icons/unplug";
+  import ListViewIcon from "lucide-svelte/icons/table-properties";
+  import ButtonMenu from '../../Shared/Menu/ButtonMenu.svelte';
+  import MailListViewOptions from '../Vertical/MailListViewOptions.svelte';
   import { t } from '../../../l10n/l10n';
   import type { ArrayColl } from 'svelte-collections';
 
@@ -49,6 +60,13 @@
   }
   .folder-header :global(button) {
     margin-inline-end: 8px;
+  }
+  .list-view-menu {
+    flex: 0 0 auto;
+    align-items: center;
+  }
+  .list-view-menu :global(.menu button.menuitem) {
+    margin-inline-end: 0;
   }
   .folder-name {
     font-weight: 600;
