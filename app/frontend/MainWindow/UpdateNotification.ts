@@ -82,23 +82,6 @@ function syncUpdateNotification(obj: {
     return;
   }
 
-  if (version && version === notifiedVersion) {
-    return;
-  }
-
-  if (updateNotification) {
-    if (!notifications.find(n => n === updateNotification)) {
-      notifiedVersion = version ?? notifiedVersion;
-      updateNotification = null;
-    } else {
-      if (phase === "downloading" && version) {
-        updateNotification.message = updateDownloadingMessage(version, obj.progress ?? 0);
-      }
-      return;
-    }
-  }
-
-  notifiedVersion = version;
   let message = updateAvailableMessage(version ?? "");
   if (phase === "downloading") {
     message = updateDownloadingMessage(version, obj.progress ?? 0);
@@ -106,6 +89,24 @@ function syncUpdateNotification(obj: {
     message = updateReadyMessage(version);
   }
 
+  let isShown = !!updateNotification && !!notifications.find(n => n === updateNotification);
+  if (isShown && (!version || version === notifiedVersion)) {
+    // Та же версия: раньше ранний выход ниже оставлял «Доступно обновление»,
+    // хотя оно уже скачивалось или было готово к установке
+    updateNotification.message = message;
+    return;
+  }
+
+  // Закрытое пользователем уведомление о той же версии не возвращаем
+  if (version && version === notifiedVersion) {
+    return;
+  }
+
+  if (isShown) {
+    // Вышла более новая версия, пока висело уведомление о прошлой
+    notifications.remove(updateNotification);
+  }
+  notifiedVersion = version;
   updateNotification = new Notification(message, NotificationSeverity.Info);
   updateNotification.buttons.add(new ButtonData(updateInstallButtonLabel(), async () => {
     openAboutForUpdate();

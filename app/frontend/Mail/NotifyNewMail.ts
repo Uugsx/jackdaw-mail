@@ -115,8 +115,11 @@ export async function showNewMail(messages: EMail[]) {
   // Dock-бейдж должен следовать фактическому числу непрочитанных писем.
   notification.updatesTaskbarBadge = false;
   notification.onClick = () => openMessage(firstMsg);
-  notification.onReply = replyText => reply(firstMsg, replyText);
-  notification.replyPlaceholder = gt`Reply…`;
+  // В сводном уведомлении о нескольких письмах ответ ушёл бы автору первого
+  if (singleMsg) {
+    notification.onReply = replyText => reply(singleMsg, replyText);
+    notification.replyPlaceholder = gt`Reply…`;
+  }
   await notification.show();
   syncMailTaskbarBadge();
 }

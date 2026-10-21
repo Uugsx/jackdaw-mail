@@ -104,6 +104,7 @@
   import { catchErrors } from "../../Util/error";
 
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import { onDestroy } from "svelte";
 
   export let message: EMail;
 
@@ -114,6 +115,7 @@
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   let canReplyAll = false;
   $: {
     replyAllUnsub?.();

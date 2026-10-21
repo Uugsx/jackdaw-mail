@@ -305,7 +305,9 @@ export class ComposeActions {
     let forward = this._forward();
     let a = forward.newAttachment();
     a.mimeType = "message/rfc822";
-    a.disposition = ContentDisposition.inline;
+    // Inline-вложение скрыто в редакторе: его не было видно, не удалить,
+    // и проверка «упомянуто вложение» считала письмо без вложений
+    a.disposition = ContentDisposition.attachment;
     a.filename = sanitize.filename(this.email.subject, "email") + ".eml";
     a.content = new File([this.email.mime], a.filename);
     a.size = this.email.size;

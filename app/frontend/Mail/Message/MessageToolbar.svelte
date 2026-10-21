@@ -150,7 +150,7 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { mailApp } from "../MailJackdawApp";
   import { SpecialFolder } from "../../../logic/Mail/Folder";
-  import { selectedMessage, selectedMessages } from "../Selected";
+  import { neighbourMessage, selectedMessage, selectedMessages } from "../Selected";
   import { openEMailMessage } from "../open";
   import MessageMenu from "./MessageMenu.svelte";
   import MessageMovePopup from "../Message/MessageMovePopup.svelte";
@@ -181,6 +181,7 @@
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { appGlobal } from "../../../logic/app";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import { onDestroy } from "svelte";
 
   export let message: EMail;
   export let onReply: (() => void | Promise<void>) | null = null;
@@ -193,6 +194,7 @@
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   let canReplyAll = false;
   $: {
     replyAllUnsub?.();
@@ -242,7 +244,7 @@
   }
   function selectNextAfterAction(list: EMail[]) {
     let anchor = list[0] ?? message;
-    let next = anchor?.nextMessage();
+    let next = anchor ? neighbourMessage(anchor) : null;
     $selectedMessages.replaceAll(next ? [next] : []);
     $selectedMessage = next ?? null;
   }

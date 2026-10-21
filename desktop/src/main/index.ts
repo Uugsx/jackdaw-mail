@@ -53,6 +53,10 @@ let currentJPCSecret: string | null = null;
 const composeWindows = new Map<string, { window: BrowserWindow; payload: ComposeWindowMail }>();
 const messageWindows = new Map<string, { window: BrowserWindow; payload: MessageWindowPayload }>();
 const kComposeWindowRequestTimeoutMS = 60_000;
+/** Отправка письма с крупным вложением по медленному SMTP идёт дольше минуты. По таймауту
+ * окно показывало ошибку, а главное окно всё равно отправляло: повторное «Отправить»
+ * давало получателям дубль. Ждём отправку дольше, чем любой разумный SMTP. */
+const kComposeWindowSendTimeoutMS = 15 * 60_000;
 const kComposeWindowSearchTextMaxLength = 512;
 const pendingComposeWindowSends = new Map<string, {
   windowID: string;
@@ -190,7 +194,7 @@ function forwardComposeWindowSend(windowID: string, payload: ComposeWindowMail):
     const timeout = setTimeout(() => {
       pendingComposeWindowSends.delete(requestID);
       resolve({ ok: false, errorMessage: "The main window did not respond" });
-    }, kComposeWindowRequestTimeoutMS);
+    }, kComposeWindowSendTimeoutMS);
     pendingComposeWindowSends.set(requestID, { windowID, resolve, timeout });
     try {
       window.webContents.send(composeWindowSendRequestChannel, requestID, windowID, payload);

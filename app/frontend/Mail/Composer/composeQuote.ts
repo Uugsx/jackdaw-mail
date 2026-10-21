@@ -6,7 +6,11 @@ export function splitComposeQuote(html: string | null | undefined): { editable: 
   // само может содержать <blockquote>. Иначе подпись вставлялась внутрь цитаты.
   let markers = [
     body.search(/<p\b[^>]*\bclass=(["'])quote-header\1/i),
-    body.search(/<blockquote\b/i),
+    // Только цитата исходного письма (`cite`, `type="cite"`, gmail_quote). Цитата,
+    // которую пользователь оформил сам кнопкой на ленте, — голый <blockquote>
+    // внутри его текста: по нему резать нельзя, иначе подпись после неё
+    // не находилась и вставлялась второй раз, а текст уезжал в блок цитаты.
+    body.search(/<blockquote\b[^>]*\b(?:cite=|type=(["'])cite\2|class=(["'])[^"']*\bgmail_quote\b)/i),
     body.search(/<hr\b[^>]*>\s*<p\b[^>]*\bclass=(["'])forward-header\1/i),
   ].filter(index => index >= 0);
   if (markers.length) {

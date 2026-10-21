@@ -261,6 +261,7 @@
   import { selectedMessages as selectedMessagesStore } from "../Selected";
   import { t, gt } from "../../../l10n/l10n";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import { onDestroy } from "svelte";
   import {
     ribbonPreferences,
     type RibbonGroupId,
@@ -300,6 +301,7 @@
   let flagsEpoch = 0;
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   function onMessageChange() {
     replyAllRev++;
     flagsEpoch++;

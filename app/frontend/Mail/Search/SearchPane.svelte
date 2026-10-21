@@ -113,7 +113,8 @@
         return;
       }
       searchMessages = result;
-      $selectedMessage = searchMessages.first;
+      // Не открываем первый результат сами: он бы помечался прочитанным
+      $selectedMessage = null;
     } catch (ex) {
       showError(ex);
     }

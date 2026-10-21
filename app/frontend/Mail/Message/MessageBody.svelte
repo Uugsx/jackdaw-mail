@@ -19,11 +19,16 @@
     <PlaintextDisplay plaintext={translatedText ?? $message.text} />
     <!--<HTMLDisplay html={convertTextToHTML($message.text)} />-->
   {:else if mode == DisplayMode.Source}
-    {#await message.loadMIME()}
-      {$t`Loading...`}
-    {:then}
-      <PlaintextDisplay plaintext={getSource($message)} />
-    {/await}
+    {#key loadAttempt}
+      {#await message.loadMIME()}
+        {$t`Loading...`}
+      {:then}
+        <PlaintextDisplay plaintext={getSource($message)} />
+      {:catch ex}
+        <!-- Без этого при ошибке загрузки висело «Загрузка…» навсегда -->
+        <ErrorMessage {ex} onRetry={retryLoad} />
+      {/await}
+    {/key}
   {:else if mode == DisplayMode.Thread}
     <!-- Thread view unfinished; show HTML until implemented -->
     <HTMLDisplay html={translatedHTML ?? $message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />

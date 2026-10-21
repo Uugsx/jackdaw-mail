@@ -47,13 +47,13 @@
     <svelte:fragment slot="row" let:item>
       {#if item.kind == "day"}
         <MailListTopicSeparator prefix={$t`Received`} label={item.label} count={item.count} collapsed={item.collapsed}
-          on:toggle={() => rowsModel.toggleGroup(item.id)} />
+          on:toggle={() => toggleListGroup(item.id)} />
       {:else if item.kind == "topic"}
         <MailListTopicSeparator prefix={$t`Subject`} label={item.label} count={item.count} collapsed={item.collapsed}
-          on:toggle={() => rowsModel.toggleGroup(item.id)} />
+          on:toggle={() => toggleListGroup(item.id)} />
       {:else if item.kind == "sender"}
         <MailListTopicSeparator prefix={$t`From`} label={item.label} count={item.count} collapsed={item.collapsed}
-          on:toggle={() => rowsModel.toggleGroup(item.id)} />
+          on:toggle={() => toggleListGroup(item.id)} />
       {:else if item.kind == "incident"}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="incident-row" on:dblclick={() => rowsModel.toggleGroup(item.id)}>
@@ -125,11 +125,12 @@
   import { moveMessagesToArchive } from "../mailArchiveActions";
   import { withMailTransferProgress } from "../mailTransferProgress";
   import { gt } from "../../../l10n/l10n";
-  import { listVisibleMessages, folderSyncing } from "../Selected";
+  import { listVisibleMessages, listRowsInView, folderSyncing } from "../Selected";
   import Spinner from "../../Shared/Spinner.svelte";
   import { catchErrors } from "../../Util/error";
   import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
   import { onDestroy, tick } from "svelte";
+  import { get } from "svelte/store";
   import { t } from "../../../l10n/l10n";
 
   export let messages: Collection<EMail>;
@@ -200,6 +201,12 @@
   // Прочитанность писем меняет счётчики карточек, а не состав папки
   $: scheduleIncidentRefresh(!!incidentMode, $folder?.countUnread);
   $: listVisibleMessages.set(messages);
+  listRowsInView.set(listRows);
+  onDestroy(() => {
+    if (get(listRowsInView) === listRows) {
+      listRowsInView.set(null);
+    }
+  });
   $: syncSelectedRow(selectedMessage, $listRows);
   $: syncSelectedMessages($selectedRows, $listRows);
   $: syncRowsFromMessages(selectedMessages, $listRows);
@@ -318,6 +325,22 @@
       if (!selectedRows.contains(row)) {
         selectedRows.replaceAll([row]);
       }
+    }
+  }
+
+  /** Свёрнута группа с выбранным письмом: FastList перенёс бы выделение на
+   * соседнюю строку, и в области чтения открылось бы письмо, которое
+   * пользователь не выбирал, да ещё помечалось прочитанным. Снимаем выбор. */
+  function toggleListGroup(groupID: string) {
+    rowsModel.toggleGroup(groupID);
+    if (selectedRows.isEmpty) {
+      return;
+    }
+    let visible = new Set(listRows.contents.flatMap(row => mailListRowMessages(row)));
+    let stillVisible = selectedRows.contents.some(row =>
+      mailListRowMessages(row).some(message => visible.has(message)));
+    if (!stillVisible) {
+      selectedRows.clear();
     }
   }
 
