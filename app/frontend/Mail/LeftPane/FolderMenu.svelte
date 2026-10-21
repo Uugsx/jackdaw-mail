@@ -133,6 +133,7 @@
   import {
     alertFolderNameRulesSetting,
     alertIncidentFolderSetting,
+    alertIncidentsEnabledSetting,
     canGroupAlertFolder,
     isAlertIncidentFolder,
     updateAlertIncidentFolderSettings,
@@ -149,7 +150,7 @@
 
   $: favoriteRefs = $favoriteFoldersSetting.value ?? [];
   $: isFavorite = isFavoriteFolderRef(folder, favoriteRefs);
-  $: canGroupAlerts = canGroupAlertFolder(folder);
+  $: canGroupAlerts = canGroupAlertFolder(folder, $alertIncidentsEnabledSetting.value);
   $: alertSetting = alertIncidentFolderSetting(folder);
   $: isAlertFolder = isAlertIncidentFolder(folder, $alertSetting.value, $alertFolderNameRulesSetting.value);
 

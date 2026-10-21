@@ -31,6 +31,8 @@ const {
   readAlertIncidentFolderSettings,
   alertIncidentFolderSetting,
   alertFolderNameRulesSetting,
+  alertIncidentsEnabledSetting,
+  canGroupAlertFolder,
   updateAlertIncidentFolderSettings,
 } = await import("../../../frontend/Mail/alertIncidentSettings");
 
@@ -230,5 +232,26 @@ describe("alert folder settings", () => {
     let resumed = mail("Ошибка: WB", base + 3 * hour, folder);
     (folder.messages as ArrayColl<EMail>).add(resumed);
     expect(filterAlertIncidentNotifications([resumed])).toEqual([resumed]);
+  });
+
+  test("the global switch turns off cards, suggestions and notification filtering", () => {
+    let folder = fakeFolder();
+    updateAlertIncidentFolderSettings(folder, { enabled: true });
+    let first = mail("Ошибка: WB", base, folder);
+    let repeat = mail("Ошибка: WB", base + minute, folder);
+    (folder.messages as ArrayColl<EMail>).addAll([first, repeat]);
+    expect(filterAlertIncidentNotifications([first, repeat])).toEqual([first]);
+
+    alertIncidentsEnabledSetting.value = false;
+    try {
+      expect(canGroupAlertFolder(folder)).toBe(false);
+      expect(isAlertIncidentFolder(folder)).toBe(false);
+      expect(filterAlertIncidentNotifications([first, repeat])).toEqual([first, repeat]);
+      // Выбор по папке сохраняется и снова действует после включения
+      expect(readAlertIncidentFolderSettings(alertIncidentFolderSetting(folder).value).enabled).toBe(true);
+    } finally {
+      alertIncidentsEnabledSetting.value = true;
+    }
+    expect(isAlertIncidentFolder(folder)).toBe(true);
   });
 });

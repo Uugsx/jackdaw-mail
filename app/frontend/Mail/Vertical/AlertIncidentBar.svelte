@@ -11,10 +11,10 @@
       <button type="button" class:active={activeOnly} aria-pressed={activeOnly}
         on:click={() => setActiveOnly(true)}>{$t`Active only`}</button>
     </hbox>
-    <button type="button" class="icon-button" title={$t`Show alerts as a plain list`}
-      aria-label={$t`Show alerts as a plain list`}
+    <button type="button" class="text-button" title={$t`Show alerts as a plain list`}
       on:click={disableGrouping}>
       <ListIcon size="15px" strokeWidth={2} aria-hidden="true" />
+      <span>{$t`Plain list`}</span>
     </button>
   </hbox>
 {:else if suggestion}
@@ -179,7 +179,18 @@
     border-radius: 4px;
     background: none;
   }
+  .text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+  }
   .icon-button:hover,
+  .text-button:hover,
   .segmented button:not(.active):hover {
     background-color: color-mix(in srgb, var(--main-fg) 10%, transparent);
   }
