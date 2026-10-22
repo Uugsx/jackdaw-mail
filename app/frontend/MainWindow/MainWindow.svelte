@@ -77,6 +77,7 @@
 </vbox>
 <MeetBackground />
 <JackdawChatBackground />
+<ShareToChatDialog />
 <MailInBackground />
 <CalendarInBackground />
 <WebAppsInBackground />
@@ -138,6 +139,7 @@
   import CalendarInBackground from "../Calendar/CalendarInBackground.svelte";
   import MeetBackground from "../Meet/MeetBackground.svelte";
   import JackdawChatBackground from "../Chat/JackdawChatBackground.svelte";
+  import ShareToChatDialog from "../Chat/ShareToChatDialog.svelte";
   import WebAppsInBackground from "../WebApps/Runner/WebAppsInBackground.svelte";
   import WidgetSidebar from "../Widgets/WidgetSidebar.svelte";
   import {

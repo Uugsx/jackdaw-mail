@@ -1,3 +1,4 @@
+<svelte:window on:pointerdown|capture={onPointerDownAnywhere} on:pointermove={onPointerMoveAnywhere} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <hbox flex
   bind:this={messageE}
@@ -11,7 +12,7 @@
   on:pointerleave={onHoverEnd}
   >
   {#if !displayOutgoing}
-    <vbox class="avatar"  from={author?.name}>
+    <vbox class="avatar"  from={$author?.name}>
       {#if author?.picture && !followup}
         <PersonPicture person={author} size={32} />
       {/if}
@@ -21,7 +22,7 @@
     {#if !(fastFollowup && hideHeaderFollowup)}
       <hbox class="meta font-smallest" class:singlechat={!isGroupChat}>
         {#if !displayOutgoing && !followup}
-          <hbox class="from value">{author?.name}</hbox>
+          <hbox class="from value">{$author?.name}</hbox>
         {/if}
         <hbox flex>
           <slot name="above-center" />
@@ -30,10 +31,24 @@
           <hbox class="edited value" title={$t`The sender edited this message`}>{$t`edited`}</hbox>
         {/if}
         <hbox class="time value">{getDateTimeString($message.sent)}</hbox>
+        {#if displayOutgoing && deliveryLabel}
+          <!-- Как в мессенджерах: часы — отправляется, ✓ — на сервере, ✓✓ — доставлено, синие ✓✓ — прочитано -->
+          <hbox class="delivery" class:seen={deliveryStatus == DeliveryStatus.Seen}
+            title={deliveryLabel} aria-label={deliveryLabel} role="img">
+            {#if deliveryStatus == DeliveryStatus.Sending}
+              <ClockIcon size="12" />
+            {:else if deliveryStatus == DeliveryStatus.Server}
+              <CheckIcon size="13" />
+            {:else}
+              <CheckCheckIcon size="13" />
+            {/if}
+          </hbox>
+        {/if}
       </hbox>
     {/if}
     {#if showActions && (showActionBar || sideReactions)}
-      <vbox class="hover-popup-anchor">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <vbox class="hover-popup-anchor" on:pointerdown={() => pinned = true}>
         <!-- На компьютере обе панели сбоку от пузыря, на свободной стороне ленты:
           над и под пузырём они закрывали имя, время, текст и соседние сообщения -->
         <vbox class="side-popups" class:side={sidePopups}
@@ -52,7 +67,14 @@
       </vbox>
     {/if}
     <Attachments message={$message} />
-    {#if $message.rawText || $message.hasHTML || $$slots.bubble}
+    {#if links.length}
+      <vbox class="links">
+        {#each links as link}
+          <LinkCard {link} />
+        {/each}
+      </vbox>
+    {/if}
+    {#if hasBody || $$slots.bubble}
       <vbox class="bubble" class:deleted={isDeletedForAll}>
         {#if $message.inReplyTo}
           <div class="quote font-small">
@@ -102,7 +124,8 @@
       </hbox>
     {/if}
     {#if !sidePopups && showReactions && showActions && canReact}
-      <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length} on:pointerdown={() => pinned = true}>
         <vbox class="hover-after-msg">
           <ReactionBar {message} bind:isOpen={showActions} />
         </vbox>
@@ -124,6 +147,14 @@
   import { appGlobal } from "../../../logic/app";
   import ReactionBar from "./ReactionBar.svelte";
   import { onDestroy } from "svelte";
+  import LinkCard from "./LinkCard.svelte";
+  import type { ChatLinkRef } from "../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+  import CheckIcon from "lucide-svelte/icons/check";
+  import CheckCheckIcon from "lucide-svelte/icons/check-check";
+  import ClockIcon from "lucide-svelte/icons/clock";
+  function htmlToPlain(html: string): string {
+    return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
+  }
   import { quoteSnippet } from "../replyState";
   import ActionBar from "./ActionBar.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
@@ -166,6 +197,17 @@
   $: fastFollowup = followup &&
     $message.sent.getTime() - previousMessage.sent.getTime() < 5 * 60 * 1000; // < 5 mins apart
   $: reactions = $message.reactions;
+  /** Письма и события, которыми поделились в чате */
+  $: links = ($message as { links?: ChatLinkRef[] }).links ?? [];
+  $: deliveryStatus = $message instanceof ChatMessage ? $message.deliveryStatus : DeliveryStatus.Unknown;
+  $: deliveryLabel = deliveryStatus == DeliveryStatus.Sending ? $t`Sending…`
+    : deliveryStatus == DeliveryStatus.Server ? $t`Message sent`
+    : deliveryStatus == DeliveryStatus.User ? $t`Delivered`
+    : deliveryStatus == DeliveryStatus.Seen ? $t`Read by recipient`
+    : "";
+  /** Есть что показать в пузыре. Сообщение только с файлом и пустым абзацем — без пузыря. */
+  $: hasBody = isDeletedForAll || !!$message.rawText?.trim() ||
+    ($message.hasHTML && (/<(img|video|table|hr)\b/i.test($message.html) || !!htmlToPlain($message.html).trim()));
   /** Своё сообщение не дошло до сервера: показываем это и даём отправить снова */
   $: isFailed = displayOutgoing && $message instanceof ChatMessage && $message.deliveryStatus == DeliveryStatus.Failed;
   /** Панель реакций — только где протокол их поддерживает (у писем — как раньше) */
@@ -186,7 +228,9 @@
   /** Указатель ушёл с сообщения: панели скрываются не сразу, чтобы до них можно было дотянуться */
   let leaveTimer: NodeJS.Timeout | null = null;
   /** Время, за которое указатель переходит с пузыря на панель реакций и не теряет её */
-  const kHideDelayMs = 400;
+  const kHideDelayMs = 1000;
+  /** Насколько дальше сообщения и панелей указатель ещё «идёт к панели» */
+  const kNearPx = 32;
   function onHoverStart() {
     clearTimeout(leaveTimer);
     leaveTimer = null;
@@ -210,14 +254,54 @@
     }
     sideSpace = Math.max(0, messageE.parentElement.clientWidth - messageE.offsetWidth - kSideGapPx);
   }
+  /** Пользователь нажал на панель (меню «Удалить», все смайлики): панель остаётся,
+   * пока он не нажмёт в другом месте, даже если указатель ушёл с сообщения */
+  let pinned = false;
+  $: if (!showActions) {
+    pinned = false;
+  }
+  function onPointerDownAnywhere(event: PointerEvent) {
+    if (!pinned) {
+      return;
+    }
+    let target = event.target as Element | null;
+    // Меню и окна выбора смайликов показываются поверх окна, вне сообщения
+    if (messageE?.contains(target) || target?.closest?.('[role="menu"], [role="dialog"], .svelteui-Popper-root, .popup')) {
+      return;
+    }
+    pinned = false;
+    showActions = false;
+  }
   function onHoverEnd() {
     clearTimeout(hoverTimer);
     hoverTimer = null;
+    if (pinned) {
+      return;
+    }
+    scheduleHide();
+  }
+  function scheduleHide() {
     clearTimeout(leaveTimer);
     leaveTimer = setTimeout(() => {
       leaveTimer = null;
       showActions = false;
     }, kHideDelayMs);
+  }
+  /** Пока указатель рядом с сообщением или его панелями (идёт к ним по диагонали, через соседние
+   * сообщения), панели не скрываются: на Windows путь до панели часто проходит мимо пузыря. */
+  function onPointerMoveAnywhere(event: PointerEvent) {
+    if (!leaveTimer || !messageE) {
+      return;
+    }
+    let rects = [messageE, ...messageE.querySelectorAll(".side-popups, .hover-after-msg, .hover-above-msg")]
+      .map(element => element.getBoundingClientRect())
+      .filter(rect => rect.width && rect.height);
+    let near = rects.some(rect =>
+      event.clientX >= rect.left - kNearPx && event.clientX <= rect.right + kNearPx &&
+      event.clientY >= rect.top - kNearPx && event.clientY <= rect.bottom + kNearPx);
+    if (near) {
+      scheduleHide();
+    }
   }
   onDestroy(() => {
     clearTimeout(hoverTimer);
@@ -402,6 +486,21 @@
     background-color: var(--main-bg);
     color: var(--main-fg);
     box-shadow: 1px 1px 2px 0px rgba(0, 0, 0, 10%);
+  }
+  .links {
+    align-items: flex-start;
+  }
+  .outgoing .links {
+    align-items: flex-end;
+  }
+  .delivery {
+    align-items: center;
+    margin-inline-start: 4px;
+    opacity: 0.6;
+  }
+  .delivery.seen {
+    opacity: 1;
+    color: var(--selected-border, #2a8bf2);
   }
   .hover-popup-anchor {
     position: relative;

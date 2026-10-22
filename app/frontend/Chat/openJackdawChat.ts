@@ -20,6 +20,10 @@ export async function openJackdawChat(account: JackdawChatAccount, email: string
   }
   let existing = account.findRoomByID(`direct:${address.toLowerCase()}`);
   if (!existing && !account.isOnline) {
+    // Ошибка с причиной: её баннер сам уходит, когда чат подключится (иначе висел и после подтверждения адреса)
+    if (account.connectionProblem()) {
+      account.requireOnline();
+    }
     throw new UserError(gt`Jackdaw chat is not connected on this device. Confirm your address for calls and chat in the settings.`);
   }
   if (!existing && !await account.canChatWith(address)) {

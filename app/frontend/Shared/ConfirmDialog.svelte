@@ -15,6 +15,7 @@
       on:keydown={onKeydown}>
       <h2 id={titleId}>{title}</h2>
       <p id={messageId}>{message}</p>
+      <slot />
       <div class="actions">
         <Button
           label={resolvedCancelLabel}

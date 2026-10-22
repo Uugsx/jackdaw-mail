@@ -23,6 +23,11 @@
             on:click={openCalendarApp}>
             <CalendarIcon size="14px" />
           </button>
+        {:else if activeWidget.kind === "chat"}
+          <button type="button" class="header-btn" title={$t`Open chat`}
+            on:click={openChatApp}>
+            <MessageIcon size="14px" />
+          </button>
         {:else if activeWidget.kind === "live-sla"}
           <button type="button" class="header-btn" title={$t`Open reports`}
             on:click={openReportsApp}>
@@ -57,6 +62,8 @@
       {/each}
       {#if activeWidget?.kind === "calendar" && $widgetsExpanded.value}
         <CalendarWidgetPanel />
+      {:else if activeWidget?.kind === "chat" && $widgetsExpanded.value}
+        <ChatWidgetPanel />
       {:else if activeWidget?.kind === "live-sla" && $widgetsExpanded.value}
         <ProFeatureGate feature="live-sla" compact={true}>
           <LiveSlaApp embedded={true} />
@@ -80,6 +87,13 @@
         on:contextmenu={(event) => onWidgetContextMenu(event, widget)}>
         {#if widget.kind === "calendar"}
           <CalendarIcon size="16px" />
+        {:else if widget.kind === "chat"}
+          <span class="chat-rail-indicator" aria-hidden="true">
+            <MessageIcon size="16px" />
+            {#if $chatUnreadTotal}
+              <span class="live-sla-badge">{$chatUnreadTotal > 99 ? "99+" : $chatUnreadTotal}</span>
+            {/if}
+          </span>
         {:else if widget.kind === "live-sla"}
           <span
             class="live-sla-rail-indicator"
@@ -167,6 +181,10 @@
   import Popup from "../Shared/Popup.svelte";
   import AddWidgetDialog from "./AddWidgetDialog.svelte";
   import CalendarWidgetPanel from "./CalendarWidgetPanel.svelte";
+  import ChatWidgetPanel from "./ChatWidgetPanel.svelte";
+  import { chatUnreadTotal } from "../Chat/chatUnread";
+  import { chatApp } from "../Chat/ChatJackdawApp";
+  import MessageIcon from "lucide-svelte/icons/message-square-text";
   import LiveSlaApp from "../Reports/LiveSlaApp.svelte";
   import ProFeatureGate from "../Shared/ProFeatureGate.svelte";
   import ButtonMenu from "../Shared/Menu/ButtonMenu.svelte";
@@ -295,6 +313,10 @@
 
   function liveSlaRailTitle(name: string, count: number): string {
     return count > 0 ? `${name} · ${count}` : name;
+  }
+
+  function openChatApp() {
+    openApp(chatApp, {});
   }
 
   function openCalendarApp() {
@@ -498,6 +520,14 @@
     font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
+  }
+  .chat-rail-indicator {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
   }
   .live-sla-rail-indicator {
     position: relative;

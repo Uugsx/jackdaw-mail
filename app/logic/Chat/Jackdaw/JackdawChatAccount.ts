@@ -33,7 +33,8 @@ import { proEntitlement } from "../../Billing/ProEntitlement";
 import { chatConnectionProblem, JackdawChatConnectionError, type ChatConnectionProblem } from "./chatConnectionProblem";
 import { notifyChangedProperty } from "../../util/Observable";
 import { UserError, assert } from "../../util/util";
-import { findDirectoryAddresses } from "./directoryAddresses";
+import { findDirectoryAddresses, findDirectoryName } from "./directoryAddresses";
+import { nameFromChatID } from "../ChatPersonUID";
 import { appGlobal } from "../../app";
 import { gt } from "../../../l10n/l10n";
 
@@ -42,6 +43,27 @@ const DEVICE_KEYS_SECRET = "jackdaw-chat.device-keys";
 const DEVICE_CACHE_MS = 60_000;
 const BLOB_CHUNK_BYTES = 64 * 1024;
 const BLOB_TIMEOUT_MS = 30_000;
+/** Сколько ждать каталог организации при поиске адреса собеседника */
+const DIRECTORY_TIMEOUT_MS = 5_000;
+const MAX_CONTACT_NAME_LENGTH = 120;
+
+/** Имя, собранное из адреса (`nlevchenko0181@` → «Nlevchenko0181»), или сам адрес: его стоит заменить настоящим */
+function isNameFromAddress(name: string | null | undefined, email: string): boolean {
+  return !name || name == email || name == nameFromChatID(email);
+}
+
+function readNames(value: unknown): Record<string, string> {
+  let names: Record<string, string> = {};
+  if (value && typeof value == "object" && !Array.isArray(value)) {
+    for (let [email, name] of Object.entries(value)) {
+      let key = normalizeCallEmail(email);
+      if (key && typeof name == "string" && name.trim()) {
+        names[key] = name.trim().slice(0, MAX_CONTACT_NAME_LENGTH);
+      }
+    }
+  }
+  return names;
+}
 /** Сообщение не расшифровалось: просим сервер больше его не присылать, но не теряем молча */
 const UNDECRYPTABLE_TEXT = () => gt`This message could not be decrypted. Ask the sender to send it again.`;
 /** Сколько удалённых групп помним, чтобы их не создало снова старое сообщение администратора */
@@ -86,6 +108,10 @@ export class JackdawChatAccount extends ChatAccount {
    * Чат с человеком часто заведён на адрес из писем (`nikita.levchenko@`), а его устройство
    * подключено на адрес ящика (`nlevchenko0181@`): без этого сообщения были «Не отправлено». */
   protected addressAliases: Record<string, string> = {};
+  /** Имена собеседников, заданные пользователем в чате: адрес → имя */
+  protected contactNames: Record<string, string> = {};
+  /** Имена из каталога организации: адрес → имя */
+  protected directoryNames: Record<string, string> = {};
   /** Собеседники, чей адрес уже проверен при подключении: каталог не опрашиваем при каждом переподключении */
   protected peersChecked = new Set<string>();
   /** Другие адреса человека из каталога организации. Заменяется в тестах. */
@@ -201,6 +227,90 @@ export class JackdawChatAccount extends ChatAccount {
     return new JackdawChatPerson(userID, name);
   }
 
+  /** Имя собеседника: своё (переименован в чате), из адресной книги или каталога организации.
+   * Имя из адреса (`Nlevchenko0181`) — только когда другого нет. */
+  getPersonUID(userID: string, name?: string): ChatPersonUID {
+    let person = super.getPersonUID(userID, name);
+    let better = this.knownNameOf(userID);
+    if (better && person.name != better && (this.customNameOf(userID) || isNameFromAddress(person.name, userID))) {
+      person.name = better;
+    }
+    return person;
+  }
+
+  /** Своё имя для собеседника, заданное в чате. null — не переименован. */
+  customNameOf(email: string): string | null {
+    let key = normalizeCallEmail(email);
+    return key ? this.contactNames[key] ?? null : null;
+  }
+
+  /** Лучшее известное имя без запросов в сеть. null — только имя из адреса. */
+  protected knownNameOf(email: string): string | null {
+    let key = normalizeCallEmail(email);
+    if (!key) {
+      return null;
+    }
+    let primary = this.addressAliases[key];
+    let fromBook = [key, primary].filter(Boolean)
+      .map(address => appGlobal.addressbooks.contents
+        .flatMap(book => book.persons.contents)
+        .find(person => person.name && person.emailAddresses.some(entry => normalizeCallEmail(entry.value) == address))?.name)
+      .find(Boolean);
+    return this.contactNames[key] ?? fromBook ?? this.directoryNames[key] ?? null;
+  }
+
+  /** Переименовать собеседника в чате (только у себя). Пустое имя — вернуть имя по умолчанию. */
+  async renameContact(email: string, name: string): Promise<void> {
+    let key = normalizeCallEmail(email);
+    if (!key) {
+      return;
+    }
+    let trimmed = name.trim().slice(0, MAX_CONTACT_NAME_LENGTH);
+    if (trimmed) {
+      this.contactNames[key] = trimmed;
+    } else {
+      delete this.contactNames[key];
+    }
+    await this.save();
+    let person = this.getPersonUID(key);
+    person.name = this.knownNameOf(key) ?? nameFromChatID(key);
+    await this.saveRoomsWith(key);
+  }
+
+  /** Имя из каталога организации (Exchange GAL) для собеседника. Один раз за сеанс. */
+  protected async loadDirectoryName(email: string): Promise<void> {
+    let key = normalizeCallEmail(email);
+    if (!key || this.contactNames[key] || this.directoryNames[key]) {
+      return;
+    }
+    let lookup = this.directoryName(this.addressAliases[key] ?? key).catch(() => null);
+    let timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), DIRECTORY_TIMEOUT_MS));
+    let name = (await Promise.race([lookup, timeout]))?.trim();
+    if (!name) {
+      return;
+    }
+    this.directoryNames[key] = name.slice(0, MAX_CONTACT_NAME_LENGTH);
+    await this.save();
+    let person = this.getPersonUID(key);
+    if (isNameFromAddress(person.name, key)) {
+      person.name = this.knownNameOf(key) ?? person.name;
+      await this.saveRoomsWith(key);
+    }
+  }
+
+  /** Имя человека по адресу из каталога организации. Заменяется в тестах. */
+  directoryName: (email: string) => Promise<string | null> =
+    email => findDirectoryName(email, appGlobal.searchOnlyAddressbooks.contents);
+
+  protected async saveRoomsWith(email: string): Promise<void> {
+    for (let room of this.rooms.contents) {
+      if (room instanceof JackdawChatRoom && !room.isGroup && room.peerEmail == email) {
+        room.notifyObservers();
+        await room.save().catch(this.errorCallback);
+      }
+    }
+  }
+
   getOwnContact(): ChatPersonUID {
     let email = this.client?.verifiedEmails[0] ?? this.registeredEmails[0] ?? "";
     return this.getPersonUID(email, this.realname);
@@ -217,6 +327,8 @@ export class JackdawChatAccount extends ChatAccount {
     this.deletedGroups = Array.isArray(json?.deletedGroups)
       ? json.deletedGroups.filter((id: unknown) => typeof id == "string").slice(-MAX_DELETED_GROUPS)
       : [];
+    this.contactNames = readNames(json?.contactNames);
+    this.directoryNames = readNames(json?.directoryNames);
     let aliases = json?.addressAliases;
     this.addressAliases = {};
     if (aliases && typeof aliases == "object" && !Array.isArray(aliases)) {
@@ -231,6 +343,8 @@ export class JackdawChatAccount extends ChatAccount {
 
   toConfigJSON(): any {
     let json = super.toConfigJSON();
+    json.contactNames = this.contactNames;
+    json.directoryNames = this.directoryNames;
     json.pinnedKeys = this.pinnedKeys;
     json.deletedGroups = this.deletedGroups;
     json.addressAliases = this.addressAliases;
@@ -342,6 +456,7 @@ export class JackdawChatAccount extends ChatAccount {
       if (room instanceof JackdawChatRoom && !room.isGroup && room.peerEmail && !this.peersChecked.has(room.peerEmail)) {
         this.peersChecked.add(room.peerEmail);
         await this.chatAddressFor(room.peerEmail).catch(() => null);
+        await this.loadDirectoryName(room.peerEmail).catch(() => null);
       }
     }
   }
@@ -520,7 +635,8 @@ export class JackdawChatAccount extends ChatAccount {
     }
   }
 
-  async uploadBlob(data: Uint8Array): Promise<string> {
+  /** @param onProgress доля загруженного, 0…1, после каждой части */
+  async uploadBlob(data: Uint8Array, onProgress?: (done: number) => void): Promise<string> {
     let client = this.requireOnline();
     let blobId = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
     let total = Math.max(1, Math.ceil(data.length / BLOB_CHUNK_BYTES));
@@ -529,6 +645,7 @@ export class JackdawChatAccount extends ChatAccount {
       await client.request({ type: "blob-put", blobId, index, total, data: toBase64(chunk) },
         reply => (reply.type == "blob-stored" && reply.index == index || reply.type == "error") && reply.blobId == blobId,
         BLOB_TIMEOUT_MS);
+      onProgress?.((index + 1) / total);
     }
     return blobId;
   }
@@ -848,7 +965,10 @@ export class JackdawChatAccount extends ChatAccount {
     if (((await this.devicesFor([email])).get(email) ?? []).length) {
       return email;
     }
-    let candidates = (await this.directoryAddresses(email).catch(() => []))
+    // Каталог может не ответить (нет входа в Exchange): отправка не ждёт его дольше нескольких секунд
+    let lookup = this.directoryAddresses(email).catch(() => [] as string[]);
+    let timeout = new Promise<string[]>(resolve => setTimeout(() => resolve([]), DIRECTORY_TIMEOUT_MS));
+    let candidates = (await Promise.race([lookup, timeout]))
       .filter(address => address != email && !this.isOwnEmail(address));
     if (!candidates.length) {
       return email;

@@ -64,6 +64,14 @@
       </hbox>
       <hbox flex class="spacer" />
       <hbox class="buttons">
+        <RoundButton
+          label={$t`Send to chat`}
+          icon={ShareChatIcon}
+          onClick={() => shareToChat(eventLink(event))}
+          classes="plain share-chat"
+          border={false}
+          iconSize="16px"
+          />
         {#if isFullWindow}
           <RoundButton
             label={$t`Shrink dialog to sidebar`}
@@ -105,6 +113,9 @@
   import Button from "../../Shared/Button.svelte";
   import ButtonMenu from "../../Shared/Menu/ButtonMenu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
+  import { shareToChat } from "../../Chat/shareToChat";
+  import { eventLink } from "../../../logic/Chat/Jackdaw/chatLinks";
+  import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import AccountIcon from "lucide-svelte/icons/user-round";
   import ExpandDialogIcon from "lucide-svelte/icons/chevrons-left";
   import ShrinkDialogIcon from "lucide-svelte/icons/chevrons-right";

@@ -45,3 +45,24 @@ export async function findDirectoryAddresses(email: string, directories: SearchO
   }
   return candidates[0].filter(address => address != wanted);
 }
+
+/** Имя человека с адресом `email` из каталога. null — не найден или найдено несколько разных людей. */
+export async function findDirectoryName(email: string, directories: SearchOnlyAddressbook[]): Promise<string | null> {
+  let wanted = normalizeCallEmail(email);
+  if (!wanted || !directories.length) {
+    return null;
+  }
+  let found = new ArrayColl<Person>();
+  for (let directory of directories) {
+    try {
+      await directory.quickSearchAsync(wanted, found);
+    } catch {
+      // Каталог недоступен: остальные ещё могут ответить
+    }
+  }
+  let names = new Set(found.contents
+    .filter(person => person.emailAddresses.contents.some(entry => normalizeCallEmail(entry.value) == wanted))
+    .map(person => person.name?.trim())
+    .filter((name): name is string => !!name && normalizeCallEmail(name) != wanted));
+  return names.size == 1 ? [...names][0] : null;
+}

@@ -3,7 +3,7 @@ import { gt } from "../../l10n/l10n";
 import { closeWidgetPopout } from "../../logic/util/widgetBrowser";
 import { writable } from "svelte/store";
 
-export type WidgetKind = "web" | "calendar" | "live-sla";
+export type WidgetKind = "web" | "calendar" | "live-sla" | "chat";
 
 export type WidgetRefreshMinutes = 0 | 1 | 2 | 5 | 10 | 30 | 60 | 90;
 
@@ -63,6 +63,15 @@ const calendarWidget: WidgetEntry = {
   kind: "calendar",
 };
 
+export const CHAT_WIDGET_ID = "chat";
+
+/** Чат Jackdaw рядом с почтой: переписка видна, пока пишешь письмо */
+const chatWidget: WidgetEntry = {
+  id: CHAT_WIDGET_ID,
+  name: gt`Chat`,
+  kind: "chat",
+};
+
 const liveSlaWidget: WidgetEntry = {
   id: LIVE_SLA_WIDGET_ID,
   name: gt`Live response control`,
@@ -71,6 +80,7 @@ const liveSlaWidget: WidgetEntry = {
 
 export const defaultWidgets: WidgetEntry[] = [
   calendarWidget,
+  chatWidget,
   liveSlaWidget,
   {
     id: "chatgpt",
@@ -148,6 +158,9 @@ function builtInWidgetName(kind: WidgetKind): string | null {
   if (kind === "live-sla") {
     return gt`Live response control`;
   }
+  if (kind === "chat") {
+    return gt`Chat`;
+  }
   return null;
 }
 
@@ -161,7 +174,8 @@ export function normalizeWidgetList(list: WidgetEntry[] | null | undefined): Wid
     };
   });
   if (!items.length) {
-    return defaultWidgets;
+    // Имена встроенных панелей — на текущем языке: при загрузке модуля переводы могли быть ещё не готовы
+    return defaultWidgets.map(entry => ({ ...entry, name: builtInWidgetName(entry.kind) ?? entry.name }));
   }
   if (!items.some(w => w.kind === "calendar")) {
     items = [calendarWidget, ...items];
@@ -169,6 +183,10 @@ export function normalizeWidgetList(list: WidgetEntry[] | null | undefined): Wid
   if (!items.some(w => w.kind === "live-sla")) {
     let calendarIndex = items.findIndex(w => w.kind === "calendar");
     items.splice(calendarIndex + 1, 0, liveSlaWidget);
+  }
+  if (!items.some(w => w.kind === "chat")) {
+    let calendarIndex = items.findIndex(w => w.kind === "calendar");
+    items.splice(calendarIndex + 1, 0, chatWidget);
   }
   return items.length ? items : defaultWidgets;
 }
@@ -214,7 +232,7 @@ export function removeWidget(id: string) {
 }
 
 export function isBuiltInWidget(entry: WidgetEntry): boolean {
-  return entry.kind === "calendar" || entry.kind === "live-sla";
+  return entry.kind === "calendar" || entry.kind === "live-sla" || entry.kind === "chat";
 }
 
 export function migrateWidgetListIfNeeded(): void {

@@ -8,11 +8,13 @@
     <span class="unread" aria-label={$t`${$room.unreadCount} unread`}>{$room.unreadCount}</span>
   {/if}
 {:else if $room.lastMessage}
-  {$room.lastMessage.text?.substring(0, kPreviewLength)}
+  {$room.lastMessage.text?.trim().substring(0, kPreviewLength) || fileLabel($room.lastMessage)}
 {/if}
 
 <script lang="ts">
   import type { ChatRoom } from "../../logic/Chat/ChatRoom";
+  import type { ChatLinkRef } from "../../logic/Chat/Jackdaw/JackdawChatProtocol";
+  import { linkText } from "../../logic/Chat/Jackdaw/chatLinks";
   import { getDateTimeString } from "../Util/date";
   import { t } from "../../l10n/l10n";
 
@@ -23,6 +25,16 @@
 
   /** Строка всё равно обрезается многоточием по ширине; длиннее нет смысла */
   const kPreviewLength = 80;
+
+  /** Сообщение только с файлом или ссылкой: в строке списка — «📎 имя файла» или «Письмо: тема», а не пустота */
+  function fileLabel(message: ChatRoom["lastMessage"]): string {
+    let link = (message as { links?: ChatLinkRef[] } | null)?.links?.[0];
+    if (link) {
+      return linkText(link);
+    }
+    let file = message?.attachments?.first;
+    return file ? `📎 ${file.filename || $t`File`}` : "";
+  }
 </script>
 
 <style>

@@ -31,10 +31,17 @@
   {/if}
   {#if existingRoom || jackdawChatEmail}
     <RoundButton
-      label={$t`Message`}
+      label={$t`Message in Jackdaw chat`}
       icon={ChatIcon}
       classes="large secondary action"
       onClick={openChat} />
+  {:else if jackdawAccount && $emailAddresses.hasItems}
+    <!-- Кнопка видна всегда: неактивна с объяснением, почему написать в чат сейчас нельзя -->
+    <RoundButton
+      label={$t`Message in Jackdaw chat`}
+      icon={ChatIcon}
+      classes="large secondary action"
+      disabled={chatUnavailableReason} />
   {/if}
   {#if preferredEmailAddress}
     <a href="mailto:{preferredEmailAddress}">
@@ -93,6 +100,13 @@
     return null;
   }
   let jackdawChatEmail: string | null = null;
+  /** Почему нельзя написать: чат не подключён, проверка идёт или собеседник не пользуется чатом */
+  let chatChecking = false;
+  $: chatUnavailableReason = !jackdawOnline
+    ? $t`Jackdaw chat is not connected on this device.`
+    : chatChecking
+      ? $t`Checking whether ${person.name} uses Jackdaw chat…`
+      : $t`${person.name} does not use Jackdaw chat yet, or has not confirmed this address.`;
   let chatCheck = 0;
   $: jackdawOnline = !!($jackdawAccount && jackdawAccount?.isOnline);
   $: person, $emailAddresses, jackdawOnline, void findJackdawChatEmail();
@@ -102,12 +116,19 @@
     if (!jackdawOnline) {
       return;
     }
-    for (let email of callTargetEmails(person)) {
-      if (await jackdawAccount.canChatWith(email).catch(() => false)) {
-        if (check == chatCheck) {
-          jackdawChatEmail = email;
+    chatChecking = true;
+    try {
+      for (let email of callTargetEmails(person)) {
+        if (await jackdawAccount.canChatWith(email).catch(() => false)) {
+          if (check == chatCheck) {
+            jackdawChatEmail = email;
+          }
+          return;
         }
-        return;
+      }
+    } finally {
+      if (check == chatCheck) {
+        chatChecking = false;
       }
     }
   }
