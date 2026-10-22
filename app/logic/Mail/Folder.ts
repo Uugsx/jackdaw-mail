@@ -274,6 +274,8 @@ export class Folder extends Observable implements TreeItem<Folder> {
     let movedNewArrivedCount = messages.contents.filter(message => message.isNewArrived).length;
     let bumpedSourceCount = false;
     let bumpedTargetUnread = false;
+    /** Письма, уже перенесённые в другой аккаунт до ошибки */
+    let transferred = new Set<EMail>();
     try {
       if (action == "move") {
         sourceFolder.messages.removeAll(messages);
@@ -290,6 +292,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
           if (action == "move") {
             await message.deleteMessage();
           }
+          transferred.add(message);
           onProgress?.(++completed);
         }
         return;
@@ -329,8 +332,10 @@ export class Folder extends Observable implements TreeItem<Folder> {
       }
       if (removedLocally) {
         // Server move failed — put messages back in the source list.
+        // Уже перенесённые в другой аккаунт не возвращаем: они в цели и удалены
+        // в источнике, иначе в источнике появлялись дубли-«призраки».
         for (let msg of messages) {
-          if (!sourceFolder.messages.contains(msg)) {
+          if (!transferred.has(msg) && !sourceFolder.messages.contains(msg)) {
             sourceFolder.messages.add(msg);
           }
         }
@@ -340,7 +345,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
       if (action == "move") {
         for (let msg of messages) {
           if (msg.pID) {
-            sourceFolder.releaseDeletion(msg.pID, movedOnServer);
+            sourceFolder.releaseDeletion(msg.pID, movedOnServer || transferred.has(msg));
           }
         }
       }

@@ -483,6 +483,85 @@ export class EWSFolder extends ExchangeFolder {
     await super.moveOrCopyMessagesHere(action, messages, sameServer, onProgress);
   }
 
+  /**
+   * Корзина и спам: пакетный DeleteItem. Базовая реализация отправляла по
+   * запросу на письмо одновременно (тысячи при очистке), удаляла письма
+   * локально ещё до ответа сервера и не меняла счётчики папки.
+   * «Не найдено» значит, что письма на сервере уже нет: убираем и локально.
+   */
+  override async deleteAllMessages(): Promise<void> {
+    if (this.specialFolder != SpecialFolder.Trash && this.specialFolder != SpecialFolder.Spam) {
+      await super.deleteAllMessages();
+      return;
+    }
+    if (this.messages.isEmpty && this.countTotal > 0) {
+      await this.listMessages();
+    }
+    let messages = [...this.messages.contents] as EWSEMail[];
+    let firstError: Error | null = null;
+    for (let i = 0; i < messages.length; i += kMaxCount) {
+      let batch = messages.slice(i, i + kMaxCount).filter(message => message.itemID);
+      if (!batch.length) {
+        continue;
+      }
+      let request = {
+        m$DeleteItem: {
+          m$ItemIds: {
+            t$ItemId: batch.map(message => ({ Id: message.itemID })),
+          },
+          DeleteType: "HardDelete",
+          // Очистка почтовой папки не должна рассылать отмену встреч
+          SendMeetingCancellations: "SendToNone",
+          SuppressReadReceipts: true,
+        },
+      };
+      for (let message of batch) {
+        this.deletions.add(message.itemID);
+      }
+      try {
+        let results: any[];
+        try {
+          results = ensureArray(await this.account.callEWS(request));
+        } catch (ex) {
+          // Единственный ответ с ошибкой callEWS бросает сам
+          if (batch.length == 1 && ex instanceof EWSItemError && ex.type == "ErrorItemNotFound") {
+            results = [{ ResponseClass: "Success" }];
+          } else {
+            throw ex;
+          }
+        }
+        if (results.length != batch.length) {
+          throw new Error("Exchange returned an incomplete DeleteItem response");
+        }
+        let deleted: EWSEMail[] = [];
+        batch.forEach((message, index) => {
+          let result = results[index];
+          if (result?.ResponseClass == "Error" && result.ResponseCode != "ErrorItemNotFound") {
+            firstError ??= new EWSItemError(result, request);
+          } else {
+            deleted.push(message);
+          }
+        });
+        let deletedUnread = deleted.filter(message => !message.isRead).length;
+        await this.deleteMessagesLocally(deleted);
+        this.countTotal = Math.max(0, this.countTotal - deleted.length);
+        this.countUnread = Math.max(0, this.countUnread - deletedUnread);
+      } finally {
+        for (let message of batch) {
+          this.deletions.delete(message.itemID);
+        }
+      }
+    }
+    // Без ItemId письмо на сервер не отправить, но и на сервере его не найти
+    await this.deleteMessagesLocally(this.messages.contents.filter((message: EWSEMail) => !message.itemID));
+    if (firstError) {
+      throw firstError;
+    }
+    this.countTotal = this.messages.length;
+    this.countUnread = this.messages.contents.filter(message => !message.isRead).length;
+    this.countNewArrived = 0;
+  }
+
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<EWSEMail>) {
     let actionVerb = sanitize.translate(action, { move: "Move", copy: "Copy" });
     let request = {
@@ -502,9 +581,20 @@ export class EWSFolder extends ExchangeFolder {
     };
     // The messages will be deleted locally after this returns,
     // so ensure that none of them failed on the server.
-    let results = ensureArray(await this.account.callEWS(request));
+    // При переносе «не найдено» не ошибка: письма в исходной папке на сервере уже
+    // нет, и из-за одного такого откатывался весь перенос, оставляя «призраки».
+    let isGone = (result: any) => action == "move" && result?.ResponseCode == "ErrorItemNotFound";
+    let results: any[];
+    try {
+      results = ensureArray(await this.account.callEWS(request));
+    } catch (ex) {
+      if (messages.length == 1 && ex instanceof EWSItemError && isGone(ex.error)) {
+        return;
+      }
+      throw ex;
+    }
     for (let result of results) {
-      if (result.ResponseClass == "Error") {
+      if (result.ResponseClass == "Error" && !isGone(result)) {
         throw new EWSItemError(result, request);
       }
     }

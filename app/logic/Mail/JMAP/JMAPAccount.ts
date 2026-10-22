@@ -388,6 +388,34 @@ export class JMAPAccount extends MailAccount {
     }
   }
 
+  /**
+   * Счётчики всех папок с сервера. Раньше они читались только в listFolders(),
+   * то есть при запуске: бейджи не менялись ни от новой почты, ни от чтения
+   * в веб-почте, ни от очистки корзины.
+   */
+  async refreshFolderCounts(): Promise<void> {
+    let response = await this.makeSingleCall("Mailbox/get", {
+      accountId: this.accountID,
+      ids: null,
+      properties: ["id", "totalEmails", "unreadEmails"],
+    }) as TJMAPGetResponse<TJMAPFolder>;
+    for (let json of response.list ?? []) {
+      let folder = this.getFolderByID(json.id);
+      if (!folder) {
+        continue;
+      }
+      let countTotal = sanitize.integer(json.totalEmails, folder.countTotal);
+      let countUnread = sanitize.integer(json.unreadEmails, folder.countUnread);
+      if (folder.countTotal != countTotal || folder.countUnread != countUnread) {
+        folder.countTotal = countTotal;
+        folder.countUnread = countUnread;
+        if (folder.dbID) {
+          await this.storage.saveFolderProperties(folder);
+        }
+      }
+    }
+  }
+
   getFolderByID(id: string): JMAPFolder | null {
     return this.allFolders.get(id);
   }
