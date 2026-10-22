@@ -50,7 +50,8 @@ BLOB_QUOTA_BYTES = 1024 * 1024 * 1024
 CLEANUP_INTERVAL_SECONDS = 60 * 60
 # Незавершённая загрузка файла держит резерв квоты; брошенная загрузка удаляется через час.
 INCOMPLETE_BLOB_TTL_SECONDS = 60 * 60
-MIGRATIONS = ((1, "001_chat.sql"), (2, "002_verified_emails.sql"), (3, "003_message_sender_subject.sql"))
+MIGRATIONS = ((1, "001_chat.sql"), (2, "002_verified_emails.sql"), (3, "003_message_sender_subject.sql"),
+              (4, "004_device_mailboxes.sql"))
 
 
 def decode_b64(value: Any, max_bytes: int, code: str = "invalid_payload") -> bytes:
@@ -349,6 +350,25 @@ class ChatStore:
             ).fetchall()
         return [(row["email"], int(row["expires_at"])) for row in rows]
 
+    def remember_device_mailboxes(self, subject: str, device_hash: str, emails: Iterable[str]) -> None:
+        """Ящики, подключённые на устройстве: заменяет прежний список этого устройства."""
+        now = int(self._clock())
+        with self._transaction() as connection:
+            connection.execute("DELETE FROM device_mailboxes WHERE subject = ? AND device_hash = ?", (subject, device_hash))
+            connection.executemany(
+                "INSERT INTO device_mailboxes (subject, device_hash, email, updated_at) VALUES (?, ?, ?, ?)",
+                [(subject, device_hash, email, now) for email in sorted(set(emails))],
+            )
+
+    def mailboxes_on_other_devices(self, subject: str, device_hash: str) -> set[str]:
+        """Ящики, недавно подключённые на других устройствах лицензии."""
+        with contextlib.closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT email FROM device_mailboxes WHERE subject = ? AND device_hash != ? AND updated_at >= ?",
+                (subject, device_hash, int(self._clock()) - DEVICE_TTL_SECONDS),
+            ).fetchall()
+        return {row["email"] for row in rows}
+
     # --- очистка --------------------------------------------------------------
 
     def cleanup(self, force: bool = False) -> None:
@@ -360,6 +380,7 @@ class ChatStore:
             connection.execute("DELETE FROM chat_messages WHERE created_at < ?", (int(now) - MESSAGE_TTL_SECONDS,))
             connection.execute("DELETE FROM chat_devices WHERE last_seen_at < ?", (int(now) - DEVICE_TTL_SECONDS,))
             connection.execute("DELETE FROM verified_emails WHERE expires_at <= ?", (int(now),))
+            connection.execute("DELETE FROM device_mailboxes WHERE updated_at < ?", (int(now) - DEVICE_TTL_SECONDS,))
             expired = [row["blob_id"] for row in connection.execute(
                 "SELECT blob_id FROM chat_blobs WHERE created_at < ? OR (complete = 0 AND created_at < ?)",
                 (int(now) - BLOB_TTL_SECONDS, int(now) - INCOMPLETE_BLOB_TTL_SECONDS),
