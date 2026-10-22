@@ -626,7 +626,10 @@ a:hover {
     0 0 0 1px rgba(var(--shadow-color), 0.08),
     0 14px 30px rgba(var(--shadow-color), 0.18);
 }
-.main-window:not(.mobile) .menu {
+/* Только всплывающее меню. Обёртка кнопки ButtonMenu — тоже `.menu` (`menu button`):
+   с min-width она растягивалась до 190px, и рядом с кнопкой появлялась дыра
+   (панель действий сообщения, выбор микрофона и камеры у звонка, «Новый чат»). */
+.main-window:not(.mobile) .menu:not(.button) {
   min-width: 190px;
   padding: 5px;
   border-radius: var(--border-radius);

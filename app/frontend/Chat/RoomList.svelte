@@ -16,16 +16,13 @@
       {/if}
     </svelte:fragment>
     <hbox slot="top-right" class="last-time" let:person={room}>
-      {#if room instanceof ChatRoom && room.lastMessage}
-        {getDateTimeString(room.lastMessage.sent)}
-      {/if}
-      {#if room instanceof ChatRoom && room.unreadCount > 0}
-        <span class="unread" aria-label={$t`${room.unreadCount} unread`}>{room.unreadCount}</span>
+      {#if room instanceof ChatRoom}
+        <RoomSummary {room} part="time" />
       {/if}
     </hbox>
     <hbox slot="second-row" flex class="last-msg font-smallest" let:person={room}>
-      {#if room instanceof ChatRoom && room.lastMessage}
-        {room.lastMessage.text?.substring(0, 50)}
+      {#if room instanceof ChatRoom}
+        <RoomSummary {room} part="text" />
       {:else if room instanceof Person}
         {$t`Contact`}
       {/if}
@@ -39,7 +36,7 @@
   import { Person } from "../../logic/Abstract/Person";
   import type { PersonOrGroup } from "../Contacts/Person/PersonOrGroup";
   import PersonsList from "../Contacts/Person/PersonsList.svelte";
-  import { getDateTimeString } from "../Util/date";
+  import RoomSummary from "./RoomSummary.svelte";
   import { appGlobal } from "../../logic/app";
   import { ArrayColl, mergeColls, type Collection } from "svelte-collections";
   import { t } from "../../l10n/l10n";
@@ -115,7 +112,8 @@
   /** Статус собеседника в личных чатах Jackdaw; присутствие обновляется через `presenceVersion` */
   const callClient = getJackdawCallClient();
   $: presenceVersion = $callClient?.presenceVersion ?? 0;
-  function roomPresence(item: PersonOrGroup): PresenceState | null {
+  /** `item` — из слота PersonsList, его тип там не выводится */
+  function roomPresence(item: unknown): PresenceState | null {
     if (!(item instanceof ChatRoom) || !(item.contact instanceof ChatPersonUID) ||
         item.contact.protocol != JACKDAW_CHAT_PROTOCOL || !item.contact.emailAddress) {
       return null;
@@ -163,6 +161,12 @@
   .chat-rooms :global(.first-row) {
     margin-block-start: 3px;
   }
+  /* Колонка аватара здесь 32 + 2 × 14 px, а не 42 px, на которые рассчитан PersonLine:
+     без поправки время справа уезжало за край списка и обрезалось («05:1») */
+  .chat-rooms :global(.person .main) {
+    max-width: calc(100% - 32px - 2 * 14px);
+    min-width: 0;
+  }
   .chat-rooms :global(.person .name) {
     font-size: medium;
   }
@@ -173,19 +177,6 @@
     font-size: x-small;
     margin-block-start: 3px;
     margin-inline-start: 8px;
-  }
-  .unread {
-    margin-inline-start: 6px;
-    min-width: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    background: var(--icon-primary);
-    color: var(--main-bg, white);
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 18px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
   }
   /* Одна строка с многоточием: вторая строка срезалась по высоте наполовину. */
   .last-msg {

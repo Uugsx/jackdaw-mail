@@ -51,7 +51,8 @@
 </vbox>
 {#if dialogOpenPerson}
   <!-- Форма: Enter в поле адреса открывает чат так же, как кнопка со стрелкой -->
-  <form class="dialog new-chat" on:submit|preventDefault={() => catchErrors(onOpenChatID)}>
+  <form class="dialog new-chat" on:submit|preventDefault={() => catchErrors(onOpenChatID)}
+    on:keydown={event => onEnterInForm(event, "new-chat-id", onOpenChatID)}>
     <hbox class="account">
       <h2 class="dialog-title">{$t`Chat with`}</h2>
       <hbox flex />
@@ -102,7 +103,8 @@
     </hbox>
   </vbox>
 {:else if dialogNewChatRoom && selectedAccount instanceof JackdawChatAccount}
-  <form class="dialog new-group" on:submit|preventDefault={() => catchErrors(createGroup)}>
+  <form class="dialog new-group" on:submit|preventDefault={() => catchErrors(createGroup)}
+    on:keydown={event => onEnterInForm(event, null, null)}>
     <hbox class="account">
       <h2 class="dialog-title">{$t`New group`}</h2>
       <hbox flex />
@@ -205,6 +207,21 @@
     dialogOpenPerson = false;
   }
 
+  /**
+   * Enter в поле формы. Без перехвата браузер «нажимал» первую кнопку формы — «Закрыть»
+   * (у RoundButton нет type="button"), и форма закрывалась, ничего не открыв.
+   * @param fieldID поле, в котором Enter выполняет `action`; в остальных полях Enter ничего не делает
+   */
+  function onEnterInForm(event: KeyboardEvent, fieldID: string | null, action: (() => Promise<void>) | null) {
+    if (event.key != "Enter" || event.isComposing || !(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+    event.preventDefault();
+    if (action && event.target.id == fieldID) {
+      catchErrors(action);
+    }
+  }
+
   let chatID: string;
   async function onOpenChatID() {
     if (!selectedAccount || !chatID?.trim()) {
@@ -253,6 +270,11 @@
   .top-row {
     align-items: center;
     gap: 8px;
+  }
+  /* Учётные записи в ряд: со сжатием до одной колонки они вставали столбиком */
+  .top-row :global(.accounts) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   /* Подпись «Jackdaw Mail» целиком, без многоточия */
   .top-row :global(.account) {

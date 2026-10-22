@@ -44,8 +44,9 @@
       max-width: 100% !important;
       overflow-x: hidden !important;
     }
+    /* auto, не 100%: у body поля 16px, и при 100% текст уходил за правый край и срезался */
     body {
-      width: 100% !important;
+      width: auto !important;
       max-width: 100% !important;
       overflow-x: hidden !important;
       overflow-wrap: anywhere !important;

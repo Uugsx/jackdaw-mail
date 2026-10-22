@@ -74,6 +74,10 @@ export class JackdawCallServiceError extends Error {
 const PROOFS_STORAGE_KEY = "jackdaw.calls.email-proofs.v1";
 /** Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии их не включают */
 const EXCLUDED_STORAGE_KEY = "jackdaw.calls.excluded-emails.v1";
+/** Адреса вне списка ящиков (псевдонимы), подтверждённые на этом устройстве: они тоже наши.
+ * Без этого псевдоним работал только до переподключения, а затем его подтверждение стиралось,
+ * и сообщения собеседников на этот адрес не доходили («Не отправлено»). */
+const OWN_ALIASES_STORAGE_KEY = "jackdaw.calls.own-aliases.v1";
 const STATUS_STORAGE_KEY = "jackdaw.calls.status.v1";
 const SOCKET_OPEN = 1;
 const LOOKUP_CACHE_MS = 60_000;
@@ -243,7 +247,7 @@ export class JackdawCallClient extends Observable {
         name: this.options.getDisplayName(),
         ...this.statusForServer(),
         emailProofs: Object.entries(this.readProofs())
-          .filter(([email]) => !mailboxes || mailboxes.has(email))
+          .filter(([email]) => this.isOwnAddress(email, mailboxes))
           .map(([, proof]) => proof),
         ...(mailboxes ? { mailboxEmails: [...mailboxes] } : {}),
         ...(excluded.length ? { excludedEmails: excluded } : {}),
@@ -379,6 +383,7 @@ export class JackdawCallClient extends Observable {
         }
         this.saveProof(message.email, message.proof);
         this.setExcluded(message.email, false);
+        this.rememberOwnAlias(message.email);
         if (!this.verifiedEmails.includes(message.email)) {
           this.verifiedEmails = [...this.verifiedEmails, message.email].sort();
         }
@@ -591,6 +596,7 @@ export class JackdawCallClient extends Observable {
     let proofs = this.readProofs();
     delete proofs[email];
     this.writeProofs(proofs);
+    this.writeOwnAliases(this.readOwnAliases().filter(alias => alias != email));
     // Иначе сервер вернёт адрес при следующем входе: он подтверждён на другом устройстве лицензии.
     this.setExcluded(email, true);
     this.verifiedEmails = this.verifiedEmails.filter(e => e != email);
@@ -680,8 +686,41 @@ export class JackdawCallClient extends Observable {
    * иначе коллега видел себя в нашем адресе («Это ваш собственный адрес»)
    * и получал наши сообщения чата. Такие подтверждения здесь же забываем. */
   protected ownMailboxesOnly(emails: string[]): string[] {
-    let mailboxes = this.helloMailboxes;
-    return mailboxes ? emails.filter(email => mailboxes.has(email)) : emails;
+    return emails.filter(email => this.isOwnAddress(email, this.helloMailboxes));
+  }
+
+  /** Наш ящик или псевдоним, подтверждённый на этом устройстве. Ящики неизвестны — считаем своим всё. */
+  protected isOwnAddress(email: string, mailboxes: Set<string> | null): boolean {
+    return !mailboxes || mailboxes.has(email) || this.readOwnAliases().includes(email);
+  }
+
+  /** Адрес подтверждён здесь, но это не ящик приложения: запоминаем как свой псевдоним */
+  protected rememberOwnAlias(email: string): void {
+    let mailboxes = this.mailboxEmails();
+    let aliases = this.readOwnAliases();
+    if (!mailboxes || mailboxes.has(email) || aliases.includes(email)) return;
+    this.writeOwnAliases([...aliases, email]);
+  }
+
+  protected readOwnAliases(): string[] {
+    try {
+      let value = JSON.parse(this.options.storage?.getItem(OWN_ALIASES_STORAGE_KEY) ?? "[]");
+      return Array.isArray(value) ? [...new Set(value.map(normalizeCallEmail).filter((e): e is string => !!e))] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  protected writeOwnAliases(aliases: string[]): void {
+    try {
+      if (aliases.length) {
+        this.options.storage?.setItem(OWN_ALIASES_STORAGE_KEY, JSON.stringify(aliases));
+      } else {
+        this.options.storage?.removeItem(OWN_ALIASES_STORAGE_KEY);
+      }
+    } catch {
+      // Без хранилища псевдоним действует до переподключения.
+    }
   }
 
   protected readExcluded(): string[] {

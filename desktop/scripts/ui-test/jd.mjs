@@ -9,6 +9,7 @@
  *   node jd.mjs eval <порт> <выражение JS>             результат выражения (await можно)
  *   node jd.mjs click <порт> <селектор>                клик мышью по центру элемента
  *   node jd.mjs clickxy <порт> <x> <y>                 клик по точке (пиксели CSS)
+ *   node jd.mjs hover <порт> <селектор>                навести мышь без клика
  *   node jd.mjs type <порт> <текст>                    ввод текста в элемент с фокусом
  *   node jd.mjs key <порт> <клавиша>                   Enter, Escape, Tab, Backspace, ArrowDown…
  *   node jd.mjs wait <порт> <селектор> [мс]            дождаться элемента
@@ -259,6 +260,16 @@ const commands = {
       await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
       console.log(`Клик: ${box.tag} «${box.text.split("\n")[0]}»`);
+    });
+  },
+
+  /** Навести мышь на элемент без клика: панели, которые видны только при наведении */
+  async hover(port, selector) {
+    await withPage(port, async cdp => {
+      let box = await waitFor(cdp, selector);
+      let point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+      console.log(`Наведено: ${box.tag} «${box.text.split("\n")[0]}»`);
     });
   },
 

@@ -249,6 +249,34 @@ describe("клиент сигналинга", () => {
     expect(client.verifiedEmails).toContain("primary@example.com");
   });
 
+  test("псевдоним, подтверждённый на этом устройстве, остаётся своим после переподключения", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123 456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    // Новое соединение, как после сна или перезапуска сервера
+    client.stop();
+    client = makeClient();
+    client.start();
+    socket().open();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-alias"]);
+    expect(socket().last("hello").mailboxEmails).toEqual(["bob@example.com"]);
+    socket().receive({ type: "welcome", emails: ["alias@example.com", "bob@example.com"], resumedCalls: [] });
+    expect(client.verifiedEmails).toEqual(["alias@example.com", "bob@example.com"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "alias@example.com": "proof-alias" });
+  });
+
+  test("отключённый псевдоним больше не считается своим", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    client.forgetEmail("alias@example.com");
+    expect(storage.getItem("jackdaw.calls.own-aliases.v1")).toBeNull();
+  });
+
   test("пока ящики неизвестны, сохранённые подтверждения не отбрасываются", () => {
     storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({ "alice@example.com": "proof-1" }));
     client.start();

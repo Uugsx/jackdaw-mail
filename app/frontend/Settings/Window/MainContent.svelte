@@ -1,4 +1,4 @@
-<Scroll>
+<Scroll bind:this={scroll}>
   <vbox flex class="settings-content">
     {#if page}
       <svelte:component this={page} account={$selectedAccount} />
@@ -12,6 +12,10 @@
   import Scroll from "../../Shared/Scroll.svelte";
 
   export let category: SettingsCategory;
+
+  /* Новый раздел — с начала страницы, а не с прокрутки прошлого */
+  let scroll: Scroll;
+  $: category, scroll?.scrollTo(0);
 
   /* У раздела верхнего уровня вроде «Общие» нет своей страницы. Вместо пустого
    * экрана показываем первый подраздел, у которого страница есть. */
