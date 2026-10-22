@@ -6,7 +6,8 @@ import { DeleteStrategy } from "../MailAccount";
 import { getTagByName, type Tag } from "../../Abstract/Tag";
 import { PersonUID, findOrCreatePersonUID, kDummyPerson } from "../../Abstract/PersonUID";
 import type { TJMAPEmailAddress, TJMAPEmailBodyPart, TJMAPEMailHeaders, TJMAPPerson } from "./TJMAPMail";
-import type { TJMAPGetResponse } from "./TJMAPGeneric";
+import type { TJMAPChangeResponse, TJMAPGetResponse } from "./TJMAPGeneric";
+import { checkChangeError } from "./JMAPError";
 import { getLocalStorage } from "../../../frontend/Util/LocalStorage";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, NotReached } from "../../util/util";
@@ -230,14 +231,15 @@ export class JMAPEMail extends EMail {
   async setFlagServer(name: string, set: boolean) {
     this.flagsChanging = true;
     try {
-      await this.folder.account.makeSingleCall("Email/set", {
+      let response = await this.folder.account.makeSingleCall("Email/set", {
         accountId: this.folder.account.accountID,
         update: {
           [this.jmapID]: {
             [`keywords/${name}`]: set ? true : null,
           },
         },
-      });
+      }) as TJMAPChangeResponse<TJMAPEMailHeaders>;
+      checkChangeError(response);
     } finally {
       this.flagsChanging = false;
     }
@@ -256,10 +258,11 @@ export class JMAPEMail extends EMail {
       this.folder.deletions.add(this.jmapID);
       if (strategy == DeleteStrategy.DeleteImmediately ||
           [SpecialFolder.Trash, SpecialFolder.Spam].includes(this.folder.specialFolder)) {
-        await this.folder.account.makeSingleCall("Email/set", {
+        let response = await this.folder.account.makeSingleCall("Email/set", {
           accountId: this.folder.account.accountID,
           destroy: [ this.jmapID ],
-        });
+        }) as TJMAPChangeResponse<TJMAPEMailHeaders>;
+        checkChangeError(response);
       } else if (strategy == DeleteStrategy.MoveToTrash || strategy == DeleteStrategy.Flag) {
         let trash = this.folder.account.findSpecialFolder(SpecialFolder.Trash);
         assert(trash, gt`Trash folder is not set. Cannot delete the email. Please go to folder properties and set Use As: Trash.`);
