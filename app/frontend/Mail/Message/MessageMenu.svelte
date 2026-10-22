@@ -198,8 +198,10 @@
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+  // Вне блока `#if`: в рабочей сборке он вырезается, и меню падало с «onDestroy is not defined»
+  import { onDestroy } from "svelte";
   // #if [!PRODUCTION]
-  import { onDestroy, tick } from "svelte";
+  import { tick } from "svelte";
   import { openMessageDOMInspector } from "./messageDOMInspector";
   // #endif
 
