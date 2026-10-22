@@ -341,6 +341,38 @@ describe("чат между двумя пользователями", () => {
     expect(await alice.account.canChatWith("nobody@example.com")).toBe(false);
   });
 
+  test("псевдоним из писем: сообщение уходит на адрес ящика из каталога, ответ — в тот же чат", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    // Чат у Боба подключён на адрес ящика, а Алиса знает его по псевдониму из писем
+    let bob = await makeAccount(server, "bob.box@example.com");
+    alice.account.directoryAddresses = async email => email == "bob@example.com" ? ["bob.box@example.com"] : [];
+    expect(await alice.account.canChatWith("bob@example.com")).toBe(true);
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    msg.text = "по псевдониму";
+    await room.sendMessage(msg);
+    await settle();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+    expect(server.sent.at(-1).recipients).toEqual(["bob.box@example.com"]);
+    expect(alice.account.primaryAddressOf("Bob@example.com")).toBe("bob.box@example.com");
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    expect((bobRoom.messages.first as any).text).toBe("по псевдониму");
+    let reply = bobRoom.newMessage();
+    reply.text = "ответ";
+    await bobRoom.sendMessage(reply);
+    await settle();
+    // Ответ с адреса ящика попадает в чат, заведённый на псевдоним, а не в новый
+    expect(alice.account.findRoomByID("direct:bob.box@example.com")).toBeNull();
+    expect(room.messages.contents.map((m: any) => m.text)).toEqual(["по псевдониму", "ответ"]);
+  });
+
+  test("псевдоним без чата и без записи в каталоге — по-прежнему «не пользуется чатом»", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.account.directoryAddresses = async () => ["nobody.box@example.com"];
+    expect(await alice.account.canChatWith("nobody@example.com")).toBe(false);
+    expect(alice.account.primaryAddressOf("nobody@example.com")).toBeNull();
+  });
+
   test("файл шифруется, загружается частями и расшифровывается у получателя", async () => {
     let alice = await makeAccount(server, "alice@example.com");
     let bob = await makeAccount(server, "bob@example.com");

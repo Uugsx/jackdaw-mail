@@ -118,7 +118,9 @@
         item.contact.protocol != JACKDAW_CHAT_PROTOCOL || !item.contact.emailAddress) {
       return null;
     }
-    return presenceOf(callClient, [item.contact.emailAddress]);
+    // Псевдоним из писем: статус — по адресу, на котором у человека чат
+    let primary = account instanceof JackdawChatAccount ? account.primaryAddressOf(item.contact.emailAddress) : null;
+    return presenceOf(callClient, primary ? [item.contact.emailAddress, primary] : [item.contact.emailAddress]);
   }
 
   let searchAddressbooks = appGlobal.addressbooks.merge(appGlobal.searchOnlyAddressbooks);
