@@ -866,12 +866,13 @@ class CallHub:
         # другие соединения не видят соединение наполовину вошедшим.
         excluded_emails = self._excluded_emails(message.get("excludedEmails"))
         mailbox_emails = self._mailbox_emails(message.get("mailboxEmails"))
+        foreign = yield from self._foreign_mailboxes(credential, mailbox_emails)
         proofs = message.get("emailProofs")
         accepted: list[str] = []
         if isinstance(proofs, list):
             for proof in proofs[:MAX_EMAILS_PER_CONNECTION]:
                 claims = self.verification.signer.verify_claims(proof, credential.subject)
-                if claims and claims[0] not in accepted:
+                if claims and claims[0] not in accepted and claims[0] not in foreign:
                     accepted.append(claims[0])
                     # Подтверждения, полученные до появления общего хранилища, тоже становятся общими.
                     yield from self._remember_verified(credential.subject, *claims)
@@ -895,6 +896,7 @@ class CallHub:
         peer.mailbox_emails = mailbox_emails
         for email in accepted:
             self._register(peer, email)
+        self._drop_foreign_claims(peer)
         resumed = self._resume_calls(peer, message.get("activeCalls"))
         welcome: dict[str, Any] = {"type": "welcome", "emails": sorted(accepted), "resumedCalls": resumed}
         if restored:
@@ -920,6 +922,38 @@ class CallHub:
                 with contextlib.suppress(CallError):
                     excluded.add(normalize_email(value))
         return excluded
+
+    def _drop_foreign_claims(self, peer: Peer) -> None:
+        """Устройство лицензии, держащее адрес из наших ящиков без своего ящика, переподключается:
+        при новом входе этот адрес ему уже не засчитывается (см. `_foreign_mailboxes`)."""
+        if not peer.mailbox_emails or peer.credential is None:
+            return
+        for other in list(self.peers_by_subject.get(peer.credential.subject, ())):
+            if other is peer or other.credential is None or other.credential.device_hash == peer.credential.device_hash:
+                continue
+            claimed = other.emails & peer.mailbox_emails
+            if claimed and (other.mailbox_emails is None or not claimed <= other.mailbox_emails):
+                other.close()
+
+    def _foreign_mailboxes(self, credential: Credential, mailboxes: set[str] | None) -> Steps:
+        """Адреса, которые этому устройству не принадлежат, хотя у него может быть их подтверждение.
+
+        Раньше подтверждение одного сотрудника расходилось по всем устройствам лицензии и осталось
+        у коллег. Клиент со списком ящиков подтверждает только их; без списка (старая версия) —
+        всё, кроме ящиков, подключённых на других устройствах лицензии.
+        """
+        if self.verified_store is None:
+            return set()
+        try:
+            if mailboxes is not None:
+                yield Blocking(functools.partial(
+                    self.verified_store.remember_device_mailboxes, credential.subject, credential.device_hash, mailboxes))
+            others = yield Blocking(functools.partial(
+                self.verified_store.mailboxes_on_other_devices, credential.subject, credential.device_hash))
+        except sqlite3.Error as error:
+            print(f"Could not read device mailboxes: {type(error).__name__}", flush=True)
+            return set()
+        return others - mailboxes if mailboxes is not None else others
 
     def _remember_verified(self, subject: str, email: str, expires: int) -> Steps:
         if self.verified_store is None:

@@ -405,6 +405,37 @@ class SharedVerificationTests(HubTestCase):
         self.verify(self.connect(device="device-alice-3"), "new@example.com")
         self.assertIsNone(self.last(old, "verified"))
 
+    def test_old_client_cannot_claim_mailbox_of_colleague_device(self):
+        """У коллеги осталось старое подтверждение нашего адреса: он не должен стать «нами» в чате."""
+        own = self.connect(device="device-alice-1", emails=["alice@example.com"], mailboxes=["alice@example.com"])
+        self.assertEqual(self.last(own, "welcome")["emails"], ["alice@example.com"])
+        colleague = self.connect(device="device-bob-0001", emails=["alice@example.com", "bob@example.com"])
+        self.assertEqual(self.last(colleague, "welcome")["emails"], ["bob@example.com"])
+        self.assertEqual(self.hub.peers_by_email["alice@example.com"], {own})
+
+    def test_new_client_cannot_claim_mailbox_of_colleague_device(self):
+        self.connect(device="device-alice-1", emails=["alice@example.com"], mailboxes=["alice@example.com"])
+        colleague = self.connect(device="device-bob-0001", emails=["alice@example.com", "bob@example.com"],
+                                 mailboxes=["bob@example.com"])
+        self.assertEqual(self.last(colleague, "welcome")["emails"], ["bob@example.com"])
+
+    def test_colleague_holding_our_address_is_reconnected_when_we_sign_in(self):
+        """После перезапуска сервера устройство коллеги могло войти раньше нашего."""
+        colleague = self.connect(device="device-bob-0001", emails=["alice@example.com", "bob@example.com"])
+        self.assertIn("alice@example.com", self.last(colleague, "welcome")["emails"])
+        self.connect(device="device-alice-1", emails=["alice@example.com"], mailboxes=["alice@example.com"])
+        self.assertTrue(colleague.closed)
+        self.hub.disconnected(colleague)
+        again = self.connect(device="device-bob-0001", emails=["alice@example.com", "bob@example.com"])
+        self.assertEqual(self.last(again, "welcome")["emails"], ["bob@example.com"])
+
+    def test_shared_mailbox_on_two_devices_stays_with_both(self):
+        first = self.connect(device="device-alice-1", emails=["team@example.com"], mailboxes=["team@example.com"])
+        second = self.connect(device="device-bob-0001", emails=["team@example.com"], mailboxes=["team@example.com"])
+        self.assertEqual(self.last(first, "welcome")["emails"], ["team@example.com"])
+        self.assertEqual(self.last(second, "welcome")["emails"], ["team@example.com"])
+        self.assertFalse(first.closed)
+
     def test_expired_addresses_are_not_restored(self):
         expires = int(time.time()) + 60
         self.store.remember_verified_email("license:1", "a@example.com", expires)
