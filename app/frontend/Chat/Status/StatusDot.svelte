@@ -1,11 +1,11 @@
 <span class="status-dot {status}" role="img" aria-label={statusLabel(status)} title={statusHint(status)} style:--size={size}></span>
 
 <script lang="ts">
-  /** Цветная метка статуса: «в сети» — зелёная, «занят» — жёлтая, «не беспокоить» — красная с чертой */
-  import type { JackdawUserStatus } from "../../../logic/Meet/Jackdaw/JackdawCallProtocol";
-  import { statusHint, statusLabel } from "./statusLabels";
+  /** Цветная метка статуса: «в сети» — зелёная, «занят» — жёлтая, «не беспокоить» — красная с чертой,
+   * «не в сети» — серое кольцо */
+  import { statusHint, statusLabel, type PresenceState } from "./statusLabels";
 
-  export let status: JackdawUserStatus;
+  export let status: PresenceState;
   export let size = "10px";
 </script>
 
@@ -27,6 +27,11 @@
   }
   .dnd {
     background-color: #d23f31;
+  }
+  .offline {
+    background-color: var(--main-bg);
+    border: 2px solid #9a948b;
+    box-sizing: border-box;
   }
   .dnd::after {
     content: "";

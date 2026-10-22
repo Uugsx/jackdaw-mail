@@ -2,7 +2,15 @@
   style="--account-color: {addressbook?.color ?? "transparent"};"
   >
     <slot name="icon" />
-    <PersonPicture {person} size={pictureSize} />
+    {#if $$slots["picture-badge"]}
+      <!-- Метка поверх аватара, например статус собеседника в чате -->
+      <div class="picture">
+        <PersonPicture {person} size={pictureSize} placeholder={picturePlaceholder} />
+        <slot name="picture-badge" {person} />
+      </div>
+    {:else}
+      <PersonPicture {person} size={pictureSize} placeholder={picturePlaceholder} />
+    {/if}
   <vbox flex class="main">
     <hbox class="first-row">
       <hbox flex class="name {fontClass}" title={$person.name}>{$person.name}</hbox>
@@ -22,6 +30,8 @@
   export let person: PersonOrGroup;
   export let isSelected = false;
   export let pictureSize: number;
+  /** Что показать вместо фото — in */
+  export let picturePlaceholder: "none" | "empty" | "icon" | "slot" | "initials" = "none";
 
   $: fontClass = appGlobal.isMobile ? "font-normal" : "font-small";
   $: addressbook = ($person as any).addressbook;
@@ -39,6 +49,11 @@
   .person :global(.avatar),
   .person :global(svg) {
     margin: 2px 14px;
+  }
+  .picture {
+    position: relative;
+    display: flex;
+    align-items: center;
   }
 
   /* account color bar */

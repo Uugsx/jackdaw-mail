@@ -44,6 +44,12 @@ export function applyTestProfile(): void {
     app.setPath("userData", path.join(testProfileDir, "userData"));
     app.commandLine.appendSwitch("use-fake-device-for-media-stream");
     app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+    // Порт отладки для jd.mjs, если копию запускает не он (например, `electron-vite dev`)
+    let debugPort = Number(process.env["JACKDAW_TEST_DEBUG_PORT"]);
+    if (Number.isInteger(debugPort) && debugPort > 1024 && debugPort < 65536) {
+      app.commandLine.appendSwitch("remote-debugging-port", String(debugPort));
+      app.commandLine.appendSwitch("remote-allow-origins", "*");
+    }
   } catch (ex) {
     // Без своего профиля копия открыла бы данные пользователя: выходим молча, без окна ошибки.
     console.error("Test profile failed:", ex);

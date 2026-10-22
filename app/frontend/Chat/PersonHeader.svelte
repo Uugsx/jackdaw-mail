@@ -1,11 +1,11 @@
 <hbox class="person">
-  <PersonPicture {person} />
+  <PersonPicture {person} size={40} placeholder="initials" />
   <vbox flex class="name-box">
-    <hbox class="name">{$person.name}</hbox>
-    {#if peerStatus != "available"}
-      <hbox class="status" title={statusHint(peerStatus)}>
-        <StatusDot status={peerStatus} size="8px" />
-        <span>{statusLabel(peerStatus)}</span>
+    <hbox class="name" title={$person.name}>{$person.name}</hbox>
+    {#if presence}
+      <hbox class="status" title={statusHint(presence)}>
+        <StatusDot status={presence} size="8px" />
+        <span>{statusLabel(presence)}</span>
       </hbox>
     {/if}
   </vbox>
@@ -51,7 +51,7 @@
   import ChatIcon from "lucide-svelte/icons/message-square-text";
   import PersonPicture from "../Contacts/Person/PersonPicture.svelte";
   import StatusDot from "./Status/StatusDot.svelte";
-  import { statusHint, statusLabel } from "./Status/statusLabels";
+  import { presenceOf, statusHint, statusLabel, type PresenceState } from "./Status/statusLabels";
   import RoundButton from "../Shared/RoundButton.svelte";
   import VideoCallIcon from '../asset/icon/appBar/meet.svg?raw';
   import VoiceCallIcon from '../asset/icon/meet/callVoice.svg?raw';
@@ -76,6 +76,11 @@
   $: peerStatus = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group)
     ? callTargetEmails(callTarget as Person | PersonUID).map(email => callClient.statusOf(email)).find(s => s != "available") ?? "available"
     : "available";
+  /** Что видно о собеседнике Jackdaw: в сети и его статус, или «не в сети». null — не пользователь Jackdaw или неизвестно. */
+  let presence: PresenceState | null = null;
+  $: presence = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group) && callTarget
+    ? presenceOf(callClient, callTargetEmails(callTarget as Person | PersonUID))
+    : null;
   /** Видеозвонок: через Jackdaw или WhatsApp */
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
@@ -117,8 +122,17 @@
 <style>
   .name-box {
     font-weight: bold;
-    margin: 15px;
-    gap: 4px;
+    margin: 12px 15px;
+    gap: 2px;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  /* Имя в одну строку: «Hayden Huel» переносилось, хотя места хватало */
+  .name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .status {
     align-items: center;
@@ -126,6 +140,13 @@
     font-weight: normal;
     font-size: 0.875em;
     opacity: 0.85;
+  }
+  .person {
+    align-items: center;
+  }
+  .person > :global(.avatar) {
+    flex: none;
+    margin-inline-start: 16px;
   }
   .actions {
     align-items: center;

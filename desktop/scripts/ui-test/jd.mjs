@@ -3,7 +3,7 @@
  * Автопроверка интерфейса Jackdaw Mail: копия приложения с отдельным профилем, невидимая для пользователя
  * (см. backend/testProfile.ts), управляется через протокол отладки Chromium.
  *
- *   node jd.mjs launch <профиль> <порт> [--demo] [--app <путь к .app>] [-- ключи приложения]
+ *   node jd.mjs launch <профиль> <порт> [--demo] [--unpacked | --app <путь к .app>] [-- ключи приложения]
  *   node jd.mjs shot <порт> <файл.png> [селектор]     снимок окна или элемента
  *   node jd.mjs text <порт> [селектор]                 видимый текст
  *   node jd.mjs eval <порт> <выражение JS>             результат выражения (await можно)
@@ -173,7 +173,12 @@ const commands = {
     // Напрямую, не через `open`: переменная профиля должна дойти до приложения наверняка.
     // Без неё копия открыла бы обычный профиль пользователя.
     let binary = path.join(app, "Contents/MacOS", path.basename(app, ".app"));
-    let child = spawn(binary, [`--remote-debugging-port=${port}`, "--remote-allow-origins=*", ...appArgs], {
+    // --unpacked: собранный `out/` без упаковки — быстрее для проверки правок
+    if (rest.includes("--unpacked")) {
+      binary = path.resolve(here, "../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
+      appArgs.unshift(path.resolve(here, "../.."));
+    }
+    let child = spawn(binary, [...appArgs.slice(0, rest.includes("--unpacked") ? 1 : 0), `--remote-debugging-port=${port}`, "--remote-allow-origins=*", ...appArgs.slice(rest.includes("--unpacked") ? 1 : 0)], {
       // Свой порт backend: обычный 5455 занят основным приложением
       env: { ...process.env, JACKDAW_TEST_PROFILE: profile, JACKDAW_TEST_JPC_PORT: String(Number(port) + 1000) },
       detached: true,

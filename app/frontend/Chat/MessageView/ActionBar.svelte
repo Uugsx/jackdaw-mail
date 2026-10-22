@@ -134,5 +134,7 @@
 <style>
   .bar {
     border-radius: 10px;
+    align-items: center;
+    gap: 2px;
   }
 </style>

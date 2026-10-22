@@ -1,6 +1,20 @@
 <vbox class="chat-rooms" flex>
   <PersonsList persons={rooms} bind:selected={selectedItem} {doSearch} {search}
-    sortBy={sortKey}>
+    bind:searchTerm sortBy={sortKey} pictureSize={32} picturePlaceholder="initials"
+    directoryHint={!startChatEmail}>
+    <svelte:fragment slot="below-search">
+      {#if startChatEmail}
+        <!-- Чата с этим адресом ещё нет: открыть его прямо из поиска -->
+        <Button classes="start-chat secondary" icon={ChatIcon}
+          label={$t`Write to ${startChatEmail}`}
+          onClick={startChatFromSearch} />
+      {/if}
+    </svelte:fragment>
+    <svelte:fragment slot="picture-badge" let:person={room}>
+      {#if presenceVersion >= 0 && roomPresence(room)}
+        <span class="presence"><StatusDot status={roomPresence(room)} size="10px" /></span>
+      {/if}
+    </svelte:fragment>
     <hbox slot="top-right" class="last-time" let:person={room}>
       {#if room instanceof ChatRoom && room.lastMessage}
         {getDateTimeString(room.lastMessage.sent)}
@@ -29,8 +43,18 @@
   import { appGlobal } from "../../logic/app";
   import { ArrayColl, mergeColls, type Collection } from "svelte-collections";
   import { t } from "../../l10n/l10n";
+  import Button from "../Shared/Button.svelte";
+  import StatusDot from "./Status/StatusDot.svelte";
+  import ChatIcon from "lucide-svelte/icons/message-square-text";
+  import { presenceOf, type PresenceState } from "./Status/statusLabels";
+  import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import { JackdawChatAccount, JACKDAW_CHAT_PROTOCOL } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
+  import type { ChatAccount } from "../../logic/Chat/ChatAccount";
+  import { looksLikeEmail, openJackdawChat } from "./openJackdawChat";
 
   export let rooms: Collection<ChatRoom>;
+  /** Учётная запись чата, чьи комнаты показаны — in. Для чата Jackdaw: статусы и чат по адресу из поиска. */
+  export let account: ChatAccount | null = null;
   /** null по умолчанию: при undefined PersonsList подставил бы своего человека */
   export let selectedRoom: ChatRoom = null;
   /** Контакт из адресной книги, выбранный в результатах поиска: с ним ещё нет чата — out */
@@ -71,6 +95,34 @@
     return "1" + (item.name ?? "").toLowerCase();
   }
 
+  let searchTerm: string | null = null;
+  /** Адрес из поиска, с которым ещё нет чата Jackdaw */
+  $: startChatEmail = account instanceof JackdawChatAccount && looksLikeEmail(searchTerm) &&
+    !$rooms.contents.some(room => roomMatches(room, searchTerm.trim().toLowerCase()))
+    ? searchTerm.trim()
+    : null;
+  async function startChatFromSearch() {
+    if (!(account instanceof JackdawChatAccount) || !startChatEmail) {
+      return;
+    }
+    let room = await openJackdawChat(account, startChatEmail);
+    if (room) {
+      searchTerm = null;
+      selectedItem = room;
+    }
+  }
+
+  /** Статус собеседника в личных чатах Jackdaw; присутствие обновляется через `presenceVersion` */
+  const callClient = getJackdawCallClient();
+  $: presenceVersion = $callClient?.presenceVersion ?? 0;
+  function roomPresence(item: PersonOrGroup): PresenceState | null {
+    if (!(item instanceof ChatRoom) || !(item.contact instanceof ChatPersonUID) ||
+        item.contact.protocol != JACKDAW_CHAT_PROTOCOL || !item.contact.emailAddress) {
+      return null;
+    }
+    return presenceOf(callClient, [item.contact.emailAddress]);
+  }
+
   let searchAddressbooks = appGlobal.addressbooks.merge(appGlobal.searchOnlyAddressbooks);
   /** Поиск в чате: свои чаты по имени и адресу, плюс контакты с email, с которыми чата ещё нет */
   function search(term: string): Collection<PersonOrGroup> {
@@ -92,6 +144,22 @@
 </script>
 
 <style>
+  .chat-rooms :global(.start-chat) {
+    margin: 4px 12px 8px;
+    max-width: calc(100% - 24px);
+  }
+  .chat-rooms :global(.start-chat .label) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Метка в правом нижнем углу аватара 32 px (отступ аватара в строке — 14 px) */
+  .presence {
+    position: absolute;
+    inset-inline-end: 12px;
+    bottom: 2px;
+    display: flex;
+  }
   .chat-rooms :global(.first-row) {
     margin-block-start: 3px;
   }

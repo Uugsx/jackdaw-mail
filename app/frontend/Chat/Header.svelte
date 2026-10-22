@@ -1,55 +1,60 @@
-<hbox class="persons-toolbar">
-  <AccountSelectorRound bind:selectedAccount {accounts} iconDefault={ChatIcon} />
+<!-- Две строки: учётные записи и «Новый чат», под ними свой статус. В одной строке статус
+  наезжал на «Новый чат» в узкой колонке, и кнопка переставала нажиматься. -->
+<vbox class="persons-toolbar">
+  <hbox class="top-row">
+    <AccountSelectorRound bind:selectedAccount {accounts} iconDefault={ChatIcon} />
+    <hbox flex />
+    <hbox class="buttons">
+      {#if selectedAccount && !$selectedAccount.isLoggedIn}
+        <RoundButton
+          label={$t`Login`}
+          icon={LoginIcon}
+          classes="small"
+          iconSize="12px"
+          onClick={() => $selectedAccount.login(true)}
+          />
+      {/if}
+      <ButtonMenu bind:isMenuOpen={isButtonMenuOpen}>
+        <RoundButton
+          slot="control"
+          label={$t`New chat`}
+          icon={AddIcon}
+          iconSize="22px"
+          padding="9px"
+          onClick={() => isButtonMenuOpen = !isButtonMenuOpen}
+          classes="large create"
+          />
+        <MenuItem
+          label={$t`Chat with person`}
+          onClick={() => dialogOpenPerson = true}
+          />
+        <!-- Комнаты по ID и новые комнаты есть не у всех протоколов: в чате Jackdaw — только группа -->
+        {#if !isJackdaw}
+          <MenuItem
+            label={$t`Open existing chat room`}
+            onClick={() => dialogOpenChatRoom = true}
+            />
+        {:else}
+          <MenuItem
+            label={$t`New group`}
+            onClick={() => dialogNewChatRoom = true}
+            />
+        {/if}
+      </ButtonMenu>
+    </hbox>
+  </hbox>
   {#if isJackdaw}
     <hbox class="my-status">
       <MyStatusButton />
     </hbox>
   {/if}
-  <hbox flex />
-  <hbox class="buttons">
-    {#if selectedAccount && !$selectedAccount.isLoggedIn}
-      <RoundButton
-        label={$t`Login`}
-        icon={LoginIcon}
-        classes="small"
-        iconSize="12px"
-        onClick={() => $selectedAccount.login(true)}
-        />
-    {/if}
-    <ButtonMenu bind:isMenuOpen={isButtonMenuOpen}>
-      <RoundButton
-        slot="control"
-        label={$t`New chat`}
-        icon={AddIcon}
-        iconSize="22px"
-        padding="9px"
-        onClick={() => isButtonMenuOpen = !isButtonMenuOpen}
-        classes="large create"
-        />
-      <MenuItem
-        label={$t`Chat with person`}
-        onClick={() => dialogOpenPerson = true}
-        />
-      <!-- Комнаты по ID и новые комнаты есть не у всех протоколов: в чате Jackdaw — только группа -->
-      {#if !isJackdaw}
-        <MenuItem
-          label={$t`Open existing chat room`}
-          onClick={() => dialogOpenChatRoom = true}
-          />
-      {:else}
-        <MenuItem
-          label={$t`New group`}
-          onClick={() => dialogNewChatRoom = true}
-          />
-      {/if}
-    </ButtonMenu>
-  </hbox>
-</hbox>
+</vbox>
 {#if dialogOpenPerson}
-  <vbox class="dialog">
+  <!-- Форма: Enter в поле адреса открывает чат так же, как кнопка со стрелкой -->
+  <form class="dialog new-chat" on:submit|preventDefault={() => catchErrors(onOpenChatID)}>
     <hbox class="account">
-      {$t`Chat with`}
-      <AccountDropDown accounts={appGlobal.chatAccounts} bind:selectedAccount filterByWorkspace={true} />
+      <h2 class="dialog-title">{$t`Chat with`}</h2>
+      <hbox flex />
       <RoundButton
         label={$t`Close`}
         onClick={() => dialogOpenPerson = false}
@@ -58,17 +63,22 @@
         padding="2px"
         />
     </hbox>
+    {#if $accounts.length > 1}
+      <AccountDropDown accounts={appGlobal.chatAccounts} bind:selectedAccount filterByWorkspace={true} />
+    {/if}
     <PersonAutocomplete skipPersonFunc={filterPerson} onAddPerson={person => catchErrors(() => openChatWithPerson(person))} />
-    <hbox class="label or">{isJackdaw ? $t`or enter an email address` : $t`or enter chat ID`}</hbox>
-    <hbox>
-      <input type="text" bind:value={chatID} placeholder={isJackdaw ? "name@example.com" : ""} />
+    <label class="label or" for="new-chat-id">{isJackdaw ? $t`or enter an email address` : $t`or enter chat ID`}</label>
+    <hbox class="chat-id">
+      <input id="new-chat-id" type={isJackdaw ? "email" : "text"} bind:value={chatID}
+        placeholder={isJackdaw ? "name@example.com" : ""} autocomplete="off" />
       <RoundButton
         label={$t`Open`}
         onClick={onOpenChatID}
         icon={OpenIcon}
+        disabled={!chatID?.trim()}
         />
     </hbox>
-  </vbox>
+  </form>
 {:else if dialogOpenChatRoom}
   <vbox class="dialog">
     <hbox class="account">
@@ -144,9 +154,8 @@
   import { JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { selectedRoom } from "./selected";
   import { catchErrors } from "../Util/error";
+  import { openJackdawChat } from "./openJackdawChat";
   import { ArrayColl } from "svelte-collections";
-  import { UserError } from "../../logic/util/util";
-  import { gt } from "../../l10n/l10n";
 
   export let accounts: Collection<ChatAccount>;
   export let selectedAccount: ChatAccount;
@@ -174,24 +183,12 @@
     return !person.emailAddress?.includes("@");
   }
 
-  /** Личный чат Jackdaw создаётся и сохраняется сразу, чтобы появиться в списке.
-   * Только с тем, кто пользуется чатом Jackdaw: иначе получился бы чат, в который нельзя написать. */
-  async function openJackdawChat(account: JackdawChatAccount, email: string) {
-    let address = email?.trim();
-    if (!address) {
-      return;
+  async function openJackdawChatAndClose(account: JackdawChatAccount, email: string) {
+    let room = await openJackdawChat(account, email);
+    if (room) {
+      $selectedRoom = room;
+      dialogOpenPerson = false;
     }
-    let existing = account.findRoomByID(`direct:${address.toLowerCase()}`);
-    if (!existing && !account.isOnline) {
-      throw new UserError(gt`Jackdaw chat is not connected on this device. Confirm your address for calls and chat in the settings.`);
-    }
-    if (!existing && !await account.canChatWith(address)) {
-      throw new UserError(account.isOwnEmail(address.toLowerCase())
-        ? gt`This is your own address. To chat, choose another contact.`
-        : gt`${address} does not use Jackdaw chat yet, or has not confirmed this address. You can send an email instead.`);
-    }
-    $selectedRoom = existing ?? await account.getDirectRoom(address);
-    dialogOpenPerson = false;
   }
 
   async function openChatWithPerson(person: PersonUID) {
@@ -199,7 +196,7 @@
       return;
     }
     if (selectedAccount instanceof JackdawChatAccount) {
-      await openJackdawChat(selectedAccount, person.emailAddress);
+      await openJackdawChatAndClose(selectedAccount, person.emailAddress);
       return;
     }
     let room = selectedAccount.newRoom(false);
@@ -214,7 +211,7 @@
       return;
     }
     if (selectedAccount instanceof JackdawChatAccount) {
-      await openJackdawChat(selectedAccount, chatID);
+      await openJackdawChatAndClose(selectedAccount, chatID);
       return;
     }
     let room = selectedAccount.newRoom(false);
@@ -250,15 +247,27 @@
 
 <style>
   .persons-toolbar {
-    margin: 10px 12px 10px 16px;
+    margin: 8px 12px 8px 16px;
+    gap: 8px;
+  }
+  .top-row {
     align-items: center;
+    gap: 8px;
+  }
+  /* Подпись «Jackdaw Mail» целиком, без многоточия */
+  .top-row :global(.account) {
+    width: 76px;
+  }
+  .buttons {
+    align-items: center;
+    gap: 8px;
+    flex: none;
   }
   .my-status {
-    margin-inline-start: 8px;
     min-width: 0;
   }
   .dialog {
-    margin: 32px 32px;
+    margin: 16px;
   }
   .dialog .account {
     margin-block-end: 12px;
@@ -266,6 +275,27 @@
   }
   .label.or {
     margin-block: 6px;
+  }
+  .new-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .new-chat .account {
+    margin-block-end: 0;
+  }
+  .new-chat .label.or {
+    margin-block: 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .chat-id {
+    align-items: center;
+    gap: 8px;
+  }
+  .chat-id input {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .new-group {
     display: flex;
@@ -281,6 +311,7 @@
     font-weight: 600;
     margin-block-start: 4px;
   }
+  .new-chat input,
   .new-group input {
     box-sizing: border-box;
     border: 1px solid var(--border);
@@ -289,6 +320,7 @@
     background: var(--main-bg);
     color: var(--main-fg);
   }
+  .new-chat input:focus-visible,
   .new-group input:focus-visible {
     outline: 2px solid var(--icon-primary);
     outline-offset: 1px;

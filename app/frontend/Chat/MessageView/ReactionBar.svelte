@@ -62,9 +62,12 @@
   .popup {
     border-radius: 10px;
   }
+  /* Размер задан явно: иначе окно растягивалось по ширине всего набора смайликов в одну строку */
   .popup {
-    min-height: 300px;
-    min-width: 400px;
+    width: 352px;
+    max-width: calc(100vw - 48px);
+    height: 320px;
     padding: 6px 0px;
+    display: flex;
   }
 </style>
