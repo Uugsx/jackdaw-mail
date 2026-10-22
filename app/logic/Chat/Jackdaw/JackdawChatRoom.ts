@@ -12,6 +12,7 @@ import { UserError } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { notifyChangedProperty } from "../../util/Observable";
 import { normalizeCallEmail } from "../../Meet/Jackdaw/JackdawCallProtocol";
+import { ChatPersonUID } from "../ChatPersonUID";
 
 /** Совпадает с MAX_BLOB_BYTES на сервере */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024 - 1024;
@@ -21,6 +22,21 @@ const UNSENT_STATUSES = [DeliveryStatus.Sending, DeliveryStatus.Failed];
 const SENT_STATUSES = [DeliveryStatus.Server, DeliveryStatus.User, DeliveryStatus.Seen];
 
 /** Личный чат (`direct:<email>`) или группа (`group:<uuid>`) Jackdaw. */
+/** Не чаще раза в 4 с сообщаем, что печатаем; собеседник показывает подсказку 6 с */
+const TYPING_SEND_INTERVAL_MS = 4000;
+const TYPING_SHOW_MS = 6000;
+
+/** Текст сообщения: HTML хранится как есть и показывается через санирующий геттер `html` */
+function setMessageContent(message: ChatMessage, text: string, html: string | null): void {
+  if (html) {
+    message.html = html;
+    message.regenerateTextFromHTML();
+  } else {
+    message.html = null;
+    message.text = text;
+  }
+}
+
 export class JackdawChatRoom extends ChatRoom {
   declare account: JackdawChatAccount;
   readonly isGroup: boolean;
@@ -35,6 +51,12 @@ export class JackdawChatRoom extends ChatRoom {
   protected historyLoading: Promise<void> | null = null;
   /** Отправляемые сейчас: id → отправка. Повторный вызов ждёт ту же отправку, а не шлёт второй раз. */
   protected sending = new Map<string, Promise<void>>();
+  /** Кто сейчас набирает сообщение: адреса собеседников. Интерфейс показывает «печатает…». */
+  @notifyChangedProperty
+  typing: string[] = [];
+  protected typingUntil = new Map<string, number>();
+  protected typingTimer: ReturnType<typeof setTimeout> | null = null;
+  protected lastTypingSentAt = 0;
 
   constructor(account: JackdawChatAccount, isGroup = false) {
     super(account);
@@ -174,7 +196,8 @@ export class JackdawChatRoom extends ChatRoom {
       throw new UserError(gt`You are no longer a member of this group.`);
     }
     if (message.isEdit) {
-      throw new UserError(gt`Editing sent messages is not supported in Jackdaw chat yet.`);
+      await this.sendEdit(message);
+      return;
     }
     if (message.attachments.length > MAX_ATTACHMENTS) {
       throw new UserError(gt`You can send at most ${MAX_ATTACHMENTS} files in one message.`);
@@ -320,6 +343,57 @@ export class JackdawChatRoom extends ChatRoom {
     });
   }
 
+  /** Новый текст нашего сообщения: у собеседников и на наших устройствах */
+  protected async sendEdit(edit: ChatMessage): Promise<void> {
+    let original = this.messages.find(m => m.id == edit.isEdit);
+    if (!(original instanceof JackdawChatMessage) || !original.canEdit) {
+      throw new UserError(gt`This message can no longer be edited.`);
+    }
+    let text = edit.text;
+    if (!text.trim()) {
+      throw new UserError(gt`The message is empty.`);
+    }
+    if (text.length > MAX_TEXT_LENGTH) {
+      throw new UserError(gt`The message is too long.`);
+    }
+    let html = edit.hasHTML ? edit.rawHTMLDangerous : null;
+    await this.account.sendPayload(this.recipients(), {
+      v: CHAT_PAYLOAD_VERSION, kind: "edit", id: crypto.randomUUID(), room: this.roomRef(),
+      target: original.id, text, html,
+    }, false, this.senderEmail());
+    setMessageContent(original, text, html);
+    original.edited = true;
+    await this.saveMessage(original);
+  }
+
+  /** Просит собеседников удалить наше сообщение. Текст и файлы у нас убирает `ChatMessage.deleteForOthers()`. */
+  async sendDeleteForAll(message: JackdawChatMessage): Promise<void> {
+    await this.account.sendPayload(this.recipients(), {
+      v: CHAT_PAYLOAD_VERSION, kind: "delete", id: crypto.randomUUID(), room: this.roomRef(), target: message.id,
+    }, false, this.senderEmail());
+    message.attachmentRefs = {};
+  }
+
+  async sendReaction(message: JackdawChatMessage, emoji: string | null): Promise<void> {
+    await this.account.sendPayload(this.recipients(), {
+      v: CHAT_PAYLOAD_VERSION, kind: "reaction", id: crypto.randomUUID(), room: this.roomRef(), target: message.id, emoji,
+    }, false, this.senderEmail());
+  }
+
+  /** «Печатает…» — не чаще раза в несколько секунд и только тем, кто сейчас в сети */
+  sendTyping(): void {
+    let now = Date.now();
+    if (now - this.lastTypingSentAt < TYPING_SEND_INTERVAL_MS || !this.account.isOnline || !this.isMember || !this.recipients().length) {
+      return;
+    }
+    this.lastTypingSentAt = now;
+    this.account.sendPayload(this.recipients(), {
+      v: CHAT_PAYLOAD_VERSION, kind: "typing", id: crypto.randomUUID(), room: this.roomRef(),
+    }, true, this.senderEmail()).catch(() => {
+      // Подсказка «печатает…» необязательна: ошибку не показываем
+    });
+  }
+
   /** Сообщает собеседнику (в группе — всем участникам), что мы прочитали его сообщения */
   async sendReadReceipt(ids: string[]): Promise<void> {
     if (!ids.length || !this.account.isOnline || !this.isMember || !this.recipients().length) {
@@ -343,7 +417,105 @@ export class JackdawChatRoom extends ChatRoom {
 
   // --- приём ------------------------------------------------------------------
 
+  /** Править, удалять у всех может только автор сообщения */
+  protected isAuthor(message: JackdawChatMessage, from: string, fromMe: boolean): boolean {
+    return fromMe ? message.outgoing : !message.outgoing && normalizeCallEmail(message.from?.chatID) == from;
+  }
+
+  protected async findMessageForUpdate(target: string): Promise<JackdawChatMessage | null> {
+    await this.listMessages();
+    let message = this.messages.find(m => m.id == target);
+    return message instanceof JackdawChatMessage ? message : null;
+  }
+
+  async applyEdit(payload: Extract<ChatPayload, { kind: "edit" }>, from: string, fromMe: boolean): Promise<void> {
+    let original = await this.findMessageForUpdate(payload.target);
+    if (!original || original.deletedForAll || !this.isAuthor(original, from, fromMe)) {
+      return;
+    }
+    setMessageContent(original, payload.text, payload.html);
+    original.edited = true;
+    await this.saveMessage(original);
+  }
+
+  async applyDelete(payload: Extract<ChatPayload, { kind: "delete" }>, from: string, fromMe: boolean): Promise<void> {
+    let original = await this.findMessageForUpdate(payload.target);
+    if (!original || original.deletedForAll || !this.isAuthor(original, from, fromMe)) {
+      return;
+    }
+    original.deletedForAll = true;
+    setMessageContent(original, fromMe ? gt`You deleted this message` : gt`This message was deleted`, null);
+    for (let attachment of original.attachments) {
+      await attachment.deleteFile().catch(() => {});
+    }
+    original.attachments.clear();
+    original.attachmentRefs = {};
+    original.reactions.clear();
+    await this.saveMessage(original);
+  }
+
+  async applyReaction(payload: Extract<ChatPayload, { kind: "reaction" }>, from: string, fromMe: boolean): Promise<void> {
+    let message = await this.findMessageForUpdate(payload.target);
+    if (!message || message.deletedForAll) {
+      return;
+    }
+    if (fromMe) {
+      // Реакция с нашего другого устройства: так же, как поставили бы её здесь
+      await message.setMyReactionLocally(payload.emoji);
+      return;
+    }
+    let person = this.account.getPersonUID(from);
+    let existing = [...message.reactions.entries()]
+      .find(([key]) => key instanceof ChatPersonUID && key.chatID == person.chatID)?.[0];
+    if (existing) {
+      message.reactions.delete(existing);
+    }
+    if (payload.emoji) {
+      message.reactions.set(person, payload.emoji);
+    }
+    await this.saveMessage(message);
+  }
+
+  /** Имена тех, кто сейчас печатает */
+  get typingNames(): string[] {
+    return this.typing.map(email => this.account.getPersonUID(email).name || email);
+  }
+
+  /** Собеседник набирает сообщение: подсказка гаснет сама через несколько секунд */
+  applyTyping(from: string, fromMe: boolean): void {
+    if (fromMe) {
+      return;
+    }
+    this.typingUntil.set(from, Date.now() + TYPING_SHOW_MS);
+    this.refreshTyping();
+  }
+
+  protected stopTyping(from: string): void {
+    if (this.typingUntil.delete(from)) {
+      this.refreshTyping();
+    }
+  }
+
+  protected refreshTyping(): void {
+    let now = Date.now();
+    for (let [email, until] of this.typingUntil) {
+      if (until <= now) {
+        this.typingUntil.delete(email);
+      }
+    }
+    this.typing = [...this.typingUntil.keys()];
+    if (this.typingTimer) {
+      clearTimeout(this.typingTimer);
+      this.typingTimer = null;
+    }
+    if (this.typingUntil.size) {
+      let next = Math.min(...this.typingUntil.values()) - now;
+      this.typingTimer = setTimeout(() => this.refreshTyping(), Math.max(50, next));
+    }
+  }
+
   async addIncoming(payload: Extract<ChatPayload, { kind: "message" }>, from: string, fromMe: boolean, sentAt: Date): Promise<void> {
+    this.stopTyping(from);
     await this.listMessages();
     if (this.messages.find(m => m.id == payload.id)) {
       return; // повторная доставка

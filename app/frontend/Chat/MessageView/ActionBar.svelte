@@ -90,6 +90,7 @@
   import ButtonMenu from "../../Shared/Menu/ButtonMenu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import { gt, t } from "../../../l10n/l10n";
+  import { replyingTo } from "../replyState";
 
   export let message: Message;
 
@@ -112,12 +113,11 @@
     assert(message instanceof ChatMessage, "Cannot get back emails");
     message.to.draftMessage = await message.createEdit();
   }
-  async function onReply() {
-    /*let previousText = message.to.draftMessage.html;
-    message.to.draftMessage = await message.reply();
-    if (previousText) {
-      message.to.draftMessage.html += previousText;
-    }*/
+  /** Ответ на сообщение чата: редактор показывает цитату, отправка добавит ссылку на него */
+  function onReply() {
+    if (message instanceof ChatMessage) {
+      replyingTo.set(message);
+    }
   }
   async function onForward() {
   }

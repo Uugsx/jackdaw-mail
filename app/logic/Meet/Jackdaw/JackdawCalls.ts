@@ -2,7 +2,7 @@
  * Точка входа звонков Jackdaw ↔ Jackdaw: один клиент сигналинга на приложение.
  */
 import { JackdawCallClient, type JackdawCallStatus } from "./JackdawCallClient";
-import { JackdawCall, JackdawCallAccount } from "./JackdawCall";
+import { JackdawCall, JackdawCallAccount, setJackdawCallFinishedHandler } from "./JackdawCall";
 import { callServiceURL, normalizeCallEmail, type JackdawServerMessage } from "./JackdawCallProtocol";
 import { getProCallCredential, proEntitlement, refreshProEntitlement, type ProCallCredential } from "../../Billing/ProEntitlement";
 import { BILLING_LICENSE_API_URL } from "../../Billing/Billing";
@@ -11,6 +11,7 @@ import { PersonUID } from "../../Abstract/PersonUID";
 import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
 import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
+import { recordCallInChat } from "../../Chat/Jackdaw/callHistory";
 import { UserError } from "../../util/util";
 import { getComputerOn, type ComputerOn } from "../../util/backend-wrapper";
 import { gt } from "../../../l10n/l10n";
@@ -177,6 +178,8 @@ export function startJackdawCalls(): () => void {
     let stopTriggers = watchCallReconnectTriggers(callClient);
     // Чат идёт по тому же соединению и включается вместе со звонками.
     let stopChat = startJackdawChat(callClient);
+    // Звонок — строкой в истории личного чата с собеседником
+    setJackdawCallFinishedHandler(call => recordCallInChat(call).catch(ex => console.error(ex)));
     stopWatching = () => {
       unsubscribe();
       stopChat();

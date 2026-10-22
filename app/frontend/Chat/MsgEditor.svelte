@@ -20,6 +20,27 @@
         <AttachmentsPane message={to.draftMessage} on:remove={onAttachmentRemove} />
       </vbox>
     {/if}
+    {#if typingLabel}
+      <hbox class="typing font-small" role="status" aria-live="polite">{typingLabel}</hbox>
+    {/if}
+    {#if isEditing}
+      <hbox class="compose-context">
+        <vbox flex class="context-text">
+          <span class="context-title">{$t`Editing message`}</span>
+        </vbox>
+        <RoundButton label={$t`Cancel editing`} icon={XIcon} iconSize="14px" padding="4px" border={false} classes="plain"
+          onClick={reset} />
+      </hbox>
+    {:else if replyTarget}
+      <hbox class="compose-context">
+        <vbox flex class="context-text">
+          <span class="context-title">{$t`Reply to ${replyTarget.from?.name ?? ""}`}</span>
+          <span class="context-snippet">{quoteSnippet(replyTarget) || $t`File`}</span>
+        </vbox>
+        <RoundButton label={$t`Cancel reply`} icon={XIcon} iconSize="14px" padding="4px" border={false} classes="plain"
+          onClick={() => replyingTo.set(null)} />
+      </hbox>
+    {/if}
     <hbox flex class="editor-row">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <vbox flex class="editor-wrapper" on:keydown|capture={ev => isEnterSend && onKeyEnter(ev, () => catchErrors(send))}>
@@ -83,6 +104,9 @@
   import SendIcon from "lucide-svelte/icons/send";
   import EnterKeyIcon from "lucide-svelte/icons/corner-down-left";
   import EmojiIcon from "lucide-svelte/icons/smile";
+  import XIcon from "lucide-svelte/icons/x";
+  import { JackdawChatRoom } from "../../logic/Chat/Jackdaw/JackdawChatRoom";
+  import { quoteSnippet, replyingTo } from "./replyState";
   import { onKeyEnter } from "../Util/util";
   import { catchErrors } from "../Util/error";
   import type { Editor } from '@tiptap/core';
@@ -99,6 +123,27 @@
   $: $selectedEditor = editor;
   let showEmojis = false;
 
+  /** Ответ относится только к своему чату */
+  $: replyTarget = $replyingTo && $replyingTo.to == to ? $replyingTo : null;
+  $: isEditing = !!$to.draftMessage?.isEdit;
+  /** Правка: текст исходного сообщения подставляется в редактор */
+  let shownDraft: ChatMessage | null = null;
+  $: editor && $to.draftMessage && showDraft($to.draftMessage);
+  function showDraft(draft: ChatMessage) {
+    if (draft === shownDraft) {
+      return;
+    }
+    shownDraft = draft;
+    if (draft.isEdit) {
+      editor.commands.setContent(draft.rawHTMLDangerous ?? "");
+      editor.commands.focus("end");
+    }
+  }
+
+  $: typingNames = $to instanceof JackdawChatRoom ? $to.typing.length >= 0 && $to.typingNames : [];
+  $: typingLabel = !typingNames || !typingNames.length ? ""
+    : typingNames.length == 1 ? $t`${typingNames[0]} is typing…` : $t`${typingNames.join(", ")} are typing…`;
+
   async function send() {
     let room = to;
     let msg = room.draftMessage;
@@ -108,6 +153,10 @@
     msg.outgoing = true;
     msg.text; // Generate to keep in sync
     msg.contact = room.contact;
+    if (!msg.isEdit && replyTarget) {
+      msg.inReplyTo = replyTarget.id;
+    }
+    replyingTo.set(null);
     msg.sent = new Date();
     // Отправляемое сообщение отделяем от редактора до первого await: новый текст и файлы
     // попадают в новый черновик, а не в сообщение, которое ещё загружается.
@@ -173,6 +222,9 @@
 
   function onEditorChange() {
     removeOrphanedInlineAttachments(editor, to.draftMessage);
+    if (to instanceof JackdawChatRoom && !to.draftMessage?.isEdit && to.draftMessage?.hasHTML) {
+      to.sendTyping();
+    }
   }
 
   function onEmojiBackspace() {
@@ -196,6 +248,33 @@
     min-height: 0;
     min-width: 0;
     width: 600px;
+  }
+  .typing {
+    padding: 2px 16px;
+    opacity: 0.75;
+    font-style: italic;
+  }
+  .compose-context {
+    align-items: center;
+    gap: 8px;
+    margin: 4px 12px 0;
+    padding: 6px 8px 6px 12px;
+    border-inline-start: 3px solid var(--selected-border, currentColor);
+    border-radius: 4px;
+    background-color: var(--hover-bg);
+  }
+  .context-text {
+    min-width: 0;
+    gap: 2px;
+  }
+  .context-title {
+    font-weight: 600;
+  }
+  .context-snippet {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
   }
   .attachments {
     height: 112px;

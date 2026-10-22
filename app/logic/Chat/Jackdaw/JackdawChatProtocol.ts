@@ -38,7 +38,18 @@ export type ChatPayload =
   | { v: 1; kind: "read"; id: string; room: ChatRoomRef; ids: string[] }
   /** Состав и название группы от администратора. `leave` — участник сообщает, что вышел.
    * Старые версии не знают `leave` и просто игнорируют такое сообщение не от администратора. */
-  | { v: 1; kind: "group"; id: string; room: ChatRoomRef; leave?: true };
+  | { v: 1; kind: "group"; id: string; room: ChatRoomRef; leave?: true }
+  /** Новый текст своего сообщения `target`. Старые версии не знают этот вид и оставляют прежний текст. */
+  | { v: 1; kind: "edit"; id: string; room: ChatRoomRef; target: string; text: string; html: string | null }
+  /** Удалить своё сообщение `target` у всех */
+  | { v: 1; kind: "delete"; id: string; room: ChatRoomRef; target: string }
+  /** Реакция на сообщение `target`; `emoji: null` снимает её */
+  | { v: 1; kind: "reaction"; id: string; room: ChatRoomRef; target: string; emoji: string | null }
+  /** «Печатает…»: только устройствам в сети, не хранится на сервере */
+  | { v: 1; kind: "typing"; id: string; room: ChatRoomRef };
+
+/** Реакция — один эмодзи (с модификаторами), не произвольный текст */
+const MAX_REACTION_LENGTH = 16;
 
 function id(value: unknown): string | null {
   return typeof value == "string" && ID_PATTERN.test(value) ? value : null;
@@ -86,6 +97,16 @@ export function ciphertextBytes(payload: ChatPayload): number {
   return new TextEncoder().encode(JSON.stringify(payload)).length + CIPHERTEXT_OVERHEAD_BYTES;
 }
 
+const KNOWN_KINDS = ["message", "read", "group", "edit", "delete", "reaction", "typing"];
+
+/** Расшифровалось, но вид сообщения появится в будущих версиях: пропускаем молча,
+ * а не показываем как «не удалось расшифровать». */
+export function isFutureChatPayload(value: unknown): boolean {
+  let data = value as any;
+  return !!data && typeof data == "object" && data.v == CHAT_PAYLOAD_VERSION && !!id(data.id) &&
+    typeof data.kind == "string" && !KNOWN_KINDS.includes(data.kind);
+}
+
 /** @returns null, если содержимое не соответствует формату */
 export function parseChatPayload(value: unknown): ChatPayload | null {
   let data = value as any;
@@ -113,6 +134,29 @@ export function parseChatPayload(value: unknown): ChatPayload | null {
     case "group":
       if (room.type != "group") return null;
       return data.leave === true ? { v: 1, kind: "group", id: messageId, room, leave: true } : { v: 1, kind: "group", id: messageId, room };
+    case "edit": {
+      let target = id(data.target);
+      let body = text(data.text, MAX_TEXT_LENGTH);
+      if (!target || !body) return null;
+      return {
+        v: 1, kind: "edit", id: messageId, room, target, text: body,
+        html: typeof data.html == "string" ? data.html.slice(0, MAX_TEXT_LENGTH * 4) : null,
+      };
+    }
+    case "delete": {
+      let target = id(data.target);
+      return target ? { v: 1, kind: "delete", id: messageId, room, target } : null;
+    }
+    case "reaction": {
+      let target = id(data.target);
+      if (!target) return null;
+      if (data.emoji === null) return { v: 1, kind: "reaction", id: messageId, room, target, emoji: null };
+      let emoji = typeof data.emoji == "string" ? data.emoji.trim() : "";
+      if (!emoji || emoji.length > MAX_REACTION_LENGTH || /[\p{L}\s<>]/u.test(emoji)) return null;
+      return { v: 1, kind: "reaction", id: messageId, room, target, emoji };
+    }
+    case "typing":
+      return { v: 1, kind: "typing", id: messageId, room };
     default:
       return null;
   }
