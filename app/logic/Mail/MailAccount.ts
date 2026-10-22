@@ -230,6 +230,26 @@ export class MailAccount extends TCPAccount {
     return this.getAllFolders().find(folder => folder.specialFolder == specialFolder) ?? null;
   }
 
+  /**
+   * Папка для «В архив»: по роли, иначе уже созданная раньше подпапка «Архив»
+   * во Входящих, иначе новая. Роль сохраняется в базе: без этого после
+   * перезапуска папка становилась обычной, и следующее архивирование пыталось
+   * создать её снова — сервер отвечал «уже существует», и в дереве появлялся дубль.
+   */
+  async getOrCreateArchiveFolder(): Promise<Folder> {
+    let archive = this.findSpecialFolder(SpecialFolder.Archive);
+    if (archive) {
+      return archive;
+    }
+    let name = gt`Archive`;
+    archive = this.inbox.subFolders.find(folder =>
+      folder.name == name || folder.name.toLowerCase() == "archive") ??
+      await this.inbox.createSubFolder(name);
+    archive.specialFolder = SpecialFolder.Archive;
+    await archive.save();
+    return archive;
+  }
+
   /** Get the `specialFolder` in this account. Falls back to a related folder,
    * and ultimately to the root folder, so that callers which need *a* folder
    * always get one. Never returns null - see `findSpecialFolder()`. */

@@ -81,13 +81,16 @@
   let contextMenu: ContextMenu;
 
   $: _folder = $folder;
-  $: folderLabel = folder.specialFolder == SpecialFolder.Normal
-    ? folder.name
-    : specialFolderNames[folder.specialFolder] ?? folder.name;
+  // Через `$folder`: иначе Svelte пересчитывает выражение только при смене самой
+  // папки, и бейдж (например, Корзины после «Очистить папку») стоял до клика
+  // по другой папке
+  $: folderLabel = $folder.specialFolder == SpecialFolder.Normal
+    ? $folder.name
+    : specialFolderNames[$folder.specialFolder] ?? $folder.name;
   $: displayLabel = showAccountLabel && accountLabel
     ? `${folderLabel} — ${accountLabel}`
     : folderLabel;
-  $: count = folder.countUnread || folder.countNewArrived;
+  $: count = $folder.countUnread || $folder.countNewArrived;
 
   function removeFromFavorites(): void {
     if (removableFromFavorites) {

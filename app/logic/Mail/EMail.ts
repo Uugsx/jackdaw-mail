@@ -295,12 +295,7 @@ export class EMail extends Message {
   }
 
   async moveToArchive() {
-    let account = this.folder.account;
-    let archive = account.findSpecialFolder(SpecialFolder.Archive);
-    if (!archive) {
-      archive = await account.inbox.createSubFolder(gt`Archive`);
-      archive.specialFolder = SpecialFolder.Archive; // TODO set on server
-    }
+    let archive = await this.folder.account.getOrCreateArchiveFolder();
     await archive.moveMessageHere(this);
   }
 

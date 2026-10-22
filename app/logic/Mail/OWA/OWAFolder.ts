@@ -44,6 +44,20 @@ const kMaxFindItemPagesLimit = 1000;
 const kDeletionGracePeriodMs = 180_000;
 /** Exchange принимает несколько ItemIds в одном запросе DeleteItem. */
 const kDeleteItemBatchSize = 50;
+
+/** Ответ DeleteItem — ошибка. «Элемент не найден» ошибкой не считается: письма
+ * уже нет на сервере (удалено в Outlook, на телефоне или прошлой очисткой), цель
+ * достигнута. Иначе такие письма оставались в корзине «призраками», а каждая
+ * следующая очистка падала на них. */
+function isDeleteItemFailure(response: any, mayBeStaleID = false): boolean {
+  // Письмо перенесли недавно без нового ItemId: «не найдено» относится к старому
+  // ID, а само письмо с новым ID на сервере осталось
+  if (response?.ResponseCode == "ErrorItemNotFound" && !mayBeStaleID) {
+    return false;
+  }
+  return response?.ResponseClass == "Error" ||
+    !!(response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
+}
 /** Exchange принимает несколько ItemIds в одном запросе MoveItem. */
 const kMoveItemBatchSize = 50;
 /** Не допускать всплеска запросов флагов, покрывая при этом видимый кеш. */
@@ -2247,9 +2261,7 @@ export class OWAFolder extends ExchangeFolder {
         let messagesToRemove: OWAEMail[] = [];
         for (let index = 0; index < batchIDs.length; index++) {
           let response = responses[index];
-          let isError = response?.ResponseClass == "Error" ||
-            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
-          if (isError) {
+          if (isDeleteItemFailure(response, this.mayHaveStaleItemID(messagesByItemID.get(batchIDs[index])))) {
             failedResponse ??= response;
             continue;
           }
@@ -2350,6 +2362,12 @@ export class OWAFolder extends ExchangeFolder {
       await this.moveMessagesHere(messages);
       return;
     }
+    let source = messages.first.folder;
+    if (source instanceof OWAFolder) {
+      // Иначе первый устаревший GetFolder возвращал очищенной папке прежние
+      // непрочитанные, и они показывались как «новые»
+      source.noteLocalDeleteMutation(messages.length, messages.contents.filter(message => !message.isRead).length);
+    }
     await super.moveOrCopyMessagesHere("move", messages, true);
   }
 
@@ -2422,6 +2440,8 @@ export class OWAFolder extends ExchangeFolder {
       }
     };
     let completed = false;
+    // Общий ящик: как и при удалении выбранных писем, запрос идёт в контексте этого ящика
+    let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
     try {
       for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
         let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
@@ -2431,19 +2451,22 @@ export class OWAFolder extends ExchangeFolder {
           // почтовой папки не должна отправлять участникам отмену встречи.
           SendMeetingCancellations: "SendToNone",
           SuppressReadReceipts: true,
-        }));
+        }), mailbox);
         let responseItems = result?.ResponseMessages?.Items
           ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
         let responses = responseItems ? ensureArray(responseItems) : [];
+        if (responses.length == 1 && batchIDs.length > 1 &&
+            responses[0]?.ResponseClass == "Success" && responses[0]?.ResponseCode == "NoError") {
+          // Некоторые серверы отвечают одним Success на весь пакет
+          responses = batchIDs.map(() => responses[0]);
+        }
         if (responses.length != batchIDs.length) {
           throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
         }
         let failedResponse: any = null;
         for (let index = 0; index < batchIDs.length; index++) {
           let response = responses[index];
-          let isError = response?.ResponseClass == "Error" ||
-            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
-          if (isError) {
+          if (isDeleteItemFailure(response, this.mayHaveStaleItemID(messagesByItemID.get(batchIDs[index])))) {
             failedResponse ??= response;
             continue;
           }
@@ -2473,8 +2496,10 @@ export class OWAFolder extends ExchangeFolder {
           await removeLocally(message);
         }
       }
-      this.countTotal = 0;
-      this.countUnread = 0;
+      // По фактическому списку, а не нулём: письма, попавшие в корзину во время
+      // очистки, остаются и должны быть видны в счётчике
+      this.countTotal = this.messages.length;
+      this.countUnread = this.localUnreadCount();
       this.countNewArrived = 0;
       this.countTotalDecreased = false;
       this.dirty = false;
@@ -3116,7 +3141,11 @@ export class OWAFolder extends ExchangeFolder {
           this.dirty = true;
         }
         this.notifyObservers();
-      } else if (firstPage && (this.countTotal > 0 || this.countUnread > 0)) {
+      } else if (firstPage && (this.countTotal > 0 ||
+          // Непрочитанных не бывает больше, чем писем: если GetFolder подтвердил
+          // 0 писем, ненулевой unread — устаревший локальный счётчик. Он не должен
+          // удерживать в списке письма, которых на сервере уже нет.
+          (this.countUnread > 0 && this.lastServerCountTotal !== 0))) {
         // The server gave us nothing for a folder it says is not empty. Taking
         // that at face value would delete the whole local copy of the folder.
         // Даже force не отменяет защиту: сначала должен прийти подтверждённый
@@ -3153,7 +3182,10 @@ export class OWAFolder extends ExchangeFolder {
           }
         }
         allMsgs.addAll(newMsgs);
-        this.messages.replaceAll(allMsgs);
+        // Сверка читала страницы до того, как письмо удалили или перенесли
+        // (очистка корзины во время синхронизации): не возвращаем его в список.
+        // Иначе в корзине оставались тысячи «призраков» при счётчике 0.
+        this.messages.replaceAll(allMsgs.contents.filter(email => !email.isDeleted && email.folder === this));
         this.refreshMessageContacts();
         // A forced/full FindItem is authoritative, including an empty result.
         // Persist the server total so a later restart cannot resurrect headers
@@ -4418,6 +4450,14 @@ export class OWAFolder extends ExchangeFolder {
     if (key) {
       this.preserveMovedUntil.set(key, Date.now() + 180_000);
     }
+  }
+
+  /** У письма может быть устаревший ItemId: его недавно перенесли без нового ID */
+  protected mayHaveStaleItemID(messages: OWAEMail[] | undefined): boolean {
+    return !!messages?.some(message => {
+      let key = String(message.dbID ?? message.itemID ?? "");
+      return !!key && (this.preserveMovedUntil.get(key) ?? 0) > Date.now();
+    });
   }
 
   protected shouldPreserveMoved(email: OWAEMail): boolean {

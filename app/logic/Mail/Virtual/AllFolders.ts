@@ -106,6 +106,39 @@ export class AllFolders extends Folder {
     return mergeColl(...results);
   }
 
+  /** Действие над каждой реальной папкой. Ошибка одной не отменяет остальные,
+   * а первая ошибка показывается пользователю. */
+  protected async forEachFolder(action: (folder: Folder) => Promise<void>): Promise<void> {
+    let results = await Promise.allSettled(this._folders.contents.map(action));
+    let failed = results.find((result): result is PromiseRejectedResult => result.status == "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
+  }
+
+  /* Базовая реализация меняла только локальные флаги: сервер и другие клиенты
+   * видели письма непрочитанными, а бейдж возвращался при следующем обновлении. */
+  async markAllRead(): Promise<void> {
+    await this.forEachFolder(folder => folder.markAllRead());
+  }
+
+  async markAllUnread(): Promise<void> {
+    await this.forEachFolder(folder => folder.markAllUnread());
+  }
+
+  /** «Очистить» в общей корзине или спаме очищает их в каждом аккаунте */
+  async clearFolder(): Promise<void> {
+    await this.forEachFolder(folder => folder.clearFolder());
+  }
+
+  disableRename(): string | false {
+    return gt`You cannot change an All accounts special folder.`;
+  }
+
+  disableDelete(): string | false {
+    return gt`You cannot change an All accounts special folder.`;
+  }
+
   async moveMessagesHere(messages: Collection<EMail>) {
     throw new UserError(gt`Select an account first, to move emails into a specific folder`);
   }
