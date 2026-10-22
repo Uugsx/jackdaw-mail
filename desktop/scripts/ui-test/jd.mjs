@@ -8,6 +8,7 @@
  *   node jd.mjs text <порт> [селектор]                 видимый текст
  *   node jd.mjs eval <порт> <выражение JS>             результат выражения (await можно)
  *   node jd.mjs click <порт> <селектор>                клик мышью по центру элемента
+ *   node jd.mjs clickxy <порт> <x> <y>                 клик по точке (пиксели CSS)
  *   node jd.mjs type <порт> <текст>                    ввод текста в элемент с фокусом
  *   node jd.mjs key <порт> <клавиша>                   Enter, Escape, Tab, Backspace, ArrowDown…
  *   node jd.mjs wait <порт> <селектор> [мс]            дождаться элемента
@@ -27,6 +28,7 @@ const kDefaultApp = path.resolve(here, "../../dist/mac-arm64/Jackdaw Mail.app");
 const kProfilesDir = path.resolve(process.env.JACKDAW_UI_TEST_DIR ?? "ui-profiles");
 const kLaunchTimeoutMs = 60_000;
 const kPollMs = 250;
+const kStopGraceMs = 3_000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -204,8 +206,16 @@ const commands = {
 
   async stop(port) {
     // Только процесс копии с этим портом отладки; основное приложение пользователя его не имеет
-    let result = spawnSync("pkill", ["-TERM", "-f", `--remote-debugging-port=${Number(port)}( |$)`]);
-    console.log(result.status == 0 ? `Закрыто: порт ${port}` : `Нет копии на порту ${port}`);
+    let pattern = `remote-debugging-port=${Number(port)}( |$)`;
+    let result = spawnSync("pkill", ["-TERM", "-f", pattern]);
+    if (result.status != 0) {
+      console.log(`Нет копии на порту ${port}`);
+      return;
+    }
+    // Приложение может задержать выход (закрытие сессий почты): через паузу завершаем принудительно
+    await sleep(kStopGraceMs);
+    spawnSync("pkill", ["-KILL", "-f", pattern]);
+    console.log(`Закрыто: порт ${port}`);
   },
 
   async shot(port, file, selector) {
@@ -244,6 +254,16 @@ const commands = {
       await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
       console.log(`Клик: ${box.tag} «${box.text.split("\n")[0]}»`);
+    });
+  },
+
+  /** Клик по точке окна в пикселях CSS (на снимке Retina — вдвое больше) */
+  async clickxy(port, x, y) {
+    await withPage(port, async cdp => {
+      let point = { x: Number(x), y: Number(y) };
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
     });
   },
 
