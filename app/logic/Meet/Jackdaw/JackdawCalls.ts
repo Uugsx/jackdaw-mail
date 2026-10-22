@@ -10,7 +10,7 @@ import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
 import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
-import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
+import { getJackdawChatAccount, startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
 import { recordCallInChat } from "../../Chat/Jackdaw/callHistory";
 import { recordCallInLog } from "./callLog";
 import { UserError } from "../../util/util";
@@ -217,7 +217,11 @@ export function callTargetEmails(target: CallTarget | null | undefined): string[
   } else if (target instanceof Person) {
     emails.push(...target.emailAddresses.contents.slice().sort((a, b) => a.preference - b.preference).map(e => normalizeCallEmail(e.value)));
   }
-  return [...new Set(emails.filter((email): email is string => !!email))];
+  // Псевдоним из писем → адрес, на котором у человека чат и звонки (найден по каталогу организации)
+  let chat = getJackdawChatAccount();
+  let known = emails.filter((email): email is string => !!email);
+  let primaries = chat ? known.map(email => chat.primaryAddressOf(email)) : [];
+  return [...new Set([...known, ...primaries].filter((email): email is string => !!email))];
 }
 
 /** Можно ли позвонить сейчас. Для кнопок: undefined, пока справочник не ответил. */

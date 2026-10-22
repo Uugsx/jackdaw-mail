@@ -33,6 +33,8 @@ import { proEntitlement } from "../../Billing/ProEntitlement";
 import { chatConnectionProblem, JackdawChatConnectionError, type ChatConnectionProblem } from "./chatConnectionProblem";
 import { notifyChangedProperty } from "../../util/Observable";
 import { UserError, assert } from "../../util/util";
+import { findDirectoryAddresses } from "./directoryAddresses";
+import { appGlobal } from "../../app";
 import { gt } from "../../../l10n/l10n";
 
 export const JACKDAW_CHAT_PROTOCOL = "jackdaw";
@@ -80,6 +82,15 @@ export class JackdawChatAccount extends ChatAccount {
   /** id групп, которые мы удалили у себя. Создать такую группу снова может только
    * новое объявление состава от администратора, где мы есть (он пригласил нас снова). */
   protected deletedGroups: string[] = [];
+  /** Псевдоним собеседника → адрес, на котором у него чат (из каталога организации).
+   * Чат с человеком часто заведён на адрес из писем (`nikita.levchenko@`), а его устройство
+   * подключено на адрес ящика (`nlevchenko0181@`): без этого сообщения были «Не отправлено». */
+  protected addressAliases: Record<string, string> = {};
+  /** Собеседники, чей адрес уже проверен при подключении: каталог не опрашиваем при каждом переподключении */
+  protected peersChecked = new Set<string>();
+  /** Другие адреса человека из каталога организации. Заменяется в тестах. */
+  directoryAddresses: (email: string) => Promise<string[]> =
+    email => findDirectoryAddresses(email, appGlobal.searchOnlyAddressbooks.contents);
   /** Адреса, для которых устройство зарегистрировано на сервере */
   @notifyChangedProperty
   registeredEmails: string[] = [];
@@ -206,12 +217,23 @@ export class JackdawChatAccount extends ChatAccount {
     this.deletedGroups = Array.isArray(json?.deletedGroups)
       ? json.deletedGroups.filter((id: unknown) => typeof id == "string").slice(-MAX_DELETED_GROUPS)
       : [];
+    let aliases = json?.addressAliases;
+    this.addressAliases = {};
+    if (aliases && typeof aliases == "object" && !Array.isArray(aliases)) {
+      for (let [alias, address] of Object.entries(aliases)) {
+        let from = normalizeCallEmail(alias), to = typeof address == "string" ? normalizeCallEmail(address) : null;
+        if (from && to && from != to) {
+          this.addressAliases[from] = to;
+        }
+      }
+    }
   }
 
   toConfigJSON(): any {
     let json = super.toConfigJSON();
     json.pinnedKeys = this.pinnedKeys;
     json.deletedGroups = this.deletedGroups;
+    json.addressAliases = this.addressAliases;
     return json;
   }
 
@@ -314,6 +336,13 @@ export class JackdawChatAccount extends ChatAccount {
       if (!(room instanceof JackdawChatRoom)) continue;
       room.resumeDownloads();
       await room.sendUnsent();
+    }
+    // Статус собеседника в списке чатов: псевдонимы узнаём заранее, не дожидаясь отправки
+    for (let room of this.rooms.contents) {
+      if (room instanceof JackdawChatRoom && !room.isGroup && room.peerEmail && !this.peersChecked.has(room.peerEmail)) {
+        this.peersChecked.add(room.peerEmail);
+        await this.chatAddressFor(room.peerEmail).catch(() => null);
+      }
     }
   }
 
@@ -449,6 +478,7 @@ export class JackdawChatAccount extends ChatAccount {
   async sendPayload(recipients: string[], payload: ChatPayload, ephemeral = false, from?: string): Promise<Extract<JackdawServerMessage, { type: "chat-sent" }>> {
     let client = this.requireOnline();
     await this.loadDeviceKeys();
+    recipients = [...new Set(await Promise.all(recipients.map(email => this.chatAddressFor(email))))];
     let own = this.registeredEmails;
     // Сервер ограничивает шифротекст; проверяем заранее и говорим понятно, а не «сервер отклонил запрос»
     if (ciphertextBytes(payload) > MAX_CIPHERTEXT_BYTES) {
@@ -620,7 +650,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (ref.type == "direct") {
       let peer = fromMe ? ref.peer : from;
       if (!peer || this.isOwnEmail(peer)) return null;
-      let room = create ? await this.getDirectRoom(peer) : this.findRoomByID(`direct:${normalizeCallEmail(peer)}`);
+      let room = create ? await this.getDirectRoom(peer) : this.findDirectRoom(normalizeCallEmail(peer) ?? peer);
       // Наш адрес в этом чате: собеседник писал на ref.peer, наше другое устройство — с from
       if (room?.rememberOwnEmail(fromMe ? from : ref.peer)) {
         await room.save();
@@ -700,7 +730,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (this.isOwnEmail(email)) {
       throw new UserError(gt`This is your own address.`);
     }
-    let existing = this.findRoomByID(`direct:${email}`);
+    let existing = this.findDirectRoom(email);
     if (existing) return existing;
     let person = this.getPersonUID(email);
     if (!this.roster.includes(person)) {
@@ -790,6 +820,61 @@ export class JackdawChatAccount extends ChatAccount {
   async canChatWith(emailAddress: string): Promise<boolean> {
     let email = normalizeCallEmail(emailAddress);
     if (!email || !this.isOnline || this.isOwnEmail(email)) return false;
-    return ((await this.devicesFor([email])).get(email) ?? []).length > 0;
+    let target = await this.chatAddressFor(email);
+    return ((await this.devicesFor([target])).get(target) ?? []).length > 0;
+  }
+
+  // --- псевдонимы -------------------------------------------------------------
+
+  /** Адрес, на котором у собеседника чат: известный по каталогу, иначе сам `email`. Без запросов. */
+  primaryAddressOf(emailAddress: string): string | null {
+    let email = normalizeCallEmail(emailAddress);
+    return email ? this.addressAliases[email] ?? null : null;
+  }
+
+  /**
+   * Куда писать: сам адрес, если на нём есть чат, иначе другой адрес того же человека
+   * из каталога организации, на котором чат есть. Найденное запоминается.
+   */
+  async chatAddressFor(emailAddress: string): Promise<string> {
+    let email = normalizeCallEmail(emailAddress);
+    if (!email || this.isOwnEmail(email)) {
+      return email ?? emailAddress;
+    }
+    let known = this.addressAliases[email];
+    if (known) {
+      return known;
+    }
+    if (((await this.devicesFor([email])).get(email) ?? []).length) {
+      return email;
+    }
+    let candidates = (await this.directoryAddresses(email).catch(() => []))
+      .filter(address => address != email && !this.isOwnEmail(address));
+    if (!candidates.length) {
+      return email;
+    }
+    let devices = await this.devicesFor(candidates);
+    let target = candidates.find(address => (devices.get(address) ?? []).length);
+    if (!target) {
+      return email;
+    }
+    this.addressAliases[email] = target;
+    await this.save();
+    // Статус и звонок по псевдониму берутся теперь с найденного адреса: обновляем интерфейс
+    if (this.client) {
+      this.client.presenceVersion++;
+    }
+    return target;
+  }
+
+  /** Личный чат с человеком: по его адресу или по псевдониму, у которого этот адрес основной */
+  protected findDirectRoom(email: string): JackdawChatRoom | null {
+    let room = this.findRoomByID(`direct:${email}`);
+    if (room) {
+      return room;
+    }
+    let alias = Object.keys(this.addressAliases).find(known =>
+      this.addressAliases[known] == email && this.findRoomByID(`direct:${known}`));
+    return alias ? this.findRoomByID(`direct:${alias}`) : null;
   }
 }
