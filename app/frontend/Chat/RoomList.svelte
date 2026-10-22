@@ -24,7 +24,8 @@
       {#if room instanceof ChatRoom}
         <RoomSummary {room} part="text" />
       {:else if room instanceof Person}
-        {$t`Contact`}
+        <!-- Адрес виден сразу: одноимённых контактов в каталоге бывает несколько -->
+        <span class="contact-email">{room.emailAddresses.first?.value ?? $t`Contact`}</span>
       {/if}
     </hbox>
   </PersonsList>
@@ -159,6 +160,12 @@
     inset-inline-end: 12px;
     bottom: 2px;
     display: flex;
+  }
+  .contact-email {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .chat-rooms :global(.first-row) {
     margin-block-start: 3px;

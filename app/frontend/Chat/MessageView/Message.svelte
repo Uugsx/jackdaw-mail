@@ -123,6 +123,7 @@
   import { ChatPersonUID } from "../../../logic/Chat/ChatPersonUID";
   import { appGlobal } from "../../../logic/app";
   import ReactionBar from "./ReactionBar.svelte";
+  import { onDestroy } from "svelte";
   import { quoteSnippet } from "../replyState";
   import ActionBar from "./ActionBar.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
@@ -182,8 +183,14 @@
 
   let showActions = false; // on hover (desktop) or long press (mobile)
   let hoverTimer: NodeJS.Timeout | null = null;
+  /** Указатель ушёл с сообщения: панели скрываются не сразу, чтобы до них можно было дотянуться */
+  let leaveTimer: NodeJS.Timeout | null = null;
+  /** Время, за которое указатель переходит с пузыря на панель реакций и не теряет её */
+  const kHideDelayMs = 400;
   function onHoverStart() {
-    if (hoverTimer) {
+    clearTimeout(leaveTimer);
+    leaveTimer = null;
+    if (hoverTimer || showActions) {
       return;
     }
     hoverTimer = setTimeout(() => {
@@ -206,8 +213,16 @@
   function onHoverEnd() {
     clearTimeout(hoverTimer);
     hoverTimer = null;
-    showActions = false;
+    clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      leaveTimer = null;
+      showActions = false;
+    }, kHideDelayMs);
   }
+  onDestroy(() => {
+    clearTimeout(hoverTimer);
+    clearTimeout(leaveTimer);
+  });
 </script>
 
 <style>
@@ -424,12 +439,15 @@
     gap: 4px;
   }
   /* Панель действий — ближе к пузырю, реакции — за ней; без места — второй строкой */
+  /* Зазор до пузыря — отступ самой панели, а не пустое место: указатель проходит его, не теряя панель */
   .outgoing .side-popups.side {
-    right: calc(100% + 8px);
+    right: 100%;
+    padding-inline-end: 8px;
     flex-direction: row-reverse;
   }
   .incoming .side-popups.side {
-    left: calc(100% + 8px);
+    left: 100%;
+    padding-inline-start: 8px;
   }
   .side-popups.side .hover-above-msg,
   .side-popups.side .hover-after-msg {

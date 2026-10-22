@@ -35,6 +35,8 @@ function storage(): Storage | null {
 export function myMailboxEmails(): string[] {
   return appGlobal.emailAccounts.contents.flatMap(account => [
     account.emailAddress,
+    // Основной адрес Exchange-ящика, если вход по другому адресу (логину)
+    ...((account as { serverEmailAddresses?: string[] }).serverEmailAddresses ?? []),
     ...account.identities.contents
       .filter(identity => !identity.isCatchAll)
       .map(identity => identity.emailAddress),

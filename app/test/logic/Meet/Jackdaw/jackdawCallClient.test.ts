@@ -212,6 +212,29 @@ describe("клиент сигналинга", () => {
     expect(socket().last("hello").mailboxEmails).toEqual(["bob@example.com", "support@example.com"]);
   });
 
+  test("узнали основной адрес ящика после входа — переподключение сообщает его серверу", () => {
+    // Вход в Exchange по логину; основной адрес приходит из настроек OWA уже после подключения к звонкам
+    mailboxes = ["ngalkin0179@example.com"];
+    connectOnline(["ngalkin0179@example.com"]);
+    let before = sockets.length;
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before);
+    mailboxes = ["ngalkin0179@example.com", "nikita.galkin@example.com"];
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before + 1);
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toEqual(["ngalkin0179@example.com", "nikita.galkin@example.com"]);
+    socket().receive({
+      type: "welcome", emails: ["ngalkin0179@example.com", "nikita.galkin@example.com"], resumedCalls: [],
+      proofs: { "nikita.galkin@example.com": "proof-primary" },
+    });
+    expect(client.verifiedEmails).toEqual(["ngalkin0179@example.com", "nikita.galkin@example.com"]);
+    // Больше не переподключается
+    socket().receive({ type: "pong" });
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before + 1);
+  });
+
   test("адрес коллеги с той же лицензией не становится своим и забывается", () => {
     // Так было до исправления сервера: подтверждение сотрудника приходило всем устройствам лицензии
     mailboxes = ["bob@example.com"];

@@ -14,6 +14,7 @@ import { OWAOffice365Notifications } from "./Notification/OWAOffice365Notificati
 import { newAccountForProtocol } from "../AccountsList/MailAccounts";
 import { newAddressbookForProtocol } from "../../Contacts/AccountsList/Addressbooks";
 import { OWAGAL } from "../../Contacts/OWA/OWAGAL";
+import { owaResolveNamesRequest } from "../../Contacts/OWA/Request/OWAPersonRequests";
 import { OWAAddressbook } from "../../Contacts/OWA/OWAAddressbook";
 import { newCalendarForProtocol} from "../../Calendar/AccountsList/Calendars";
 import { OWACalendar } from "../../Calendar/OWA/OWACalendar";
@@ -555,9 +556,37 @@ export class OWAAccount extends ExchangeMailAccount {
    * This is optional metadata and must not prevent mail startup if the server
    * does not expose the configuration endpoint.
    */
+  /**
+   * Основной адрес ящика может отличаться от логина (`nikita.galkin@` при входе как `ngalkin0179@`):
+   * коллеги пишут на основной, и по нему должны находить нас в чате и звонках.
+   * Берём его из настроек сеанса OWA, а если их нет — из каталога по адресу входа.
+   */
+  protected async loadServerEmailAddresses(config: any): Promise<void> {
+    let session = config?.SessionSettings ?? config?.sessionSettings;
+    let addresses = [session?.UserEmailAddress, session?.LogonEmailAddress];
+    if (!addresses.some(address => typeof address == "string" && address.toLowerCase() != this.emailAddress?.toLowerCase())) {
+      try {
+        let response = await this.callOWA(owaResolveNamesRequest(this.emailAddress));
+        let resolutions = ensureArray(response?.ResolutionSet?.Resolution ?? response?.ResolutionSet);
+        // Несколько совпадений — это не наш ящик однозначно, ничего не берём
+        let mailbox = resolutions.length == 1 ? resolutions[0]?.Mailbox : null;
+        if (mailbox && (!mailbox.RoutingType || mailbox.RoutingType == "SMTP")) {
+          addresses.push(mailbox.EmailAddress);
+        }
+      } catch {
+        // Каталог недоступен: попробуем при следующем входе
+      }
+    }
+    await this.setServerEmailAddresses(addresses.filter((address): address is string => typeof address == "string"));
+  }
+
   protected async loadCategoryColors(): Promise<void> {
     try {
       let config = await this.callOWA(new OWAGetUserConfigurationRequest());
+
+      await this.loadServerEmailAddresses(config).catch(() => {
+        // Без основного адреса чат работает по адресу входа, как раньше
+      });
 
       // Load user signature if configured on the server
       let userOptions = config?.UserOptions ?? config?.userOptions ?? config?.Options ?? config?.options ?? config;

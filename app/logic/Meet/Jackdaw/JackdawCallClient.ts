@@ -307,6 +307,11 @@ export class JackdawCallClient extends Observable {
   protected scheduleHeartbeat(): void {
     this.clearTimer(this.heartbeatTimer);
     this.heartbeatTimer = this.setTimer(() => {
+      if (this.mailboxesChangedSinceHello()) {
+        // Узнали новый адрес ящика (например, основной адрес Exchange): сервер выдаёт его подтверждение при входе
+        this.restart();
+        return;
+      }
       this.checkConnection();
       this.scheduleHeartbeat();
     }, HEARTBEAT_MS);
@@ -673,6 +678,13 @@ export class JackdawCallClient extends Observable {
 
   /** Ящики, о которых сообщили серверу при входе в этом соединении */
   protected helloMailboxes: Set<string> | null = null;
+
+  /** Ящиков стало больше, чем при входе, и звонка нет: переподключение его не оборвёт */
+  protected mailboxesChangedSinceHello(): boolean {
+    let mailboxes = this.mailboxEmails();
+    if (!mailboxes || this.calls.size || this.status != "online") return false;
+    return [...mailboxes].some(email => !this.helloMailboxes?.has(email));
+  }
 
   /** null — ящики ещё не известны (аккаунты не загружены): тогда ничего не отбрасываем */
   protected mailboxEmails(): Set<string> | null {
