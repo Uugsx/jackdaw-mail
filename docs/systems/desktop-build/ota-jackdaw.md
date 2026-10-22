@@ -209,6 +209,7 @@ Or push to `main` touching monitored paths.
 | Infinite “Checking…” on About tab | Remount / race on `checkForUpdate(true)` | Poll status; don’t force new check while `checking` |
 | Windows: “Automatic updates are not configured” | Portable/dir build or an installer without `app-update.yml` | Install the latest `setup.exe` from GitHub Releases, or use **Download latest installer** on the About page |
 | `422` / duplicate tag on publish | Tag missing before publish | `prepare` creates tag + release before mac/win |
+| `422 already_exists` on publish although `prepare` created the release | GitHub sometimes returns `200` with an empty list for `GET /releases`; electron-builder then tries to create the release | The mac/windows publish steps retry up to 4 times; already uploaded files are overwritten |
 
 ---
 
