@@ -6,6 +6,7 @@ import { appGlobal } from "../../app";
 import type { Folder } from "../Folder";
 import { notifyChangedProperty } from "../../util/Observable";
 import { ArrayColl, Collection } from "svelte-collections";
+import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 
 export class ExchangeMailAccount extends MailAccount {
   readonly port: number = 443;
@@ -15,6 +16,36 @@ export class ExchangeMailAccount extends MailAccount {
   /** Root of the optional Exchange Online Archive hierarchy. */
   @notifyChangedProperty
   archiveMailboxRoot: Folder | null = null;
+  /** Адреса этого ящика по данным сервера: основной SMTP-адрес часто отличается от логина
+   * (`nikita.galkin@` при входе как `ngalkin0179@`). Коллеги пишут на основной адрес. */
+  serverEmailAddresses: string[] = [];
+
+  /** Запоминает адреса ящика от сервера. @returns true, если список изменился */
+  async setServerEmailAddresses(addresses: string[]): Promise<boolean> {
+    let own = this.emailAddress?.toLowerCase();
+    let found = [...new Set(addresses
+      .map(address => sanitize.emailAddress(address, null)?.toLowerCase())
+      .filter((address): address is string => !!address && address != own))].sort();
+    if (found.join(" ") == this.serverEmailAddresses.join(" ")) {
+      return false;
+    }
+    this.serverEmailAddresses = found;
+    await this.save();
+    return true;
+  }
+
+  fromConfigJSON(json: any) {
+    super.fromConfigJSON(json);
+    this.serverEmailAddresses = sanitize.array(json.serverEmailAddresses, [])
+      .map(address => sanitize.emailAddress(address, null)?.toLowerCase())
+      .filter((address): address is string => !!address);
+  }
+
+  toConfigJSON(): any {
+    let json = super.toConfigJSON();
+    json.serverEmailAddresses = this.serverEmailAddresses;
+    return json;
+  }
 
   getAllFolders(): ArrayColl<Folder> {
     let folders = super.getAllFolders();

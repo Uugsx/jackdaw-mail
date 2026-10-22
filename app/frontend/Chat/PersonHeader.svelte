@@ -2,6 +2,10 @@
   <PersonPicture {person} size={40} placeholder="initials" />
   <vbox flex class="name-box">
     <hbox class="name" title={$person.name}>{$person.name}</hbox>
+    {#if email && email != $person.name?.toLowerCase()}
+      <!-- Адрес собеседника: по одному имени не понять, кому пишешь и звонишь -->
+      <hbox class="email" title={email}>{email}</hbox>
+    {/if}
     {#if presence}
       <hbox class="status" title={statusHint(presence)}>
         <StatusDot status={presence} size="8px" />
@@ -81,6 +85,9 @@
   $: presence = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group) && callTarget
     ? presenceOf(callClient, callTargetEmails(callTarget as Person | PersonUID))
     : null;
+  $: email = !(person instanceof Group) && callTarget
+    ? callTargetEmails(callTarget as Person | PersonUID)[0] ?? null
+    : null;
   /** Видеозвонок: через Jackdaw или WhatsApp */
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
@@ -133,6 +140,16 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .email {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: normal;
+    font-size: 0.875em;
+    opacity: 0.75;
+    user-select: text;
   }
   .status {
     align-items: center;

@@ -10,6 +10,7 @@
  *   node jd.mjs click <порт> <селектор>                клик мышью по центру элемента
  *   node jd.mjs clickxy <порт> <x> <y>                 клик по точке (пиксели CSS)
  *   node jd.mjs hover <порт> <селектор>                навести мышь без клика
+ *   node jd.mjs movexy <порт> <x1> <y1> <x2> <y2> [мс] плавно провести мышь (пиксели CSS)
  *   node jd.mjs type <порт> <текст>                    ввод текста в элемент с фокусом
  *   node jd.mjs key <порт> <клавиша>                   Enter, Escape, Tab, Backspace, ArrowDown…
  *   node jd.mjs wait <порт> <селектор> [мс]            дождаться элемента
@@ -270,6 +271,19 @@ const commands = {
       let point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
       console.log(`Наведено: ${box.tag} «${box.text.split("\n")[0]}»`);
+    });
+  },
+
+  /** Плавно провести мышь от точки к точке, как рукой: панели при наведении теряются на таком пути */
+  async movexy(port, x1, y1, x2, y2, durationMs = "300") {
+    let steps = 15;
+    await withPage(port, async cdp => {
+      for (let i = 0; i <= steps; i++) {
+        let x = Number(x1) + (Number(x2) - Number(x1)) * i / steps;
+        let y = Number(y1) + (Number(y2) - Number(y1)) * i / steps;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+        await new Promise(resolve => setTimeout(resolve, Number(durationMs) / steps));
+      }
     });
   },
 
