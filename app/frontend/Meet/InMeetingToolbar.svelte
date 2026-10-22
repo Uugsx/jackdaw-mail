@@ -21,7 +21,7 @@
       />
     <SelectScreenShare bind:this={selectScreenShare} />
   {/if}
-  {#if meeting.account.canVideo && $meeting.hasVideo}
+  {#if meeting.account.canVideo && ($meeting.hasVideo || $meeting.canAddVideo)}
     <DeviceButton video={true} {devices}
       on={$me?.cameraOn}
       selectedID={$selectedCameraSetting.value}
@@ -130,6 +130,7 @@
 <script lang="ts">
   import type { VideoConfMeeting } from "../../logic/Meet/VideoConfMeeting";
   import { PhoneCall } from "../../logic/Meet/PhoneCall";
+  import { JackdawCall } from "../../logic/Meet/Jackdaw/JackdawCall";
   import { meetApp } from "./MeetJackdawApp";
   import { selectedCameraSetting, selectedMicSetting, cameraOnSetting, micOnSetting } from "./Setup/selectedDevices";
   import { showDialPad } from "./uiState";
@@ -180,7 +181,8 @@
     }
     meInited = true;
     // Аудиозвонок не включает камеру, даже если она включена по умолчанию.
-    let cameraOn = cameraOnSetting.value && meeting.hasVideo;
+    // Видеозвонок Jackdaw выбран явно кнопкой «Видеозвонок»: камера включается сразу.
+    let cameraOn = meeting.hasVideo && (cameraOnSetting.value || meeting instanceof JackdawCall);
     // Голосовой звонок всегда начинается со включённым микрофоном: «выключен» из прошлого
     // разговора легко не заметить, и собеседник не услышит ни слова.
     let micOn = meeting.voiceOnly || micOnSetting.value;
@@ -304,7 +306,7 @@
   let showViewSelector = false;
   let popupAnchor: HTMLElement;
   let viewSetting = getLocalStorage("meet.videoView", View.GalleryAutoView);
-  $: selectedView = meeting instanceof PhoneCall || meeting.voiceOnly ? View.Phone : $viewSetting.value;
+  $: selectedView = meeting instanceof PhoneCall || $meeting.voiceOnly ? View.Phone : $viewSetting.value;
   $: viewSelectorIcon =
     selectedView == View.SpeakerOnly ? ViewSpeakerOnlyIcon :
     selectedView == View.Thumbnails ? ViewThumbnailsRightIcon :

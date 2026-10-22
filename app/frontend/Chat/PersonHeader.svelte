@@ -10,7 +10,7 @@
     {/if}
   </vbox>
   <hbox class="actions">
-    {#if canCall && canVideo}
+    {#if canCall && canVideo && peerStatus != "dnd"}
       <RoundButton label={$t`Video call`} icon={VideoCallIcon} classes="secondary large"
         onClick={() => startVideoCall(callTarget)} />
     {/if}
@@ -76,7 +76,7 @@
   $: peerStatus = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group)
     ? callTargetEmails(callTarget as Person | PersonUID).map(email => callClient.statusOf(email)).find(s => s != "available") ?? "available"
     : "available";
-  /** Видео — только через WhatsApp: звонки между пользователями Jackdaw голосовые */
+  /** Видеозвонок: через Jackdaw или WhatsApp */
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
    * null — не чат Jackdaw или звонок возможен. */

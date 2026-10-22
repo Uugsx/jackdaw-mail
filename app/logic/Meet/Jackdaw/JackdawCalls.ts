@@ -12,6 +12,7 @@ import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
 import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
 import { recordCallInChat } from "../../Chat/Jackdaw/callHistory";
+import { recordCallInLog } from "./callLog";
 import { UserError } from "../../util/util";
 import { getComputerOn, type ComputerOn } from "../../util/backend-wrapper";
 import { gt } from "../../../l10n/l10n";
@@ -178,8 +179,11 @@ export function startJackdawCalls(): () => void {
     let stopTriggers = watchCallReconnectTriggers(callClient);
     // Чат идёт по тому же соединению и включается вместе со звонками.
     let stopChat = startJackdawChat(callClient);
-    // Звонок — строкой в истории личного чата с собеседником
-    setJackdawCallFinishedHandler(call => recordCallInChat(call).catch(ex => console.error(ex)));
+    // Звонок — строкой в истории личного чата с собеседником и в журнале звонков
+    setJackdawCallFinishedHandler(call => {
+      recordCallInLog(call);
+      recordCallInChat(call).catch(ex => console.error(ex));
+    });
     stopWatching = () => {
       unsubscribe();
       stopChat();
@@ -236,7 +240,7 @@ function findPersonByEmail(email: string): Person | null {
  * @returns null, если звонок через Jackdaw невозможен (тогда вызывающий выбирает другой способ)
  * @throws UserError, если уже идёт другой звонок
  */
-export async function startJackdawCall(target: CallTarget, _video = false): Promise<JackdawCall | null> {
+export async function startJackdawCall(target: CallTarget, video = false): Promise<JackdawCall | null> {
   assertNoActiveCall();
   let callClient = getJackdawCallClient();
   if (!callClient.isOnline || !callClient.verifiedEmails.length) return null;
@@ -252,7 +256,7 @@ export async function startJackdawCall(target: CallTarget, _video = false): Prom
   closeUnconfirmedCalls();
   let person = target instanceof Person ? target : target.findPerson();
   let call = getJackdawCallAccount().newMeeting();
-  call.prepareOutgoing(email, person?.name || target.name || "", false, person);
+  call.prepareOutgoing(email, person?.name || target.name || "", video, person);
   appGlobal.meetings.add(call);
   return call;
 }

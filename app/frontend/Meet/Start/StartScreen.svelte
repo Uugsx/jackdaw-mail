@@ -77,6 +77,16 @@
     </div>
   </section>
   <aside class="meetings">
+    {#if $callLog.hasItems}
+      <section class="list">
+        <hbox class="list-header">
+          <h3 class="title font-small">{$t`Recent calls`}</h3>
+          <hbox flex />
+          <Button label={$t`All calls`} plain classes="all-calls font-small" onClick={() => goTo("/meet/history", {})} />
+        </hbox>
+        <CallLogList limit={RECENT_CALLS} errorCallback={showError} />
+      </section>
+    {/if}
     <section class="list">
       <h3 class="title font-small">{$t`Today's next meetings`}</h3>
       <MeetingList meetings={upcomingMeetings}
@@ -107,13 +117,15 @@
   import { PhoneAccount } from "../../../logic/Meet/PhoneAccount";
   import { selectedPerson } from "../../Contacts/Person/Selected";
   import { meetApp } from "../MeetJackdawApp";
-  import { selectedApp } from "../../AppsBar/selectedApp";
   import { Event } from "../../../logic/Calendar/Event";
   import { Calendar } from "../../../logic/Calendar/Calendar";
   import { openEvent } from "../../Calendar/open";
   import { setNewEventTime } from "../../Calendar/event";
   import { appGlobal } from "../../../logic/app";
   import MeetingList from "./MeetingList.svelte";
+  import CallLogList from "./CallLogList.svelte";
+  import { loadCallLog } from "../../../logic/Meet/Jackdaw/callLog";
+  import { goTo, selectedApp } from "../../AppsBar/selectedApp";
   import StartBarM from "./StartBarM.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
   import ErrorMessage, { ErrorGravity } from "../../Shared/ErrorMessage.svelte";
@@ -141,6 +153,10 @@
   maxPrevious.setDate(maxPrevious.getDate() - 14); // last 14 days
   const upcomingMeetings = appGlobal.calendarEvents.filterObservable(event => event.startTime > now && event.startTime < maxUpcoming);
   const previousMeetings = appGlobal.calendarEvents.filterObservable(event => event.startTime < now && event.startTime > maxPrevious).reverse();
+
+  /** Сколько последних звонков показать рядом со встречами; остальные — на странице журнала */
+  const RECENT_CALLS = 5;
+  const callLog = loadCallLog();
 
   let selectedAccount = appGlobal.meetAccounts.first;
   let conferenceURL: string;
@@ -271,6 +287,12 @@
   .title {
     margin: 0 0 8px;
     font-weight: 600;
+  }
+  .list-header {
+    align-items: baseline;
+  }
+  .list-header :global(.all-calls) {
+    padding: 0 4px;
   }
   .emptyMsg {
     color: var(--main-fg);
