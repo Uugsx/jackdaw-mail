@@ -54,6 +54,14 @@ const defaultNotificationSoundSettings: Record<NotificationSoundEvent, Notificat
   other: "none",
 };
 
+/** Громкость звуков уведомлений, 0…1 */
+export const notificationVolumeSetting = getLocalStorage("notifications.volume", 1);
+
+export function notificationVolume(): number {
+  let value = Number(notificationVolumeSetting.value);
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
 export const notificationSoundSetting = getLocalStorage<NotificationSoundSettings>(
   "notifications.sounds",
   defaultNotificationSoundSettings,
@@ -129,7 +137,8 @@ export async function playNotificationSound(
   options: { preview?: boolean; sound?: NotificationSoundSelection } = {},
 ): Promise<void> {
   let sound = options.sound ?? getNotificationSound(event);
-  if (sound == "none") {
+  let volume = notificationVolume();
+  if (sound == "none" || volume <= 0) {
     return;
   }
   const now = Date.now();
@@ -141,12 +150,12 @@ export async function playNotificationSound(
     if (!sound.dataURL.startsWith("data:audio/")) {
       return;
     }
-    await playAudioSource(sound.dataURL, now);
+    await playAudioSource(sound.dataURL, now, volume);
     return;
   }
 
   if (sound == "default") {
-    await playAudioSource("sound/new-message.mp3", now);
+    await playAudioSource("sound/new-message.mp3", now, volume);
     return;
   }
 
@@ -158,18 +167,22 @@ export async function playNotificationSound(
     if (context.state == "suspended") {
       await context.resume();
     }
-    playTones(context, soundTones[sound], context.currentTime + 0.01);
+    playTones(context, soundTones[sound], context.currentTime + 0.01, volume);
     lastSoundAt = now;
   } catch (_ex) {
     // A locked audio context must not turn a successful mail/calendar event into an error.
   }
 }
 
-async function playAudioSource(source: string, now: number): Promise<void> {
+async function playAudioSource(source: string, now: number, volume = 1): Promise<void> {
   if (typeof Audio == "undefined") {
     return;
   }
   let audio = new Audio(source);
+  if (volume < 1) {
+    // При 100 % громкость не трогаем: остаётся системная по умолчанию
+    audio.volume = volume;
+  }
   activeAudio.add(audio);
   audio.addEventListener("ended", () => activeAudio.delete(audio), { once: true });
   lastSoundAt = now;
@@ -193,7 +206,7 @@ function getAudioContext(): AudioContext | null {
   return audioContext;
 }
 
-function playTones(context: AudioContext, tones: Tone[], startAt: number): void {
+function playTones(context: AudioContext, tones: Tone[], startAt: number, volume = 1): void {
   let elapsed = 0;
   for (let tone of tones) {
     let start = startAt + elapsed + (tone.delay ?? 0);
@@ -203,7 +216,7 @@ function playTones(context: AudioContext, tones: Tone[], startAt: number): void 
     oscillator.type = tone.type ?? "sine";
     oscillator.frequency.setValueAtTime(tone.frequency, start);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.16, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.16 * volume), start + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, end);
     oscillator.connect(gain);
     gain.connect(context.destination);

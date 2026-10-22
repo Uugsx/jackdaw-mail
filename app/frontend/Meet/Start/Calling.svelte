@@ -147,7 +147,7 @@
 <svelte:window on:keydown={ev => enterStartsCall($meeting.state) && catchErrors(() => onKeyEnter(ev, accept))} />
 
 {#if $meeting.state == MeetingState.IncomingCall || $meeting.state == MeetingState.OutgoingCall }
-  <audio src="sound/ringtone1.mp3" loop autoplay />
+  <CallSound incoming={$meeting.state == MeetingState.IncomingCall} />
 {/if}
 
 {#if ($meeting.state == MeetingState.IncomingCall || $meeting.state == MeetingState.OutgoingCall) &&
@@ -164,6 +164,7 @@
 {/if}
 
 <script lang="ts">
+  import CallSound from "./CallSound.svelte";
   import { MeetingState, enterStartsCall, type VideoConfMeeting } from "../../../logic/Meet/VideoConfMeeting";
   import { JackdawCall } from "../../../logic/Meet/Jackdaw/JackdawCall";
   import { appGlobal } from "../../../logic/app";

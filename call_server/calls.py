@@ -54,6 +54,10 @@ ACTIVE_LICENSE_STATUSES = frozenset({"active", "trial", "past_due"})
 MAX_MESSAGE_BYTES = 192 * 1024
 MAX_DISPLAY_NAME_LENGTH = 80
 MAX_LOOKUP_EMAILS = 50
+# Статус пользователя: «в сети», «занят» (звонки проходят, собеседник предупреждён), «не беспокоить» (звонки отклоняются)
+USER_STATUSES = ("available", "busy", "dnd")
+# Срок статуса не дольше недели: забытое «не беспокоить» не должно глушить звонки навсегда
+MAX_STATUS_SECONDS = 7 * 24 * 60 * 60
 MAX_EMAILS_PER_CONNECTION = 20
 # Ящиков в приложении бывает больше, чем адресов на соединение: общие ящики, псевдонимы
 MAX_MAILBOX_EMAILS = 200
@@ -94,6 +98,7 @@ DATABASE_THREADS = 16
 RATE_LIMITS = {
     "hello": 10,
     "lookup": 12,
+    "status-set": 20,
     "invite": 10,
     "verify-start": 3,
     "verify-finish": 10,
@@ -603,6 +608,22 @@ class CallState:
     ACTIVE = "active"
 
 
+@dataclass(frozen=True)
+class UserStatus:
+    value: str
+    # Время сервера (секунды), до которого действует статус; None — пока не сменят
+    until: float | None = None
+
+    def active(self, now: float) -> bool:
+        return self.until is None or now < self.until
+
+    def message(self, now: float) -> dict[str, Any]:
+        result: dict[str, Any] = {"type": "status", "status": self.value}
+        if self.until is not None:
+            result["untilIn"] = max(0, int(self.until - now))
+        return result
+
+
 @dataclass
 class Call:
     call_id: str
@@ -671,6 +692,8 @@ class CallHub:
         # приходит письмом и должно дойти до любого из них.
         self.peers_by_subject: dict[str, set[Peer]] = {}
         self.calls: dict[str, Call] = {}
+        # Последний выбранный статус адреса: общий для всех его устройств, живёт в памяти
+        self.status_by_email: dict[str, UserStatus] = {}
         # ReverseVerification из inbound.py; None — обратное подтверждение выключено
         self.reverse = reverse
         # ChatStore из chat.py: подтверждённые адреса лицензии для её других устройств.
@@ -795,6 +818,7 @@ class CallHub:
                 "verify-reverse-start": self._verify_reverse_start,
                 "verify-reverse-check": self._verify_reverse_check,
                 "lookup": self._lookup,
+                "status-set": self._status_set,
                 "invite": self._invite,
                 "accept": self._accept,
                 "reject": self._reject,
@@ -902,6 +926,7 @@ class CallHub:
         if restored:
             welcome["proofs"] = restored
         peer.send(welcome)
+        self._sync_status_on_hello(peer, message)
 
     @staticmethod
     def _mailbox_emails(values: Any) -> set[str] | None:
@@ -1145,9 +1170,63 @@ class CallHub:
                 continue
             reachable[email] = self._online(email) and email not in peer.emails
         reply: dict[str, Any] = {"type": "lookup-result", "reachable": reachable}
+        statuses = {email: self._status(email) for email, online in reachable.items() if online}
+        statuses = {email: status for email, status in statuses.items() if status != "available"}
+        if statuses:
+            reply["statuses"] = statuses
         if isinstance(message.get("requestId"), str):
             reply["requestId"] = message["requestId"][:64]
         peer.send(reply)
+
+    # --- статус -----------------------------------------------------------
+
+    def _status(self, email: str) -> str:
+        status = self.status_by_email.get(email)
+        return status.value if status is not None and status.active(self._clock()) else "available"
+
+    def _parse_status(self, message: dict[str, Any]) -> UserStatus | None:
+        value = message.get("status")
+        if value not in USER_STATUSES:
+            return None
+        until_in = message.get("untilIn")
+        if until_in is None or value == "available":
+            return UserStatus(value)
+        if isinstance(until_in, bool) or not isinstance(until_in, (int, float)) or until_in <= 0:
+            return None
+        return UserStatus(value, self._clock() + min(float(until_in), MAX_STATUS_SECONDS))
+
+    def _status_set(self, peer: Peer, message: dict[str, Any]) -> None:
+        status = self._parse_status(message)
+        if status is None:
+            raise CallError("invalid_status", "Некорректный статус.")
+        if not peer.emails:
+            raise CallError("not_verified", "Подтвердите свой адрес, чтобы менять статус.")
+        self._share_status(peer, status)
+        peer.send(status.message(self._clock()))
+
+    def _share_status(self, peer: Peer, status: UserStatus) -> None:
+        """Статус — для всех адресов соединения и всех их устройств."""
+        now = self._clock()
+        others: set[Peer] = set()
+        for email in peer.emails:
+            self.status_by_email[email] = status
+            others |= self.peers_by_email.get(email, set())
+        others.discard(peer)
+        for other in others:
+            other.send(status.message(now))
+
+    def _sync_status_on_hello(self, peer: Peer, message: dict[str, Any]) -> None:
+        """После входа: статус уже известен серверу — сообщаем устройству; иначе (перезапуск сервера)
+        берём сохранённый на устройстве."""
+        now = self._clock()
+        stored = [self.status_by_email[email] for email in peer.emails
+                  if email in self.status_by_email and self.status_by_email[email].active(now)]
+        if stored:
+            peer.send(stored[0].message(now))
+            return
+        status = self._parse_status(message) if message.get("status") is not None else None
+        if status is not None and status.value != "available":
+            self._share_status(peer, status)
 
     # --- звонки -----------------------------------------------------------
 
@@ -1173,6 +1252,9 @@ class CallHub:
             return
         if self._busy(callee_email):
             peer.send({"type": "call-ended", "callId": call_id, "reason": "busy"})
+            return
+        if self._status(callee_email) == "dnd":
+            peer.send({"type": "call-ended", "callId": call_id, "reason": "dnd"})
             return
         call = Call(
             call_id=call_id,

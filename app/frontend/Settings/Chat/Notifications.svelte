@@ -14,13 +14,14 @@
 </HeaderGroupBox>
 
 <script lang="ts">
-  import { getLocalStorage } from "../../Util/LocalStorage";
   import NotificationKinds from "../Mail/NotificationKinds.svelte";
   import NotificationSounds from "../Mail/NotificationSounds.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import { t } from "../../../l10n/l10n";
 
-  let notificationsSetting = getLocalStorage("notifications.chat", ["popup"]);
+  import { chatNotificationsSetting } from "../../Chat/chatNotificationPrefs";
+
+  let notificationsSetting = chatNotificationsSetting;
 </script>
 
 <style>

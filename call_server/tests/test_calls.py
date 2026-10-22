@@ -122,7 +122,8 @@ class HubTestCase(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def connect(self, device="device-alice-1", emails=(), name="", kind="license", key=LICENSE_KEY, mailboxes=None):
+    def connect(self, device="device-alice-1", emails=(), name="", kind="license", key=LICENSE_KEY, mailboxes=None,
+                status=None):
         inbox = []
         closed = []
         peer = calls.Peer(inbox.append, lambda: closed.append(True))
@@ -137,6 +138,8 @@ class HubTestCase(unittest.TestCase):
         hello = {"type": "hello", "credential": credential, "emailProofs": proofs, "name": name}
         if mailboxes is not None:
             hello["mailboxEmails"] = list(mailboxes)
+        if status is not None:
+            hello["status"] = status
         self.hub.handle(peer, hello)
         return peer
 
@@ -1025,3 +1028,51 @@ class MailerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UserStatusTests(HubTestCase):
+    def setUp(self):
+        super().setUp()
+        self.alice = self.connect(emails=["alice@example.com"], name="Alice")
+        self.bob_desk = self.connect(device="device-bob-0001", emails=["bob@example.com"], name="Bob")
+        self.bob_laptop = self.connect(device="device-carol-01", emails=["bob@example.com"], name="Bob")
+
+    def test_do_not_disturb_rejects_calls_and_syncs_devices(self):
+        self.hub.handle(self.bob_desk, {"type": "status-set", "status": "dnd"})
+        self.assertEqual(self.last(self.bob_desk, "status")["status"], "dnd")
+        self.assertEqual(self.last(self.bob_laptop, "status")["status"], "dnd")
+        self.hub.handle(self.alice, {"type": "invite", "callId": "call-0001", "to": "bob@example.com"})
+        self.assertEqual(self.last(self.alice, "call-ended")["reason"], "dnd")
+        self.assertIsNone(self.last(self.bob_laptop, "incoming"))
+
+    def test_lookup_reports_status_and_busy_still_rings(self):
+        self.hub.handle(self.bob_desk, {"type": "status-set", "status": "busy"})
+        self.hub.handle(self.alice, {"type": "lookup", "emails": ["bob@example.com"]})
+        result = self.last(self.alice, "lookup-result")
+        self.assertEqual(result["statuses"], {"bob@example.com": "busy"})
+        self.hub.handle(self.alice, {"type": "invite", "callId": "call-0001", "to": "bob@example.com"})
+        self.assertIsNotNone(self.last(self.bob_laptop, "incoming"))
+
+    def test_status_expires(self):
+        self.hub.handle(self.bob_desk, {"type": "status-set", "status": "dnd", "untilIn": 60})
+        self.assertEqual(self.last(self.bob_desk, "status")["untilIn"], 60)
+        self.clock.value += 61
+        self.hub.handle(self.alice, {"type": "lookup", "emails": ["bob@example.com"]})
+        self.assertNotIn("statuses", self.last(self.alice, "lookup-result"))
+
+    def test_new_device_gets_current_status_and_restart_restores_it(self):
+        self.hub.handle(self.bob_desk, {"type": "status-set", "status": "dnd"})
+        later = self.connect(device="device-alice-2", emails=["bob@example.com"])
+        self.assertEqual(self.last(later, "status")["status"], "dnd")
+        # После перезапуска сервера статус приходит от устройства при входе
+        self.hub.disconnected(later)
+        self.hub.status_by_email.clear()
+        again = self.connect(device="device-alice-2", emails=["bob@example.com"], status="busy")
+        self.assertIsNone(self.last(again, "status"))
+        self.hub.handle(self.alice, {"type": "lookup", "emails": ["bob@example.com"]})
+        self.assertEqual(self.last(self.alice, "lookup-result")["statuses"], {"bob@example.com": "busy"})
+
+    def test_invalid_status_is_rejected(self):
+        for message in ({"status": "away"}, {"status": "dnd", "untilIn": -5}, {"status": "dnd", "untilIn": True}):
+            self.hub.handle(self.bob_desk, {"type": "status-set", **message})
+            self.assertEqual(self.last(self.bob_desk, "error")["code"], "invalid_status")

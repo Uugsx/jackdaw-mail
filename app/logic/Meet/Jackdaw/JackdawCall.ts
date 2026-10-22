@@ -187,7 +187,9 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   }
 
   protected missedCallMessage(): string {
-    return gt`Missed call from ${this.remoteLabel}`;
+    return this.endReason == "busy"
+      ? gt`${this.remoteLabel} called while you were in another call`
+      : gt`Missed call from ${this.remoteLabel}`;
   }
 
   protected addRemotePlaceholder(email: string, name: string, person?: Person | null): void {

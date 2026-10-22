@@ -14,6 +14,8 @@
   import { mailApp } from "../Mail/MailJackdawApp";
   import { openChatRoomFromOtherApp } from "./open";
   import { NotificationKinds, SystemNotification } from "../Shared/SystemNotification";
+  import { chatNotificationKinds } from "./chatNotificationPrefs";
+  import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { notifications, Notification, NotificationSeverity } from "../MainWindow/Notification";
   import { backgroundError } from "../Util/error";
   import { gt } from "../../l10n/l10n";
@@ -68,8 +70,12 @@
       markRead(room); // пользователь видит это сообщение — оно прочитано, собеседник получит отметку
       return;
     }
+    let kinds = chatNotificationKinds(room.id, getJackdawCallClient().myStatus);
+    if (!kinds.length) {
+      return;
+    }
     let notification = new SystemNotification(
-      new NotificationKinds(["popup", "sound"]),
+      new NotificationKinds(kinds),
       room.name,
       message.text || (message.attachments.length ? gt`File` : ""),
       `chat-${room.id}`,

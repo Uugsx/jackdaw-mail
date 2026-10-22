@@ -1,5 +1,10 @@
 <hbox class="persons-toolbar">
   <AccountSelectorRound bind:selectedAccount {accounts} iconDefault={ChatIcon} />
+  {#if isJackdaw}
+    <hbox class="my-status">
+      <MyStatusButton />
+    </hbox>
+  {/if}
   <hbox flex />
   <hbox class="buttons">
     {#if selectedAccount && !$selectedAccount.isLoggedIn}
@@ -125,6 +130,7 @@
   import GroupMembersInput from "./GroupMembersInput.svelte";
   import ButtonMenu from "../Shared/Menu/ButtonMenu.svelte";
   import MenuItem from "../Shared/Menu/MenuItem.svelte";
+  import MyStatusButton from "./Status/MyStatusButton.svelte";
   import RoundButton from "../Shared/RoundButton.svelte";
   import AddIcon from "lucide-svelte/icons/plus";
   import ChatIcon from "lucide-svelte/icons/message-square-text";
@@ -246,6 +252,10 @@
   .persons-toolbar {
     margin: 10px 12px 10px 16px;
     align-items: center;
+  }
+  .my-status {
+    margin-inline-start: 8px;
+    min-width: 0;
   }
   .dialog {
     margin: 32px 32px;

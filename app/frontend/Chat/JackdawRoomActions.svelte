@@ -14,6 +14,11 @@
     {/if}
   {/if}
   <MenuItem
+    label={muted ? $t`Turn on notifications` : $t`Mute notifications`}
+    icon={muted ? BellIcon : BellOffIcon}
+    onClick={() => setChatRoomMuted(room.id, !muted)}
+    />
+  <MenuItem
     label={$t`Delete chat`}
     icon={DeleteIcon}
     onClick={() => confirmDelete = true}
@@ -45,6 +50,9 @@
   import MembersIcon from "lucide-svelte/icons/users";
   import LeaveIcon from "lucide-svelte/icons/log-out";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
+  import BellIcon from "lucide-svelte/icons/bell";
+  import BellOffIcon from "lucide-svelte/icons/bell-off";
+  import { mutedChatRoomsSetting, setChatRoomMuted } from "./chatNotificationPrefs";
   import { catchErrors } from "../Util/error";
   import { t } from "../../l10n/l10n";
 
@@ -56,6 +64,8 @@
 
   let isMenuOpen = false;
   let confirmLeave = false;
+  const mutedRooms = mutedChatRoomsSetting;
+  $: muted = Array.isArray($mutedRooms.value) && $mutedRooms.value.includes(room.id);
 
   /** Администратор передаёт группу следующему участнику: говорим, кому */
   $: nextAdmin = $room.isAdmin ? $room.memberEmails.find(email => !room.account.isOwnEmail(email)) : null;
