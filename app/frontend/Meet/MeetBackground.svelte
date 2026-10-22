@@ -16,6 +16,7 @@
   import { watchReplyComposers } from "../Mail/Collision/replyComposers";
   import { JackdawCall, setJackdawCallEndedHandler, setJackdawCallWarningHandler } from "../../logic/Meet/Jackdaw/JackdawCall";
   import { CallNotification } from "./CallNotification";
+  import { rememberReturnPoint, returnAfterCall } from "./returnAfterCall";
   import { gt } from "../../l10n/l10n";
   import { onDestroy, onMount } from "svelte";
 
@@ -119,9 +120,12 @@
     if (meeting.state == MeetingState.OutgoingCallConfirm ||
         meeting.state == MeetingState.OutgoingCall ||
         meeting.state == MeetingState.IncomingCall) {
+      rememberReturnPoint(meetApp);
       openApp(meetApp, { meeting });
     }
   }
+  // Звонок закончился — назад в чат или почту, откуда звонили или где застал входящий
+  $: !$meetings.hasItems && returnAfterCall(meetApp);
 
   /** Open sidebar, if meeting is ongoing.
    * Note: Has to be after `openMeet()`, so that sets the correct state first */
