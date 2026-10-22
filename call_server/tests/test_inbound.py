@@ -307,7 +307,7 @@ class HubReverseTests(HubTestCase):
 
     def test_full_reverse_flow_reaches_all_devices_of_subject(self):
         first = self.connect(device="device-alice-1")
-        second = self.connect(device="device-alice-2")
+        second = self.connect(device="device-alice-2", mailboxes=["alice@corp.example"])
         stranger = self.connect(device="device-trial-01", kind="trial")
         self.hub.handle(first, {"type": "verify-reverse-start", "email": "Alice@Corp.Example"})
         ready = self.last(first, "verify-reverse-ready")
@@ -319,6 +319,20 @@ class HubReverseTests(HubTestCase):
             self.assertEqual(self.signer.verify(verified["proof"], "license:1"), "alice@corp.example")
         self.assertIsNone(self.last(stranger, "verified"))
         self.assertIn("alice@corp.example", self.hub.peers_by_email)
+
+    def test_reverse_flow_skips_colleague_with_same_license(self):
+        alice = self.connect(device="device-alice-1", mailboxes=["alice@corp.example"])
+        colleague = self.connect(device="device-bob-0001", mailboxes=["bob@corp.example"])
+        legacy = self.connect(device="device-carol-01")
+        for peer in (colleague, legacy):
+            self.assertIsNotNone(self.last(peer, "welcome"))
+        self.hub.handle(alice, {"type": "verify-reverse-start", "email": "alice@corp.example"})
+        token = self.last(alice, "verify-reverse-ready")["token"]
+        self.assertTrue(self.hub.reverse_verified(token, "alice@corp.example"))
+        self.assertEqual(self.last(alice, "verified")["email"], "alice@corp.example")
+        self.assertIsNone(self.last(colleague, "verified"))
+        self.assertIsNone(self.last(legacy, "verified"))
+        self.assertEqual({peer for peer in self.hub.peers_by_email["alice@corp.example"]}, {alice})
 
     def test_check_after_reconnect(self):
         peer = self.connect()

@@ -356,6 +356,10 @@ export class JackdawCallClient extends Observable {
         this.pongTimer = null;
         break;
       case "verified":
+        if (!this.isOwnVerification(message.email, message.requestedEmail)) {
+          // Коллега с той же лицензией подтвердил свой адрес — это не наш ящик.
+          break;
+        }
         this.saveProof(message.email, message.proof);
         this.setExcluded(message.email, false);
         if (!this.verifiedEmails.includes(message.email)) {
@@ -504,6 +508,7 @@ export class JackdawCallClient extends Observable {
 
   async startVerification(emailAddress: string): Promise<void> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor(message =>
       message.type == "verify-sent" && message.email == email ||
       message.type == "error" && message.requestType == "verify-start" && (message.email == email || !message.email));
@@ -513,6 +518,7 @@ export class JackdawCallClient extends Observable {
 
   async finishVerification(emailAddress: string, code: string): Promise<void> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor(message =>
       message.type == "verified" && message.email == email ||
       message.type == "error" && message.requestType == "verify-finish" && (message.email == email || !message.email));
@@ -526,6 +532,7 @@ export class JackdawCallClient extends Observable {
    */
   async startReverseVerification(emailAddress: string): Promise<{ token: string, address: string, mailSubject: string, expiresIn: number }> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor<Extract<JackdawServerMessage, { type: "verify-reverse-ready" }>>(message =>
       message.type == "verify-reverse-ready" && message.email == email ||
       message.type == "error" && message.requestType == "verify-reverse-start" && (message.email == email || !message.email));
@@ -621,6 +628,18 @@ export class JackdawCallClient extends Observable {
     if (Object.keys(kept).length != Object.keys(stored).length || Object.entries(kept).some(([email, proof]) => stored[email] != proof)) {
       this.writeProofs(kept);
     }
+  }
+
+  /** Адреса, подтверждение которых начали на этом устройстве */
+  protected requestedVerifications = new Set<string>();
+
+  /** Подтверждение адреса относится к нашему ящику или к проверке, начатой здесь.
+   * Иначе это адрес коллеги с той же лицензией: он видел бы себя «своим адресом». */
+  protected isOwnVerification(email: string, requestedEmail?: string): boolean {
+    let mailboxes = this.mailboxEmails();
+    let candidates = [email, normalizeCallEmail(requestedEmail ?? "")].filter((e): e is string => !!e);
+    return !mailboxes ||
+      candidates.some(e => mailboxes.has(e) || this.requestedVerifications.has(e));
   }
 
   /** Ящики, о которых сообщили серверу при входе в этом соединении */
