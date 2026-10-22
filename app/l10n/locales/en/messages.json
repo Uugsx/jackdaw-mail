@@ -2775,5 +2775,11 @@
   "Qo9d6G": "Translating… {0} of {1}",
   "wFcvZJ": "Translation",
   "VpMiy+": "Translation engine",
-  "am+JNs": "Translation is available only in the desktop app."
+  "am+JNs": "Translation is available only in the desktop app.",
+  "lLuvm7": "{0} cannot be called in Jackdaw right now. Try again when they are online.",
+  "ZYoqof": "Connect a meeting account",
+  "xP9zW7": "Group video meetings need a meeting account. Calls to colleagues work without it: open a chat or a contact and press the call button.",
+  "MROqzh": "Meetings and calls",
+  "LfPY9t": "No camera or microphone was found. Connect a microphone, or check that Windows or macOS allows Jackdaw to use it.",
+  "Revolh": "No microphone was found. Connect a microphone, or check that Windows or macOS allows Jackdaw to use it."
 }

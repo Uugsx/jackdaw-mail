@@ -2838,5 +2838,11 @@
   "Qo9d6G": "Traduction… {0} sur {1}",
   "wFcvZJ": "Traduction",
   "VpMiy+": "Moteur de traduction",
-  "am+JNs": "La traduction n’est disponible que dans l’application de bureau."
+  "am+JNs": "La traduction n’est disponible que dans l’application de bureau.",
+  "lLuvm7": "Impossible d’appeler {0} dans Jackdaw pour le moment. Réessayez quand cette personne sera en ligne.",
+  "ZYoqof": "Connecter un compte de réunion",
+  "xP9zW7": "Les réunions vidéo de groupe nécessitent un compte de réunion. Les appels aux collègues fonctionnent sans : ouvrez une discussion ou un contact et appuyez sur le bouton d’appel.",
+  "MROqzh": "Réunions et appels",
+  "LfPY9t": "Aucune caméra ni aucun micro trouvé. Branchez un micro ou vérifiez que Windows ou macOS autorise Jackdaw à l’utiliser.",
+  "Revolh": "Aucun micro trouvé. Branchez-en un ou vérifiez que Windows ou macOS autorise Jackdaw à l’utiliser."
 }
