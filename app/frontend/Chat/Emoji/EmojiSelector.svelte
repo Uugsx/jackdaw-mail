@@ -46,6 +46,7 @@
 
 <script lang="ts">
   import emojisJSON from "./emojis.json";
+  import { isEmojiSupported } from "./emojiSupport";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import Scroll from "../../Shared/Scroll.svelte";
   import { createEventDispatcher } from 'svelte';
@@ -58,13 +59,22 @@
 
   $: emojisList = list(searchTerm);
 
+  /** Только смайлики, которые система умеет рисовать: остальные были пустыми квадратами */
+  let supportedGroups: typeof emojisJSON | null = null;
+  function supportedEmojis(): typeof emojisJSON {
+    supportedGroups ??= emojisJSON
+      .map(group => ({ ...group, emojis: group.emojis.filter(entry => isEmojiSupported(entry.emoji)) }))
+      .filter(group => group.emojis.length);
+    return supportedGroups;
+  }
+
   function list(searchTerm: string) {
     if (!searchTerm) {
-      return emojisJSON;
+      return supportedEmojis();
     }
     let term = searchTerm.toLowerCase();
     let list = [];
-    for (let group of emojisJSON) {
+    for (let group of supportedEmojis()) {
       let emojis = [];
       for (let emoji of group.emojis) {
         if (emoji.keywords.some(keyword => keyword.includes(term))) {

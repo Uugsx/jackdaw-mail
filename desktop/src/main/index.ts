@@ -6,6 +6,7 @@ import { pathToFileURL } from 'url'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
 import { installSignalServiceCATrust } from './signalServiceCA'
+import { installTestProfileGuards, testJPCPort } from '../../backend/testProfile'
 import { connectOAuth2Window } from './oauth2Window'
 import { getSpellcheckSuggestions } from './spellcheck'
 import {
@@ -749,6 +750,9 @@ async function createWindow(): Promise<void> {
     if (isDemoModeRequested()) {
       rendererHash += '&demo=1';
     }
+    if (testJPCPort()) {
+      rendererHash += '&jpcPort=' + testJPCPort();
+    }
     void loadRendererWindow(mainWindow, rendererHash).catch(console.error);
   } catch (ex) {
     console.error(ex);
@@ -991,6 +995,7 @@ async function whenReady() {
   allowCrossDomainRequestsFromFrontend();
   installSignalServiceCATrust(); // renderer's HTTPS REST to *.signal.org (the wss socket runs in the backend with its own CA)
 
+  installTestProfileGuards();
   createMenu();
   await createWindow();
 

@@ -3,7 +3,8 @@
     <SearchField bind:searchTerm
       placeholder={$t`Search directory or contacts`}
       autofocus={doSearch} />
-    {#if searchTerm && $sortedPersons?.isEmpty}
+    <slot name="below-search" {searchTerm} />
+    {#if searchTerm && $sortedPersons?.isEmpty && directoryHint}
       <hbox class="gal-hint">{$t`Type a name to search the company directory.`}</hbox>
     {/if}
   {/if}
@@ -15,10 +16,18 @@
     on:selected
     columns="auto">
     <vbox class="person" slot="row" let:item={person}>
-      <PersonLine {person} isSelected={person == selected} {pictureSize} on:click>
-        <slot name="top-right" slot="top-right" {person} />
-        <slot name="second-row" slot="second-row" {person} />
-      </PersonLine>
+      {#if $$slots["picture-badge"]}
+        <PersonLine {person} isSelected={person == selected} {pictureSize} {picturePlaceholder} on:click>
+          <slot name="picture-badge" slot="picture-badge" {person} />
+          <slot name="top-right" slot="top-right" {person} />
+          <slot name="second-row" slot="second-row" {person} />
+        </PersonLine>
+      {:else}
+        <PersonLine {person} isSelected={person == selected} {pictureSize} {picturePlaceholder} on:click>
+          <slot name="top-right" slot="top-right" {person} />
+          <slot name="second-row" slot="second-row" {person} />
+        </PersonLine>
+      {/if}
     </vbox>
   </FastList>
 </vbox>
@@ -39,6 +48,10 @@
   export let selected: PersonOrGroup = $selectedPerson;
   export let selectedPersons: ArrayColl<PersonOrGroup>;
   export let pictureSize = appGlobal.isMobile ? 32 : 20;
+  /** Что показать вместо фото — in */
+  export let picturePlaceholder: "none" | "empty" | "icon" | "slot" | "initials" = "none";
+  /** Подсказка «Введите имя для поиска в каталоге», когда ничего не нашлось — in */
+  export let directoryHint = true;
   /** in/out */
   export let searchTerm: string | null = null;
   /* Show or entirely remove the search field -- in */

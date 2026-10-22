@@ -52,6 +52,11 @@
     }
   }
 
+  /* Без выбранного раздела справа было пусто: открываем первый */
+  $: if (!$selectedCategory && $categories.first) {
+    $selectedCategory = $categories.first;
+  }
+
   function onClose() {
     openApp($selectedCategory?.forApp ?? mailApp, {});
   }

@@ -1,5 +1,6 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <hbox flex
+  bind:this={messageE}
   class="message"
   class:incoming={!displayOutgoing}
   class:outgoing={displayOutgoing}
@@ -31,10 +32,22 @@
         <hbox class="time value">{getDateTimeString($message.sent)}</hbox>
       </hbox>
     {/if}
-    {#if showActions && showActionBar}
+    {#if showActions && (showActionBar || sideReactions)}
       <vbox class="hover-popup-anchor">
-        <vbox class="hover-above-msg">
-          <ActionBar {message} />
+        <!-- На компьютере обе панели сбоку от пузыря, на свободной стороне ленты:
+          над и под пузырём они закрывали имя, время, текст и соседние сообщения -->
+        <vbox class="side-popups" class:side={sidePopups}
+          style={sidePopups && sideSpace ? `max-width: ${sideSpace}px` : ""}>
+          {#if showActionBar}
+            <vbox class="hover-above-msg">
+              <ActionBar {message} />
+            </vbox>
+          {/if}
+          {#if sideReactions}
+            <vbox class="hover-after-msg">
+              <ReactionBar {message} bind:isOpen={showActions} />
+            </vbox>
+          {/if}
         </vbox>
       </vbox>
     {/if}
@@ -88,7 +101,7 @@
         {/each}
       </hbox>
     {/if}
-    {#if showReactions && showActions && canReact}
+    {#if !sidePopups && showReactions && showActions && canReact}
       <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length}>
         <vbox class="hover-after-msg">
           <ReactionBar {message} bind:isOpen={showActions} />
@@ -108,6 +121,7 @@
   import cssBody from "../../Mail/Message/content-body.css?inline";
   import cssFont from "../../asset/font/Karla.css?inline";
   import { ChatPersonUID } from "../../../logic/Chat/ChatPersonUID";
+  import { appGlobal } from "../../../logic/app";
   import ReactionBar from "./ReactionBar.svelte";
   import { quoteSnippet } from "../replyState";
   import ActionBar from "./ActionBar.svelte";
@@ -155,6 +169,9 @@
   $: isFailed = displayOutgoing && $message instanceof ChatMessage && $message.deliveryStatus == DeliveryStatus.Failed;
   /** Панель реакций — только где протокол их поддерживает (у писем — как раньше) */
   $: canReact = !($message instanceof ChatMessage) || $message.canReact;
+  /** На телефоне свободного места сбоку нет: там панели над и под пузырём */
+  const sidePopups = !appGlobal.isMobile;
+  $: sideReactions = sidePopups && showReactions && canReact;
 
   async function onRetry() {
     assert(message instanceof ChatMessage, "Only chat messages can be sent again");
@@ -171,8 +188,20 @@
     }
     hoverTimer = setTimeout(() => {
       hoverTimer = null;
+      measureSideSpace();
       showActions = true;
     }, 300)
+  }
+  let messageE: HTMLElement;
+  /** Свободное место сбоку от сообщения: там панели помещаются в один ряд, иначе — в два */
+  let sideSpace = 0;
+  /** Отступы сообщения в ленте (`.message` margin) и зазор до пузыря */
+  const kSideGapPx = 20 + 32 + 8;
+  function measureSideSpace() {
+    if (!sidePopups || !messageE?.parentElement) {
+      return;
+    }
+    sideSpace = Math.max(0, messageE.parentElement.clientWidth - messageE.offsetWidth - kSideGapPx);
   }
   function onHoverEnd() {
     clearTimeout(hoverTimer);
@@ -382,6 +411,31 @@
   .hover-above-msg {
     bottom: 0px;
     right: 10px;
+  }
+  /* Сбоку от пузыря, на свободной стороне ленты (сообщение не шире 75 %) */
+  .side-popups.side {
+    position: absolute;
+    top: 0;
+    z-index: 2;
+    width: max-content;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+  /* Панель действий — ближе к пузырю, реакции — за ней; без места — второй строкой */
+  .outgoing .side-popups.side {
+    right: calc(100% + 8px);
+    flex-direction: row-reverse;
+  }
+  .incoming .side-popups.side {
+    left: calc(100% + 8px);
+  }
+  .side-popups.side .hover-above-msg,
+  .side-popups.side .hover-after-msg {
+    position: static;
+    align-self: auto;
+    margin-inline-end: 0;
   }
   .hover-after-msg {
     top: 0px;

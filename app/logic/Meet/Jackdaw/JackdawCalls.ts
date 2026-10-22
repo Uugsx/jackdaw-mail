@@ -5,7 +5,7 @@ import { JackdawCallClient, type JackdawCallStatus } from "./JackdawCallClient";
 import { JackdawCall, JackdawCallAccount, setJackdawCallFinishedHandler } from "./JackdawCall";
 import { callServiceURL, normalizeCallEmail, type JackdawServerMessage } from "./JackdawCallProtocol";
 import { getProCallCredential, proEntitlement, refreshProEntitlement, type ProCallCredential } from "../../Billing/ProEntitlement";
-import { BILLING_LICENSE_API_URL } from "../../Billing/Billing";
+import { BILLING_LICENSE_API_URL, UI_TEST_CALLS_URL } from "../../Billing/Billing";
 import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
 import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
@@ -47,7 +47,7 @@ function myDisplayName(): string {
 
 export function getJackdawCallClient(): JackdawCallClient {
   client ??= new JackdawCallClient({
-    url: callServiceURL(BILLING_LICENSE_API_URL),
+    url: UI_TEST_CALLS_URL ?? callServiceURL(BILLING_LICENSE_API_URL),
     getCredential: () => CALL_ENTITLEMENT_STATUSES.has(proEntitlement.value.status) ? getProCallCredential() : null,
     getDisplayName: myDisplayName,
     getMailboxEmails: myMailboxEmails,

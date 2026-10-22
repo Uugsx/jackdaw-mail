@@ -169,8 +169,11 @@
   $: me = $meeting.myParticipant;
   $: stream = $meeting.mediaDeviceStreams;
   $: participants = meeting.participants;
+  /* `$meetingVideos`: видео собеседника приходит позже, чем он сам, и без подписки на видео
+     его имя так и оставалось в панели, будто у него нет камеры */
+  $: meetingVideos = meeting.videos;
   $: participantsWithoutVideo = selectedView == View.SpeakerOnly ? participants :
-      $participants.filter(p => !meeting.videos.find(video =>
+      $participants.filter(p => !$meetingVideos.find(video =>
         video.hasVideo && !video.isScreenShare && video.participant == p));
 
   let meInited = false;

@@ -425,8 +425,9 @@
     border-radius: 50%;
     background: color-mix(in srgb, var(--main-fg) 35%, transparent);
   }
+  /* Зелёный, как «В сети» в чате: оранжевый акцент читался как предупреждение */
   .status-dot.online {
-    background: var(--icon-primary);
+    background: var(--success-fg, #2F7A3E);
   }
   .status-dot.connecting {
     background: color-mix(in srgb, var(--icon-primary) 45%, transparent);
