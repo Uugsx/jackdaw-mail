@@ -33,8 +33,40 @@ export interface ChatAttachmentRef {
   size: number;
 }
 
+/** Ссылка на письмо или событие календаря: у получателя открывается его копия, если она у него есть.
+ * Старые версии поле `links` не знают и показывают текст сообщения, где ссылка описана словами. */
+export type ChatLinkRef =
+  | { type: "email"; messageID: string; subject: string; from: string; date: number }
+  | { type: "event"; uid: string; title: string; start: number; end: number; location: string };
+
+export const MAX_LINKS = 5;
+const MAX_LINK_FIELD = 300;
+
+/** Строка для версий без карточек: по одной на ссылку в конце текста. Без перевода — значок понятен всем. */
+export function linkFallbackLine(link: ChatLinkRef): string {
+  return link.type == "email"
+    ? `✉️ ${link.subject}` + (link.from ? ` — ${link.from}` : "")
+    : `📅 ${link.title}, ${new Date(link.start).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** Текст для отправки: комментарий и строки-заглушки для старых версий */
+export function withLinkFallback(text: string, links: ChatLinkRef[]): string {
+  return [text.trim(), ...links.map(linkFallbackLine)].filter(Boolean).join("\n");
+}
+
+/** Текст для показа: без строк-заглушек, ведь ссылки видны карточками */
+export function withoutLinkFallback(text: string, links: ChatLinkRef[]): string {
+  let lines = text.split("\n");
+  let fallback = links.map(linkFallbackLine);
+  let tail = lines.slice(-fallback.length);
+  if (fallback.length && tail.length == fallback.length && tail.every((line, i) => line == fallback[i])) {
+    return lines.slice(0, -fallback.length).join("\n");
+  }
+  return text;
+}
+
 export type ChatPayload =
-  | { v: 1; kind: "message"; id: string; room: ChatRoomRef; text: string; html: string | null; inReplyTo: string | null; attachments: ChatAttachmentRef[] }
+  | { v: 1; kind: "message"; id: string; room: ChatRoomRef; text: string; html: string | null; inReplyTo: string | null; attachments: ChatAttachmentRef[]; links?: ChatLinkRef[] }
   | { v: 1; kind: "read"; id: string; room: ChatRoomRef; ids: string[] }
   /** Состав и название группы от администратора. `leave` — участник сообщает, что вышел.
    * Старые версии не знают `leave` и просто игнорируют такое сообщение не от администратора. */
@@ -92,6 +124,27 @@ export function parseAttachment(value: any): ChatAttachmentRef | null {
   return { blobId: value.blobId, key: value.key, sha256: value.sha256, name: cleanName(value.name), mime, size };
 }
 
+function timestamp(value: unknown): number | null {
+  return typeof value == "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
+export function parseLink(value: any): ChatLinkRef | null {
+  if (!value || typeof value != "object") return null;
+  if (value.type == "email") {
+    let messageID = text(value.messageID, MAX_LINK_FIELD).trim();
+    let date = timestamp(value.date);
+    if (!messageID || date == null) return null;
+    return { type: "email", messageID, subject: cleanName(text(value.subject, MAX_LINK_FIELD)), from: cleanName(value.from), date };
+  }
+  if (value.type == "event") {
+    let uid = text(value.uid, MAX_LINK_FIELD).trim();
+    let start = timestamp(value.start), end = timestamp(value.end);
+    if (!uid || start == null) return null;
+    return { type: "event", uid, title: cleanName(text(value.title, MAX_LINK_FIELD)), start, end: end ?? start, location: cleanName(value.location) };
+  }
+  return null;
+}
+
 /** Размер шифротекста, который получится из этого содержимого. Проверяется до шифрования. */
 export function ciphertextBytes(payload: ChatPayload): number {
   return new TextEncoder().encode(JSON.stringify(payload)).length + CIPHERTEXT_OVERHEAD_BYTES;
@@ -120,11 +173,15 @@ export function parseChatPayload(value: unknown): ChatPayload | null {
         ? data.attachments.slice(0, MAX_ATTACHMENTS).map(parseAttachment).filter(Boolean) as ChatAttachmentRef[]
         : [];
       let body = text(data.text, MAX_TEXT_LENGTH);
-      if (!body && !attachments.length) return null;
+      let links = Array.isArray(data.links)
+        ? data.links.slice(0, MAX_LINKS).map(parseLink).filter(Boolean) as ChatLinkRef[]
+        : [];
+      if (!body && !attachments.length && !links.length) return null;
       return {
         v: 1, kind: "message", id: messageId, room, text: body,
         html: typeof data.html == "string" ? data.html.slice(0, MAX_TEXT_LENGTH * 4) : null,
         inReplyTo: id(data.inReplyTo), attachments,
+        ...(links.length ? { links } : {}),
       };
     }
     case "read": {

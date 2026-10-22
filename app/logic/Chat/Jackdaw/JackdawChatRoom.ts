@@ -6,7 +6,7 @@ import { SQLChatMessage, uniqueAttachmentFilename } from "../SQL/SQLChatMessage"
 import { JackdawChatAttachment, JackdawChatMessage } from "./JackdawChatMessage";
 import type { JackdawChatAccount } from "./JackdawChatAccount";
 import { decryptFile, encryptFile } from "./JackdawChatCrypto";
-import { CHAT_PAYLOAD_VERSION, MAX_ACK_IDS, MAX_ATTACHMENTS, MAX_GROUP_MEMBERS, MAX_TEXT_LENGTH, type ChatAttachmentRef, type ChatPayload, type ChatRoomRef } from "./JackdawChatProtocol";
+import { CHAT_PAYLOAD_VERSION, MAX_ACK_IDS, MAX_ATTACHMENTS, MAX_GROUP_MEMBERS, MAX_TEXT_LENGTH, withLinkFallback, withoutLinkFallback, type ChatAttachmentRef, type ChatPayload, type ChatRoomRef } from "./JackdawChatProtocol";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { UserError } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
@@ -258,10 +258,13 @@ export class JackdawChatRoom extends ChatRoom {
         kind: "message",
         id: message.id,
         room: this.roomRef(),
-        text: message.text,
+        text: message instanceof JackdawChatMessage && message.links.length
+          ? withLinkFallback(message.text, message.links)
+          : message.text,
         html: message.hasHTML ? message.rawHTMLDangerous : null,
         inReplyTo: message.inReplyTo ?? null,
         attachments,
+        ...(message instanceof JackdawChatMessage && message.links.length ? { links: message.links } : {}),
       }, false, from);
       message.deliveryStatus = sent.delivered > 0 ? DeliveryStatus.User : DeliveryStatus.Server;
       if (!this.isGroup && !this.ownEmail) {
@@ -285,7 +288,22 @@ export class JackdawChatRoom extends ChatRoom {
       return known;
     }
     let encrypted = encryptFile(new Uint8Array(await attachment.content.arrayBuffer()));
-    let blobId = await this.account.uploadBlob(encrypted.data);
+    let progress = attachment instanceof JackdawChatAttachment ? attachment : null;
+    let blobId: string;
+    if (progress) {
+      progress.uploadProgress = 0;
+    }
+    try {
+      blobId = await this.account.uploadBlob(encrypted.data, done => {
+        if (progress) {
+          progress.uploadProgress = done;
+        }
+      });
+    } finally {
+      if (progress) {
+        progress.uploadProgress = null;
+      }
+    }
     let ref: ChatAttachmentRef = {
       blobId,
       key: encrypted.key,
@@ -534,8 +552,9 @@ export class JackdawChatRoom extends ChatRoom {
       msg.html = payload.html; // хранится как есть, показывается только через санирующий геттер `html`
       msg.regenerateTextFromHTML();
     } else {
-      msg.text = payload.text;
+      msg.text = payload.links?.length ? withoutLinkFallback(payload.text, payload.links) : payload.text;
     }
+    msg.links = payload.links ?? [];
     let taken = new Set<string>();
     for (let ref of payload.attachments) {
       this.addAttachment(msg, ref, taken);

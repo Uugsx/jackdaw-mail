@@ -1,7 +1,7 @@
 import { ChatMessage, DeliveryStatus } from "../ChatMessage";
 import { Attachment } from "../../Abstract/Attachment";
 import type { JackdawChatRoom } from "./JackdawChatRoom";
-import { parseAttachment, type ChatAttachmentRef } from "./JackdawChatProtocol";
+import { parseAttachment, type ChatAttachmentRef, parseLink, type ChatLinkRef } from "./JackdawChatProtocol";
 import { notifyChangedProperty } from "../../util/Observable";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert } from "../../util/util";
@@ -17,6 +17,9 @@ export class JackdawChatAttachment extends Attachment {
   /** Скачать не удалось. Интерфейс показывает ошибку с кнопкой «Повторить». */
   @notifyChangedProperty
   downloadError: Error | null = null;
+  /** Загрузка своего файла на сервер, 0…1. null — не загружается. */
+  @notifyChangedProperty
+  uploadProgress: number | null = null;
 
   /** Есть ли что скачивать: ссылка на файл на сервере известна, а самого файла у нас нет */
   get needsDownload(): boolean {
@@ -37,6 +40,9 @@ export class JackdawChatMessage extends ChatMessage {
   attachmentRefs: Record<string, ChatAttachmentRef> = {};
   /** Группа: кто из участников прочитал наше сообщение */
   readBy: string[] = [];
+  /** Ссылки на письма и события календаря */
+  @notifyChangedProperty
+  links: ChatLinkRef[] = [];
   /** Автор изменил текст после отправки */
   @notifyChangedProperty
   edited = false;
@@ -57,6 +63,10 @@ export class JackdawChatMessage extends ChatMessage {
   }
   get canDeleteForOthers(): boolean {
     return this.canEdit;
+  }
+  /** Чужое сообщение удаляется только у нас: интерфейс так и подписывает кнопку и спрашивает */
+  get deletesOnlyLocally(): boolean {
+    return !this.outgoing;
   }
   override canReact = true;
 
@@ -102,6 +112,7 @@ export class JackdawChatMessage extends ChatMessage {
     // Статус доставки базовый класс не сохраняет, а для чата он виден пользователю.
     return { ...super.toExtraJSON(), deliveryStatus: this.deliveryStatus, isRead: this.isRead, attachmentRefs: this.attachmentRefs,
       ...(this.readBy.length ? { readBy: this.readBy } : {}),
+      ...(this.links.length ? { links: this.links } : {}),
       ...(this.edited ? { edited: true } : {}),
       ...(this.deletedForAll ? { deletedForAll: true } : {}) };
   }
@@ -114,6 +125,7 @@ export class JackdawChatMessage extends ChatMessage {
     this.isRead = sanitize.boolean(json?.isRead, this.outgoing);
     this.readBy = Array.isArray(json?.readBy) ? json.readBy.filter((e: unknown) => typeof e == "string") : [];
     this.edited = json?.edited === true;
+    this.links = Array.isArray(json?.links) ? json.links.map(parseLink).filter(Boolean) as ChatLinkRef[] : [];
     this.deletedForAll = json?.deletedForAll === true;
     let refs = json?.attachmentRefs;
     this.attachmentRefs = {};

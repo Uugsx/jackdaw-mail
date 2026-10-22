@@ -13,7 +13,7 @@ import {
   keyFingerprint,
   ChatDecryptError,
 } from "../../../../logic/Chat/Jackdaw/JackdawChatCrypto";
-import { isFutureChatPayload, parseChatPayload } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { isFutureChatPayload, parseChatPayload, withLinkFallback, withoutLinkFallback } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
 import { JackdawChatAccount } from "../../../../logic/Chat/Jackdaw/JackdawChatAccount";
 import { JackdawChatConnectionError } from "../../../../logic/Chat/Jackdaw/chatConnectionProblem";
 import type { JackdawChatRoom } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
@@ -393,6 +393,87 @@ describe("чат между двумя пользователями", () => {
     let att = received.attachments.first;
     expect(att.filename).toBe("photo.png");
     expect(new Uint8Array(await att.content.arrayBuffer())).toEqual(bytes);
+  });
+
+  test("загрузка файла показывает ход и после неё сбрасывается", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    let attachment = msg.newAttachment() as any;
+    attachment.fromFile(new File([new Uint8Array(150_000)], "big.bin", { type: "application/octet-stream" }));
+    msg.attachments.add(attachment);
+    let seen: number[] = [];
+    attachment.subscribe(() => attachment.uploadProgress != null && seen.push(attachment.uploadProgress));
+    await room.sendMessage(msg);
+    await settle();
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(1);
+    expect(attachment.uploadProgress).toBeNull();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+  });
+
+  test("ссылка на письмо и событие доходит и сохраняется", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage() as any;
+    msg.text = "Посмотри письмо";
+    msg.links = [
+      { type: "email", messageID: "<abc@example.com>", subject: "Счёт", from: "Иван", date: 1_700_000_000_000 },
+      { type: "event", uid: "uid-1", title: "Планёрка", start: 1_700_000_000_000, end: 1_700_003_600_000, location: "Зал" },
+    ];
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.links).toEqual(msg.links);
+    expect(received.text).toBe("Посмотри письмо");
+    let copy = new (received.constructor)(received.to);
+    copy.fromExtraJSON(JSON.parse(JSON.stringify(received.toExtraJSON())));
+    expect(copy.links).toEqual(msg.links);
+  });
+
+  test("строки-заглушки для старых версий: уходят в тексте, при показе убираются", () => {
+    let links = [
+      { type: "email" as const, messageID: "<a@b>", subject: "Счёт", from: "Иван", date: 0 },
+      { type: "event" as const, uid: "u", title: "Планёрка", start: 0, end: 0, location: "" },
+    ];
+    let sent = withLinkFallback("Глянь", links);
+    expect(sent).toBe("Глянь\n✉️ Счёт — Иван\n📅 Планёрка, 1970-01-01 00:00 UTC");
+    expect(withoutLinkFallback(sent, links)).toBe("Глянь");
+    expect(withoutLinkFallback(withLinkFallback("", links), links)).toBe("");
+    // Текст без заглушек (другой клиент) не трогаем
+    expect(withoutLinkFallback("Просто текст", links)).toBe("Просто текст");
+  });
+
+  test("собеседник переименован у себя; имя из каталога вместо имени из адреса", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "nlevchenko0181@example.com");
+    alice.account.directoryName = async email => email == "nlevchenko0181@example.com" ? "Левченко Никита" : null;
+    let room = await alice.account.getDirectRoom("nlevchenko0181@example.com");
+    expect(room.name).toBe("Nlevchenko0181");
+    await (alice.account as any).loadDirectoryName("nlevchenko0181@example.com");
+    expect(room.name).toBe("Левченко Никита");
+    await alice.account.renameContact("nlevchenko0181@example.com", "  Никита  ");
+    expect(room.name).toBe("Никита");
+    expect(alice.account.toConfigJSON().contactNames).toEqual({ "nlevchenko0181@example.com": "Никита" });
+    await alice.account.renameContact("nlevchenko0181@example.com", "");
+    expect(room.name).toBe("Левченко Никита");
+  });
+
+  test("чужое сообщение удаляется только у себя, своё — можно у всех", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    msg.text = "моё";
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.canDeleteForOthers).toBe(false);
+    expect(received.deletesOnlyLocally).toBe(true);
+    expect((msg as any).canDeleteForOthers).toBe(true);
+    expect((msg as any).deletesOnlyLocally).toBe(false);
   });
 
   test("группа: создание, сообщение, посторонний не может писать", async () => {

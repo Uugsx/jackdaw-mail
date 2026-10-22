@@ -101,8 +101,10 @@ describe("интерфейс на французском", () => {
       { id: "site", name: "Мой сайт", kind: "web", url: "https://example.com" },
     ]);
 
+    // Встроенная панель «Чат» добавляется сама, сразу после календаря
     expect(widgets.map(widget => widget.name)).toEqual([
       gt(["Calendar"]),
+      gt(["Chat"]),
       "Suivi des réponses en direct",
       "Мой сайт",
     ]);

@@ -37,6 +37,13 @@
   label={$t`New topic`}
   tooltip={$t`Send a new, unrelated message to all recipients`}
   icon={NewAllIcon} />
+{#if message.messageID}
+  <MenuItem
+    onClick={() => shareToChat(emailLink(message))}
+    label={$t`Send to chat`}
+    tooltip={$t`Send a link to this email to a Jackdaw chat. Colleagues who also have it open their copy.`}
+    icon={ShareChatIcon} />
+{/if}
 <MenuDivider />
 <MenuItem
   onClick={toggleRead}
@@ -168,6 +175,9 @@
   import { getMessageContentRenderingSetting } from "./messageViewerAppearance";
   import type Print from "./MessagePrint.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
+import { shareToChat } from "../../Chat/shareToChat";
+import { emailLink } from "../../../logic/Chat/Jackdaw/chatLinks";
+import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
   import SubMenu from "../../Shared/Menu/SubMenu.svelte";
   import ReplyIcon from "lucide-svelte/icons/reply";
