@@ -4,6 +4,7 @@ import { mailApp } from "./MailJackdawApp";
 import { goTo, openApp, selectedApp } from "../AppsBar/selectedApp";
 import { appGlobal } from "../../logic/app";
 import type { EMail } from "../../logic/Mail/EMail";
+import type { Folder } from "../../logic/Mail/Folder";
 import { URLPart } from "../Util/util";
 import { assert } from "../../logic/util/util";
 import { tick } from "svelte";
@@ -43,6 +44,13 @@ export async function openEMailMessage(message: EMail, tab?: SearchView) {
 }
 
 /** Открывает письмо отдельным полноэкранным экраном на десктопе. */
+/** Показывает папку без выбранного письма */
+export function openMailFolder(folder: Folder) {
+  selectedAccount.set(folder.account);
+  selectedFolder.set(folder);
+  selectedMessage.set(null);
+}
+
 export async function openEMailMessageFullscreen(message: EMail, tab?: SearchView) {
   assert(message.folder?.account, "no account for email");
   selectedAccount.set(message.folder?.account);
