@@ -122,7 +122,7 @@ class HubTestCase(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def connect(self, device="device-alice-1", emails=(), name="", kind="license", key=LICENSE_KEY):
+    def connect(self, device="device-alice-1", emails=(), name="", kind="license", key=LICENSE_KEY, mailboxes=None):
         inbox = []
         closed = []
         peer = calls.Peer(inbox.append, lambda: closed.append(True))
@@ -134,7 +134,10 @@ class HubTestCase(unittest.TestCase):
             credential["licenseKey"] = key
         subject = "license:1" if kind == "license" else f"trial:{calls.sha256_hex(device)}"
         proofs = [self.signer.issue(email, subject) for email in emails]
-        self.hub.handle(peer, {"type": "hello", "credential": credential, "emailProofs": proofs, "name": name})
+        hello = {"type": "hello", "credential": credential, "emailProofs": proofs, "name": name}
+        if mailboxes is not None:
+            hello["mailboxEmails"] = list(mailboxes)
+        self.hub.handle(peer, hello)
         return peer
 
     @staticmethod
@@ -334,7 +337,7 @@ class SharedVerificationTests(HubTestCase):
     def test_other_device_of_license_gets_address_on_login(self):
         mac = self.connect(device="device-alice-1")
         self.verify(mac, "alice@example.com")
-        windows = self.connect(device="device-alice-2")
+        windows = self.connect(device="device-alice-2", mailboxes=["Alice@Example.com"])
         welcome = self.last(windows, "welcome")
         self.assertEqual(welcome["emails"], ["alice@example.com"])
         self.assertEqual(self.signer.verify(welcome["proofs"]["alice@example.com"], "license:1"), "alice@example.com")
@@ -342,14 +345,14 @@ class SharedVerificationTests(HubTestCase):
 
     def test_online_device_of_license_gets_address_at_once(self):
         mac = self.connect(device="device-alice-1")
-        windows = self.connect(device="device-alice-2")
+        windows = self.connect(device="device-alice-2", mailboxes=["alice@example.com"])
         self.verify(mac, "alice@example.com")
         self.assertEqual(self.last(windows, "verified")["email"], "alice@example.com")
         self.assertIn(windows, self.hub.peers_by_email["alice@example.com"])
 
     def test_proofs_issued_before_the_store_are_shared(self):
         self.connect(device="device-alice-1", emails=["old@example.com"])
-        windows = self.connect(device="device-alice-2")
+        windows = self.connect(device="device-alice-2", mailboxes=["old@example.com"])
         self.assertEqual(self.last(windows, "welcome")["emails"], ["old@example.com"])
 
     def test_copied_proof_does_not_extend_its_lifetime(self):
@@ -357,13 +360,13 @@ class SharedVerificationTests(HubTestCase):
         proof = self.signer.issue("a@example.com", "license:1", expires=expires)
         peer = calls.Peer(lambda m: None)
         self.hub.handle(peer, {"type": "hello", "credential": {"kind": "license", "deviceId": "device-alice-1", "licenseKey": LICENSE_KEY}, "emailProofs": [proof]})
-        windows = self.connect(device="device-alice-2")
+        windows = self.connect(device="device-alice-2", mailboxes=["a@example.com"])
         copied = self.last(windows, "welcome")["proofs"]["a@example.com"]
         self.assertEqual(self.signer.verify_claims(copied, "license:1"), ("a@example.com", expires))
 
     def test_other_license_and_trial_do_not_get_address(self):
         self.verify(self.connect(device="device-alice-1"), "alice@example.com")
-        trial = self.connect(device="device-trial-01", kind="trial")
+        trial = self.connect(device="device-trial-01", kind="trial", mailboxes=["alice@example.com"])
         self.assertEqual(self.last(trial, "welcome")["emails"], [])
         self.assertNotIn("proofs", self.last(trial, "welcome"))
 
@@ -372,7 +375,7 @@ class SharedVerificationTests(HubTestCase):
         windows = calls.Peer(lambda m: windows.inbox.append(m))
         windows.inbox = []
         self.hub.handle(windows, {"type": "hello", "credential": {"kind": "license", "deviceId": "device-alice-2", "licenseKey": LICENSE_KEY},
-                                  "emailProofs": [], "excludedEmails": ["Alice@Example.com"]})
+                                  "emailProofs": [], "excludedEmails": ["Alice@Example.com"], "mailboxEmails": ["alice@example.com"]})
         self.assertEqual(self.last(windows, "welcome")["emails"], [])
         self.verify(self.connect(device="device-bob-0001"), "alice@example.com")
         self.assertIsNone(self.last(windows, "verified"))
@@ -380,11 +383,33 @@ class SharedVerificationTests(HubTestCase):
         self.hub.handle(windows, {"type": "verify-start", "email": "alice@example.com"})
         self.assertNotIn("alice@example.com", windows.excluded_emails)
 
+    def test_colleague_on_same_license_does_not_get_my_address(self):
+        """Одну лицензию компании ставят разные сотрудники: адрес другого ящика не становится «своим»."""
+        self.verify(self.connect(device="device-alice-1"), "alice@example.com")
+        colleague = self.connect(device="device-bob-0001", mailboxes=["bob@example.com"])
+        self.assertEqual(self.last(colleague, "welcome")["emails"], [])
+        self.assertNotIn("proofs", self.last(colleague, "welcome"))
+        self.assertNotIn(colleague, self.hub.peers_by_email.get("alice@example.com", set()))
+
+    def test_colleague_online_does_not_get_my_new_address(self):
+        colleague = self.connect(device="device-bob-0001", mailboxes=["bob@example.com"])
+        self.verify(self.connect(device="device-alice-1"), "alice@example.com")
+        self.assertIsNone(self.last(colleague, "verified"))
+        self.assertNotIn(colleague, self.hub.peers_by_email.get("alice@example.com", set()))
+
+    def test_client_without_mailbox_list_gets_no_other_addresses(self):
+        """Старый клиент не сообщает ящики: раздавать ему чужие адреса нельзя, свои подтверждения работают."""
+        self.verify(self.connect(device="device-alice-1"), "alice@example.com")
+        old = self.connect(device="device-alice-2", emails=["own@example.com"])
+        self.assertEqual(self.last(old, "welcome")["emails"], ["own@example.com"])
+        self.verify(self.connect(device="device-alice-3"), "new@example.com")
+        self.assertIsNone(self.last(old, "verified"))
+
     def test_expired_addresses_are_not_restored(self):
         expires = int(time.time()) + 60
         self.store.remember_verified_email("license:1", "a@example.com", expires)
         self.store._clock = lambda: expires + 1
-        windows = self.connect(device="device-alice-2")
+        windows = self.connect(device="device-alice-2", mailboxes=["a@example.com"])
         self.assertEqual(self.last(windows, "welcome")["emails"], [])
 
 

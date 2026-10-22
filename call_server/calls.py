@@ -55,6 +55,8 @@ MAX_MESSAGE_BYTES = 192 * 1024
 MAX_DISPLAY_NAME_LENGTH = 80
 MAX_LOOKUP_EMAILS = 50
 MAX_EMAILS_PER_CONNECTION = 20
+# Ящиков в приложении бывает больше, чем адресов на соединение: общие ящики, псевдонимы
+MAX_MAILBOX_EMAILS = 200
 RING_TIMEOUT_SECONDS = 45
 # Короткий обрыв WebSocket не должен завершать идущий разговор: медиа идёт напрямую между клиентами.
 RECONNECT_GRACE_SECONDS = 30
@@ -581,6 +583,11 @@ class Peer:
         self.chat_device_id: str | None = None
         # Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии сюда не приходят
         self.excluded_emails: set[str] = set()
+        # Почтовые ящики, подключённые в приложении на этом устройстве. Только их адреса устройство
+        # получает с других устройств лицензии: одну лицензию компании ставят разные сотрудники,
+        # и чужой подтверждённый адрес делал коллегу «вами» в чате и звонках.
+        # None — клиент не сообщил свои ящики (старая версия): чужие адреса ему не раздаются.
+        self.mailbox_emails: set[str] | None = None
         # True после `CallHub.disconnected`: незаконченная обработка его сообщений не меняет состояние хаба
         self.gone = False
 
@@ -856,6 +863,7 @@ class CallHub:
         # Сначала все обращения к базе, затем изменение состояния без await между ними:
         # другие соединения не видят соединение наполовину вошедшим.
         excluded_emails = self._excluded_emails(message.get("excludedEmails"))
+        mailbox_emails = self._mailbox_emails(message.get("mailboxEmails"))
         proofs = message.get("emailProofs")
         accepted: list[str] = []
         if isinstance(proofs, list):
@@ -865,7 +873,7 @@ class CallHub:
                     accepted.append(claims[0])
                     # Подтверждения, полученные до появления общего хранилища, тоже становятся общими.
                     yield from self._remember_verified(credential.subject, *claims)
-        restored = yield from self._restore_verified(credential.subject, accepted, excluded_emails)
+        restored = yield from self._restore_verified(credential.subject, accepted, excluded_emails, mailbox_emails)
         accepted.extend(restored)
         for email in list(peer.emails):
             self._unregister(peer, email)
@@ -882,6 +890,7 @@ class CallHub:
         peer.credential_checked_at = self._clock()
         peer.display_name = normalize_display_name(message.get("name"))
         peer.excluded_emails = excluded_emails
+        peer.mailbox_emails = mailbox_emails
         for email in accepted:
             self._register(peer, email)
         resumed = self._resume_calls(peer, message.get("activeCalls"))
@@ -889,6 +898,17 @@ class CallHub:
         if restored:
             welcome["proofs"] = restored
         peer.send(welcome)
+
+    @staticmethod
+    def _mailbox_emails(values: Any) -> set[str] | None:
+        """Адреса ящиков устройства из `hello`; None, если клиент их не прислал."""
+        if not isinstance(values, list):
+            return None
+        mailboxes: set[str] = set()
+        for value in values[:MAX_MAILBOX_EMAILS]:
+            with contextlib.suppress(CallError):
+                mailboxes.add(normalize_email(value))
+        return mailboxes
 
     @staticmethod
     def _excluded_emails(values: Any) -> set[str]:
@@ -908,9 +928,9 @@ class CallHub:
             # Без записи подтверждение всё равно работает на этом устройстве.
             print(f"Could not store verified email: {type(error).__name__}", flush=True)
 
-    def _restore_verified(self, subject: str, known: list[str], excluded: set[str]) -> Steps:
-        """Адреса, подтверждённые на других устройствах той же лицензии: email → подтверждение."""
-        if self.verified_store is None:
+    def _restore_verified(self, subject: str, known: list[str], excluded: set[str], mailboxes: set[str] | None = None) -> Steps:
+        """Адреса, подтверждённые на других устройствах той же лицензии и подключённые на этом: email → подтверждение."""
+        if self.verified_store is None or not mailboxes:
             return {}
         try:
             stored = yield Blocking(functools.partial(self.verified_store.verified_emails, subject))
@@ -921,16 +941,17 @@ class CallHub:
         for email, expires in stored:
             if len(known) + len(restored) >= MAX_EMAILS_PER_CONNECTION:
                 break
-            if email in known or email in excluded or email in restored:
+            if email in known or email in excluded or email in restored or email not in mailboxes:
                 continue
             restored[email] = self.verification.signer.issue(email, subject, expires=expires)
         return restored
 
     def _share_verified(self, subject: str, email: str, proof: str, source: Peer | None = None) -> Steps:
-        """Новое подтверждение — сразу всем подключённым устройствам лицензии, кроме отключивших адрес."""
+        """Новое подтверждение — сразу устройствам лицензии, где этот ящик подключён и адрес не отключён."""
         # Сначала доставка, затем запись: закрытие соединения-источника во время записи не отменяет доставку.
         for other in list(self.peers_by_subject.get(subject, ())):
-            if other is not source and email not in other.excluded_emails:
+            if (other is not source and email not in other.excluded_emails
+                    and other.mailbox_emails is not None and email in other.mailbox_emails):
                 self._deliver_proof(other, email, proof)
         yield from self._remember_verified_proof(subject, proof)
 

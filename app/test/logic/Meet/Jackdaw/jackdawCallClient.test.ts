@@ -163,6 +163,8 @@ describe("клиент сигналинга", () => {
   let credential: any;
   let incoming: any[];
   let client: JackdawCallClient;
+  /** Ящики в приложении этого устройства; пусто — как старый клиент или аккаунты ещё не загружены */
+  let mailboxes: string[];
 
   function socket() {
     return sockets[sockets.length - 1];
@@ -173,6 +175,7 @@ describe("клиент сигналинга", () => {
       url: "wss://calls.test/v1/calls",
       getCredential: () => credential,
       getDisplayName: () => "Alice",
+      getMailboxEmails: () => mailboxes,
       createSocket: () => {
         let created = new FakeSocket();
         sockets.push(created);
@@ -198,7 +201,41 @@ describe("клиент сигналинга", () => {
     storage = new MemoryStorage();
     credential = { kind: "license", licenseKey: "JACKDAW-PRO-AAAA-BBBB-CCCC-DDDD", deviceId: "device-1234" };
     incoming = [];
+    mailboxes = [];
     client = makeClient();
+  });
+
+  test("вход сообщает серверу ящики этого устройства", () => {
+    mailboxes = ["Bob@Example.com", "", "bob@example.com", "support@example.com"];
+    client.start();
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toEqual(["bob@example.com", "support@example.com"]);
+  });
+
+  test("адрес коллеги с той же лицензией не становится своим и забывается", () => {
+    // Так было до исправления сервера: подтверждение сотрудника приходило всем устройствам лицензии
+    mailboxes = ["bob@example.com"];
+    storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({
+      "bob@example.com": "proof-bob",
+      "alice@example.com": "proof-alice-from-license",
+    }));
+    client.start();
+    socket().open();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-bob"]);
+    socket().receive({
+      type: "welcome", emails: ["alice@example.com", "bob@example.com"], resumedCalls: [],
+      proofs: { "alice@example.com": "proof-alice-2" },
+    });
+    expect(client.verifiedEmails).toEqual(["bob@example.com"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "bob@example.com": "proof-bob" });
+  });
+
+  test("пока ящики неизвестны, сохранённые подтверждения не отбрасываются", () => {
+    storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({ "alice@example.com": "proof-1" }));
+    client.start();
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toBeUndefined();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-1"]);
   });
 
   test("без лицензии не подключается", () => {
