@@ -6,6 +6,7 @@ import * as OWA from './owa';
 import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
 import { pickMacDmgAsset } from './updateAssets';
+import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort } from './testProfile';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
 import { SQLiteHost, type RemoteSQLiteDatabase } from "./sqlite/SQLiteHost";
@@ -75,6 +76,9 @@ function hasExplicitUserDataDir(): boolean {
 }
 
 function preserveLegacyUserData(): void {
+  if (isTestProfile()) {
+    return;
+  }
   let defaultUserDataDir = app.getPath("userData");
   let legacyUserDataDir = path.join(app.getPath("appData"), kLegacyUserDataDirName);
   if (hasExplicitUserDataDir() ||
@@ -85,6 +89,7 @@ function preserveLegacyUserData(): void {
   app.setPath("userData", legacyUserDataDir);
 }
 
+applyTestProfile();
 preserveLegacyUserData();
 
 let jpc: JPCWebSocket | null = null;
@@ -125,7 +130,7 @@ export async function startupBackend(jpcSecret: string) {
   }
   backendStartup = (async () => {
     let appGlobal = await createSharedAppObject();
-    jpc = await listenForJPC(appGlobal, jpcSecret, production ? 5455 : 5453);
+    jpc = await listenForJPC(appGlobal, jpcSecret, testJPCPort() ?? (production ? 5455 : 5453));
   })().finally(() => {
     backendStartup = null;
   });
@@ -657,7 +662,7 @@ function newOSNotification(options: any): Notification {
 }
 
 function isOSNotificationSupported(): boolean {
-  return Notification.isSupported();
+  return !isTestProfile() && Notification.isSupported();
 }
 
 function restartApp() {
@@ -1209,7 +1214,8 @@ function markUpdateUnavailable(code: string) {
 }
 
 async function runUpdateCheck(check: () => Promise<UpdateCheckResult | null>): Promise<boolean> {
-  if (!hasAppUpdateConfig()) {
+  // Копия для автопроверок не обновляется
+  if (!hasAppUpdateConfig() || isTestProfile()) {
     markUpdateUnavailable("ota-not-configured");
     return false;
   }
@@ -2023,6 +2029,11 @@ let filesDirCreated = false;
  * Mac OS: /Users/USER/Library/Jackdaw
  */
 function getFilesDir(): string {
+  let testDir = testFilesDir();
+  if (testDir) {
+    fs.mkdirSync(testDir, { recursive: true });
+    return testDir;
+  }
   let platform = os.platform();
   let dirname =
     platform == "win32" ? kAppDir :

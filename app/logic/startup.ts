@@ -27,6 +27,8 @@ import { retryWhileDatabaseBusy, type DatabaseBusyCallback } from './util/retryW
 let startupURLParameters = new URLSearchParams(location.hash.slice(1));
 let jpcSecretFromURL = startupURLParameters.get("jpcSecret");
 let demoModeFromURL = startupURLParameters.get("demo") == "1";
+/** Копия для автопроверок слушает свой порт: обычный занят основным приложением */
+let jpcPortFromURL = Number(startupURLParameters.get("jpcPort")) || null;
 
 export function isDemoMode(): boolean {
   return demoModeFromURL;
@@ -92,7 +94,7 @@ export async function getStartObjects(onDatabaseBusy?: DatabaseBusyCallback): Pr
   if (!appGlobal.remoteApp) {
     const secret = await getJPCSecret();
     let jpc = new JPCWebSocket(null);
-    await connectToBackend(jpc, secret, production ? 5455 : 5453);
+    await connectToBackend(jpc, secret, jpcPortFromURL ?? (production ? 5455 : 5453));
     jpc.errorCallback = showError;
     jpc.reconnectCallback = checkAccounts;
     console.log("Connected to backend");
