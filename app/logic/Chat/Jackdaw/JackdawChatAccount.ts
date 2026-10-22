@@ -24,7 +24,7 @@ import {
   type DeviceKeys,
   type RemoteDevice,
 } from "./JackdawChatCrypto";
-import { ciphertextBytes, parseChatPayload, type ChatPayload, type ChatRoomRef, MAX_ACK_IDS, MAX_CIPHERTEXT_BYTES, MAX_GROUP_MEMBERS } from "./JackdawChatProtocol";
+import { ciphertextBytes, isFutureChatPayload, parseChatPayload, type ChatPayload, type ChatRoomRef, MAX_ACK_IDS, MAX_CIPHERTEXT_BYTES, MAX_GROUP_MEMBERS } from "./JackdawChatProtocol";
 import { JackdawCallServiceError, type JackdawCallClient, type JackdawCallStatus } from "../../Meet/Jackdaw/JackdawCallClient";
 import type { JackdawServerMessage } from "../../Meet/Jackdaw/JackdawCallProtocol";
 import { normalizeCallEmail } from "../../Meet/Jackdaw/JackdawCallProtocol";
@@ -530,9 +530,12 @@ export class JackdawChatAccount extends ChatAccount {
     await this.loadDeviceKeys();
     let payload: ChatPayload | null = null;
     let sender: RemoteDevice | null = null;
+    let fromNewerVersion = false;
     try {
       sender = await this.senderDevice(message.from, message.fromDevice);
-      payload = sender ? parseChatPayload(decryptMessage(message.ciphertext, message.key, message.messageId, sender, this.deviceKeys!)) : null;
+      let decrypted = sender ? decryptMessage(message.ciphertext, message.key, message.messageId, sender, this.deviceKeys!) : null;
+      payload = parseChatPayload(decrypted);
+      fromNewerVersion = !payload && isFutureChatPayload(decrypted);
     } catch (ex) {
       payload = null;
     }
@@ -542,7 +545,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (payload) {
       let fromMe = this.isOwnEmail(message.from) || await this.isOwnDevice(sender!);
       await this.applyPayload(payload, message.from, new Date(message.sentAt || Date.now()), fromMe);
-    } else if (!message.ephemeral) {
+    } else if (!message.ephemeral && !fromNewerVersion) {
       await this.addUndecryptable(message.messageId, message.from, new Date(message.sentAt || Date.now()));
     }
     if (!message.ephemeral) {
@@ -577,7 +580,8 @@ export class JackdawChatAccount extends ChatAccount {
 
   protected async applyPayload(payload: ChatPayload, from: string, sentAt: Date, fromMe = this.isOwnEmail(from)): Promise<void> {
     // Отметка о прочтении относится к уже существующему чату и новый не создаёт
-    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind != "read", payload.kind == "group");
+    // Новый чат создают только сообщение и объявление группы; отметки, правки, реакции — только в существующем
+    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind == "message" || payload.kind == "group", payload.kind == "group");
     if (!room) return;
     switch (payload.kind) {
       case "message":
@@ -585,6 +589,18 @@ export class JackdawChatAccount extends ChatAccount {
         break;
       case "read":
         room.markSeen(payload.ids, fromMe, from);
+        break;
+      case "edit":
+        await room.applyEdit(payload, from, fromMe);
+        break;
+      case "delete":
+        await room.applyDelete(payload, from, fromMe);
+        break;
+      case "reaction":
+        await room.applyReaction(payload, from, fromMe);
+        break;
+      case "typing":
+        room.applyTyping(from, fromMe);
         break;
       case "group":
         // Метаданные группы от администратора уже применены в roomForPayload()

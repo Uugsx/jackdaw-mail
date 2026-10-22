@@ -25,6 +25,9 @@
         <hbox flex>
           <slot name="above-center" />
         </hbox>
+        {#if isEdited}
+          <hbox class="edited value" title={$t`The sender edited this message`}>{$t`edited`}</hbox>
+        {/if}
         <hbox class="time value">{getDateTimeString($message.sent)}</hbox>
       </hbox>
     {/if}
@@ -37,7 +40,17 @@
     {/if}
     <Attachments message={$message} />
     {#if $message.rawText || $message.hasHTML || $$slots.bubble}
-      <vbox class="bubble">
+      <vbox class="bubble" class:deleted={isDeletedForAll}>
+        {#if $message.inReplyTo}
+          <div class="quote font-small">
+            {#if quoted}
+              <span class="quote-author">{quoted.from?.name ?? ""}</span>
+              <span class="quote-text">{quoteSnippet(quoted) || $t`File`}</span>
+            {:else}
+              <span class="quote-text">{$t`The original message is not available`}</span>
+            {/if}
+          </div>
+        {/if}
         {#if $$slots.menu}
           <hbox class="menu" class:openMenuOnMessageHover>
             <slot name="menu" />
@@ -96,6 +109,7 @@
   import cssFont from "../../asset/font/Karla.css?inline";
   import { ChatPersonUID } from "../../../logic/Chat/ChatPersonUID";
   import ReactionBar from "./ReactionBar.svelte";
+  import { quoteSnippet } from "../replyState";
   import ActionBar from "./ActionBar.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
   import WebView from "../../Shared/WebView.svelte";
@@ -123,6 +137,12 @@
 
   $: isGroupChat = ($message as ChatMessage).to?.contact instanceof Group;
   $: author = (($message instanceof ChatMessage && $message.from) || $message.contact) as ChatPersonUID | Person | Group;
+  /** Сообщение, на которое это — ответ: ищем в загруженной истории чата */
+  $: quoted = $message.inReplyTo && $message instanceof ChatMessage
+    ? $message.to?.messages.find(m => m.id == $message.inReplyTo) as ChatMessage | undefined
+    : undefined;
+  $: isEdited = (($message as any).edited ?? false) === true;
+  $: isDeletedForAll = (($message as any).deletedForAll ?? false) === true;
   $: previousAuthor = (previousMessage instanceof ChatMessage && previousMessage.from) || previousMessage?.contact;
   $: displayOutgoing = outgoingOverride ?? $message.outgoing;
   $: previousDisplayOutgoing = previousOutgoingOverride ?? previousMessage?.outgoing;
@@ -258,6 +278,35 @@
     align-items: end;
     margin-block-end: 2px;
     color: #818181;
+  }
+  .edited {
+    margin-inline-end: 6px;
+    opacity: 0.7;
+    font-style: italic;
+  }
+  .quote {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-block-end: 6px;
+    padding: 4px 8px;
+    border-inline-start: 3px solid var(--selected-border, currentColor);
+    border-radius: 4px;
+    background-color: var(--hover-bg);
+    max-width: 100%;
+  }
+  .quote-author {
+    font-weight: 600;
+  }
+  .quote-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+  .bubble.deleted .text {
+    font-style: italic;
+    opacity: 0.7;
   }
   .meta.singlechat {
     color: #999999;

@@ -72,6 +72,12 @@ export function setJackdawCallEndedHandler(handler: (call: JackdawCall, message:
   onJackdawCallEnded = handler;
 }
 
+/** Вызывается после любого завершения звонка: например, чтобы записать его в историю чата. */
+export let onJackdawCallFinished: (call: JackdawCall) => void = () => {};
+export function setJackdawCallFinishedHandler(handler: (call: JackdawCall) => void): void {
+  onJackdawCallFinished = handler;
+}
+
 /** Предупреждение во время разговора, которое не завершает звонок: например, отключился микрофон. */
 export let onJackdawCallWarning: (call: JackdawCall, message: string) => void = () => {};
 export function setJackdawCallWarningHandler(handler: (call: JackdawCall, message: string) => void): void {
@@ -786,6 +792,11 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
     this.closeMedia();
     await super.hangup();
+    try {
+      onJackdawCallFinished(this);
+    } catch (ex) {
+      console.error(ex);
+    }
     // Микрофон не должен остаться включённым, когда собеседник положил трубку.
     await this.mediaDeviceStreams.setCameraMicOn(false, false).catch(() => {
       // Устройство уже освобождено или недоступно: звонок всё равно закончен.

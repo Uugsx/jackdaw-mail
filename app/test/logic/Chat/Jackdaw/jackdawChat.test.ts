@@ -13,7 +13,7 @@ import {
   keyFingerprint,
   ChatDecryptError,
 } from "../../../../logic/Chat/Jackdaw/JackdawChatCrypto";
-import { parseChatPayload } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { isFutureChatPayload, parseChatPayload } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
 import { JackdawChatAccount } from "../../../../logic/Chat/Jackdaw/JackdawChatAccount";
 import { JackdawChatConnectionError } from "../../../../logic/Chat/Jackdaw/chatConnectionProblem";
 import type { JackdawChatRoom } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
@@ -913,5 +913,125 @@ describe("управление группой", () => {
     let room = { type: "group", id: "group-0001", name: "x", admin: "a@x.com", members: ["b@x.com"] };
     expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: true })).toMatchObject({ leave: true });
     expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: "yes" })).not.toHaveProperty("leave");
+  });
+});
+
+describe("ответы, правки, удаление, реакции и «печатает…»", () => {
+  let server: FakeServer;
+  beforeAll(async () => {
+    await setupChatTestEnv();
+  });
+  beforeEach(() => {
+    server = new FakeServer();
+    memoryStorage.clear();
+  });
+
+  async function pair() {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let aliceRoom = await alice.account.getDirectRoom("bob@example.com");
+    let msg = aliceRoom.newMessage();
+    msg.text = "Первый вариант";
+    await aliceRoom.sendMessage(msg);
+    await settle();
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    return { alice, bob, aliceRoom, bobRoom, msg: msg as any, received: bobRoom.messages.first as any };
+  }
+
+  test("новые виды содержимого проверяются, будущие — распознаются", () => {
+    const room = { type: "direct" };
+    expect(parseChatPayload({ v: 1, kind: "edit", id: "msg-00000002", room, target: "msg-00000001", text: "новый" }))
+      .toMatchObject({ kind: "edit", target: "msg-00000001", text: "новый", html: null });
+    expect(parseChatPayload({ v: 1, kind: "edit", id: "msg-00000002", room, target: "msg-00000001", text: "" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "delete", id: "msg-00000002", room, target: "bad id" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: "👍" }))
+      .toMatchObject({ emoji: "👍" });
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: null }))
+      .toMatchObject({ emoji: null });
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: "<b>текст</b>" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "typing", id: "msg-00000002", room })).toMatchObject({ kind: "typing" });
+    expect(isFutureChatPayload({ v: 1, kind: "poll", id: "msg-00000002", room })).toBe(true);
+    expect(isFutureChatPayload({ v: 1, kind: "message", id: "msg-00000002", room })).toBe(false);
+  });
+
+  test("правка своего сообщения доходит собеседнику с пометкой", async () => {
+    let { aliceRoom, msg, received } = await pair();
+    let edit = await msg.createEdit();
+    edit.text = "Исправленный вариант";
+    await aliceRoom.sendMessage(edit);
+    await settle();
+    expect(msg.text).toBe("Исправленный вариант");
+    expect(msg.edited).toBe(true);
+    expect(aliceRoom.messages.length).toBe(1);
+    expect(received.text).toBe("Исправленный вариант");
+    expect(received.edited).toBe(true);
+  });
+
+  test("чужое сообщение править и удалять нельзя", async () => {
+    let { bob, bobRoom, received, msg } = await pair();
+    expect(received.canEdit).toBe(false);
+    // Подделка: Боб шлёт правку сообщения Алисы
+    await bob.account.sendPayload(["alice@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "edit", id: crypto.randomUUID(), room: bobRoom.roomRef(), target: msg.id, text: "взлом", html: null,
+    } as any);
+    await bob.account.sendPayload(["alice@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "delete", id: crypto.randomUUID(), room: bobRoom.roomRef(), target: msg.id,
+    } as any);
+    await settle();
+    expect(msg.text).toBe("Первый вариант");
+    expect(msg.deletedForAll).toBe(false);
+  });
+
+  test("удаление у всех убирает текст у собеседника", async () => {
+    let { msg, received } = await pair();
+    await msg.deleteForOthers();
+    await settle();
+    expect(msg.deletedForAll).toBe(true);
+    expect(msg.text).not.toContain("Первый вариант");
+    expect(received.deletedForAll).toBe(true);
+    expect(received.text).not.toContain("Первый вариант");
+    expect(received.canReply).toBe(false);
+  });
+
+  test("реакция ставится и снимается у собеседника", async () => {
+    let { msg, received } = await pair();
+    await received.setMyReaction("👍");
+    await settle();
+    expect([...msg.reactions.values()]).toEqual(["👍"]);
+    await received.setMyReaction(null);
+    await settle();
+    expect(msg.reactions.length).toBe(0);
+  });
+
+  test("ответ ссылается на исходное сообщение", async () => {
+    let { bobRoom, aliceRoom, received } = await pair();
+    let reply = bobRoom.newMessage();
+    reply.text = "Ответ";
+    reply.inReplyTo = received.id;
+    await bobRoom.sendMessage(reply);
+    await settle();
+    let arrived = aliceRoom.messages.find(m => m.text == "Ответ")!;
+    expect(arrived.inReplyTo).toBe(received.id);
+  });
+
+  test("«печатает…» показывается, гаснет по сроку и снимается новым сообщением", async () => {
+    let { aliceRoom, bobRoom } = await pair();
+    aliceRoom.sendTyping();
+    await settle();
+    expect(bobRoom.typing).toEqual(["alice@example.com"]);
+    // Повтор в течение нескольких секунд не отправляется
+    let sentBefore = server.sent.length;
+    aliceRoom.sendTyping();
+    expect(server.sent.length).toBe(sentBefore);
+    let message = aliceRoom.newMessage();
+    message.text = "Готово";
+    await aliceRoom.sendMessage(message);
+    await settle();
+    expect(bobRoom.typing).toEqual([]);
+    // Срок подсказки вышел
+    bobRoom.applyTyping("alice@example.com", false);
+    (bobRoom as any).typingUntil.set("alice@example.com", Date.now() - 1);
+    (bobRoom as any).refreshTyping();
+    expect(bobRoom.typing).toEqual([]);
   });
 });
