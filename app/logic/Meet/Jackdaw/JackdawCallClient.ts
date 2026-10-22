@@ -13,7 +13,9 @@ import {
   parseServerMessage,
   reconnectDelay,
   serverErrorMessage,
+  USER_STATUSES,
   type JackdawServerMessage,
+  type JackdawUserStatus,
 } from "./JackdawCallProtocol";
 
 export type JackdawCallStatus =
@@ -72,6 +74,7 @@ export class JackdawCallServiceError extends Error {
 const PROOFS_STORAGE_KEY = "jackdaw.calls.email-proofs.v1";
 /** Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии их не включают */
 const EXCLUDED_STORAGE_KEY = "jackdaw.calls.excluded-emails.v1";
+const STATUS_STORAGE_KEY = "jackdaw.calls.status.v1";
 const SOCKET_OPEN = 1;
 const LOOKUP_CACHE_MS = 60_000;
 const LOOKUP_DEBOUNCE_MS = 250;
@@ -113,6 +116,12 @@ export class JackdawCallClient extends Observable {
   /** Меняется при каждом обновлении справочника, чтобы интерфейс перерисовал кнопки звонка */
   @notifyChangedProperty
   presenceVersion = 0;
+  /** Свой статус: общий для всех устройств адреса, хранится на сервере и на устройстве */
+  @notifyChangedProperty
+  myStatus: JackdawUserStatus = "available";
+  /** До какого момента (`now()`, мс) действует статус; null — пока не сменят */
+  @notifyChangedProperty
+  myStatusUntil: number | null = null;
 
   protected readonly options: JackdawCallClientOptions;
   protected socket: CallSocket | null = null;
@@ -127,6 +136,9 @@ export class JackdawCallClient extends Observable {
   protected lookupTimer: unknown = null;
   protected readonly lookupQueue = new Set<string>();
   protected readonly reachable = new Map<string, { value: boolean; at: number }>();
+  /** Статусы собеседников из справочника; нет записи — «в сети» */
+  protected readonly peerStatuses = new Map<string, JackdawUserStatus>();
+  protected statusTimer: unknown = null;
   protected readonly waiters = new Set<Waiter>();
   protected readonly calls = new Map<string, JackdawCallSignalTarget>();
   /** Остальные получатели сообщений сервера, например чат */
@@ -136,6 +148,7 @@ export class JackdawCallClient extends Observable {
   constructor(options: JackdawCallClientOptions) {
     super();
     this.options = options;
+    this.loadStatus();
   }
 
   protected setTimer(callback: () => void, ms: number): unknown {
@@ -228,6 +241,7 @@ export class JackdawCallClient extends Observable {
         type: "hello",
         credential,
         name: this.options.getDisplayName(),
+        ...this.statusForServer(),
         emailProofs: Object.entries(this.readProofs())
           .filter(([email]) => !mailboxes || mailboxes.has(email))
           .map(([, proof]) => proof),
@@ -351,6 +365,9 @@ export class JackdawCallClient extends Observable {
         this.flushLookups();
         this.notifyCallsReconnected(message.resumedCalls);
         break;
+      case "status":
+        this.applyStatus(message.status, message.untilIn == null ? null : this.now() + message.untilIn * 1000);
+        break;
       case "pong":
         this.clearTimer(this.pongTimer);
         this.pongTimer = null;
@@ -370,6 +387,12 @@ export class JackdawCallClient extends Observable {
         let at = this.now();
         for (let [email, value] of Object.entries(message.reachable)) {
           this.reachable.set(email, { value, at });
+          let peerStatus = message.statuses[email];
+          if (value && peerStatus && peerStatus != "available") {
+            this.peerStatuses.set(email, peerStatus);
+          } else {
+            this.peerStatuses.delete(email);
+          }
         }
         this.presenceVersion++;
         break;
@@ -700,6 +723,69 @@ export class JackdawCallClient extends Observable {
     }
     this.queueLookup(email);
     return cached?.value;
+  }
+
+  /** Статус собеседника по последнему ответу справочника */
+  statusOf(emailAddress: string | null | undefined): JackdawUserStatus {
+    let email = normalizeCallEmail(emailAddress);
+    return email ? this.peerStatuses.get(email) ?? "available" : "available";
+  }
+
+  /**
+   * Меняет свой статус на всех устройствах.
+   * @param durationSeconds сколько действует статус; без него — пока не сменят
+   */
+  setMyStatus(status: JackdawUserStatus, durationSeconds?: number): void {
+    let until = status != "available" && durationSeconds ? this.now() + durationSeconds * 1000 : null;
+    this.applyStatus(status, until);
+    if (this.isOnline) {
+      this.send({ type: "status-set", ...this.statusForServer(true) });
+    }
+  }
+
+  /** Статус для сервера. Без `always` «в сети» не отправляется: при входе сервер знает его сам. */
+  protected statusForServer(always = false): { status?: JackdawUserStatus, untilIn?: number } {
+    if (this.myStatus == "available" && !always) return {};
+    let untilIn = this.myStatusUntil == null ? undefined : Math.max(1, Math.round((this.myStatusUntil - this.now()) / 1000));
+    return untilIn == null ? { status: this.myStatus } : { status: this.myStatus, untilIn };
+  }
+
+  protected applyStatus(status: JackdawUserStatus, until: number | null): void {
+    if (until != null && until <= this.now()) {
+      status = "available";
+      until = null;
+    }
+    this.myStatus = status;
+    this.myStatusUntil = until;
+    this.saveStatus();
+    this.clearTimer(this.statusTimer);
+    this.statusTimer = until == null ? null : this.setTimer(() => {
+      this.statusTimer = null;
+      this.applyStatus("available", null);
+    }, until - this.now());
+  }
+
+  protected loadStatus(): void {
+    try {
+      let value = JSON.parse(this.options.storage?.getItem(STATUS_STORAGE_KEY) ?? "null");
+      if (value && USER_STATUSES.includes(value.status)) {
+        this.applyStatus(value.status, typeof value.until == "number" ? value.until : null);
+      }
+    } catch {
+      // Повреждённая запись — остаётся «в сети»
+    }
+  }
+
+  protected saveStatus(): void {
+    try {
+      if (this.myStatus == "available") {
+        this.options.storage?.removeItem(STATUS_STORAGE_KEY);
+      } else {
+        this.options.storage?.setItem(STATUS_STORAGE_KEY, JSON.stringify({ status: this.myStatus, until: this.myStatusUntil }));
+      }
+    } catch {
+      // Хранилище недоступно: статус действует до перезапуска
+    }
   }
 
   /** Спрашивает сервер сразу. Для нажатия кнопки звонка, когда кэш устарел. */

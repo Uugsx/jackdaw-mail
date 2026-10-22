@@ -2,13 +2,23 @@
   <PersonPicture {person} />
   <vbox flex class="name-box">
     <hbox class="name">{$person.name}</hbox>
+    {#if peerStatus != "available"}
+      <hbox class="status" title={statusHint(peerStatus)}>
+        <StatusDot status={peerStatus} size="8px" />
+        <span>{statusLabel(peerStatus)}</span>
+      </hbox>
+    {/if}
   </vbox>
   <hbox class="actions">
     {#if canCall && canVideo}
       <RoundButton label={$t`Video call`} icon={VideoCallIcon} classes="secondary large"
         onClick={() => startVideoCall(callTarget)} />
     {/if}
-    {#if canCall}
+    {#if canCall && peerStatus == "dnd"}
+      <!-- Сервер всё равно отклонит звонок: объясняем заранее -->
+      <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
+        disabled={statusHint(peerStatus)} />
+    {:else if canCall}
       <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
         onClick={() => startAudioCall(callTarget)} />
     {:else if callUnavailableReason}
@@ -34,11 +44,14 @@
   import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { callTargetEmails } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import type { JackdawUserStatus } from "../../logic/Meet/Jackdaw/JackdawCallProtocol";
   import { jackdawCallUnavailableReason } from "../Shared/callUnavailable";
   import { appGlobal } from "../../logic/app";
   import { openChatRoomFromOtherApp } from "./open";
   import ChatIcon from "lucide-svelte/icons/message-square-text";
   import PersonPicture from "../Contacts/Person/PersonPicture.svelte";
+  import StatusDot from "./Status/StatusDot.svelte";
+  import { statusHint, statusLabel } from "./Status/statusLabels";
   import RoundButton from "../Shared/RoundButton.svelte";
   import VideoCallIcon from '../asset/icon/appBar/meet.svg?raw';
   import VoiceCallIcon from '../asset/icon/meet/callVoice.svg?raw';
@@ -58,6 +71,11 @@
   const callClient = getJackdawCallClient();
   /** Кнопки только когда звонок реально возможен; присутствие собеседника обновляется через `$callClient`. */
   $: canCall = $callClient && $callClient.presenceVersion >= 0 && canStartCall(callTarget);
+  /** Статус собеседника в Jackdaw: «занят» или «не беспокоить» видны в шапке */
+  let peerStatus: JackdawUserStatus = "available";
+  $: peerStatus = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group)
+    ? callTargetEmails(callTarget as Person | PersonUID).map(email => callClient.statusOf(email)).find(s => s != "available") ?? "available"
+    : "available";
   /** Видео — только через WhatsApp: звонки между пользователями Jackdaw голосовые */
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
@@ -100,6 +118,14 @@
   .name-box {
     font-weight: bold;
     margin: 15px;
+    gap: 4px;
+  }
+  .status {
+    align-items: center;
+    gap: 6px;
+    font-weight: normal;
+    font-size: 0.875em;
+    opacity: 0.85;
   }
   .actions {
     align-items: center;

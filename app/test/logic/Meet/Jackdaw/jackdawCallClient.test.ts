@@ -257,6 +257,41 @@ describe("клиент сигналинга", () => {
     expect(socket().last("hello").emailProofs).toEqual(["proof-1"]);
   });
 
+  test("статус «не беспокоить» уходит на сервер, сохраняется и сам снимается по сроку", () => {
+    connectOnline();
+    client.setMyStatus("dnd", 60);
+    expect(socket().last("status-set")).toMatchObject({ type: "status-set", status: "dnd", untilIn: 60 });
+    expect(client.myStatus).toBe("dnd");
+    expect(JSON.parse(storage.getItem("jackdaw.calls.status.v1")!).status).toBe("dnd");
+    timers.advance(61_000);
+    expect(client.myStatus).toBe("available");
+    expect(storage.getItem("jackdaw.calls.status.v1")).toBeNull();
+  });
+
+  test("сохранённый статус отправляется при входе, а статус с другого устройства применяется", () => {
+    storage.setItem("jackdaw.calls.status.v1", JSON.stringify({ status: "busy", until: null }));
+    client = makeClient();
+    client.start();
+    socket().open();
+    expect(socket().last("hello").status).toBe("busy");
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    socket().receive({ type: "status", status: "dnd", untilIn: 30 });
+    expect(client.myStatus).toBe("dnd");
+    expect(client.myStatusUntil).toBe(timers.now + 30_000);
+  });
+
+  test("статус собеседника берётся из справочника", () => {
+    connectOnline();
+    socket().receive({
+      type: "lookup-result", reachable: { "bob@example.com": true, "carol@example.com": true },
+      statuses: { "bob@example.com": "dnd", "carol@example.com": "weird" },
+    });
+    expect(client.statusOf("Bob@Example.com")).toBe("dnd");
+    expect(client.statusOf("carol@example.com")).toBe("available");
+    socket().receive({ type: "lookup-result", reachable: { "bob@example.com": false } });
+    expect(client.statusOf("bob@example.com")).toBe("available");
+  });
+
   test("без лицензии не подключается", () => {
     credential = null;
     client.start();

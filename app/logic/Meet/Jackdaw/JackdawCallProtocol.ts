@@ -15,12 +15,18 @@ export type JackdawCallEndReason =
   | "hangup"
   | "answered-elsewhere"
   | "connection-lost"
-  | "timeout";
+  | "timeout"
+  /** У собеседника включено «Не беспокоить» */
+  | "dnd";
 
 const END_REASONS: readonly JackdawCallEndReason[] = [
   "offline", "busy", "declined", "no-answer", "cancelled", "hangup",
-  "answered-elsewhere", "connection-lost", "timeout",
+  "answered-elsewhere", "connection-lost", "timeout", "dnd",
 ];
+
+/** Статус пользователя. «Занят» — звонки проходят, «Не беспокоить» — сервер их отклоняет. */
+export type JackdawUserStatus = "available" | "busy" | "dnd";
+export const USER_STATUSES: readonly JackdawUserStatus[] = ["available", "busy", "dnd"];
 
 /** ICE-кандидат WebRTC в том виде, в каком его пересылает сервер. */
 export interface JackdawIceCandidate {
@@ -55,7 +61,10 @@ export type JackdawServerMessage =
   /** Обратное подтверждение: письмо нужно отправить с адреса `email` на `address` */
   | { type: "verify-reverse-ready"; email: string; token: string; address: string; mailSubject: string; expiresIn: number }
   | { type: "verify-reverse-pending"; email: string; token: string }
-  | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean> }
+  /** `statuses` — только у собеседников в сети со статусом, отличным от «в сети» */
+  | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean>; statuses: Record<string, JackdawUserStatus> }
+  /** Свой статус, выбранный на этом или другом устройстве. `untilIn` — сколько секунд он ещё действует */
+  | { type: "status"; status: JackdawUserStatus; untilIn: number | null }
   | { type: "ringing"; callId: string }
   | { type: "incoming"; callId: string; from: string; fromName: string; to: string; video: boolean }
   /** Звонок принят: медиа идёт напрямую между клиентами (P2P). `iceServers` — null, если сервис их не задаёт. */
@@ -275,7 +284,19 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
           if (email) reachable[email] = value === true;
         }
       }
-      return { type: "lookup-result", requestId: optionalText(data.requestId), reachable };
+      let statuses: Record<string, JackdawUserStatus> = {};
+      if (data.statuses && typeof data.statuses == "object") {
+        for (let [key, value] of Object.entries(data.statuses)) {
+          let email = normalizeCallEmail(key);
+          if (email && USER_STATUSES.includes(value as JackdawUserStatus)) statuses[email] = value as JackdawUserStatus;
+        }
+      }
+      return { type: "lookup-result", requestId: optionalText(data.requestId), reachable, statuses };
+    }
+    case "status": {
+      if (!USER_STATUSES.includes(data.status)) return null;
+      let untilIn = typeof data.untilIn == "number" && Number.isFinite(data.untilIn) && data.untilIn >= 0 ? data.untilIn : null;
+      return { type: "status", status: data.status as JackdawUserStatus, untilIn };
     }
     case "ringing": {
       let id = callID(data.callId);
@@ -398,6 +419,8 @@ export function endReasonMessage(reason: JackdawCallEndReason, outgoing: boolean
       return gt`The contact is not online in Jackdaw Mail right now.`;
     case "busy":
       return gt`The contact is busy with another call.`;
+    case "dnd":
+      return outgoing ? gt`The contact asked not to be disturbed. Write them in the chat instead.` : null;
     case "declined":
       return outgoing ? gt`The contact declined the call.` : null;
     case "no-answer":
