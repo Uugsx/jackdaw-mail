@@ -116,8 +116,19 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           NODE_OPTIONS: '--max-old-space-size=32768'
-      - run: cd desktop; yarn run build:publish:prerelease:mac
-        if: github.event_name == 'push' || inputs.release_type == 'prerelease'
+      - if: github.event_name == 'push' || inputs.release_type == 'prerelease'
+        shell: bash
+        # GitHub иногда отвечает на список выпусков пустым массивом: electron-builder не находит
+        # выпуск от prepare, пытается создать его и падает с 422 already_exists. Повтор помогает,
+        # уже загруженные файлы electron-builder перезаписывает.
+        run: |
+          cd desktop
+          for attempt in 1 2 3 4; do
+            yarn run build:publish:prerelease:mac && exit 0
+            echo "::warning::Публикация, попытка $attempt не удалась, повторяю"
+            sleep 20
+          done
+          exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JACKDAW_GH_UPDATE_TOKEN: ${{ secrets.JACKDAW_GH_UPDATE_TOKEN }}
@@ -159,8 +170,19 @@ jobs:
           JACKDAW_GH_UPDATE_TOKEN: ${{ secrets.JACKDAW_GH_UPDATE_TOKEN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           NODE_OPTIONS: '--max-old-space-size=32768'
-      - run: cd desktop; yarn run build:publish:prerelease:win
-        if: github.event_name == 'push' || inputs.release_type == 'prerelease'
+      - if: github.event_name == 'push' || inputs.release_type == 'prerelease'
+        shell: bash
+        # GitHub иногда отвечает на список выпусков пустым массивом: electron-builder не находит
+        # выпуск от prepare, пытается создать его и падает с 422 already_exists. Повтор помогает,
+        # уже загруженные файлы electron-builder перезаписывает.
+        run: |
+          cd desktop
+          for attempt in 1 2 3 4; do
+            yarn run build:publish:prerelease:win && exit 0
+            echo "::warning::Публикация, попытка $attempt не удалась, повторяю"
+            sleep 20
+          done
+          exit 1
         env: *win_env
 
   carry-forward:
