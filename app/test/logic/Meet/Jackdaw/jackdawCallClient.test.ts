@@ -230,6 +230,25 @@ describe("клиент сигналинга", () => {
     expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "bob@example.com": "proof-bob" });
   });
 
+  test("подтверждение адреса коллеги, пришедшее в сети, не делает его своим", () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    socket().receive({ type: "verified", email: "alice@example.com", proof: "proof-alice" });
+    expect(client.verifiedEmails).toEqual(["bob@example.com"]);
+    expect(storage.getItem("jackdaw.calls.email-proofs.v1")).toBeNull();
+  });
+
+  test("подтверждение, начатое на этом устройстве, принимается и вне списка ящиков", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123 456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    expect(client.verifiedEmails).toEqual(["alias@example.com", "bob@example.com"]);
+    socket().receive({ type: "verified", email: "primary@example.com", proof: "proof-primary", requestedEmail: "bob@example.com" });
+    expect(client.verifiedEmails).toContain("primary@example.com");
+  });
+
   test("пока ящики неизвестны, сохранённые подтверждения не отбрасываются", () => {
     storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({ "alice@example.com": "proof-1" }));
     client.start();

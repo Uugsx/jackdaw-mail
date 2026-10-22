@@ -588,6 +588,8 @@ class Peer:
         # и чужой подтверждённый адрес делал коллегу «вами» в чате и звонках.
         # None — клиент не сообщил свои ящики (старая версия): чужие адреса ему не раздаются.
         self.mailbox_emails: set[str] | None = None
+        # Адреса, обратное подтверждение которых начато с этого соединения
+        self.reverse_requested: set[str] = set()
         # True после `CallHub.disconnected`: незаконченная обработка его сообщений не меняет состояние хаба
         self.gone = False
 
@@ -1016,6 +1018,8 @@ class CallHub:
         except ReverseVerificationError as error:
             raise CallError(error.code, error.message) from error
         peer.excluded_emails.discard(email)
+        if len(peer.reverse_requested) < MAX_EMAILS_PER_CONNECTION:
+            peer.reverse_requested.add(email)
         peer.send({"type": "verify-reverse-ready", "email": email, **ready})
 
     def _verify_reverse_check(self, peer: Peer, message: dict[str, Any]) -> None:
@@ -1042,8 +1046,14 @@ class CallHub:
             pending = self.reverse.complete(token, normalize_email(from_email))
         except (ReverseVerificationError, CallError):
             return False
+        # Только устройству, начавшему проверку, и устройствам, где подключён этот ящик:
+        # иначе адрес коллеги с той же лицензией регистрировался на нашем соединении
+        # («Это ваш собственный адрес»).
+        mailbox = {pending.email, pending.requested_email} - {""}
         for peer in list(self.peers_by_subject.get(pending.subject, ())):
-            if pending.email not in peer.excluded_emails:
+            if pending.email not in peer.excluded_emails and (
+                    mailbox & peer.reverse_requested
+                    or peer.mailbox_emails is not None and mailbox & peer.mailbox_emails):
                 self._deliver_proof(peer, pending.email, pending.proof, pending.requested_email)
         # Вызывается в цикле событий: запись в базу — в фоне, чтобы не держать звонки и чаты.
         self._spawn(self._remember_verified_proof(pending.subject, pending.proof))
