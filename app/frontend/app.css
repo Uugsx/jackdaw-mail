@@ -362,6 +362,9 @@ select {
   color: var(--leftbar-fg);
   font-size: 14px;
   border-bottom: 1px solid var(--input-line);
+  /* Без отступа текст на залитом фоне начинался от самого края и первая буква срезалась */
+  padding-block: 4px;
+  padding-inline-start: 8px;
 }
 select:focus {
   outline: none;
