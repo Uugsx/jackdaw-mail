@@ -51,6 +51,9 @@ export interface JackdawCallClientOptions {
   url: string | null;
   getCredential(): ProCallCredential | null;
   getDisplayName(): string;
+  /** Адреса почтовых ящиков и личностей в приложении на этом устройстве.
+   * Сервер раздаёт адреса с других устройств лицензии только из этого списка. */
+  getMailboxEmails?(): string[];
   createSocket?(url: string): CallSocket;
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
   onIncoming?(message: Extract<JackdawServerMessage, { type: "incoming" }>): void;
@@ -219,11 +222,16 @@ export class JackdawCallClient extends Observable {
     socket.onopen = () => {
       if (this.socket != socket) return;
       let excluded = this.readExcluded();
+      let mailboxes = this.mailboxEmails();
+      this.helloMailboxes = mailboxes;
       this.sendRaw({
         type: "hello",
         credential,
         name: this.options.getDisplayName(),
-        emailProofs: Object.values(this.readProofs()),
+        emailProofs: Object.entries(this.readProofs())
+          .filter(([email]) => !mailboxes || mailboxes.has(email))
+          .map(([, proof]) => proof),
+        ...(mailboxes ? { mailboxEmails: [...mailboxes] } : {}),
         ...(excluded.length ? { excludedEmails: excluded } : {}),
         activeCalls: [...this.calls.keys()],
       });
@@ -334,8 +342,8 @@ export class JackdawCallClient extends Observable {
         this.offlineSince = null;
         this.clearTimer(this.handshakeTimer);
         this.handshakeTimer = null;
-        this.verifiedEmails = message.emails;
-        this.forgetUnacceptedProofs(message.emails, message.proofs);
+        this.verifiedEmails = this.ownMailboxesOnly(message.emails);
+        this.forgetUnacceptedProofs(this.verifiedEmails, message.proofs);
         this.status = "online";
         this.reachable.clear();
         this.presenceVersion++;
@@ -613,6 +621,25 @@ export class JackdawCallClient extends Observable {
     if (Object.keys(kept).length != Object.keys(stored).length || Object.entries(kept).some(([email, proof]) => stored[email] != proof)) {
       this.writeProofs(kept);
     }
+  }
+
+  /** Ящики, о которых сообщили серверу при входе в этом соединении */
+  protected helloMailboxes: Set<string> | null = null;
+
+  /** null — ящики ещё не известны (аккаунты не загружены): тогда ничего не отбрасываем */
+  protected mailboxEmails(): Set<string> | null {
+    let emails = (this.options.getMailboxEmails?.() ?? [])
+      .map(normalizeCallEmail)
+      .filter((email): email is string => !!email);
+    return emails.length ? new Set(emails) : null;
+  }
+
+  /** Адрес, подтверждённый на устройстве коллеги с той же лицензией, — не наш:
+   * иначе коллега видел себя в нашем адресе («Это ваш собственный адрес»)
+   * и получал наши сообщения чата. Такие подтверждения здесь же забываем. */
+  protected ownMailboxesOnly(emails: string[]): string[] {
+    let mailboxes = this.helloMailboxes;
+    return mailboxes ? emails.filter(email => mailboxes.has(email)) : emails;
   }
 
   protected readExcluded(): string[] {

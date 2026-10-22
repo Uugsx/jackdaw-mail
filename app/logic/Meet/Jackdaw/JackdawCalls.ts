@@ -29,6 +29,16 @@ function storage(): Storage | null {
   }
 }
 
+/** Адреса ящиков и личностей в приложении: по ним сервер решает, какие адреса лицензии наши */
+export function myMailboxEmails(): string[] {
+  return appGlobal.emailAccounts.contents.flatMap(account => [
+    account.emailAddress,
+    ...account.identities.contents
+      .filter(identity => !identity.isCatchAll)
+      .map(identity => identity.emailAddress),
+  ]).filter(Boolean);
+}
+
 function myDisplayName(): string {
   return appGlobal.me?.name || appGlobal.emailAccounts.first?.realname || "";
 }
@@ -38,6 +48,7 @@ export function getJackdawCallClient(): JackdawCallClient {
     url: callServiceURL(BILLING_LICENSE_API_URL),
     getCredential: () => CALL_ENTITLEMENT_STATUSES.has(proEntitlement.value.status) ? getProCallCredential() : null,
     getDisplayName: myDisplayName,
+    getMailboxEmails: myMailboxEmails,
     storage: storage(),
     onIncoming: message => handleIncomingJackdawCall(message),
   });
