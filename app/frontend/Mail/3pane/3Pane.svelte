@@ -6,6 +6,9 @@
     bind:activeTab={$selectedSearchTab}
     slot="left" />
   <vbox flex class="mail-main" slot="right">
+    {#if $tasksViewOpen}
+      <TasksPage />
+    {:else}
     <MailToolbar
       {selectedAccount}
       {selectedFolder}
@@ -36,6 +39,7 @@
         </vbox>
       </SplitterBidirectional>
     </vbox>
+    {/if}
   </vbox>
 </Splitter>
 
@@ -58,6 +62,8 @@
   import { onMount } from "svelte";
   import { ensureAccountExpanded } from "../mailSidebarState";
   import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
+  import TasksPage from "../Tasks/TasksPage.svelte";
+  import { tasksViewOpen } from "../Tasks/tasksStore";
 
   export let horizontal: boolean = true;
   export let accounts: Collection<MailAccount>; /** in */
@@ -70,6 +76,14 @@
   let selectedFolders: ArrayColl<Folder>;
 
   $: folderMessages = selectedFolder?.messages;
+  // Выбор папки или письма (в том числе из списка задач) возвращает к почте
+  let lastFolder: Folder | null = null;
+  $: if (selectedFolder !== lastFolder) {
+    if (lastFolder) {
+      $tasksViewOpen = false;
+    }
+    lastFolder = selectedFolder;
+  }
   $: messages = searchMessages ?? folderMessages ?? new ArrayColl<EMail>();
   $: if (selectedAccount) {
     ensureAccountExpanded(selectedAccount);

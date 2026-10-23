@@ -1,7 +1,7 @@
 <button type="button" class="quick-folder" class:selected={selected}
   aria-pressed={selected}
   title={displayLabel}
-  on:click={() => dispatch("select", folder)}
+  on:click={() => { tasksViewOpen.set(false); dispatch("select", folder); }}
   on:contextmenu={contextMenu.onContextMenu}>
   <FolderIcon {folder} size="14px" />
   <span class="label">{displayLabel}</span>
@@ -45,6 +45,7 @@
 </ContextMenu>
 
 <script lang="ts">
+  import { tasksViewOpen } from "../Tasks/tasksStore";
   import { SpecialFolder, type Folder } from "../../../logic/Mail/Folder";
   import { specialFolderNames } from "../../../logic/Mail/Folder";
   import FolderIcon from "./FolderIcon.svelte";

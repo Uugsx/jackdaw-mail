@@ -11,6 +11,7 @@ import { EMailProcessorList, ProcessingStartOn } from "./EMailProcessor";
 import type { ExtraData } from "./ExtraData";
 import type { SMLData } from "./SML/SMLData";
 import type { FollowUpChoice } from "./FollowUp/FollowUpReminder";
+import { flagDaysForChoice, type DayString, type FlagDueChoice, type MailFlagState } from "./Tasks/ExchangeTask";
 import type { PublicKey } from "./Encryption/PublicKey";
 import { Event } from "../Calendar/Event";
 import { InvitationMessage, type iCalMethod } from "../Calendar/Invitation/InvitationStatus";
@@ -73,6 +74,14 @@ export class EMail extends Message {
   /** For composer/send only: «Напомнить, если не ответят». Not persisted. */
   @notifyChangedProperty
   followUpReminder: FollowUpChoice | null = null;
+  /** Флажок «К исполнению»: начало и срок, день `YYYY-MM-DD`. null — без срока. */
+  @notifyChangedProperty
+  flagStartDay: DayString | null = null;
+  @notifyChangedProperty
+  flagDueDay: DayString | null = null;
+  /** Флажок отмечен выполненным (Exchange FlagStatus=Complete). `isStarred` тогда false. */
+  @notifyChangedProperty
+  flagCompletedAt: Date | null = null;
   /** Request a read receipt when sending (OWA/EWS + MDN header). */
   @notifyChangedProperty
   requestReadReceipt = false;
@@ -285,6 +294,67 @@ export class EMail extends Message {
 
   async markImportant(isImportant = true) {
     this.isImportant = isImportant;
+  }
+
+  /** Простой флажок без срока: снятие убирает срок, установка — отметку о выполнении */
+  async markStarred(starred = true) {
+    this.flagStartDay = null;
+    this.flagDueDay = null;
+    this.flagCompletedAt = null;
+    await super.markStarred(starred);
+  }
+
+  get flagState(): MailFlagState {
+    return {
+      flagged: this.isStarred,
+      startDay: this.flagStartDay,
+      dueDay: this.flagDueDay,
+      completedAt: this.flagCompletedAt,
+    };
+  }
+
+  /** Только в памяти, без сервера и базы */
+  applyFlagState(flag: MailFlagState) {
+    this.isStarred = flag.flagged;
+    this.flagStartDay = flag.flagged ? flag.startDay : null;
+    this.flagDueDay = flag.flagged ? flag.dueDay : null;
+    this.flagCompletedAt = flag.flagged ? null : flag.completedAt;
+  }
+
+  /** Ставит флажок со сроком, как «К исполнению» в Outlook */
+  async setFlagDue(choice: FlagDueChoice, now = new Date()) {
+    let { startDay, dueDay } = flagDaysForChoice(choice, now);
+    await this.updateFlag({ flagged: true, startDay, dueDay, completedAt: null });
+  }
+
+  async markFlagComplete(now = new Date()) {
+    await this.updateFlag({ flagged: false, startDay: null, dueDay: null, completedAt: now });
+  }
+
+  async clearFlag() {
+    await this.updateFlag({ flagged: false, startDay: null, dueDay: null, completedAt: null });
+  }
+
+  /** Меняет флажок сразу в списке, затем на сервере; при ошибке сервера возвращает прежний */
+  async updateFlag(flag: MailFlagState) {
+    let previous = this.flagState;
+    this.applyFlagState(flag);
+    try {
+      await this.pushFlagState(flag);
+    } catch (ex) {
+      this.applyFlagState(previous);
+      throw ex;
+    }
+    // Базовый pushFlagState() идёт через markStarred(), а тот снимает срок
+    this.applyFlagState(flag);
+    if (this.dbID) {
+      await this.saveWritablePropsLocally().catch(() => null);
+    }
+  }
+
+  /** Протоколы без сроков флажка (IMAP и др.) хранят срок только у себя, на сервер уходит сам флажок */
+  protected async pushFlagState(flag: MailFlagState) {
+    await this.markStarred(flag.flagged);
   }
 
   async markDraft(isDraft = true) {

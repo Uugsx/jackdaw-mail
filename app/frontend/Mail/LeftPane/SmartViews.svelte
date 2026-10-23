@@ -55,6 +55,21 @@
         {#if $awaitingReplyExpanded.value}
           <AwaitingReplyList />
         {/if}
+      {:else if view.id == "tasks"}
+        <!-- Не фильтр папки, а страница задач Exchange и писем с флажком всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$tasksViewOpen}
+          title={view.label()}
+          aria-pressed={$tasksViewOpen}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => $tasksViewOpen = !$tasksViewOpen}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if dueTaskCount}
+            <span class="count" class:overdue={overdueTaskCount > 0}>{dueTaskCount}</span>
+          {/if}
+        </button>
       {:else}
         <button type="button" class="smart-view"
           class:active={isActive(view.id, $quickSearch)}
@@ -109,6 +124,8 @@
   import HourglassIcon from "lucide-svelte/icons/hourglass";
   import AwaitingReplyList from "../FollowUp/AwaitingReplyList.svelte";
   import { followUpSnapshot } from "../FollowUp/followUpReminders";
+  import { tasksState, tasksViewOpen, groupOpenItems } from "../Tasks/tasksStore";
+  import ListChecksIcon from "lucide-svelte/icons/list-checks";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { onMount } from "svelte";
   import CheckIcon from "lucide-svelte/icons/check";
@@ -153,6 +170,7 @@
     { id: "starred", label: () => $t`Flagged`, icon: FlagIcon },
     { id: "attachments", label: () => $t`Attachments`, icon: AttachmentIcon },
     { id: "awaiting-reply", label: () => $t`Waiting for a reply`, icon: HourglassIcon },
+    { id: "tasks", label: () => $t`Tasks`, icon: ListChecksIcon },
   ];
 
   const awaitingReplyExpanded = getLocalStorage("mail.smart-views.awaiting-reply.expanded", false);
@@ -163,6 +181,11 @@
   });
   $: awaitingOverdueCount = $followUpSnapshot.reminders
     .filter(reminder => reminder.dueAt.getTime() <= minuteTick).length;
+  // Сроки «сегодня» и просроченные — после первого открытия страницы задач
+  $: dueTaskSections = groupOpenItems($tasksState.items, new Date(minuteTick))
+    .filter(section => section.group == "overdue" || section.group == "today");
+  $: dueTaskCount = dueTaskSections.reduce((sum, section) => sum + section.items.length, 0);
+  $: overdueTaskCount = dueTaskSections.find(section => section.group == "overdue")?.items.length ?? 0;
 
   let contextMenu: ContextMenu;
   let contextViewId: SmartViewId | null = null;
@@ -250,6 +273,7 @@
     if (!folder) {
       return;
     }
+    $tasksViewOpen = false;
     let generation = ++searchGeneration;
     let currentFolder = folder;
     if (isActive(id, $quickSearch)) {
