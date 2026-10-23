@@ -1,6 +1,13 @@
 <vbox class="tags-rule-actions" flex>
   <h2>{$t`Rules *=> Criteria after which emails should be sorted`}</h2>
   <hbox class="subtitle">{$t`Perform routine actions once messages arrive`}</hbox>
+  {#if account instanceof ExchangeMailAccount && account.canServerRules}
+    <hbox class="server-hint">
+      <span>{$t`These rules work only while Jackdaw Mail is running. Server rules work even when the app is closed.`}</span>
+      <Button plain label={$t`Server rules`}
+        onClick={() => openSettingsCategoryForAccount(account, "mail-server-rules")} />
+    </hbox>
+  {/if}
 
   <Splitter name="settings-mail-folders" initialRightRatio={4}>
     <FastList items={rules} bind:selectedItem={rule} slot="left">
@@ -80,6 +87,8 @@
 
 <script lang="ts">
   import { MailAccount } from "../../../logic/Mail/MailAccount";
+  import { ExchangeMailAccount } from "../../../logic/Mail/EWS/ExchangeMailAccount";
+  import { openSettingsCategoryForAccount } from "../Window/CategoriesUtils";
   import { FilterRuleAction } from "../../../logic/Mail/FilterRules/FilterRuleAction";
   import { FilterMoment } from "../../../logic/Mail/FilterRules/FilterMoments";
   import SearchCriteria from "../../Mail/Search/SearchCriteria.svelte";
@@ -151,6 +160,23 @@
   .subtitle {
     margin-block-end: 24px;
     margin-inline-start: 1px;
+  }
+  .server-hint {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-block: -12px 20px;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--main-fg) 72%, transparent);
+  }
+  .server-hint :global(button) {
+    padding: 0;
+    color: var(--link-fg);
+    font-size: 12px;
+    text-decoration: underline;
+  }
+  .server-hint :global(button:hover) {
+    color: var(--link-hover-fg);
   }
   .header {
   }

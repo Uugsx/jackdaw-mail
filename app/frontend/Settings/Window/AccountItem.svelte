@@ -35,6 +35,9 @@
     if (category.id == "mail-out-of-office") {
       return account instanceof ExchangeMailAccount && account.canOutOfOffice;
     }
+    if (category.id == "mail-server-rules") {
+      return account instanceof ExchangeMailAccount && account.canServerRules;
+    }
     return true;
   }
 
