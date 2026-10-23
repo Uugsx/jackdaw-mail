@@ -38,7 +38,6 @@
   import {
     getResponseReminderStateSnapshot,
     getResponseReminderSlaStartAt,
-    isResponseReminderRequestSuppressed,
     responseReminderMailEpoch,
   } from "../Mail/ResponseReminderWatcher";
   import {
@@ -202,25 +201,18 @@
         return;
       }
       const reminderState = getResponseReminderStateSnapshot();
-      requests = nextRequests
-        .filter(
-          (request) =>
-            !isResponseReminderRequestSuppressed(
-              request,
-              excludedCategoryNames,
-              reminderState,
-            ),
-        )
-        .map((request) => ({
-          ...request,
-          slaStartedAt: getResponseReminderSlaStartAt(
-            request,
-            refreshNow,
-            workingHours,
-            excludedCategoryNames,
-            reminderState,
-          ),
-        }));
+      // Прочитано / непрочитано не снимает письмо с контроля: из очереди
+      // его убирают только ответ, перенос в другую папку или удаление.
+      requests = nextRequests.map((request) => ({
+        ...request,
+        slaStartedAt: getResponseReminderSlaStartAt(
+          request,
+          refreshNow,
+          workingHours,
+          excludedCategoryNames,
+          reminderState,
+        ),
+      }));
       lastUpdatedAt = new Date();
     } catch (ex) {
       if (requestId === refreshRequestId) {

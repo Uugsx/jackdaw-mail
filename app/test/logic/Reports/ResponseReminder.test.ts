@@ -13,7 +13,6 @@ import {
   isResponseRequestExcluded,
   shouldNotifyResponseReminderEvent,
   isResponseRequestTakenInWork,
-  isResponseRequestSuppressedUntilTakenInWork,
   type PendingResponseRequest,
 } from "../../../logic/Reports/ResponseReminder";
 import type { WorkingHoursSchedule } from "../../../logic/Reports/WorkingHours";
@@ -104,50 +103,29 @@ describe("ResponseReminder", () => {
     ).toBe(false);
   });
 
-  test("снимает письмо с SLA после возврата в непрочитанное состояние", () => {
-    const trackedRequest = {
-      ...request,
-      categoryNames: [],
-      isRead: false,
-    };
-    const takenInWorkState = {
-      receivedAt: request.receivedAt.getTime(),
-      firedIntervalsMinutes: [10],
-      startedAt: new Date("2026-09-09T08:55:00.000Z").getTime(),
-      startedAtSource: "taken-in-work" as const,
-      takenInWork: true,
-      overdue: false,
+  test("просрочка после прочтения и возврата в непрочитанное идёт от поступления", () => {
+    const now = new Date("2026-09-09T10:00:00.000Z");
+    const unreadAgain = { ...request, categoryNames: [], isRead: false };
+    const readOnce = { ...unreadAgain, isRead: true };
+    // Круглосуточный график: результат не зависит от часового пояса машины.
+    const allDay: WorkingHoursSchedule = {
+      days: Array.from({ length: 7 }, () => ({
+        enabled: true,
+        startMinutes: 0,
+        endMinutes: 24 * 60,
+      })),
     };
 
-    expect(
-      isResponseRequestSuppressedUntilTakenInWork(
-        trackedRequest,
-        takenInWorkState,
-      ),
-    ).toBe(true);
-    expect(
-      isResponseRequestSuppressedUntilTakenInWork(
-        { ...trackedRequest, isRead: true },
-        takenInWorkState,
-      ),
-    ).toBe(false);
-    expect(
-      isResponseRequestSuppressedUntilTakenInWork(
-        {
-          ...trackedRequest,
-          categoryNames: ["Никита Галкин"],
-        },
-        takenInWorkState,
-      ),
-    ).toBe(false);
-    expect(
-      isResponseRequestSuppressedUntilTakenInWork(trackedRequest, {
-        receivedAt: request.receivedAt.getTime(),
-        firedIntervalsMinutes: [],
-        takenInWork: false,
-        suppressedUntilTakenInWork: true,
-      }),
-    ).toBe(true);
+    // Возврат в непрочитанное — не взятие в работу, но и не снятие с контроля.
+    expect(isResponseRequestTakenInWork(readOnce)).toBe(true);
+    expect(isResponseRequestTakenInWork(unreadAgain)).toBe(false);
+    for (const current of [unreadAgain, readOnce]) {
+      expect(getResponseSlaStartAt(current, now, allDay)).toEqual(receivedAt);
+      const progress = getResponseSlaProgress(current, 30, now, allDay);
+      expect(progress.status).toBe("over-target");
+      expect(progress.elapsedSeconds).toBe(60 * 60);
+      expect(progress.overdueSeconds).toBe(30 * 60);
+    }
   });
 
   test("сигналит только при переходе состояния и не повторяет его", () => {
