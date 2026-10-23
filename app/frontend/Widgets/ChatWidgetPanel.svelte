@@ -3,7 +3,7 @@
 <vbox flex class="chat-widget">
   {#if room}
     <hbox class="room-bar">
-      <RoundButton label={$t`All chats`} icon={BackIcon} iconSize="16px" padding="4px" border={false} classes="plain"
+      <RoundButton label={$t`All chats`} icon={BackIcon} iconSize="16px" padding="4px" border={false} classes="plain back"
         onClick={() => openRoom(null)} />
       <vbox flex class="room-title">
         <span class="name" title={$room.name}>{$room.name}</span>
@@ -215,6 +215,10 @@
 </script>
 
 <style>
+  /* «Назад» в арабском и иврите указывает вправо */
+  :global([dir="rtl"]) .room-bar :global(.back svg) {
+    transform: scaleX(-1);
+  }
   .chat-widget {
     min-height: 0;
     min-width: 0;

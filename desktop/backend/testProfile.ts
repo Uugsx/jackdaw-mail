@@ -95,7 +95,7 @@ export function installTestProfileGuards(): void {
   shell.openExternal = async () => undefined;
   // Диалог поверх экрана прервал бы работу пользователя: отвечаем «Отмена» и пишем в журнал.
   let cancelResponse = (options: Electron.MessageBoxOptions) => {
-    console.warn("Test profile: dialog skipped:", options?.message);
+    console.warn("Test profile: dialog skipped:", options?.message, options?.buttons?.join(" | ") ?? "");
     return options?.cancelId ?? 0;
   };
   dialog.showMessageBox = (async (...args: any[]) =>

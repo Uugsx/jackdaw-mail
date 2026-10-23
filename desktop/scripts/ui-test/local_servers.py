@@ -59,6 +59,35 @@ def prepare(data_dir: Path) -> str:
     return base64.urlsafe_b64encode(public_raw).decode().rstrip("=")
 
 
+# Настоящие файлы с CDN KLIPY (из примеров docs.klipy.com): выбор GIF их показывает и скачивает.
+FAKE_GIF_URLS = [
+    "https://static.klipy.com/ii/925f17378dd1893b674a723c07535afe/1c/24/Oizp49sT.gif",
+    "https://static.klipy.com/ii/f87f46a2c5aeaeed4c68910815f73eaf/af/77/35MgTkW5.gif",
+    "https://static.klipy.com/ii/ce286d05b8e1a47cd4f32b0e1b6dec0e/a6/f3/SEmLt8aA.gif",
+    "https://static.klipy.com/ii/e293a233a303a98e471f78d04e13a1b0/a5/fd/NnGoLmO8.gif",
+    "https://static.klipy.com/ii/935d7ab9d8c6202580a668421940ec81/14/af/8GCrVAB7.gif",
+    "https://static.klipy.com/ii/935d7ab9d8c6202580a668421940ec81/14/af/um0L4dFH.gif",
+]
+
+
+def install_fake_gifs() -> None:
+    """JACKDAW_UI_TEST_FAKE_GIFS=1: поиск GIF без ключа KLIPY. Подменяется только запрос к KLIPY —
+    разбор ответа, кеш и лимиты в gifs.py работают как на сервере."""
+    import urllib.parse
+    import gifs
+
+    def fake_fetch(url: str) -> dict:
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("q", ["trending"])[0]
+        items = [{"id": f"fake{index}", "type": "gif", "title": f"{query} {index + 1}",
+                  "file": {"sm": {"gif": {"url": gif_url, "width": 220, "height": 160}}}}
+                 for index, gif_url in enumerate(FAKE_GIF_URLS)]
+        if query == "nothing":
+            items = []
+        return {"result": True, "data": {"data": items, "has_next": False}}
+
+    gifs.build_gifs_from_environment = lambda: gifs.GifService("ui-test-fake-key", fetch=fake_fetch)
+
+
 def main() -> None:
     data_dir = Path(sys.argv[1]).resolve()
     public_key = prepare(data_dir)
@@ -73,6 +102,8 @@ def main() -> None:
             codes.write(json.dumps({"email": email, "code": code}) + "\n")
 
     calls.Mailer.send_code = write_code
+    if os.environ.get("JACKDAW_UI_TEST_FAKE_GIFS") == "1":
+        install_fake_gifs()
 
     config = license_app.Configuration()
     store = license_app.LicenseStore(config.database_path)
