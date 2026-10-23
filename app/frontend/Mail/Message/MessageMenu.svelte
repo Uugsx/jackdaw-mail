@@ -112,6 +112,9 @@
     {/each}
   </SubMenu>
 {/if}
+<SubMenu label={$t`Follow up`} icon={MailFlagIcon}>
+  <FlagMenuItems {message} messages={flagTargets} />
+</SubMenu>
 {#if canFollowUpMessage(message)}
   <SubMenu label={$t`Remind me if nobody replies`} icon={BellRingIcon}>
     <FollowUpMenuItems
@@ -180,6 +183,8 @@ import { emailLink } from "../../../logic/Chat/Jackdaw/chatLinks";
 import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
   import SubMenu from "../../Shared/Menu/SubMenu.svelte";
+  import FlagMenuItems from "../Tasks/FlagMenuItems.svelte";
+  import MailFlagIcon from "lucide-svelte/icons/flag";
   import ReplyIcon from "lucide-svelte/icons/reply";
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
   import NewAllIcon from "lucide-svelte/icons/plus";
@@ -240,6 +245,12 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
     replyAllUnsub = subscribeCanReplyAll(message, () => replyAllRev++);
   }
   $: canReplyAllMenu = (replyAllRev, computeCanReplyAll(message));
+  $: flagTargets = targetsAt($selectedMessages, message);
+
+  /** Параметры — зависимости для пересчёта выше */
+  function targetsAt(_selection: unknown, _message: EMail): EMail[] {
+    return actionTargets();
+  }
 
   function actionTargets(): EMail[] {
     return ($selectedMessages?.hasItems && message && $selectedMessages.contents.some(target => messagesRepresentSameMail(target, message))

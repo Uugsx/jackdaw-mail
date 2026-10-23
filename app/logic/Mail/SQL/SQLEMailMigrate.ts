@@ -223,3 +223,36 @@ export const rollbackFollowUpReminderTable = sql`
   DROP INDEX IF EXISTS index_followUpReminder_status_dueAt;
   DROP TABLE IF EXISTS "followUpReminder";
 `;
+
+/**
+ * Задачи Exchange (папка «Задачи»). Отдельная таблица без изменения `email`.
+ * Сроки — день `YYYY-MM-DD` без времени, остальное время — unixtime в секундах.
+ */
+export const createExchangeTaskTable = sql`
+  CREATE TABLE IF NOT EXISTS "exchangeTask" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    -- ItemId на сервере
+    "itemID" TEXT not null,
+    "changeKey" TEXT default null,
+    "subject" TEXT not null default '',
+    "notes" TEXT not null default '',
+    "startDay" TEXT default null,
+    "dueDay" TEXT default null,
+    "completedAt" INTEGER default null,
+    -- 'Low' | 'Normal' | 'High'
+    "importance" TEXT not null default 'Normal',
+    -- 'NotStarted' | 'InProgress' | 'Completed' | 'WaitingOnOthers' | 'Deferred'
+    "status" TEXT not null default 'NotStarted',
+    "lastModified" INTEGER default null,
+    UNIQUE("accountID", "itemID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+`;
+
+/** Откат createExchangeTaskTable для инструментов обслуживания базы. */
+export const rollbackExchangeTaskTable = sql`
+  DROP TABLE IF EXISTS "exchangeTask";
+`;

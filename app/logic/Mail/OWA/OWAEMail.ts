@@ -1,4 +1,6 @@
 import { ExchangeEMail, type EMailFlag, EMailFlagPidTag, EMailFlagTimePidTag, IconIndex, IconIndexPidTag } from "../EWS/ExchangeEMail";
+import { owaSetMailFlagRequest, parseExchangeFlag } from "../Tasks/ExchangeTaskRequests";
+import type { MailFlagState } from "../Tasks/ExchangeTask";
 import type { OWAFolder } from "./OWAFolder";
 import { SpecialFolder } from "../Folder";
 import { DeleteStrategy } from "../MailAccount";
@@ -186,7 +188,10 @@ export class OWAEMail extends ExchangeEMail {
         Date.now() - this.readStateCommittedAt < OWAEMail.kReadStateGuardMs) {
       isRead = this.readStateCommittedValue;
     }
-    let isStarred = "Flag" in json ? propertyValue(json.Flag)?.FlagStatus == "Flagged" : this.isStarred;
+    let flag = "Flag" in json ? parseExchangeFlag(propertyValue(json.Flag)) : this.flagState;
+    let isStarred = flag.flagged;
+    let flagDatesChanged = this.flagStartDay != flag.startDay || this.flagDueDay != flag.dueDay ||
+      this.flagCompletedAt?.getTime() != flag.completedAt?.getTime();
     let isDraft = "IsDraft" in json ? sanitize.boolean(propertyValue(json.IsDraft), this.isDraft) : this.isDraft;
     let tagNames: string[];
     if ("Categories" in json) {
@@ -227,13 +232,13 @@ export class OWAEMail extends ExchangeEMail {
     let changed = this.isRead != isRead || this.isReplied != isReplied ||
       this.isForwarded != isForwarded || this.isImportant != isImportant ||
       this.isStarred != isStarred || this.isDraft != isDraft ||
-      tagsChanged || datesChanged || attachmentsFlagChanged || lastVerbAtChanged;
+      tagsChanged || datesChanged || attachmentsFlagChanged || lastVerbAtChanged || flagDatesChanged;
     this.isRead = isRead;
     this.isReplied = isReplied;
     this.isForwarded = isForwarded;
     this.lastVerbAt = lastVerbAt;
     this.isImportant = isImportant;
-    this.isStarred = isStarred;
+    this.applyFlagState(flag);
     // can't work out how to find junk status
     this.isDraft = isDraft;
     if (tagsChanged) {
@@ -321,6 +326,14 @@ export class OWAEMail extends ExchangeEMail {
     }, "item:Flag");
     let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
     await this.folder.account.callOWA(request, mailbox);
+  }
+
+  protected async pushFlagState(flag: MailFlagState) {
+    await this.saveWritablePropsLocally().catch(() => null);
+    await this.withItemIdRetry(async () => {
+      let mailbox = this.folder.account.isDependentAccount ? this.folder.account.username : undefined;
+      await this.folder.account.callOWA(owaSetMailFlagRequest(this.itemID, flag), mailbox);
+    });
   }
 
   async updateTags() {

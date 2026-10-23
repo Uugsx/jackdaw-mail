@@ -1,4 +1,6 @@
 import { ExchangeEMail, EMailFlag, EMailFlagPidTag, EMailFlagTimePidTag, IconIndex, IconIndexPidTag } from "./ExchangeEMail";
+import { ewsSetMailFlagRequest, parseExchangeFlag } from "../Tasks/ExchangeTaskRequests";
+import type { MailFlagState } from "../Tasks/ExchangeTask";
 import { type EWSFolder, getEWSItem } from "./EWSFolder";
 import { SpecialFolder } from "../Folder";
 import { DeleteStrategy } from "../MailAccount";
@@ -125,7 +127,7 @@ export class EWSEMail extends ExchangeEMail {
     this.isForwarded = xmljs.ExtendedProperty?.Value == IconIndex.Forwarded;
     // Not `=`: The sender's `Importance:` header is not in the sync response
     this.isImportant ||= xmljs.Importance == "High";
-    this.isStarred = xmljs.Flag?.FlagStatus == "Flagged";
+    this.applyFlagState(parseExchangeFlag(xmljs.Flag));
     // can't work out how to find junk status
     this.isDraft = sanitize.boolean(xmljs.IsDraft, false);
     this.tags.replaceAll(ensureArray(xmljs.Categories?.String).map(name => getTagByName(sanitize.string(name))));
@@ -156,6 +158,10 @@ export class EWSEMail extends ExchangeEMail {
     }, "item:Flag");
     await this.folder.account.callEWS(request);
     await super.markStarred(starred);
+  }
+
+  protected async pushFlagState(flag: MailFlagState) {
+    await this.folder.account.callEWS(ewsSetMailFlagRequest(this.itemID, flag));
   }
 
   async markSpam(spam = true) {

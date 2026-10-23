@@ -112,10 +112,10 @@ async function sentCopy(messageID = "<sent-1@example.com>", folderID = 12, id = 
 }
 
 describe("миграция", () => {
-  test("десятая миграция — в конце списка, выпущенные не сдвинуты", () => {
+  test("десятая миграция — на своём месте, выпущенные не сдвинуты", () => {
     expect(mailDatabaseMigrations.indexOf(dedupeEMailsWithoutPID)).toBe(8);
     expect(mailDatabaseMigrations.indexOf(createFollowUpReminderTable)).toBe(9);
-    expect(mailDatabaseMigrations.at(-1)).toBe(createFollowUpReminderTable);
+    expect(mailDatabaseMigrations.at(9)).toBe(createFollowUpReminderTable);
   });
 
   test("база на user_version 9 получает таблицу, письма не трогаются; откат удаляет таблицу", async () => {
@@ -127,7 +127,7 @@ describe("миграция", () => {
       INSERT INTO email (id, folderID, messageID, dateSent, dateReceived, subject) VALUES (1, 1, '<m>', 1, 1, 'Hi');
     `);
     expect(await legacy.pragma("user_version", { simple: true })).toBe(9);
-    await legacy.migrate(...mailDatabaseMigrations);
+    await legacy.migrate(...mailDatabaseMigrations.slice(0, 10));
     expect(await legacy.pragma("user_version", { simple: true })).toBe(10);
     expect(await legacy.all(sql`SELECT id, subject FROM email`)).toEqual([{ id: 1, subject: "Hi" }]);
     expect(await legacy.get(sql`
