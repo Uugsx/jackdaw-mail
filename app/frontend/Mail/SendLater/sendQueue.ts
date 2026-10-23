@@ -364,6 +364,7 @@ export async function startSendQueue(): Promise<void> {
   }
   started = true;
   try {
+    await waitForBackend();
     await recoverInterruptedSends();
   } catch (ex) {
     // Базы нет (веб-версия) — очереди тоже нет, отправка идёт сразу
@@ -492,6 +493,7 @@ async function sendItem(queueID: string, force: boolean): Promise<void> {
 
 export async function refreshScheduledSends(): Promise<void> {
   try {
+    await waitForBackend();
     let items = sortScheduledSends(await listScheduledSends());
     scheduledSends.set({ loaded: true, error: null, items });
   } catch (ex) {
@@ -508,6 +510,21 @@ export function scheduledSendErrorText(item: ScheduledSend): string | null {
   return item.lastError == kInterruptedError
     ? gt`Sending was interrupted when the app closed. Check Sent before sending again.`
     : item.lastError;
+}
+
+/** Связь с backend (и mail.db) после запуска появляется не сразу */
+const kBackendWaitMs = 60_000;
+const kBackendPollMs = 250;
+
+/**
+ * Ждёт backend, не дольше минуты. Список «Запланированные», раскрытый
+ * с прошлого запуска, читает базу раньше, чем закончится вход в ящики.
+ */
+async function waitForBackend(): Promise<void> {
+  let deadline = Date.now() + kBackendWaitMs;
+  while (!appGlobal.remoteApp && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, kBackendPollMs));
+  }
 }
 
 // ---------- Полоса внизу окна ----------

@@ -23,7 +23,7 @@ vi.mock("../../../../logic/Mail/SQL/SQLDatabase", async importOriginal => ({
   getDatabase: async () => mocks.db,
 }));
 vi.mock("../../../../logic/app", () => ({
-  appGlobal: { get emailAccounts() { return mocks.accounts; } },
+  appGlobal: { remoteApp: {}, get emailAccounts() { return mocks.accounts; } },
 }));
 vi.mock("../../../../frontend/Mail/open", () => ({
   openComposer: mocks.openComposer,
