@@ -253,9 +253,14 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 4px;
+    min-width: 0;
+    max-width: 100%;
   }
+  /* Подпись кнопки переносится, только если не помещается даже в отдельной
+   * строке (узкая область письма), а не вылезает за край плашки. */
   .translate-bar :global(button) {
-    white-space: nowrap;
+    max-width: 100%;
+    text-align: start;
     padding-block: 3px;
   }
   .language {
