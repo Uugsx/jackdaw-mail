@@ -8,6 +8,7 @@ import { OWAFolder } from "./OWAFolder";
 import type { OWAEMail } from "./OWAEMail";
 import { owaCategoriesPresent } from "./OWAEMail";
 import { OWAError } from "./OWAError";
+import { checkInboxRulesResponse, owaGetInboxRulesRequest, owaUpdateInboxRulesRequest, parseInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "../EWS/InboxRules";
 import { checkOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
 import type { OWANotifications } from "./Notification/OWANotifications";
 import { OWAExchangeNotifications } from "./Notification/OWAExchangeNotifications";
@@ -2015,6 +2016,21 @@ export class OWAAccount extends ExchangeMailAccount {
   protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
     let response = await this.callOWA(owaSetOutOfOfficeRequest(this.emailAddress, settings));
     checkOutOfOfficeResponse(response);
+  }
+
+  get canServerRules(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  async loadInboxRules(): Promise<InboxRuleList> {
+    let response = await this.callOWA(owaGetInboxRulesRequest());
+    checkInboxRulesResponse(response);
+    return parseInboxRulesResponse(response);
+  }
+
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    let response = await this.callOWA(owaUpdateInboxRulesRequest(operations, removeOutlookRuleBlob));
+    checkInboxRulesResponse(response);
   }
 
   async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {

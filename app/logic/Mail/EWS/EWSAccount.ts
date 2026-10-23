@@ -9,6 +9,7 @@ import { EWSCreateItemRequest } from "./Request/EWSCreateItemRequest";
 import type { EWSDeleteItemRequest } from "./Request/EWSDeleteItemRequest";
 import type { EWSUpdateItemRequest } from "./Request/EWSUpdateItemRequest";
 import { EWSError, EWSItemError } from "./EWSError";
+import { checkInboxRulesResponse, ewsGetInboxRulesRequest, ewsUpdateInboxRulesRequest, parseInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "./InboxRules";
 import { checkOutOfOfficeResponse, ewsGetOutOfOfficeRequest, ewsSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "./OutOfOffice";
 import type { EWSAddressbook } from "../../Contacts/EWS/EWSAddressbook";
 import type { EWSCalendar } from "../../Calendar/EWS/EWSCalendar";
@@ -277,6 +278,21 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     checkOutOfOfficeResponse(response);
   }
 
+  get canServerRules(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  async loadInboxRules(): Promise<InboxRuleList> {
+    let response = await this.callEWS(ewsGetInboxRulesRequest());
+    checkInboxRulesResponse(response);
+    return parseInboxRulesResponse(response);
+  }
+
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    let response = await this.callEWS(ewsUpdateInboxRulesRequest(operations, removeOutlookRuleBlob));
+    checkInboxRulesResponse(response);
+  }
+
   request2XML(aRequest: JsonRequest): string {
     let xml = document.implementation.createDocument("http://schemas.xmlsoap.org/soap/envelope/", "s:Envelope");
     xml.documentElement.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:s", "http://schemas.xmlsoap.org/soap/envelope/");
@@ -310,6 +326,22 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     let delegate = responseXML.querySelector("GetDelegateResponse");
     if (delegate?.getAttribute("ResponseClass") == "Success") {
       return [...responseXML.querySelectorAll("DelegateUser")].map(user => XML2JSON(user));
+    }
+    // Правила входящих отвечают своим элементом, ResponseClass прямо на нём
+    let inboxRules = responseXML.querySelector("GetInboxRulesResponse, UpdateInboxRulesResponse");
+    if (inboxRules) {
+      let json: any = XML2JSON(inboxRules);
+      if (json.ResponseClass == "Error") {
+        let error = new EWSItemError(json, aRequest);
+        try {
+          checkInboxRulesResponse(json);
+        } catch (ex) {
+          // С подробностями из RuleOperationErrors, например «папка не найдена»
+          error.message = ex.message;
+        }
+        throw error;
+      }
+      return json;
     }
     // Автоответ отвечает своим элементом, без ResponseMessages
     let outOfOffice = responseXML.querySelector("GetUserOofSettingsResponse, SetUserOofSettingsResponse");

@@ -9,6 +9,7 @@ import { ArrayColl, Collection } from "svelte-collections";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { NotSupported } from "../../util/util";
 import type { OutOfOfficeSettings } from "./OutOfOffice";
+import type { InboxRuleList, InboxRuleOperation } from "./InboxRules";
 
 export class ExchangeMailAccount extends MailAccount {
   readonly port: number = 443;
@@ -55,6 +56,24 @@ export class ExchangeMailAccount extends MailAccount {
 
   protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
     throw new NotSupported("Out of Office");
+  }
+
+  /** Сервер хранит правила входящих (Inbox Rules) для этого ящика */
+  get canServerRules(): boolean {
+    return false;
+  }
+
+  /** Читает серверные правила входящих, по порядку выполнения */
+  async loadInboxRules(): Promise<InboxRuleList> {
+    throw new NotSupported("Inbox rules");
+  }
+
+  /**
+   * Создаёт, меняет и удаляет серверные правила.
+   * @param removeOutlookRuleBlob Удалить клиентские правила Outlook — только с согласия пользователя
+   */
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    throw new NotSupported("Inbox rules");
   }
 
   /** Запоминает адреса ящика от сервера. @returns true, если список изменился */
