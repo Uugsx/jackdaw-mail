@@ -12,6 +12,7 @@
       {selectedMessage}
       {selectedMessages}
       bind:searchMessages />
+    <OutOfOfficeBar account={selectedAccount} />
     <vbox flex>
       <SplitterBidirectional {horizontal}
         name={horizontal ? "mail.3pane.msgs" : "mail.widetable.msgs"}
@@ -52,6 +53,7 @@
   import Splitter from "../../Shared/Splitter.svelte";
   import SplitterBidirectional from "../../Shared/SplitterBidirectional.svelte";
   import MailUndoToast from "../MailUndoToast.svelte";
+  import OutOfOfficeBar from "../OutOfOfficeBar.svelte";
   import { ArrayColl, type Collection } from 'svelte-collections';
   import { onMount } from "svelte";
   import { ensureAccountExpanded } from "../mailSidebarState";

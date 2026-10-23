@@ -2976,5 +2976,21 @@
   "zVxIom": "Pesquisas de GIF demais",
   "RNaVWn": "Enviando {0} %",
   "h9PjLK": "Aceno",
-  "0jtqIx": "{num, plural, one {# membro} many {# membros} other {# membros}}"
+  "0jtqIx": "{num, plural, one {# membro} many {# membros} other {# membros}}",
+  "F296tB": "Respostas automáticas",
+  "Tc1Mx4": "As respostas automáticas estão ativadas",
+  "2ZqpRB": "Desativar",
+  "l3JD35": "Responder automaticamente a quem lhe escrever enquanto estiver ausente",
+  "aHRs39": "As respostas automáticas não estão disponíveis para esta conta.",
+  "MfvCUn": "Não enviar respostas automáticas",
+  "N0Z4jk": "Enviar respostas automáticas",
+  "d4YgBp": "Enviar apenas durante este período",
+  "37LdGH": "Dentro da minha organização",
+  "Clsey2": "Fora da minha organização",
+  "L9Pkkt": "O administrador não permite respostas automáticas fora da organização.",
+  "ANfdRq": "Responder a pessoas fora da minha organização",
+  "p4h+Bg": "Apenas os meus contactos",
+  "MTXxnh": "Qualquer pessoa fora da minha organização",
+  "idD8Ev": "Guardado",
+  "e3bo7L": "O fim tem de ser posterior ao início"
 }

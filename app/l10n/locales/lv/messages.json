@@ -2976,5 +2976,21 @@
   "zVxIom": "Pārāk daudz GIF meklējumu",
   "RNaVWn": "Notiek augšupielāde: {0} %",
   "h9PjLK": "Māšana",
-  "0jtqIx": "{num, plural, zero {# dalībnieku} one {# dalībnieks} other {# dalībnieki}}"
+  "0jtqIx": "{num, plural, zero {# dalībnieku} one {# dalībnieks} other {# dalībnieki}}",
+  "F296tB": "Automātiskās atbildes",
+  "Tc1Mx4": "Automātiskās atbildes ir ieslēgtas",
+  "2ZqpRB": "Izslēgt",
+  "l3JD35": "Automātiski atbildēt tiem, kas jums raksta jūsu prombūtnes laikā",
+  "aHRs39": "Automātiskās atbildes šim kontam nav pieejamas.",
+  "MfvCUn": "Nesūtīt automātiskās atbildes",
+  "N0Z4jk": "Sūtīt automātiskās atbildes",
+  "d4YgBp": "Sūtīt tikai šajā laika posmā",
+  "37LdGH": "Manā organizācijā",
+  "Clsey2": "Ārpus manas organizācijas",
+  "L9Pkkt": "Administrators neatļauj automātiskās atbildes ārpus organizācijas.",
+  "ANfdRq": "Atbildēt cilvēkiem ārpus manas organizācijas",
+  "p4h+Bg": "Tikai maniem kontaktiem",
+  "MTXxnh": "Ikvienam ārpus manas organizācijas",
+  "idD8Ev": "Saglabāts",
+  "e3bo7L": "Beigām jābūt pēc sākuma"
 }

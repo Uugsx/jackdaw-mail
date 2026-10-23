@@ -27,6 +27,7 @@ import AccountFolders from "./Mail/Account/Folders.svelte";
 import AccountIdentity from "./Mail/Account/Identity.svelte";
 import AccountMailAppearance from "./Mail/Account/Appearance.svelte";
 import AccountMailNotifications from "./Mail/Account/Notifications.svelte";
+import AccountOutOfOffice from "./Mail/Account/OutOfOffice.svelte";
 import AccountXMPPServer from "./Chat/AccountXMPPServer.svelte";
 import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
@@ -39,6 +40,7 @@ import Debug from "./About/Debug.svelte";
 // #endif
 import { Account } from "../../logic/Abstract/Account";
 import { MailAccount } from "../../logic/Mail/MailAccount";
+import { ExchangeMailAccount } from "../../logic/Mail/EWS/ExchangeMailAccount";
 import { XMPPAccount } from "../../logic/Chat/XMPP/XMPPAccount";
 // #if [!WEBMAIL]
 import { MatrixAccount } from "../../logic/Chat/Matrix/MatrixAccount";
@@ -99,6 +101,7 @@ accountSettings.add(new AccSetting(MailAccount, "mail-server", gt`Server`, Accou
 // #endif
 accountSettings.add(new AccSetting(MailAccount, "mail-folders", gt`Folders`, AccountFolders));
 accountSettings.add(new AccSetting(MailAccount, "mail-identity", gt`Sender and signature`, AccountIdentity));
+accountSettings.add(new AccSetting(ExchangeMailAccount, "mail-out-of-office", gt`Automatic replies`, AccountOutOfOffice));
 accountSettings.add(new AccSetting(MailAccount, "mail-rules", gt`Rules *=> Criteria after which emails should be sorted`, MailRules));
 accountSettings.add(new AccSetting(MailAccount, "mail-sharing", gt`Sharing *=> Accessing mail account of team mates`, MailSharing));
 

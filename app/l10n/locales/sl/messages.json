@@ -2976,5 +2976,21 @@
   "zVxIom": "Preveč iskanj GIF-ov",
   "RNaVWn": "Nalaganje: {0} %",
   "h9PjLK": "Mahanje",
-  "0jtqIx": "{num, plural, one {# član} two {# člana} few {# člani} other {# članov}}"
+  "0jtqIx": "{num, plural, one {# član} two {# člana} few {# člani} other {# članov}}",
+  "F296tB": "Samodejni odgovori",
+  "Tc1Mx4": "Samodejni odgovori so vklopljeni",
+  "2ZqpRB": "Izklopi",
+  "l3JD35": "Samodejno odgovarjaj ljudem, ki vam pišejo, ko vas ni",
+  "aHRs39": "Samodejni odgovori za ta račun niso na voljo.",
+  "MfvCUn": "Ne pošiljaj samodejnih odgovorov",
+  "N0Z4jk": "Pošiljaj samodejne odgovore",
+  "d4YgBp": "Pošiljaj samo v tem obdobju",
+  "37LdGH": "Znotraj moje organizacije",
+  "Clsey2": "Zunaj moje organizacije",
+  "L9Pkkt": "Skrbnik ne dovoli samodejnih odgovorov zunaj organizacije.",
+  "ANfdRq": "Odgovarjaj ljudem zunaj moje organizacije",
+  "p4h+Bg": "Samo mojim stikom",
+  "MTXxnh": "Vsem zunaj moje organizacije",
+  "idD8Ev": "Shranjeno",
+  "e3bo7L": "Konec mora biti po začetku"
 }

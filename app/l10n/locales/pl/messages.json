@@ -2976,5 +2976,21 @@
   "zVxIom": "Zbyt wiele wyszukiwań GIF-ów",
   "RNaVWn": "Przesyłanie {0} %",
   "h9PjLK": "Machanie",
-  "0jtqIx": "{num, plural, one {# członek} few {# członków} many {# członków} other {# członka}}"
+  "0jtqIx": "{num, plural, one {# członek} few {# członków} many {# członków} other {# członka}}",
+  "F296tB": "Odpowiedzi automatyczne",
+  "Tc1Mx4": "Odpowiedzi automatyczne są włączone",
+  "2ZqpRB": "Wyłącz",
+  "l3JD35": "Automatycznie odpowiadaj osobom, które piszą do Ciebie podczas Twojej nieobecności",
+  "aHRs39": "Odpowiedzi automatyczne nie są dostępne dla tego konta.",
+  "MfvCUn": "Nie wysyłaj odpowiedzi automatycznych",
+  "N0Z4jk": "Wysyłaj odpowiedzi automatyczne",
+  "d4YgBp": "Wysyłaj tylko w tym okresie",
+  "37LdGH": "W mojej organizacji",
+  "Clsey2": "Poza moją organizacją",
+  "L9Pkkt": "Administrator nie zezwala na odpowiedzi automatyczne poza organizację.",
+  "ANfdRq": "Odpowiadaj osobom spoza mojej organizacji",
+  "p4h+Bg": "Tylko moim kontaktom",
+  "MTXxnh": "Wszystkim spoza mojej organizacji",
+  "idD8Ev": "Zapisano",
+  "e3bo7L": "Koniec musi być po początku"
 }

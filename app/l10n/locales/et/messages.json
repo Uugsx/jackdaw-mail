@@ -2976,5 +2976,21 @@
   "zVxIom": "Liiga palju GIF-ide otsinguid",
   "RNaVWn": "Üleslaadimine {0} %",
   "h9PjLK": "Lehvitus",
-  "0jtqIx": "{num, plural, one {# liige} other {# liiget}}"
+  "0jtqIx": "{num, plural, one {# liige} other {# liiget}}",
+  "F296tB": "Automaatvastused",
+  "Tc1Mx4": "Automaatvastused on sees",
+  "2ZqpRB": "Lülita välja",
+  "l3JD35": "Vasta automaatselt neile, kes sulle eemaloleku ajal kirjutavad",
+  "aHRs39": "Automaatvastused pole selle konto jaoks saadaval.",
+  "MfvCUn": "Ära saada automaatvastuseid",
+  "N0Z4jk": "Saada automaatvastuseid",
+  "d4YgBp": "Saada ainult sel perioodil",
+  "37LdGH": "Minu organisatsioonis",
+  "Clsey2": "Väljaspool minu organisatsiooni",
+  "L9Pkkt": "Administraator ei luba automaatvastuseid väljapoole organisatsiooni.",
+  "ANfdRq": "Vasta inimestele väljastpoolt minu organisatsiooni",
+  "p4h+Bg": "Ainult minu kontaktidele",
+  "MTXxnh": "Kõigile väljastpoolt minu organisatsiooni",
+  "idD8Ev": "Salvestatud",
+  "e3bo7L": "Lõpp peab olema pärast algust"
 }

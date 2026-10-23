@@ -2976,5 +2976,21 @@
   "zVxIom": "Zu viele GIF-Suchen",
   "RNaVWn": "{0} % werden hochgeladen",
   "h9PjLK": "Winken",
-  "0jtqIx": "{num, plural, one {# Mitglied} other {# Mitglieder}}"
+  "0jtqIx": "{num, plural, one {# Mitglied} other {# Mitglieder}}",
+  "F296tB": "Automatische Antworten",
+  "Tc1Mx4": "Automatische Antworten sind aktiv",
+  "2ZqpRB": "Ausschalten",
+  "l3JD35": "Automatisch antworten, wenn Ihnen jemand schreibt, während Sie abwesend sind",
+  "aHRs39": "Automatische Antworten sind für dieses Konto nicht verfügbar.",
+  "MfvCUn": "Keine automatischen Antworten senden",
+  "N0Z4jk": "Automatische Antworten senden",
+  "d4YgBp": "Nur in diesem Zeitraum senden",
+  "37LdGH": "Innerhalb meiner Organisation",
+  "Clsey2": "Außerhalb meiner Organisation",
+  "L9Pkkt": "Ihr Administrator erlaubt keine automatischen Antworten außerhalb der Organisation.",
+  "ANfdRq": "Personen außerhalb meiner Organisation antworten",
+  "p4h+Bg": "Nur meinen Kontakten",
+  "MTXxnh": "Allen außerhalb meiner Organisation",
+  "idD8Ev": "Gespeichert",
+  "e3bo7L": "Das Ende muss nach dem Beginn liegen"
 }

@@ -2976,5 +2976,21 @@
   "zVxIom": "Túl sok GIF-keresés",
   "RNaVWn": "Feltöltés: {0} %",
   "h9PjLK": "Integetés",
-  "0jtqIx": "{num, plural, one {# tag} other {# tag}}"
+  "0jtqIx": "{num, plural, one {# tag} other {# tag}}",
+  "F296tB": "Automatikus válaszok",
+  "Tc1Mx4": "Az automatikus válaszok be vannak kapcsolva",
+  "2ZqpRB": "Kikapcsolás",
+  "l3JD35": "Automatikus válasz azoknak, akik távollétében írnak Önnek",
+  "aHRs39": "Ehhez a fiókhoz nem érhetők el automatikus válaszok.",
+  "MfvCUn": "Ne küldjön automatikus válaszokat",
+  "N0Z4jk": "Automatikus válaszok küldése",
+  "d4YgBp": "Küldés csak ebben az időszakban",
+  "37LdGH": "A szervezetemen belül",
+  "Clsey2": "A szervezetemen kívül",
+  "L9Pkkt": "A rendszergazda nem engedélyezi az automatikus válaszokat a szervezeten kívülre.",
+  "ANfdRq": "Válasz a szervezetemen kívüli személyeknek",
+  "p4h+Bg": "Csak a névjegyeimnek",
+  "MTXxnh": "Bárkinek a szervezetemen kívül",
+  "idD8Ev": "Mentve",
+  "e3bo7L": "A befejezésnek a kezdés után kell lennie"
 }

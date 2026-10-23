@@ -2976,5 +2976,21 @@
   "zVxIom": "Troppe ricerche di GIF",
   "RNaVWn": "Caricamento di {0} %",
   "h9PjLK": "Saluto",
-  "0jtqIx": "{num, plural, one {# membro} many {# membri} other {# membri}}"
+  "0jtqIx": "{num, plural, one {# membro} many {# membri} other {# membri}}",
+  "F296tB": "Risposte automatiche",
+  "Tc1Mx4": "Le risposte automatiche sono attive",
+  "2ZqpRB": "Disattiva",
+  "l3JD35": "Rispondi automaticamente a chi ti scrive mentre sei assente",
+  "aHRs39": "Le risposte automatiche non sono disponibili per questo account.",
+  "MfvCUn": "Non inviare risposte automatiche",
+  "N0Z4jk": "Invia risposte automatiche",
+  "d4YgBp": "Invia solo in questo periodo",
+  "37LdGH": "All'interno della mia organizzazione",
+  "Clsey2": "All'esterno della mia organizzazione",
+  "L9Pkkt": "L'amministratore non consente risposte automatiche all'esterno dell'organizzazione.",
+  "ANfdRq": "Rispondi alle persone esterne alla mia organizzazione",
+  "p4h+Bg": "Solo ai miei contatti",
+  "MTXxnh": "A chiunque all'esterno della mia organizzazione",
+  "idD8Ev": "Salvato",
+  "e3bo7L": "La fine deve essere successiva all'inizio"
 }

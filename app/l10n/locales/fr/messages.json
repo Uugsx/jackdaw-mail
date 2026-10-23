@@ -2978,5 +2978,21 @@
   "zVxIom": "Trop de recherches de GIF",
   "RNaVWn": "Envoi de {0} %",
   "h9PjLK": "Salut",
-  "0jtqIx": "{num, plural, one {# membre} many {# membres} other {# membres}}"
+  "0jtqIx": "{num, plural, one {# membre} many {# membres} other {# membres}}",
+  "F296tB": "Réponses automatiques",
+  "Tc1Mx4": "Les réponses automatiques sont activées",
+  "2ZqpRB": "Désactiver",
+  "l3JD35": "Répondre automatiquement aux personnes qui vous écrivent pendant votre absence",
+  "aHRs39": "Les réponses automatiques ne sont pas disponibles pour ce compte.",
+  "MfvCUn": "Ne pas envoyer de réponses automatiques",
+  "N0Z4jk": "Envoyer des réponses automatiques",
+  "d4YgBp": "Envoyer uniquement pendant cette période",
+  "37LdGH": "Dans mon organisation",
+  "Clsey2": "En dehors de mon organisation",
+  "L9Pkkt": "Votre administrateur n'autorise pas les réponses automatiques en dehors de l'organisation.",
+  "ANfdRq": "Répondre aux personnes en dehors de mon organisation",
+  "p4h+Bg": "Mes contacts uniquement",
+  "MTXxnh": "Toute personne en dehors de mon organisation",
+  "idD8Ev": "Enregistré",
+  "e3bo7L": "La fin doit être postérieure au début"
 }

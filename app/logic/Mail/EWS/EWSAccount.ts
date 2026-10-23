@@ -9,6 +9,7 @@ import { EWSCreateItemRequest } from "./Request/EWSCreateItemRequest";
 import type { EWSDeleteItemRequest } from "./Request/EWSDeleteItemRequest";
 import type { EWSUpdateItemRequest } from "./Request/EWSUpdateItemRequest";
 import { EWSError, EWSItemError } from "./EWSError";
+import { checkOutOfOfficeResponse, ewsGetOutOfOfficeRequest, ewsSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "./OutOfOffice";
 import type { EWSAddressbook } from "../../Contacts/EWS/EWSAddressbook";
 import type { EWSCalendar } from "../../Calendar/EWS/EWSCalendar";
 import { EWSGAL } from "../../Contacts/EWS/EWSGAL";
@@ -142,6 +143,8 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         // `listFolders()` will subscribe to new user-added addressbooks and calendars
 
         await this.subscribeToNotifications();
+        // Плашка автоответа в почте: необязательные данные, ошибка не мешает запуску
+        this.loadOutOfOffice().catch(() => undefined);
       } finally { // Even when the mail folders failed, so that calendar and addressbook still work
         await this.startupDependentAccounts();
       }
@@ -259,6 +262,21 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     await this.callEWS(request);
   }
 
+  get canOutOfOffice(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    let response = await this.callEWS(ewsGetOutOfOfficeRequest(this.emailAddress));
+    checkOutOfOfficeResponse(response);
+    return parseOutOfOfficeResponse(response);
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    let response = await this.callEWS(ewsSetOutOfOfficeRequest(this.emailAddress, settings));
+    checkOutOfOfficeResponse(response);
+  }
+
   request2XML(aRequest: JsonRequest): string {
     let xml = document.implementation.createDocument("http://schemas.xmlsoap.org/soap/envelope/", "s:Envelope");
     xml.documentElement.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:s", "http://schemas.xmlsoap.org/soap/envelope/");
@@ -292,6 +310,15 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     let delegate = responseXML.querySelector("GetDelegateResponse");
     if (delegate?.getAttribute("ResponseClass") == "Success") {
       return [...responseXML.querySelectorAll("DelegateUser")].map(user => XML2JSON(user));
+    }
+    // Автоответ отвечает своим элементом, без ResponseMessages
+    let outOfOffice = responseXML.querySelector("GetUserOofSettingsResponse, SetUserOofSettingsResponse");
+    if (outOfOffice) {
+      let json: any = XML2JSON(outOfOffice);
+      if (json.ResponseMessage?.ResponseClass == "Error") {
+        throw new EWSItemError(json.ResponseMessage, aRequest);
+      }
+      return json;
     }
     let messages = responseXML.querySelector("ResponseMessages");
     if (!messages) {
