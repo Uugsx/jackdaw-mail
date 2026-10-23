@@ -4,6 +4,7 @@ import type { Participant } from "../Participant";
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { EWSEvent } from "./EWSEvent";
 import { EWSIncomingInvitation } from "./EWSIncomingInvitation";
+import { ewsGetRoomListsRequest, ewsGetRoomsRequest, parseEWSRoomLists, parseEWSRooms, type MeetingRoom } from "./MeetingRooms";
 import type { EWSAccount, EWSSubscribable } from "../../Mail/EWS/EWSAccount";
 import { getSharedPersons, ExchangePermission, deleteExchangePermissions, setExchangePermissions } from "../../Mail/EWS/ExchangePermission";
 import { EWSItemError } from "../../Mail/EWS/EWSError";
@@ -88,6 +89,26 @@ export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
       });
     }
     return availabilities;
+  }
+
+  get canBookRooms(): boolean {
+    return true;
+  }
+
+  async listRoomLists(): Promise<MeetingRoom[]> {
+    return parseEWSRoomLists(await this.account.callEWS(ewsGetRoomListsRequest()));
+  }
+
+  async listRooms(roomList: MeetingRoom): Promise<MeetingRoom[]> {
+    try {
+      return parseEWSRooms(await this.account.callEWS(ewsGetRoomsRequest(roomList.emailAddress)));
+    } catch (ex) {
+      // Пустой список комнат Exchange отдаёт ошибкой
+      if (ex instanceof EWSItemError && ex.type == "ErrorNameResolutionNoResults") {
+        return [];
+      }
+      throw ex;
+    }
   }
 
   async listEvents() {

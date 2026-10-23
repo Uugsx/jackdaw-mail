@@ -120,6 +120,9 @@ export class SQLEvent extends Event {
     let json = {} as any;
     json.lastUpdateTime = participant.lastUpdateTime;
     json.isOptional = participant.isOptional;
+    if (participant.isResource) {
+      json.isResource = true;
+    }
     await (await getDatabase()).run(sql`
       INSERT INTO eventParticipant (
         eventID, emailAddress, name, confirmed, json
@@ -304,7 +307,7 @@ export class SQLEvent extends Event {
       try {
         let json = sanitize.json(row.json, {});
         let participant = new Participant(row.emailAddress, row.name, row.confirmed,
-          sanitize.boolean(json.isOptional, false));
+          sanitize.boolean(json.isOptional, false), sanitize.boolean(json.isResource, false));
         participant.lastUpdateTime = sanitize.date(json.lastUpdateTime, null);
         event.participants.add(participant);
       } catch (ex) {

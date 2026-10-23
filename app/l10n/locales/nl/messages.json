@@ -3045,5 +3045,22 @@
   "i5z0eT": "Kies ten minste één actie",
   "3EFxbo": "Map op de server",
   "dKlk8s": "Geen e-mailadres: {0}",
-  "aqolyA": "Deze regels werken alleen terwijl Jackdaw Mail actief is. Serverregels werken ook als de app gesloten is."
+  "aqolyA": "Deze regels werken alleen terwijl Jackdaw Mail actief is. Serverregels werken ook als de app gesloten is.",
+  "uBRbRP": "Ruimte verwijderen",
+  "w6M9ks": "Ruimtes laden…",
+  "ALdI0A": "Ruimtelijst",
+  "PBkdKI": "Alleen vrije",
+  "xJIP1+": "Er zijn geen ruimtes in deze lijst",
+  "GP4fb7": "Kan niet controleren of de ruimtes vrij zijn",
+  "03OoKp": "Beschikbaarheid controleren…",
+  "MXJxiu": "Geen vrije ruimtes op dit tijdstip",
+  "6lAoV5": "Vrij",
+  "t8S1kw": "Bezet",
+  "IrRG5A": "Geen gegevens",
+  "ylXj1N": "Geselecteerd",
+  "rG3WVm": "Selecteren",
+  "5Gd+8w": "De server heeft geen ruimtelijsten. Voer het e-mailadres van de ruimte in.",
+  "4Fdu7D": "E-mailadres van de ruimte",
+  "/FxtqK": "Ruimte toevoegen",
+  "cG3vx/": "Ruimte"
 }

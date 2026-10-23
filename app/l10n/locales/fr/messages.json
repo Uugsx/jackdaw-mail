@@ -3047,5 +3047,22 @@
   "i5z0eT": "Choisissez au moins une action",
   "3EFxbo": "Dossier sur le serveur",
   "dKlk8s": "Adresse e-mail non valide : {0}",
-  "aqolyA": "Ces règles ne fonctionnent que lorsque Jackdaw Mail est ouvert. Les règles du serveur fonctionnent même lorsque l’application est fermée."
+  "aqolyA": "Ces règles ne fonctionnent que lorsque Jackdaw Mail est ouvert. Les règles du serveur fonctionnent même lorsque l’application est fermée.",
+  "uBRbRP": "Retirer la salle",
+  "w6M9ks": "Chargement des salles…",
+  "ALdI0A": "Liste des salles",
+  "PBkdKI": "Libres uniquement",
+  "xJIP1+": "Aucune salle dans cette liste",
+  "GP4fb7": "Impossible de vérifier si les salles sont libres",
+  "03OoKp": "Vérification de la disponibilité…",
+  "MXJxiu": "Aucune salle libre à cette heure",
+  "6lAoV5": "Libre",
+  "t8S1kw": "Occupée",
+  "IrRG5A": "Aucune donnée",
+  "ylXj1N": "Sélectionnée",
+  "rG3WVm": "Sélectionner",
+  "5Gd+8w": "Le serveur n’a pas de listes de salles. Saisissez l’adresse e-mail de la salle.",
+  "4Fdu7D": "Adresse e-mail de la salle",
+  "/FxtqK": "Ajouter une salle",
+  "cG3vx/": "Salle"
 }
