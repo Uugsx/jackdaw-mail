@@ -442,6 +442,17 @@
     font-size: 12px;
     text-align: start;
     cursor: default;
+    min-width: 0;
+  }
+  /* Длинное название (например, «Запланированные» в узкой панели) сокращается, счётчик виден */
+  .smart-view > span:not(.count) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smart-view > :global(svg) {
+    flex: 0 0 auto;
   }
   .smart-view:hover:not(:disabled):not(.active) {
     background: var(--hover-bg);
