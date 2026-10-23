@@ -1,5 +1,3 @@
-import { OWARequest } from "../OWA/Request/OWARequest";
-
 /** Автоответ «Нет на месте» (Out of Office) в Exchange. */
 export type OutOfOfficeState = "Disabled" | "Enabled" | "Scheduled";
 /** Кому за пределами организации отвечать: никому, только контактам или всем */
@@ -199,44 +197,86 @@ export function ewsSetOutOfOfficeRequest(emailAddress: string, settings: OutOfOf
   };
 }
 
-export function owaGetOutOfOfficeRequest(emailAddress: string): OWARequest {
-  return new OWARequest("GetUserOofSettings", {
-    __type: "GetUserOofSettingsRequest:#Exchange",
-    Mailbox: {
-      __type: "EmailAddress:#Exchange",
-      Address: emailAddress,
-    },
-  });
+/**
+ * OWA не принимает `GetUserOofSettings` в JSON («Cannot deserialize object of type
+ * GetUserOofSettingsJsonRequest»). Сам Outlook в браузере читает и пишет автоответ через
+ * `Get/SetMailboxAutoReplyConfiguration`: состояние и аудитория там числами, текст — HTML.
+ * Чтение — пустое тело `{}`.
+ */
+export class OWAGetOutOfOfficeRequest {
+  get action() {
+    return "GetMailboxAutoReplyConfiguration";
+  }
 }
 
-export function owaSetOutOfOfficeRequest(emailAddress: string, settings: OutOfOfficeSettings): OWARequest {
-  checkSchedule(settings);
-  let oof: Record<string, any> = {
-    __type: "UserOofSettings:#Exchange",
-    OofState: settings.state,
-    ExternalAudience: settings.externalAudience,
+export class OWASetOutOfOfficeRequest {
+  readonly __type = "SetMailboxAutoReplyConfigurationRequest:#Exchange";
+  readonly Header = {
+    __type: "JsonRequestHeaders:#Exchange",
+    RequestServerVersion: "Exchange2013",
   };
-  if (settings.start && settings.end && settings.start < settings.end) {
-    oof.Duration = {
-      __type: "Duration:#Exchange",
-      StartTime: exchangeDateString(settings.start),
-      EndTime: exchangeDateString(settings.end),
+  readonly Options: Record<string, any>;
+
+  constructor(settings: OutOfOfficeSettings) {
+    checkSchedule(settings);
+    this.Options = {
+      __type: "MailboxAutoReplyConfigurationOptions:#Exchange",
+      AutoReplyState: kStates.indexOf(settings.state),
+      ExternalAudience: kAudiences.indexOf(settings.externalAudience),
+      InternalMessage: settings.internalReply ?? "",
+      ExternalMessage: settings.externalReply ?? "",
     };
+    // Только изменённые поля обязательны; время шлём для расписания
+    if (settings.state == "Scheduled") {
+      this.Options.StartTime = exchangeDateString(settings.start);
+      this.Options.EndTime = exchangeDateString(settings.end);
+    }
   }
-  oof.InternalReply = {
-    __type: "ReplyBody:#Exchange",
-    Message: settings.internalReply ?? "",
+
+  get action() {
+    return "SetMailboxAutoReplyConfiguration";
+  }
+}
+
+export function owaGetOutOfOfficeRequest(): OWAGetOutOfOfficeRequest {
+  return new OWAGetOutOfOfficeRequest();
+}
+
+export function owaSetOutOfOfficeRequest(settings: OutOfOfficeSettings): OWASetOutOfOfficeRequest {
+  return new OWASetOutOfOfficeRequest(settings);
+}
+
+/** Ошибку эти вызовы OWA возвращают с HTTP 200 и `WasSuccessful: false` */
+export function checkOWAOutOfOfficeResponse(response: any): void {
+  if (response?.WasSuccessful === false) {
+    let error = new Error(textValue(response.ErrorMessage) || "Out of Office request failed (ErrorCode " + response.ErrorCode + ")");
+    (error as any).code = response.ErrorCode;
+    throw error;
+  }
+}
+
+/** Разбирает ответ `GetMailboxAutoReplyConfiguration` */
+export function parseOWAOutOfOfficeResponse(response: any): OutOfOfficeSettings {
+  checkOWAOutOfOfficeResponse(response);
+  let options = (response?.Body ?? response)?.Options;
+  if (!options || typeof options != "object") {
+    throw new Error("GetMailboxAutoReplyConfiguration: no Options in the response");
+  }
+  return {
+    state: indexOrEnum(options.AutoReplyState, kStates, "Disabled"),
+    externalAudience: indexOrEnum(options.ExternalAudience, kAudiences, "None"),
+    start: parseExchangeDate(options.StartTime),
+    end: parseExchangeDate(options.EndTime),
+    internalReply: textValue(options.InternalMessage),
+    externalReply: textValue(options.ExternalMessage),
+    // OWA не сообщает, что разрешил администратор
+    allowExternal: "All",
   };
-  oof.ExternalReply = {
-    __type: "ReplyBody:#Exchange",
-    Message: settings.externalReply ?? "",
-  };
-  return new OWARequest("SetUserOofSettings", {
-    __type: "SetUserOofSettingsRequest:#Exchange",
-    Mailbox: {
-      __type: "EmailAddress:#Exchange",
-      Address: emailAddress,
-    },
-    UserOofSettings: oof,
-  });
+}
+
+function indexOrEnum<T extends string>(value: any, allowed: T[], fallback: T): T {
+  if (typeof value == "number") {
+    return allowed[value] ?? fallback;
+  }
+  return enumValue(value, allowed, fallback);
 }

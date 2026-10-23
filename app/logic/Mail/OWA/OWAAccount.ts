@@ -9,7 +9,7 @@ import type { OWAEMail } from "./OWAEMail";
 import { owaCategoriesPresent } from "./OWAEMail";
 import { OWAError } from "./OWAError";
 import { checkInboxRulesResponse, owaGetInboxRulesRequest, owaUpdateInboxRulesRequest, parseInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "../EWS/InboxRules";
-import { checkOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
+import { checkOWAOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOWAOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
 import type { OWANotifications } from "./Notification/OWANotifications";
 import { OWAExchangeNotifications } from "./Notification/OWAExchangeNotifications";
 import { OWAOffice365Notifications } from "./Notification/OWAOffice365Notifications";
@@ -2008,14 +2008,11 @@ export class OWAAccount extends ExchangeMailAccount {
   }
 
   protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
-    let response = await this.callOWA(owaGetOutOfOfficeRequest(this.emailAddress));
-    checkOutOfOfficeResponse(response);
-    return parseOutOfOfficeResponse(response);
+    return parseOWAOutOfOfficeResponse(await this.callOWA(owaGetOutOfOfficeRequest()));
   }
 
   protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
-    let response = await this.callOWA(owaSetOutOfOfficeRequest(this.emailAddress, settings));
-    checkOutOfOfficeResponse(response);
+    checkOWAOutOfOfficeResponse(await this.callOWA(owaSetOutOfOfficeRequest(settings)));
   }
 
   get canServerRules(): boolean {
