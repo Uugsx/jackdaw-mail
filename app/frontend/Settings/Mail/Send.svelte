@@ -194,6 +194,15 @@
         {$t`Warn when the text mentions an attachment, but no file is attached`}
       </label>
     </hbox>
+    <hbox class="composition undo-send">
+      <label for="undo-send-seconds">{$t`Undo send`}</label>
+      <select id="undo-send-seconds" bind:value={undoSeconds}>
+        {#each kUndoSendChoices as seconds}
+          <option value={seconds}>{seconds ? $t`${seconds} seconds` : $t`Off`}</option>
+        {/each}
+      </select>
+    </hbox>
+    <span class="hint">{$t`After you click Send, the message waits this long. Until then, you can take it back to the editor.`}</span>
     {#if !webMail}
       <hbox class="presentation">
         <span class="presentation-label">{$t`Open compose window:`}</span>
@@ -217,6 +226,7 @@
   import Paper from "../../Shared/Paper.svelte";
   import Button from "../../Shared/Button.svelte";
   import { webMail } from "../../../logic/build";
+  import { kUndoSendChoices, normalizeUndoSeconds, undoSendSecondsSetting } from "../../Mail/Scheduled/scheduledSend";
   import {
     composeDefaultFontFamily,
     composeDefaultFontSize,
@@ -239,6 +249,8 @@
   let quoteAttributionSetting = getLocalStorage("mail.send.quote.attribution", false);
   let spellcheckEnabledSetting = getLocalStorage("mail.send.spellcheck.enabled", false);
   let warnMissingAttachmentSetting = getLocalStorage("mail.send.warnMissingAttachment", true);
+  let undoSeconds = normalizeUndoSeconds(undoSendSecondsSetting.value);
+  $: undoSendSecondsSetting.value = normalizeUndoSeconds(undoSeconds);
   let presentationSetting = getLocalStorage("mail.compose.presentation", "fullscreen");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
@@ -339,6 +351,14 @@
   .presentation-label {
     font-weight: 600;
     margin-inline-end: 4px;
+  }
+  .undo-send {
+    align-items: center;
+    gap: 12px;
+  }
+  .undo-send label {
+    margin-inline-start: 0;
+    font-weight: 600;
   }
   .illustration-paper {
     margin-block-start: 8px;

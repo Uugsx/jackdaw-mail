@@ -102,6 +102,8 @@ export interface ComposeWindowMail {
   signatureRemovedByUser?: boolean;
   /** «Напомнить, если не ответят». Необязательно: старые окна его не передают */
   followUpReminder?: ComposeWindowFollowUp | null;
+  /** «Отправить позже» из отдельного окна: время отправки (ISO). Необязательно: старые окна его не передают */
+  scheduledSendAt?: string | null;
   isDraft: boolean;
   isDeleted: boolean;
   shouldEncrypt: boolean;
@@ -217,7 +219,8 @@ export function isComposeWindowPayload(value: unknown): value is ComposeWindowMa
       typeof mail.hasAttachmentsFlag !== "boolean" || !isHeaders(mail.headers) ||
       !Array.isArray(mail.attachments) || mail.attachments.length > kMaxAttachments || !mail.attachments.every(isAttachment) ||
       !isNullableSource(mail.composeSource) ||
-      !isOptionalFollowUp(mail.followUpReminder)) {
+      !isOptionalFollowUp(mail.followUpReminder) ||
+      !(mail.scheduledSendAt === undefined || isDate(mail.scheduledSendAt))) {
     return false;
   }
   let bodyLength = (mail.html as string | null)?.length ?? 0;

@@ -21,6 +21,7 @@ import { normalizeSignatureHTML } from "./SignatureHTML";
 import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
 import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
 import { notifyMailSent } from "./Collision/mailSent";
+import type { DeferredSend } from "./Scheduled/DeferredSendRequests";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -539,8 +540,12 @@ export class ComposeActions {
    *
    * Called by composer.
    * The actual send on the protocol level is done by `EMail.send()`
+   *
+   * @param options.deferredSend отложенная доставка: Exchange держит письмо
+   *   в «Исходящих» до указанного времени. Только для протоколов, где
+   *   `canDeferOnServer()`; остальные письмо отправили бы сразу.
    */
-  async send(): Promise<void> {
+  async send(options: { deferredSend?: DeferredSend } = {}): Promise<void> {
     let fromIdentity = this.email.identity;
     assert(fromIdentity, "Need identity set on mail");
     if (fromIdentity.replyTo) {
@@ -593,9 +598,17 @@ export class ComposeActions {
     this.email.mime = undefined;
 
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
-    await account.send(mail);
-    void playNotificationSound("mail-outgoing");
-    notifyMailSent(this.email);
+    mail.deferredSend = options.deferredSend ?? null;
+    try {
+      await account.send(mail);
+    } finally {
+      mail.deferredSend = null;
+    }
+    // Запланированное письмо ещё не ушло: звук и уведомление «Отправлено» не к месту
+    if (!options.deferredSend) {
+      void playNotificationSound("mail-outgoing");
+      notifyMailSent(this.email);
+    }
 
     await this.markComposeSourceFlags();
     await this.startFollowUpAfterSend(account.dbID);

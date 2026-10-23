@@ -256,3 +256,37 @@ export const createExchangeTaskTable = sql`
 export const rollbackExchangeTaskTable = sql`
   DROP TABLE IF EXISTS "exchangeTask";
 `;
+
+/**
+ * Отложенная отправка и окно «Отменить отправку». Отдельная таблица без изменения `email`.
+ * `payload` — письмо из редактора (JSON ComposeWindowMail), чтобы отправить его
+ * после перезапуска или вернуть в редактор. Время — unixtime в секундах.
+ */
+export const createScheduledSendTable = sql`
+  CREATE TABLE IF NOT EXISTS "scheduledSend" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    "scheduleID" TEXT not null UNIQUE,
+    -- 'local' — отправит Jackdaw; 'server' — ждёт в «Исходящих» Exchange; 'undo' — окно отмены
+    "mode" TEXT not null default 'local',
+    "sendAt" INTEGER not null,
+    "subject" TEXT not null default '',
+    "recipients" TEXT not null default '',
+    -- 'pending' | 'sending' | 'failed'
+    "status" TEXT not null default 'pending',
+    "attempts" INTEGER not null default 0,
+    "error" TEXT default null,
+    "payload" TEXT not null,
+    "created" INTEGER not null,
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_scheduledSend_sendAt ON scheduledSend (sendAt);
+`;
+
+/** Откат createScheduledSendTable для инструментов обслуживания базы. */
+export const rollbackScheduledSendTable = sql`
+  DROP INDEX IF EXISTS index_scheduledSend_sendAt;
+  DROP TABLE IF EXISTS "scheduledSend";
+`;

@@ -20,6 +20,7 @@ import { selectedApp } from "../AppsBar/selectedApp";
 import { confirmReplyCollision, replyCollisionWarning } from "./Collision/replyCollisionWarning";
 import { backgroundError } from "../Util/error";
 import { assert } from "../../logic/util/util";
+import { scheduleSend, sendWithUndo } from "./Scheduled/scheduledSend";
 
 export class MailJackdawApp extends JackdawApp {
   id = "mail";
@@ -96,7 +97,11 @@ export async function sendNativeComposeWindow(windowID: string, payload: Compose
   assert(mail, "Compose window message is no longer available");
   applyComposeMailPayload(mail, payload);
   await resolveComposeRecipients(mail);
-  await mail.compose.send();
+  if (payload.scheduledSendAt) {
+    await scheduleSend(mail, new Date(payload.scheduledSendAt));
+  } else {
+    await sendWithUndo(mail);
+  }
 }
 
 /** Открывает штатную форму ответа в текущем окне просмотра, если оно передано. */

@@ -74,6 +74,7 @@
     </vbox>
   </hbox>
   <ComposeFloatingLayer />
+  <SendUndoToast />
 </vbox>
 <MeetBackground />
 <JackdawChatBackground />
@@ -136,6 +137,7 @@
   import SplitterHorizontal from "../Shared/SplitterHorizontal.svelte";
   import MailInBackground from "../Mail/MailInBackground.svelte";
   import ComposeFloatingLayer from "../Mail/Composer/ComposeFloatingLayer.svelte";
+  import SendUndoToast from "../Mail/Scheduled/SendUndoToast.svelte";
   import CalendarInBackground from "../Calendar/CalendarInBackground.svelte";
   import MeetBackground from "../Meet/MeetBackground.svelte";
   import JackdawChatBackground from "../Chat/JackdawChatBackground.svelte";

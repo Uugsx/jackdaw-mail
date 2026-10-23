@@ -45,6 +45,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, blobToBase64, ensureArray, NotSupported, NotReached, sleep } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
+import { owaDeferredSendProperties } from "../Scheduled/DeferredSendRequests";
 import {
   getTagsSyncAccountId,
   setTagsSyncAccountId,
@@ -1782,6 +1783,9 @@ export class OWAAccount extends ExchangeMailAccount {
     let request = new OWACreateItemRequest({ SavedItemFolderId: { __type: "TargetFolderId:#Exchange", BaseFolderId: { __type: "FolderId:#Exchange", Id: folder.id } }, MessageDisposition: "SendAndSaveCopy" });
     if (email.sendRawMIME) {
       request.addField("Message", "MimeContent", btoa(email.sendRawMIME), "item:MimeContent");
+      if (email.deferredSend) {
+        request.addField("Message", "ExtendedProperty", owaDeferredSendProperties(email.deferredSend), null);
+      }
     } else {
       request.addField("Message", "ItemClass", "IPM.Note", "item:ItemClass");
       request.addField("Message", "Subject", email.subject, "item:Subject");
@@ -1802,15 +1806,19 @@ export class OWAAccount extends ExchangeMailAccount {
           Content: await attachment.contentAsBase64(),
         }))), "item:Attachments");
       }
-      if (email.headers.hasItems) {
-        request.addField("Message", "ExtendedProperty", [...email.headers.entries()].map(([header, value]) => ({
-          ExtendedFieldURI: {
-            PropertyName: header,
-            DistinguishedPropertySetId: "InternetHeaders",
-            PropertyType: "String",
-          },
-          Value: value,
-        })), null);
+      let extendedProperties = [...email.headers.entries()].map(([header, value]) => ({
+        ExtendedFieldURI: {
+          PropertyName: header,
+          DistinguishedPropertySetId: "InternetHeaders",
+          PropertyType: "String",
+        },
+        Value: value,
+      }));
+      if (email.deferredSend) {
+        extendedProperties.push(...owaDeferredSendProperties(email.deferredSend));
+      }
+      if (extendedProperties.length) {
+        request.addField("Message", "ExtendedProperty", extendedProperties, null);
       }
       if (email.inReplyTo) {
         request.addField("Message", "InReplyTo", email.inReplyTo, "item:InReplyTo");

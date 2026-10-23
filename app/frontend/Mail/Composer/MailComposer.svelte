@@ -117,6 +117,7 @@
       hasSML={!!$mail.sml}
       signatureEnabled={signatureEnabled}
       on:send={() => catchErrors(onSend)}
+      on:sendLater={() => catchErrors(onSendLater)}
       on:addAttachment={() => catchErrors(onAddAttachment)}
       on:insertSignature={insertSignature}
       on:toggleHighImportance={toggleHighImportance}
@@ -238,6 +239,8 @@
     normalizeComposeTextColor,
   } from "../../Shared/Editor/composeEditorExtensions";
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
+  import { scheduleSend, scheduledModeFor, sendWithUndo } from "../Scheduled/scheduledSend";
+  import { pickScheduleSendTime } from "../Scheduled/pickScheduleSendTime";
   import { addIdentityDefaultRecipients, addSenderToCC, mentionsAttachment } from "../../../logic/Mail/composeRecipients";
   import { closeFloatingCompose } from "./composeFloating";
   import { focusComposeTypingArea } from "./composeCursor";
@@ -279,7 +282,7 @@
     return get(selectedWorkspace);
   }
   /** Detached windows delegate the actual send to the owning renderer. */
-  export let sendInOwner: (() => Promise<void>) | null = null;
+  export let sendInOwner: ((scheduledSendAt?: Date) => Promise<void>) | null = null;
   /** Detached windows use the owner's authenticated directory for lookups. */
   export let searchContactsInOwner: (
     (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
@@ -946,6 +949,23 @@
 
   let sending = false;
   async function onSend() {
+    await sendOrSchedule(null);
+  }
+
+  /** «Отправить позже»: время спрашиваем до проверок, отмена ничего не меняет */
+  async function onSendLater() {
+    if (sending) {
+      return;
+    }
+    let account = mail.identity?.account ?? mail.folder?.account;
+    let sendAt = await pickScheduleSendTime(scheduledModeFor(account));
+    if (sendAt) {
+      await sendOrSchedule(sendAt);
+    }
+  }
+
+  /** @param scheduledSendAt null — отправить сейчас (с окном отмены) */
+  async function sendOrSchedule(scheduledSendAt: Date | null) {
     if (sending) {
       return;
     }
@@ -976,9 +996,11 @@
         await resolveComposeRecipients(mail);
       }
       if (sendInOwner) {
-        await sendInOwner();
+        await sendInOwner(scheduledSendAt ?? undefined);
+      } else if (scheduledSendAt) {
+        await scheduleSend(mail, scheduledSendAt);
       } else {
-        await mail.compose.send();
+        await sendWithUndo(mail);
       }
       onClose();
     } finally {

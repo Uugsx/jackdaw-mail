@@ -11,6 +11,7 @@ import { EMailProcessorList, ProcessingStartOn } from "./EMailProcessor";
 import type { ExtraData } from "./ExtraData";
 import type { SMLData } from "./SML/SMLData";
 import type { FollowUpChoice } from "./FollowUp/FollowUpReminder";
+import type { DeferredSend } from "./Scheduled/DeferredSendRequests";
 import { flagDaysForChoice, type DayString, type FlagDueChoice, type MailFlagState } from "./Tasks/ExchangeTask";
 import type { PublicKey } from "./Encryption/PublicKey";
 import { Event } from "../Calendar/Event";
@@ -74,6 +75,8 @@ export class EMail extends Message {
   /** For composer/send only: «Напомнить, если не ответят». Not persisted. */
   @notifyChangedProperty
   followUpReminder: FollowUpChoice | null = null;
+  /** For send only: отложенная доставка на сервере Exchange (EWS, OWA). Not persisted. */
+  deferredSend: DeferredSend | null = null;
   /** Флажок «К исполнению»: начало и срок, день `YYYY-MM-DD`. null — без срока. */
   @notifyChangedProperty
   flagStartDay: DayString | null = null;

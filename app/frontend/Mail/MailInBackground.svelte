@@ -4,6 +4,7 @@
   import { newMailListener } from "./NotifyNewMail";
   import { startResponseReminderWatcher } from "./ResponseReminderWatcher";
   import { startFollowUpWatcher } from "./FollowUp/followUpReminders";
+  import { startScheduledSendQueue } from "./Scheduled/scheduledSend";
   import { startConnectionProblemNotifications } from "./connectionProblemNotice";
   import { startMailUnreadTracking } from "./mailUnreadCounts";
   import { startFavoriteFolderTracking } from "./LeftPane/favoriteFolders";
@@ -12,7 +13,7 @@
   import { bringAppToFront } from "../AppsBar/selectedApp";
   import { selectedFolder } from "./Selected";
   import { appGlobal } from "../../logic/app";
-  import { catchErrors } from "../Util/error";
+  import { backgroundError, catchErrors } from "../Util/error";
   import { assert, sleep, type URLString } from "../../logic/util/util";
   import { t } from "../../l10n/l10n";
   import { onMount } from "svelte";
@@ -23,6 +24,8 @@
     catchErrors(newMailListener);
     catchErrors(startResponseReminderWatcher);
     catchErrors(startFollowUpWatcher);
+    // Ошибка базы видна на странице «Запланированные», всплывающее сообщение не нужно
+    startScheduledSendQueue().catch(backgroundError);
     startConnectionProblemNotifications();
     startMailUnreadTracking();
   });

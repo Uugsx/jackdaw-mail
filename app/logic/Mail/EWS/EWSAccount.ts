@@ -36,6 +36,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray, NotReached, NotSupported, type Json } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
+import { ewsDeferredSendProperties } from "../Scheduled/DeferredSendRequests";
 
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
@@ -198,6 +199,9 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     let request = new EWSCreateItemRequest({ m$SavedItemFolderId: { t$FolderId: { Id: folder.id } }, MessageDisposition: "SendAndSaveCopy" });
     if (email.sendRawMIME) {
       request.addField("Message", "MimeContent", btoa(email.sendRawMIME), "item:MimeContent");
+      if (email.deferredSend) {
+        request.addField("Message", "ExtendedProperty", ewsDeferredSendProperties(email.deferredSend), null);
+      }
     } else {
       request.addField("Message", "ItemClass", "IPM.Note", "item:ItemClass");
       request.addField("Message", "Subject", email.subject, "item:Subject");
@@ -220,16 +224,20 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       if (email.inReplyTo) {
         request.addField("Message", "InReplyTo", email.inReplyTo, "item:InReplyTo");
       }
-      if (email.headers.hasItems) {
-        request.addField("Message", "ExtendedProperty", [...email.headers.entries()].map(([header, value]) => ({
-          t$ExtendedFieldURI: {
-            PropertyName: header,
-            DistinguishedPropertySetId: "InternetHeaders",
-            PropertyType: "String",
-            // TODO Sends header names as all-lowercase. Should preserve casing.
-          },
-          t$Value: value,
-        })), null);
+      let extendedProperties = [...email.headers.entries()].map(([header, value]) => ({
+        t$ExtendedFieldURI: {
+          PropertyName: header,
+          DistinguishedPropertySetId: "InternetHeaders",
+          PropertyType: "String",
+          // TODO Sends header names as all-lowercase. Should preserve casing.
+        },
+        t$Value: value,
+      }));
+      if (email.deferredSend) {
+        extendedProperties.push(...ewsDeferredSendProperties(email.deferredSend));
+      }
+      if (extendedProperties.length) {
+        request.addField("Message", "ExtendedProperty", extendedProperties, null);
       }
       // Older versions of Exchange require a specific order of parameters
       addRecipients(request, "ToRecipients", email.to.contents);

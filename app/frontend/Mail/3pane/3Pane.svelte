@@ -8,6 +8,8 @@
   <vbox flex class="mail-main" slot="right">
     {#if $tasksViewOpen}
       <TasksPage />
+    {:else if $scheduledViewOpen}
+      <ScheduledPage />
     {:else}
     <MailToolbar
       {selectedAccount}
@@ -64,6 +66,8 @@
   import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
   import TasksPage from "../Tasks/TasksPage.svelte";
   import { tasksViewOpen } from "../Tasks/tasksStore";
+  import ScheduledPage from "../Scheduled/ScheduledPage.svelte";
+  import { scheduledViewOpen } from "../Scheduled/scheduledSend";
 
   export let horizontal: boolean = true;
   export let accounts: Collection<MailAccount>; /** in */
@@ -81,6 +85,7 @@
   $: if (selectedFolder !== lastFolder) {
     if (lastFolder) {
       $tasksViewOpen = false;
+      $scheduledViewOpen = false;
     }
     lastFolder = selectedFolder;
   }

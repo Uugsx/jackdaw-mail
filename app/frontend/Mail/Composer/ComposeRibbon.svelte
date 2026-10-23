@@ -418,6 +418,7 @@
 
   {#if sendMenuAnchor}
     <Menu bind:isMenuOpen={sendMenuOpen} anchor={sendMenuAnchor} boundaryElSel=".mail-composer-window">
+      <MenuItem label={$t`Send later…`} onClick={() => { sendMenuOpen = false; dispatch("sendLater"); }} />
       <MenuItem label={$t`Save draft`} onClick={() => { sendMenuOpen = false; dispatch("saveDraft"); }} />
     </Menu>
   {/if}
@@ -587,6 +588,7 @@
 
   const dispatch = createEventDispatcher<{
     send: void;
+    sendLater: void;
     addAttachment: void;
     insertSignature: void;
     toggleHighImportance: void;
