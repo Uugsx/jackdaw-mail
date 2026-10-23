@@ -15,6 +15,11 @@
  * - Срабатывает и на hover, и на :focus-visible (клавиатура видит то же).
  * - Отключённые кнопки не анимируются.
  * - Всё движение существует только при prefers-reduced-motion: no-preference.
+ * - <svg> по умолчанию обрезает всё, что вышло за viewBox, поэтому у иконок
+ *   в кнопках overflow: visible. Сдвиг частей держится в пределах ~2 единиц
+ *   viewBox: он помещается в собственный отступ кнопки и не задевает соседей.
+ * - Иконка без собственного жеста получает общий короткий «кивок» — так в
+ *   приложении нет кнопок, которые реагируют на наведение, и кнопок, которые нет.
  *
  * Координаты transform-origin частей иконок заданы в единицах viewBox 24×24
  * (transform-box: view-box), поэтому не зависят от размера иконки. */
@@ -24,6 +29,12 @@
   --icon-motion-duration: 260ms;
   --icon-motion-gesture: 620ms;
   --icon-motion-stagger: 45ms;
+}
+
+/* Части иконки, сдвинутые жестом, не должны обрезаться краем <svg>
+ * (у «Ответить всем» пропадала левая стрелка, у корзины — верх крышки). */
+:is(button, [role="button"]) svg[class*="lucide-"] {
+  overflow: visible;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -68,7 +79,7 @@
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-trash-2 > :nth-child(5),
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-trash > :nth-child(2),
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-trash > :nth-child(3) {
-    transform: translateY(-1.5px) rotate(9deg);
+    transform: translateY(-1px) rotate(7deg);
   }
 
   /* ── Архив: крышка ящика приподнимается ── */
@@ -88,13 +99,13 @@
     transition-delay: var(--icon-motion-stagger);
   }
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-reply-all > :nth-child(1) {
-    transform: translateX(-2px);
+    transform: translateX(-1.5px);
   }
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-reply-all > :nth-child(2) {
-    transform: translateX(-1px);
+    transform: translateX(-0.5px);
   }
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-reply-all > :nth-child(3) {
-    transform: translateX(-3.5px);
+    transform: translateX(-2.5px);
   }
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-forward > :nth-child(1) {
     transform: translateX(3px);
@@ -281,6 +292,298 @@
     animation-name: jd-icon-cog;
   }
 
+
+  /* ───────────── Остальные кнопки приложения ─────────────
+   * Тот же язык движения для иконок звонков, календаря, чата, контактов,
+   * настроек и панелей: долгие состояния — transition, жесты — keyframes. */
+  svg.lucide-languages > :nth-child(-n + 4),
+  svg.lucide-languages > :nth-child(n + 5),
+  svg.lucide-link > :nth-child(1),
+  svg.lucide-link > :nth-child(2),
+  svg.lucide-zoom-in > *,
+  svg.lucide-zoom-out > *,
+  svg.lucide-image > :nth-child(2),
+  svg.lucide-type > :nth-child(2),
+  svg.lucide-copy > :nth-child(1),
+  svg.lucide-copy > :nth-child(2),
+  svg.lucide-save > :nth-child(3),
+  svg.lucide-video > :nth-child(1),
+  svg.lucide-calendar > :nth-child(-n + 2),
+  svg.lucide-calendar-plus > :nth-child(1),
+  svg.lucide-calendar-plus > :nth-child(3),
+  svg.lucide-chevron-up > *,
+  svg:is(.lucide-chevron-left, .lucide-chevrons-left, .lucide-arrow-big-left) > *,
+  svg:is(.lucide-chevron-right, .lucide-chevrons-right, .lucide-arrow-big-right) > *,
+  svg.lucide-arrow-left > *,
+  svg.lucide-arrow-right > *,
+  svg.lucide-arrow-up > *,
+  svg.lucide-arrow-down > *,
+  svg.lucide-eye > :nth-child(2),
+  svg.lucide-external-link > :nth-child(-n + 2),
+  svg.lucide-maximize-2 > :nth-child(-n + 2),
+  svg.lucide-maximize-2 > :nth-child(n + 3),
+  svg.lucide-undo > :nth-child(1),
+  svg.lucide-redo > :nth-child(1),
+  svg:is(.lucide-panel-left-close, .lucide-panel-right-open) > :nth-child(3),
+  svg.lucide-panel-right-close > :nth-child(3),
+  svg:is(.lucide-upload, .lucide-share) > :nth-child(-n + 2),
+  svg:is(.lucide-log-in, .lucide-log-out) > :nth-child(-n + 2),
+  svg.lucide-screen-share > :nth-child(n + 4) {
+    transform-box: view-box;
+    transition: transform var(--icon-motion-duration) var(--icon-motion-ease);
+  }
+
+  /* ── Перевести: знаки двух языков расходятся ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-languages > :nth-child(-n + 4) {
+    transform: translateX(-1px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-languages > :nth-child(n + 5) {
+    transform: translateX(1px);
+  }
+
+  /* ── Ссылка: звенья цепи сходятся ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-link > :nth-child(1) {
+    transform: translate(-1px, 1px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-link > :nth-child(2) {
+    transform: translate(1px, -1px);
+  }
+
+  /* ── Масштаб: линза приближает или отдаляет ── */
+  svg.lucide-zoom-in > * {
+    transform-origin: 11px 11px;
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-zoom-in > * {
+    transform: scale(1.08);
+  }
+  svg.lucide-zoom-out > * {
+    transform-origin: 11px 11px;
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-zoom-out > * {
+    transform: scale(0.92);
+  }
+
+  /* ── Картинка: солнце поднимается над горой ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-image > :nth-child(2) {
+    transform: translateY(-1.5px);
+  }
+
+  /* ── Шрифт: перекладина буквы «Т» расправляется ── */
+  svg.lucide-type > :nth-child(2) {
+    transform-origin: 12px 5px;
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-type > :nth-child(2) {
+    transform: scaleX(1.12);
+  }
+
+  /* ── Копировать: листы расходятся ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-copy > :nth-child(1) {
+    transform: translate(1px, 1px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-copy > :nth-child(2) {
+    transform: translate(-1px, -1px);
+  }
+
+  /* ── Сохранить: шторка дискеты сдвигается ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-save > :nth-child(3) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Видео: объектив выдвигается ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-video > :nth-child(1) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Календарь: кольца переплёта приподнимаются ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-calendar > :nth-child(-n + 2) {
+    transform: translateY(-1.5px);
+  }
+
+  /* ── Новое событие: плюс поворачивается, как у «Создать» ── */
+  svg.lucide-calendar-plus > :nth-child(1),
+  svg.lucide-calendar-plus > :nth-child(3) {
+    transform-origin: 19px 19px;
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-calendar-plus > :nth-child(1),
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-calendar-plus > :nth-child(3) {
+    transform: rotate(90deg);
+  }
+
+  /* ── Шевроны и стрелки: сдвиг в свою сторону ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-chevron-up > * {
+    transform: translateY(-1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-chevron-left, .lucide-chevrons-left, .lucide-arrow-big-left) > * {
+    transform: translateX(-1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-chevron-right, .lucide-chevrons-right, .lucide-arrow-big-right) > * {
+    transform: translateX(1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-arrow-left > * {
+    transform: translateX(-2px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-arrow-right > * {
+    transform: translateX(2px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-arrow-up > * {
+    transform: translateY(-1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-arrow-down > * {
+    transform: translateY(1.5px);
+  }
+
+  /* ── Показать: зрачок оглядывается ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-eye > :nth-child(2) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Открыть снаружи: стрелка уходит из рамки ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-external-link > :nth-child(-n + 2) {
+    transform: translate(1.5px, -1.5px);
+  }
+
+  /* ── Развернуть: уголки расходятся ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-maximize-2 > :nth-child(-n + 2) {
+    transform: translate(1px, -1px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-maximize-2 > :nth-child(n + 3) {
+    transform: translate(-1px, 1px);
+  }
+
+  /* ── Отменить / повторить: крючок стрелки тянется назад или вперёд ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-undo > :nth-child(1) {
+    transform: translateX(-1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-redo > :nth-child(1) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Панели: стрелка показывает, куда уедет панель ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-panel-left-close, .lucide-panel-right-open) > :nth-child(3) {
+    transform: translateX(-1.5px);
+  }
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-panel-right-close > :nth-child(3) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Загрузить / поделиться: стрелка поднимается ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-upload, .lucide-share) > :nth-child(-n + 2) {
+    transform: translateY(-1.5px);
+  }
+
+  /* ── Войти / выйти: стрелка проходит в дверь ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-log-in, .lucide-log-out) > :nth-child(-n + 2) {
+    transform: translateX(1.5px);
+  }
+
+  /* ── Показ экрана: стрелка уходит с экрана ── */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-screen-share > :nth-child(n + 4) {
+    transform: translate(1px, -1px);
+  }
+
+  /* Однократные жесты остальных иконок: база та же, что у жестов выше. */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-video-off, .lucide-mic-off, .lucide-bell-off, .lucide-eye-off, .lucide-screen-share-off, .lucide-cloud-off) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-phone, .lucide-phone-call, .lucide-phone-outgoing) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-check, .lucide-check-check, .lucide-circle-check, .lucide-mail-check, .lucide-share-2) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-info, .lucide-circle-help, .lucide-circle-question-mark) > :not(circle),
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-heart > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-rotate-ccw, .lucide-refresh-ccw, .lucide-history, .lucide-iteration-ccw) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-sun > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-moon, .lucide-sun-moon) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-square-pen, .lucide-pen-line, .lucide-notebook-pen, .lucide-signature, .lucide-highlighter, .lucide-brush, .lucide-key-round) > * {
+    transform-box: view-box;
+    transform-origin: 12px 12px;
+    animation-duration: var(--icon-motion-gesture);
+    animation-timing-function: var(--icon-motion-ease);
+    animation-fill-mode: both;
+  }
+
+  /* «Выключено» (видео, микрофон, звук, показ экрана): качает «нет», как щит спама */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-video-off, .lucide-mic-off, .lucide-bell-off, .lucide-eye-off, .lucide-screen-share-off, .lucide-cloud-off) > * {
+    animation-name: jd-icon-deny;
+    animation-duration: 480ms;
+  }
+
+  /* Телефон звонит */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-phone, .lucide-phone-call, .lucide-phone-outgoing) > * {
+    animation-name: jd-icon-wiggle;
+    animation-duration: 480ms;
+  }
+
+  /* Готово: галочка «появляется», как звезда */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-check, .lucide-check-check, .lucide-circle-check, .lucide-mail-check, .lucide-share-2) > * {
+    animation-name: jd-icon-pop;
+    animation-duration: 420ms;
+  }
+
+  /* Справка: знак подпрыгивает, как «!» у важного */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-info, .lucide-circle-help, .lucide-circle-question-mark) > :not(circle) {
+    animation-name: jd-icon-hop;
+    animation-duration: 460ms;
+  }
+
+  /* Сердце бьётся */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-heart > * {
+    animation-name: jd-icon-pulse;
+    animation-duration: 460ms;
+  }
+
+  /* Сбросить / история: оборот в обратную сторону */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-rotate-ccw, .lucide-refresh-ccw, .lucide-history, .lucide-iteration-ccw) > * {
+    animation-name: jd-icon-spin-back;
+    animation-duration: 700ms;
+  }
+
+  /* Светлая тема: лучи солнца проворачиваются на один луч */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg.lucide-sun > * {
+    animation-name: jd-icon-sun-turn;
+    animation-duration: 520ms;
+  }
+
+  /* Тёмная и системная тема: луна покачивается */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-moon, .lucide-sun-moon) > * {
+    animation-name: jd-icon-swing;
+  }
+
+  /* Перо, подпись, маркер, ключ покачиваются, как карандаш */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg:is(.lucide-square-pen, .lucide-pen-line, .lucide-notebook-pen, .lucide-signature, .lucide-highlighter, .lucide-brush, .lucide-key-round) > * {
+    animation-name: jd-icon-wiggle;
+    animation-duration: 480ms;
+  }
+
+  /* ── Общий «кивок» для всех прочих иконок в кнопках ──
+   * В исключениях — иконки со своим движением и неподвижные индикаторы.
+   * Если у иконки появляется свой жест, её нужно добавить сюда. */
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg[class*="lucide-"]:not(
+    .lucide-trash-2, .lucide-trash, .lucide-archive, .lucide-reply, .lucide-reply-all,
+    .lucide-forward, .lucide-undo-2, .lucide-folder-input, .lucide-mail, .lucide-sliders-horizontal,
+    .lucide-list-plus, .lucide-mail-plus, .lucide-chevron-down, .lucide-panel-left-open, .lucide-download,
+    .lucide-search, .lucide-printer, .lucide-flag, .lucide-circle-alert, .lucide-tags,
+    .lucide-tag, .lucide-shield-x, .lucide-shield-off, .lucide-ellipsis, .lucide-ellipsis-vertical,
+    .lucide-list-filter, .lucide-mail-open, .lucide-folder-open, .lucide-refresh-cw, .lucide-rotate-cw,
+    .lucide-send, .lucide-bell, .lucide-x, .lucide-plus, .lucide-pencil,
+    .lucide-paperclip, .lucide-star, .lucide-settings, .lucide-languages, .lucide-link,
+    .lucide-zoom-in, .lucide-zoom-out, .lucide-image, .lucide-type, .lucide-copy,
+    .lucide-save, .lucide-video, .lucide-calendar, .lucide-calendar-plus, .lucide-chevron-up,
+    .lucide-chevron-left, .lucide-chevrons-left, .lucide-arrow-big-left, .lucide-chevron-right, .lucide-chevrons-right,
+    .lucide-arrow-big-right, .lucide-arrow-left, .lucide-arrow-right, .lucide-arrow-up, .lucide-arrow-down,
+    .lucide-eye, .lucide-external-link, .lucide-maximize-2, .lucide-undo, .lucide-redo,
+    .lucide-panel-left-close, .lucide-panel-right-open, .lucide-panel-right-close, .lucide-upload, .lucide-share,
+    .lucide-log-in, .lucide-log-out, .lucide-screen-share, .lucide-video-off, .lucide-mic-off,
+    .lucide-bell-off, .lucide-eye-off, .lucide-screen-share-off, .lucide-cloud-off, .lucide-phone,
+    .lucide-phone-call, .lucide-phone-outgoing, .lucide-check, .lucide-check-check, .lucide-circle-check,
+    .lucide-mail-check, .lucide-share-2, .lucide-info, .lucide-circle-help, .lucide-circle-question-mark,
+    .lucide-heart, .lucide-rotate-ccw, .lucide-refresh-ccw, .lucide-history, .lucide-iteration-ccw,
+    .lucide-sun, .lucide-moon, .lucide-sun-moon, .lucide-square-pen, .lucide-pen-line,
+    .lucide-notebook-pen, .lucide-signature, .lucide-highlighter, .lucide-brush, .lucide-key-round,
+    .lucide-loader-circle, .lucide-circle-dashed, .lucide-dot, .lucide-grip,
+    .lucide-grip-vertical, .lucide-grab, .lucide-minus, .lucide-square
+  ) > * {
+    transform-box: view-box;
+    transform-origin: 12px 12px;
+    animation: jd-icon-nod 420ms var(--icon-motion-ease) both;
+  }
+
   /* Иконка, которая подменяет другую при наведении (data-icon-motion="swap-in"):
    * сама подмена уже показывает действие, поэтому части не двигаются,
    * а вся иконка коротко «появляется». */
@@ -373,4 +676,24 @@
 @keyframes jd-icon-cog {
   0% { transform: none; }
   100% { transform: rotate(60deg); }
+}
+
+@keyframes jd-icon-spin-back {
+  0% { transform: none; }
+  100% { transform: rotate(-360deg); }
+}
+
+/* У солнца 8 лучей: поворот на 45° совпадает с исходным положением. */
+@keyframes jd-icon-sun-turn {
+  0% { transform: none; }
+  100% { transform: rotate(45deg); }
+}
+
+/* Общий «кивок»: мягче, чем hop, — иконка целиком приподнимается и встаёт
+ * на место, оставаясь внутри отступа кнопки. */
+@keyframes jd-icon-nod {
+  0% { transform: none; }
+  40% { transform: translateY(-1.5px); }
+  70% { transform: translateY(0.3px); }
+  100% { transform: none; }
 }
