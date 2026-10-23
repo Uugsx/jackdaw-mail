@@ -8,7 +8,7 @@ import { OWAFolder } from "./OWAFolder";
 import type { OWAEMail } from "./OWAEMail";
 import { owaCategoriesPresent } from "./OWAEMail";
 import { OWAError } from "./OWAError";
-import { checkInboxRulesResponse, owaGetInboxRulesRequest, owaUpdateInboxRulesRequest, parseInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "../EWS/InboxRules";
+import { checkOWAInboxRulesResponse, owaCreatedInboxRuleID, owaEnableInboxRuleRequest, owaGetInboxRulesRequest, owaInboxRuleRequest, parseOWAInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "../EWS/InboxRules";
 import { checkOWAOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOWAOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
 import type { OWANotifications } from "./Notification/OWANotifications";
 import { OWAExchangeNotifications } from "./Notification/OWAExchangeNotifications";
@@ -2020,14 +2020,23 @@ export class OWAAccount extends ExchangeMailAccount {
   }
 
   async loadInboxRules(): Promise<InboxRuleList> {
-    let response = await this.callOWA(owaGetInboxRulesRequest());
-    checkInboxRulesResponse(response);
-    return parseInboxRulesResponse(response);
+    return parseOWAInboxRulesResponse(await this.callOWA(owaGetInboxRulesRequest()));
   }
 
+  /** OWA: по команде на операцию, включение и выключение — отдельной командой */
   async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
-    let response = await this.callOWA(owaUpdateInboxRulesRequest(operations, removeOutlookRuleBlob));
-    checkInboxRulesResponse(response);
+    for (let operation of operations) {
+      let response = await this.callOWA(owaInboxRuleRequest(operation, removeOutlookRuleBlob));
+      checkOWAInboxRulesResponse(response);
+      if (operation.kind == "delete") {
+        continue;
+      }
+      let id = operation.kind == "create" ? owaCreatedInboxRuleID(response) : operation.rule.id;
+      // Новое правило сервер создаёт включённым
+      if (id && (operation.kind == "set" || !operation.rule.enabled)) {
+        checkOWAInboxRulesResponse(await this.callOWA(owaEnableInboxRuleRequest(id, operation.rule.enabled, removeOutlookRuleBlob)));
+      }
+    }
   }
 
   async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {

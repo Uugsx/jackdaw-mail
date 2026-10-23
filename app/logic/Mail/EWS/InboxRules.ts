@@ -1,4 +1,4 @@
-import { OWARequest } from "../OWA/Request/OWARequest";
+import { OWAOptionsRequest } from "../OWA/Request/OWAOptionsRequest";
 
 /**
  * Серверные правила входящих (Inbox Rules) Exchange.
@@ -24,6 +24,8 @@ export interface InboxRuleAddress {
 export interface InboxRuleFolder {
   id: string | null;
   distinguishedId: string | null;
+  /** OWA называет папку своим ID, но сообщает её имя */
+  name?: string;
 }
 
 export interface InboxRuleConditions {
@@ -204,13 +206,6 @@ function parseFolder(value: any): InboxRuleFolder | null {
   if (!value || typeof value != "object") {
     return null;
   }
-  // OWA: `{ BaseFolderId: { __type: "DistinguishedFolderId:#Exchange", Id } }`
-  let base = value.BaseFolderId;
-  if (base && typeof base == "object") {
-    value = String(base.__type).startsWith("DistinguishedFolderId")
-      ? { DistinguishedFolderId: base }
-      : { FolderId: base };
-  }
   let distinguished = value.DistinguishedFolderId;
   if (distinguished) {
     let id = typeof distinguished == "string" ? distinguished : textValue(distinguished.Id);
@@ -221,7 +216,7 @@ function parseFolder(value: any): InboxRuleFolder | null {
   return id ? { id, distinguishedId: null } : null;
 }
 
-/** Разбирает одно правило из EWS (XML2JSON) или OWA (JSON): поля называются одинаково */
+/** Разбирает одно правило EWS (XML2JSON) */
 export function parseInboxRule(json: any): InboxRule {
   let rule = newInboxRule();
   rule.id = textValue(json?.RuleId) || null;
@@ -291,7 +286,7 @@ export function parseInboxRule(json: any): InboxRule {
   return rule;
 }
 
-/** Разбирает ответ `GetInboxRules` (EWS или OWA) */
+/** Разбирает ответ `GetInboxRules` (EWS) */
 export function parseInboxRulesResponse(response: any): InboxRuleList {
   let body = response?.Body ?? response;
   if (!body || typeof body != "object") {
@@ -474,111 +469,194 @@ export function ewsUpdateInboxRulesRequest(operations: InboxRuleOperation[], rem
   };
 }
 
-function owaAddresses(addresses: InboxRuleAddress[]) {
-  return addresses.map(entry => {
-    let address: Record<string, any> = {
-      __type: "EmailAddress:#Exchange",
-      EmailAddress: entry.address,
-    };
-    if (entry.name) {
-      address.Name = entry.name;
-    }
-    if (entry.routingType) {
-      address.RoutingType = entry.routingType;
-    }
-    if (entry.mailboxType) {
-      address.MailboxType = entry.mailboxType;
-    }
-    return address;
-  });
+// OWA: команды настроек, как PowerShell `Get-InboxRule`/`New-InboxRule`/`Set-InboxRule`.
+// JSON-вариант `GetInboxRules`/`UpdateInboxRules` в service.svc сервер не принимает.
+
+/** Поля, которые сервер заполняет сам или которые только описывают правило */
+const kOWAOutputOnly = ["__type", "Identity", "Name", "Priority", "Enabled", "InError", "SupportedByTask",
+  "Description", "DescriptionTimeFormat", "DescriptionTimeZone", "WarningMessages"];
+const kOWAKnown = ["From", "SentTo", "SubjectContainsWords", "BodyContainsWords", "WithImportance", "HasAttachment",
+  "MoveToFolder", "CopyToFolder", "DeleteMessage", "MarkAsRead", "ApplyCategory", "ForwardTo", "StopProcessingRules"];
+/** Ответ команды настроек: «Спросить пользователя», единственный вопрос — удалить ли правила Outlook */
+const kOWAPromptUser = 4;
+
+function isOWAEmpty(value: any): boolean {
+  return value == null || value === false || value === "" || (Array.isArray(value) && !value.length);
 }
 
-function owaFolder(folder: InboxRuleFolder) {
+function owaPeople(value: any): InboxRuleAddress[] {
+  return listOf(value, "").map(entry => {
+    let address: InboxRuleAddress = {
+      name: textValue(entry?.DisplayName),
+      address: textValue(entry?.SmtpAddress ?? entry?.EmailAddress),
+    };
+    if (entry?.RoutingType) {
+      address.routingType = textValue(entry.RoutingType);
+    }
+    return address;
+  }).filter(address => address.address || address.name);
+}
+
+function owaFolderRef(value: any): InboxRuleFolder | null {
+  let id = textValue(value?.RawIdentity);
+  if (!id) {
+    return null;
+  }
+  let folder: InboxRuleFolder = { id, distinguishedId: null };
+  let name = textValue(value?.DisplayName);
+  if (name) {
+    folder.name = name;
+  }
+  return folder;
+}
+
+/** Разбирает `InboxRule` из ответа `GetInboxRule` */
+export function parseOWAInboxRule(json: any): InboxRule {
+  let rule = newInboxRule();
+  rule.id = textValue(json?.Identity?.RawIdentity) || null;
+  rule.name = textValue(json?.Name);
+  rule.priority = Number(json?.Priority) || 0;
+  rule.enabled = json?.Enabled !== false;
+  rule.inError = json?.InError === true;
+  if (json?.SupportedByTask === false) {
+    rule.unsupported.push("SupportedByTask");
+  }
+  for (let key of keysOf(json)) {
+    if (!kOWAOutputOnly.includes(key) && !kOWAKnown.includes(key) && !isOWAEmpty(json[key])) {
+      rule.unsupported.push(key);
+    }
+  }
+  let c = rule.conditions;
+  c.from = owaPeople(json?.From);
+  c.sentTo = owaPeople(json?.SentTo);
+  c.subjectContains = parseStrings(json?.SubjectContainsWords);
+  c.bodyContains = parseStrings(json?.BodyContainsWords);
+  if (!isOWAEmpty(json?.WithImportance)) {
+    let importance = textValue(json.WithImportance);
+    c.importance = kImportance.find(entry => entry.toLowerCase() == importance.toLowerCase()) ?? null;
+    if (!c.importance) {
+      rule.unsupported.push("WithImportance");
+    }
+  }
+  c.hasAttachments = json?.HasAttachment === true;
+
+  let a = rule.actions;
+  a.moveTo = owaFolderRef(json?.MoveToFolder);
+  a.copyTo = owaFolderRef(json?.CopyToFolder);
+  for (let key of ["MoveToFolder", "CopyToFolder"]) {
+    if (!isOWAEmpty(json?.[key]) && !owaFolderRef(json[key])) {
+      rule.unsupported.push(key);
+    }
+  }
+  a.delete = json?.DeleteMessage === true;
+  a.markAsRead = json?.MarkAsRead === true;
+  a.categories = parseStrings(json?.ApplyCategory);
+  a.forwardTo = owaPeople(json?.ForwardTo);
+  a.stopProcessing = json?.StopProcessingRules === true;
+  return rule;
+}
+
+/** Разбирает ответ `GetInboxRule` */
+export function parseOWAInboxRulesResponse(response: any): InboxRuleList {
+  checkOWAInboxRulesResponse(response);
+  let rules = listOf(response?.InboxRuleCollection?.InboxRules, "").map(parseOWAInboxRule);
+  rules.sort((a, b) => a.priority - b.priority);
+  // OWA сообщает о правилах Outlook только в ответ на изменение
+  return { rules, outlookRuleBlobExists: false };
+}
+
+/** Команды настроек OWA сообщают об ошибке через HTTP 200 и `WasSuccessful: false` */
+export function checkOWAInboxRulesResponse(response: any): void {
+  if (response?.WasSuccessful !== false) {
+    return;
+  }
+  let promptUser = response.ErrorCode == kOWAPromptUser || response.ErrorCode == "PromptUser";
+  let error = new Error(textValue(response.ErrorMessage) || textValue(response.UserPrompt) ||
+    "Inbox rules request failed (ErrorCode " + response.ErrorCode + ")");
+  (error as any).type = (error as any).code = promptUser ? kOutlookRuleBlobExists : response.ErrorCode;
+  throw error;
+}
+
+function owaPeopleParameter(addresses: InboxRuleAddress[]) {
+  return addresses.length
+    ? addresses.map(entry => ({
+      SmtpAddress: entry.address,
+      DisplayName: entry.name || entry.address,
+      RoutingType: entry.routingType ?? "SMTP",
+    }))
+    : null;
+}
+
+function owaFolderParameter(folder: InboxRuleFolder | null) {
+  return folder ? { RawIdentity: folder.id ?? folder.distinguishedId, DisplayName: folder.name ?? "" } : null;
+}
+
+/**
+ * Все параметры, которые мы понимаем. Пустые — `null`/`false`: так `SetInboxRule`
+ * убирает условие, которое пользователь стёр. Остальные параметры сервер не трогает.
+ */
+export function owaInboxRuleParameters(rule: InboxRule): Record<string, any> {
+  let c = rule.conditions;
+  let a = rule.actions;
   return {
-    __type: "TargetFolderId:#Exchange",
-    BaseFolderId: folder.distinguishedId
-      ? { __type: "DistinguishedFolderId:#Exchange", Id: folder.distinguishedId }
-      : { __type: "FolderId:#Exchange", Id: folder.id },
+    Name: rule.name.trim(),
+    Priority: Math.max(1, rule.priority || 1),
+    From: owaPeopleParameter(c.from),
+    SentTo: owaPeopleParameter(c.sentTo),
+    SubjectContainsWords: c.subjectContains.length ? c.subjectContains : null,
+    BodyContainsWords: c.bodyContains.length ? c.bodyContains : null,
+    WithImportance: c.importance,
+    HasAttachment: c.hasAttachments,
+    MoveToFolder: owaFolderParameter(a.moveTo),
+    CopyToFolder: owaFolderParameter(a.copyTo),
+    DeleteMessage: a.delete,
+    MarkAsRead: a.markAsRead,
+    ApplyCategory: a.categories.length ? a.categories : null,
+    ForwardTo: owaPeopleParameter(a.forwardTo),
+    StopProcessingRules: a.stopProcessing,
   };
 }
 
-/** Правило для OWA (JSON service.svc) */
-export function owaInboxRule(rule: InboxRule, withID: boolean) {
-  let c = rule.conditions;
-  let conditions: Record<string, any> = { __type: "RulePredicates:#Exchange" };
-  if (c.bodyContains.length) {
-    conditions.ContainsBodyStrings = c.bodyContains;
-  }
-  if (c.subjectContains.length) {
-    conditions.ContainsSubjectStrings = c.subjectContains;
-  }
-  if (c.from.length) {
-    conditions.FromAddresses = owaAddresses(c.from);
-  }
-  if (c.hasAttachments) {
-    conditions.HasAttachments = true;
-  }
-  if (c.importance) {
-    conditions.Importance = c.importance;
-  }
-  if (c.sentTo.length) {
-    conditions.SentToAddresses = owaAddresses(c.sentTo);
-  }
-
-  let a = rule.actions;
-  let actions: Record<string, any> = { __type: "RuleActions:#Exchange" };
-  if (a.categories.length) {
-    actions.AssignCategories = a.categories;
-  }
-  if (a.copyTo) {
-    actions.CopyToFolder = owaFolder(a.copyTo);
-  }
-  if (a.delete) {
-    actions.Delete = true;
-  }
-  if (a.forwardTo.length) {
-    actions.ForwardToRecipients = owaAddresses(a.forwardTo);
-  }
-  if (a.markAsRead) {
-    actions.MarkAsRead = true;
-  }
-  if (a.moveTo) {
-    actions.MoveToFolder = owaFolder(a.moveTo);
-  }
-  if (a.stopProcessing) {
-    actions.StopProcessingRules = true;
-  }
-
-  let result: Record<string, any> = { __type: "Rule:#Exchange" };
-  if (withID) {
-    result.RuleId = rule.id;
-  }
-  result.DisplayName = rule.name.trim();
-  result.Priority = Math.max(1, rule.priority || 1);
-  result.IsEnabled = rule.enabled;
-  result.Conditions = conditions;
-  result.Actions = actions;
-  return result;
+export function owaGetInboxRulesRequest(): OWAOptionsRequest {
+  return new OWAOptionsRequest("GetInboxRule");
 }
 
-export function owaGetInboxRulesRequest(): OWARequest {
-  return new OWARequest("GetInboxRules", {
-    __type: "GetInboxRulesRequest:#Exchange",
-  });
-}
-
-export function owaUpdateInboxRulesRequest(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): OWARequest {
-  operations.forEach(checkWritable);
-  return new OWARequest("UpdateInboxRules", {
-    __type: "UpdateInboxRulesRequest:#Exchange",
-    RemoveOutlookRuleBlob: removeOutlookRuleBlob,
-    Operations: operations.map(operation => {
-      if (operation.kind == "create") {
-        return { __type: "CreateRuleOperation:#Exchange", Rule: owaInboxRule(operation.rule, false) };
-      } else if (operation.kind == "set") {
-        return { __type: "SetRuleOperation:#Exchange", Rule: owaInboxRule(operation.rule, true) };
+/**
+ * Запрос для одной операции. Включение и выключение — отдельной командой:
+ * см. `owaEnableInboxRuleRequest()`.
+ * @param removeOutlookRuleBlob Удалить клиентские правила Outlook. Только после согласия пользователя.
+ */
+export function owaInboxRuleRequest(operation: InboxRuleOperation, removeOutlookRuleBlob = false): OWAOptionsRequest {
+  checkWritable(operation);
+  let outlookRules = { AlwaysDeleteOutlookRulesBlob: removeOutlookRuleBlob, Force: false };
+  if (operation.kind == "delete") {
+    return new OWAOptionsRequest("RemoveInboxRule", { Identity: { RawIdentity: operation.id }, ...outlookRules });
+  }
+  let parameters = owaInboxRuleParameters(operation.rule);
+  if (operation.kind == "create") {
+    // У нового правила пустые параметры не нужны
+    for (let [key, value] of Object.entries(parameters)) {
+      if (isOWAEmpty(value)) {
+        delete parameters[key];
       }
-      return { __type: "DeleteRuleOperation:#Exchange", RuleId: operation.id };
-    }),
+    }
+    return new OWAOptionsRequest("NewInboxRule", { InboxRule: parameters, ...outlookRules });
+  }
+  return new OWAOptionsRequest("SetInboxRule", {
+    InboxRule: { Identity: { RawIdentity: operation.rule.id }, ...parameters },
+    ...outlookRules,
   });
+}
+
+export function owaEnableInboxRuleRequest(id: string, enabled: boolean, removeOutlookRuleBlob = false): OWAOptionsRequest {
+  return new OWAOptionsRequest(enabled ? "EnableInboxRule" : "DisableInboxRule", {
+    Identity: { RawIdentity: id },
+    AlwaysDeleteOutlookRulesBlob: removeOutlookRuleBlob,
+    Force: false,
+  });
+}
+
+/** ID правила из ответа `NewInboxRule` */
+export function owaCreatedInboxRuleID(response: any): string | null {
+  return textValue(response?.InboxRule?.Identity?.RawIdentity) || null;
 }

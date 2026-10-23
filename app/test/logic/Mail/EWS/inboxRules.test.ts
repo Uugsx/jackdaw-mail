@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 
-import "../../../../logic/app"; // Avoid import cycle
+import { appGlobal } from "../../../../logic/app"; // Avoid import cycle
 import { EWSAccount } from "../../../../logic/Mail/EWS/EWSAccount";
+import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
 import { EWSItemError } from "../../../../logic/Mail/EWS/EWSError";
 import {
-  checkInboxRulesResponse, ewsGetInboxRulesRequest, ewsUpdateInboxRulesRequest, hasInboxRuleAction,
-  hasInboxRuleCondition, isInboxRuleReadOnly, isOutlookRuleBlobError, newInboxRule, owaGetInboxRulesRequest,
-  owaUpdateInboxRulesRequest, parseInboxRule, parseInboxRulesResponse, splitInboxRuleList, type InboxRule,
+  checkInboxRulesResponse, checkOWAInboxRulesResponse, ewsGetInboxRulesRequest, ewsUpdateInboxRulesRequest,
+  hasInboxRuleAction, hasInboxRuleCondition, isInboxRuleReadOnly, isOutlookRuleBlobError, newInboxRule,
+  owaCreatedInboxRuleID, owaEnableInboxRuleRequest, owaGetInboxRulesRequest, owaInboxRuleRequest, parseInboxRule,
+  parseInboxRulesResponse, parseOWAInboxRulesResponse, splitInboxRuleList, type InboxRule,
 } from "../../../../logic/Mail/EWS/InboxRules";
 import { describe, expect, test } from "vitest";
 
@@ -283,7 +285,7 @@ describe("EWS: формирование XML", () => {
   test("правило из Outlook не отправляется: оно стёрло бы непонятые части", () => {
     let outlook = parseInboxRulesResponse(ewsResponse(kGetInboxRules)).rules[2];
     expect(() => ewsUpdateInboxRulesRequest([{ kind: "set", rule: { ...outlook, enabled: false } }])).toThrow();
-    expect(() => owaUpdateInboxRulesRequest([{ kind: "set", rule: outlook }])).toThrow();
+    expect(() => owaInboxRuleRequest({ kind: "set", rule: outlook })).toThrow();
     // Удалять можно
     expect(() => ewsUpdateInboxRulesRequest([{ kind: "delete", id: outlook.id }])).not.toThrow();
   });
@@ -314,91 +316,206 @@ describe("EWS: формирование XML", () => {
   });
 });
 
-describe("OWA: JSON", () => {
-  test("GetInboxRules и разбор ответа OWA", () => {
-    let request = owaGetInboxRulesRequest();
-    expect(request.action).toBe("GetInboxRules");
-    expect(request.__type).toBe("GetInboxRulesJsonRequest:#Exchange");
-    expect(request.Body.__type).toBe("GetInboxRulesRequest:#Exchange");
-
-    let list = parseInboxRulesResponse({
-      ResponseClass: "Success",
-      ResponseCode: "NoError",
-      OutlookRuleBlobExists: false,
+describe("OWA: команды настроек", () => {
+  const kGetInboxRule = {
+    WasSuccessful: true,
+    InboxRuleCollection: {
       InboxRules: [{
-        __type: "Rule:#Exchange",
-        RuleId: "R1",
-        DisplayName: "Шеф",
-        Priority: 1,
-        IsEnabled: true,
-        IsNotSupported: false,
-        IsInError: false,
-        Conditions: {
-          __type: "RulePredicates:#Exchange",
-          FromAddresses: [{ __type: "EmailAddress:#Exchange", Name: "Шеф", EmailAddress: "boss@example.com" }],
-          ContainsSubjectStrings: ["срочно"],
-        },
-        Actions: {
-          __type: "RuleActions:#Exchange",
-          MoveToFolder: { __type: "TargetFolderId:#Exchange", BaseFolderId: { __type: "FolderId:#Exchange", Id: "F1" } },
-          AssignCategories: ["Красная"],
-          MarkAsRead: false,
-        },
-      }],
-    });
-    let [rule] = list.rules;
-    expect(isInboxRuleReadOnly(rule)).toBe(false);
-    expect(rule.conditions.from).toEqual([{ name: "Шеф", address: "boss@example.com" }]);
-    expect(rule.conditions.subjectContains).toEqual(["срочно"]);
-    expect(rule.actions.categories).toEqual(["Красная"]);
-    expect(rule.actions.markAsRead).toBe(false);
-    expect(rule.actions.moveTo).toEqual({ id: "F1", distinguishedId: null });
-  });
-
-  test("UpdateInboxRules: операции с типами Exchange", () => {
-    let rule = simpleRule();
-    rule.actions.copyTo = { id: null, distinguishedId: "junkemail" };
-    let request = owaUpdateInboxRulesRequest([
-      { kind: "set", rule },
-      { kind: "delete", id: "R2" },
-    ]);
-    expect(request.action).toBe("UpdateInboxRules");
-    expect(request.Body.RemoveOutlookRuleBlob).toBe(false);
-    let [set, remove] = request.Body.Operations;
-    expect(set.__type).toBe("SetRuleOperation:#Exchange");
-    expect(set.Rule).toMatchObject({
-      RuleId: "AQAAAAAAAA1",
-      DisplayName: "Счета",
-      Priority: 2,
-      IsEnabled: true,
-      Conditions: {
-        ContainsSubjectStrings: ["счёт", "invoice"],
-        FromAddresses: [{ __type: "EmailAddress:#Exchange", EmailAddress: "buh@example.com", Name: "Бухгалтерия" }],
-        HasAttachments: true,
-        Importance: "High",
-      },
-      Actions: {
-        AssignCategories: ["Финансы"],
-        CopyToFolder: { BaseFolderId: { __type: "DistinguishedFolderId:#Exchange", Id: "junkemail" } },
-        MoveToFolder: { BaseFolderId: { __type: "FolderId:#Exchange", Id: "AAMkFolder1" } },
+        Identity: { RawIdentity: "ivan\\2" },
+        Name: "Без поддержки",
+        Priority: 2,
+        Enabled: false,
+        SupportedByTask: true,
+        RecipientAddressContainsWords: ["list"],
         MarkAsRead: true,
+        From: null,
+        HasAttachment: false,
+      }, {
+        Identity: { RawIdentity: "ivan\\1" },
+        Name: "Шеф",
+        Priority: 1,
+        Enabled: true,
+        InError: false,
+        SupportedByTask: true,
+        Description: "If the message: from Шеф...",
+        From: [{ SmtpAddress: "boss@example.com", DisplayName: "Шеф", RoutingType: "SMTP" }],
+        SubjectContainsWords: ["срочно"],
+        WithImportance: "High",
+        HasAttachment: true,
+        MoveToFolder: { RawIdentity: "LgAAAA1", DisplayName: "Важное" },
+        ApplyCategory: ["Красная"],
+        ForwardTo: [{ SmtpAddress: "me@example.org", DisplayName: "me@example.org" }],
         StopProcessingRules: true,
-      },
+        DeleteMessage: false,
+        CopyToFolder: null,
+      }, {
+        Identity: { RawIdentity: "ivan\\3" },
+        Name: "Из Outlook",
+        Priority: 3,
+        SupportedByTask: false,
+        MarkAsRead: true,
+      }],
+    },
+  };
+
+  test("GetInboxRule: запрос без Body, параметры рядом с Header", () => {
+    let request = owaGetInboxRulesRequest();
+    expect(request.action).toBe("GetInboxRule");
+    expect(request.__type).toBe("GetInboxRuleRequest:#Exchange");
+    expect(JSON.parse(JSON.stringify(request))).toEqual({
+      __type: "GetInboxRuleRequest:#Exchange",
+      Header: { __type: "JsonRequestHeaders:#Exchange", RequestServerVersion: "Exchange2013" },
     });
-    expect(remove).toEqual({ __type: "DeleteRuleOperation:#Exchange", RuleId: "R2" });
-    // Разбор того же JSON даёт то же правило
-    expect(parseInboxRule(set.Rule)).toEqual({ ...rule, unsupported: [] });
   });
 
-  test("ошибка OWA с кодом", () => {
+  test("разбор GetInboxRule: порядок, поддержанные поля, только чтение", () => {
+    let list = parseOWAInboxRulesResponse(kGetInboxRule);
+    expect(list.outlookRuleBlobExists).toBe(false);
+    let [boss, unknown, outlook] = list.rules;
+    expect(boss.id).toBe("ivan\\1");
+    expect(boss.enabled).toBe(true);
+    expect(isInboxRuleReadOnly(boss)).toBe(false);
+    expect(boss.conditions).toEqual({
+      from: [{ name: "Шеф", address: "boss@example.com", routingType: "SMTP" }],
+      sentTo: [],
+      subjectContains: ["срочно"],
+      bodyContains: [],
+      importance: "High",
+      hasAttachments: true,
+    });
+    expect(boss.actions).toEqual({
+      moveTo: { id: "LgAAAA1", distinguishedId: null, name: "Важное" },
+      copyTo: null,
+      delete: false,
+      markAsRead: false,
+      categories: ["Красная"],
+      forwardTo: [{ name: "me@example.org", address: "me@example.org" }],
+      stopProcessing: true,
+    });
+    expect(unknown.enabled).toBe(false);
+    expect(unknown.unsupported).toEqual(["RecipientAddressContainsWords"]);
+    expect(outlook.unsupported).toEqual(["SupportedByTask"]);
+  });
+
+  test("ошибка и вопрос про правила Outlook", () => {
+    expect(() => checkOWAInboxRulesResponse({ WasSuccessful: false, ErrorCode: 1, ErrorMessage: "Нет папки" }))
+      .toThrow("Нет папки");
     let error: any;
     try {
-      checkInboxRulesResponse({ Body: { ResponseClass: "Error", ResponseCode: "ErrorOutlookRuleBlobExists", MessageText: "Blob." } });
+      checkOWAInboxRulesResponse({ WasSuccessful: false, ErrorCode: 4, UserPrompt: "Delete Outlook rules?" });
     } catch (ex) {
       error = ex;
     }
-    expect(error.message).toBe("Blob.");
     expect(isOutlookRuleBlobError(error)).toBe(true);
+    expect(() => checkOWAInboxRulesResponse({ WasSuccessful: true })).not.toThrow();
+  });
+
+  test("SetInboxRule: все понятые параметры, пустые — чтобы стереть, правила Outlook не трогаем", () => {
+    let rule = parseOWAInboxRulesResponse(kGetInboxRule).rules[0];
+    rule.conditions.importance = null;
+    rule.actions.moveTo = { id: "LgAAAA1", distinguishedId: null, name: "Важное" };
+    let request: any = owaInboxRuleRequest({ kind: "set", rule });
+    expect(request.action).toBe("SetInboxRule");
+    expect(request.__type).toBe("SetInboxRuleRequest:#Exchange");
+    expect(request.AlwaysDeleteOutlookRulesBlob).toBe(false);
+    expect(request.Force).toBe(false);
+    expect(request.InboxRule).toEqual({
+      Identity: { RawIdentity: "ivan\\1" },
+      Name: "Шеф",
+      Priority: 1,
+      From: [{ SmtpAddress: "boss@example.com", DisplayName: "Шеф", RoutingType: "SMTP" }],
+      SentTo: null,
+      SubjectContainsWords: ["срочно"],
+      BodyContainsWords: null,
+      WithImportance: null,
+      HasAttachment: true,
+      MoveToFolder: { RawIdentity: "LgAAAA1", DisplayName: "Важное" },
+      CopyToFolder: null,
+      DeleteMessage: false,
+      MarkAsRead: false,
+      ApplyCategory: ["Красная"],
+      ForwardTo: [{ SmtpAddress: "me@example.org", DisplayName: "me@example.org", RoutingType: "SMTP" }],
+      StopProcessingRules: true,
+    });
+    expect((owaInboxRuleRequest({ kind: "set", rule }, true) as any).AlwaysDeleteOutlookRulesBlob).toBe(true);
+  });
+
+  test("NewInboxRule без пустых параметров; RemoveInboxRule; включение", () => {
+    let rule = simpleRule();
+    rule.id = null;
+    let created: any = owaInboxRuleRequest({ kind: "create", rule });
+    expect(created.action).toBe("NewInboxRule");
+    expect(Object.keys(created.InboxRule)).toEqual([
+      "Name", "Priority", "From", "SubjectContainsWords", "WithImportance", "HasAttachment", "MoveToFolder",
+      "MarkAsRead", "ApplyCategory", "StopProcessingRules",
+    ]);
+    expect(owaCreatedInboxRuleID({ WasSuccessful: true, InboxRule: { Identity: { RawIdentity: "ivan\\9" } } })).toBe("ivan\\9");
+
+    let removed: any = owaInboxRuleRequest({ kind: "delete", id: "ivan\\2" });
+    expect(removed.action).toBe("RemoveInboxRule");
+    expect(removed.Identity).toEqual({ RawIdentity: "ivan\\2" });
+
+    expect(owaEnableInboxRuleRequest("ivan\\2", false).action).toBe("DisableInboxRule");
+    expect((owaEnableInboxRuleRequest("ivan\\2", true) as any).Identity).toEqual({ RawIdentity: "ivan\\2" });
+  });
+
+  test("разбор того, что мы отправили, даёт то же правило", () => {
+    let rule = parseOWAInboxRulesResponse(kGetInboxRule).rules[0];
+    let request: any = owaInboxRuleRequest({ kind: "set", rule });
+    let echoed = parseOWAInboxRulesResponse({
+      InboxRuleCollection: { InboxRules: [{ ...request.InboxRule, Enabled: true, SupportedByTask: true }] },
+    }).rules[0];
+    expect(echoed).toEqual({
+      ...rule,
+      actions: { ...rule.actions, forwardTo: [{ ...rule.actions.forwardTo[0], routingType: "SMTP" }] },
+    });
+  });
+});
+
+describe("OWAAccount: цепочка команд", () => {
+  function stubAccount(responses: any[]) {
+    appGlobal.remoteApp ??= { OWA: {} } as any;
+    let account = new OWAAccount();
+    let calls: any[] = [];
+    (account as any).callOWA = async (request: any) => {
+      calls.push(JSON.parse(JSON.stringify({ action: request.action, ...request })));
+      return responses.shift() ?? { WasSuccessful: true };
+    };
+    return { account, calls };
+  }
+
+  test("новое выключенное правило: NewInboxRule, затем DisableInboxRule с ID от сервера", async () => {
+    let rule = simpleRule();
+    rule.id = null;
+    rule.enabled = false;
+    let { account, calls } = stubAccount([{ WasSuccessful: true, InboxRule: { Identity: { RawIdentity: "ivan\\7" } } }]);
+    await account.updateInboxRules([{ kind: "create", rule }]);
+    expect(calls.map(call => call.action)).toEqual(["NewInboxRule", "DisableInboxRule"]);
+    expect(calls[1].Identity).toEqual({ RawIdentity: "ivan\\7" });
+  });
+
+  test("изменение: SetInboxRule и включение; удаление: только RemoveInboxRule", async () => {
+    let { account, calls } = stubAccount([]);
+    await account.updateInboxRules([{ kind: "set", rule: simpleRule() }, { kind: "delete", id: "ivan\\2" }]);
+    expect(calls.map(call => call.action)).toEqual(["SetInboxRule", "EnableInboxRule", "RemoveInboxRule"]);
+  });
+
+  test("вопрос про правила Outlook останавливает цепочку", async () => {
+    let { account, calls } = stubAccount([{ WasSuccessful: false, ErrorCode: 4, UserPrompt: "?" }]);
+    let error: any;
+    try {
+      await account.updateInboxRules([{ kind: "set", rule: simpleRule() }, { kind: "delete", id: "x" }]);
+    } catch (ex) {
+      error = ex;
+    }
+    expect(isOutlookRuleBlobError(error)).toBe(true);
+    expect(calls.map(call => call.action)).toEqual(["SetInboxRule"]);
+  });
+
+  test("загрузка: GetInboxRule", async () => {
+    let { account, calls } = stubAccount([{ WasSuccessful: true, InboxRuleCollection: { InboxRules: [] } }]);
+    expect(await account.loadInboxRules()).toEqual({ rules: [], outlookRuleBlobExists: false });
+    expect(calls[0].action).toBe("GetInboxRule");
   });
 });
 

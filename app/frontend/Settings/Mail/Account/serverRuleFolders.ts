@@ -48,11 +48,17 @@ export function findRuleFolder(account: MailAccount, folder: InboxRuleFolder): F
     let special = kDistinguishedFolders[folder.distinguishedId.toLowerCase()];
     return special ? account.findFolder(entry => entry.specialFolder == special) : null;
   }
-  return account.findFolder(entry => entry.id == folder.id);
+  let byID = account.findFolder(entry => entry.id == folder.id);
+  if (byID || !folder.name) {
+    return byID;
+  }
+  // OWA называет папку своим ID, но сообщает имя: берём, только если оно однозначно
+  let byName = account.getAllFolders().contents.filter(entry => entry.name == folder.name);
+  return byName.length == 1 ? byName[0] : null;
 }
 
 export function folderNameFor(account: MailAccount, folder: InboxRuleFolder): string | null {
-  return findRuleFolder(account, folder)?.name ?? null;
+  return findRuleFolder(account, folder)?.name ?? folder.name ?? null;
 }
 
 /** Ключ для списка папок; папку, которой у нас нет, помечаем отдельно, чтобы не потерять */
