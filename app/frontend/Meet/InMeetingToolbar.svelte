@@ -347,9 +347,11 @@
     margin-bottom: -3px;
   }
   .actions :global(.leave svg) {
-    transform: rotate(135deg);
+    /* Отдельное свойство rotate складывается с transform кнопки при наведении,
+     * поэтому трубка остаётся опущенной. */
+    rotate: 135deg;
   }
-  .actions :global(.leave:hover) {
+  .actions :global(button.leave:hover:not(.disabled)) {
     background-color: #F34949;
   }
   .participants-count {

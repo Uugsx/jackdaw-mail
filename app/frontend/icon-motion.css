@@ -33,7 +33,7 @@
 
 /* Части иконки, сдвинутые жестом, не должны обрезаться краем <svg>
  * (у «Ответить всем» пропадала левая стрелка, у корзины — верх крышки). */
-:is(button, [role="button"]) svg[class*="lucide-"] {
+:is(button, [role="button"]) :is(svg[class*="lucide-"], .icon > svg:not([class])) {
   overflow: visible;
 }
 
@@ -552,6 +552,8 @@
   }
 
   /* ── Общий «кивок» для всех прочих иконок в кнопках ──
+   * Сюда же входят собственные SVG-значки Jackdaw (svelte-icon, без класса
+   * в .icon кнопки): панель приложений, звонок и чат в карточке контакта.
    * В исключениях — иконки со своим движением и неподвижные индикаторы.
    * Если у иконки появляется свой жест, её нужно добавить сюда. */
   :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) svg[class*="lucide-"]:not(
@@ -578,7 +580,8 @@
     .lucide-notebook-pen, .lucide-signature, .lucide-highlighter, .lucide-brush, .lucide-key-round,
     .lucide-loader-circle, .lucide-circle-dashed, .lucide-dot, .lucide-grip,
     .lucide-grip-vertical, .lucide-grab, .lucide-minus, .lucide-square
-  ) > * {
+  ) > *,
+  :is(button, [role="button"]):is(:hover, :focus-visible):not(:disabled, .disabled, [aria-disabled="true"]) .icon > svg:not([class]) > :not(defs, style) {
     transform-box: view-box;
     transform-origin: 12px 12px;
     animation: jd-icon-nod 420ms var(--icon-motion-ease) both;
@@ -690,10 +693,11 @@
 }
 
 /* Общий «кивок»: мягче, чем hop, — иконка целиком приподнимается и встаёт
- * на место, оставаясь внутри отступа кнопки. */
+ * на место, оставаясь внутри отступа кнопки. Сдвиг в процентах viewBox
+ * (1,5 из 24), поэтому одинаков для Lucide 24×24 и собственных значков 128×128. */
 @keyframes jd-icon-nod {
   0% { transform: none; }
-  40% { transform: translateY(-1.5px); }
-  70% { transform: translateY(0.3px); }
+  40% { transform: translateY(-6.25%); }
+  70% { transform: translateY(1.25%); }
   100% { transform: none; }
 }
