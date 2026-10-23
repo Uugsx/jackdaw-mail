@@ -444,9 +444,42 @@
     }
     .subject-tools {
       margin-inline-start: auto;
+      /* Масштаб, фон и вид письма переносятся на вторую строку,
+       * а не вылезают за правый край узкой области письма. */
+      flex-shrink: 1;
+      min-width: 0;
+      max-width: 100%;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      row-gap: 2px;
     }
     .message-meta {
       align-items: flex-start;
+    }
+    /* Имя получателя обрезается многоточием, а не рвётся по словам
+     * с доменом и запятой в отдельных столбцах. */
+    /* Список занимает всю строку: иначе его ширина считается на отступ
+     * кнопки «+N» меньше и имя сокращается без необходимости. */
+    .recipients :global(.persons) {
+      flex: 1 1 auto;
+    }
+    .recipients :global(.recipient) {
+      min-width: 0;
+      max-width: calc(100% - 0.6em);
+      white-space: nowrap;
+    }
+    /* Сначала сокращается имя (но не до нуля), затем домен. */
+    .recipients :global(.recipient .name) {
+      flex: 0 10000 auto;
+      min-width: min(4em, 100%);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recipients :global(.recipient .domain) {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .message-actions {
       flex-wrap: wrap;
@@ -455,6 +488,30 @@
     .message-actions :global(.buttons) {
       flex-wrap: wrap;
       justify-content: flex-start;
+    }
+  }
+  /* Совсем узкая область письма на компьютере (телефон раскладывается сам,
+   * через isSmall): аватар остаётся рядом с именем, а кнопки и получатели
+   * занимают всю ширину под ним, а не узкий столбец справа от аватара. */
+  @media (min-width: 601px) {
+    @container message-header (max-width: 480px) {
+      .message-details,
+      .identity-row {
+        display: contents;
+      }
+      .message-meta {
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 4px;
+      }
+      .sender {
+        flex: 1 1 0;
+      }
+      /* Получатели и подробности шифрования (дети .message-details) */
+      .message-actions,
+      .message-details > :global(*) {
+        flex: 1 1 100%;
+      }
     }
   }
   @media (prefers-reduced-motion: reduce) {

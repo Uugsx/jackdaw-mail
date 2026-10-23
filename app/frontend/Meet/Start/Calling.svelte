@@ -321,7 +321,9 @@
     background-color: #F34949 !important;
   }
   .actions :global(button.hangup svg) {
-    transform: rotate(135deg);
+    /* Отдельное свойство rotate складывается с transform кнопки при наведении,
+     * поэтому трубка остаётся опущенной. */
+    rotate: 135deg;
   }
   .mic-setup :global(.buttons) {
     margin-block-start: 14px;
