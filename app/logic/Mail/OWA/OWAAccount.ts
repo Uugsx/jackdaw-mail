@@ -8,6 +8,7 @@ import { OWAFolder } from "./OWAFolder";
 import type { OWAEMail } from "./OWAEMail";
 import { owaCategoriesPresent } from "./OWAEMail";
 import { OWAError } from "./OWAError";
+import { checkOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
 import type { OWANotifications } from "./Notification/OWANotifications";
 import { OWAExchangeNotifications } from "./Notification/OWAExchangeNotifications";
 import { OWAOffice365Notifications } from "./Notification/OWAOffice365Notifications";
@@ -474,6 +475,10 @@ export class OWAAccount extends ExchangeMailAccount {
           : this.loadCategoryColors().catch(() => {
             // Optional category metadata
           });
+        if (!this.isDependentAccount) {
+          // Плашка автоответа в почте: необязательные данные, ошибка не мешает запуску
+          this.loadOutOfOffice().catch(() => undefined);
+        }
         try {
           if (this.sharedFolderRoot) {
             if (inbox) {
@@ -1995,6 +2000,21 @@ export class OWAAccount extends ExchangeMailAccount {
       return false;
     }
     return false;
+  }
+
+  get canOutOfOffice(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    let response = await this.callOWA(owaGetOutOfOfficeRequest(this.emailAddress));
+    checkOutOfOfficeResponse(response);
+    return parseOutOfOfficeResponse(response);
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    let response = await this.callOWA(owaSetOutOfOfficeRequest(this.emailAddress, settings));
+    checkOutOfOfficeResponse(response);
   }
 
   async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {

@@ -2976,5 +2976,21 @@
   "zVxIom": "För många GIF-sökningar",
   "RNaVWn": "Laddar upp {0} %",
   "h9PjLK": "Vinka",
-  "0jtqIx": "{num, plural, one {# medlem} other {# medlemmar}}"
+  "0jtqIx": "{num, plural, one {# medlem} other {# medlemmar}}",
+  "F296tB": "Automatiska svar",
+  "Tc1Mx4": "Automatiska svar är på",
+  "2ZqpRB": "Stäng av",
+  "l3JD35": "Svara automatiskt den som skriver till dig medan du är borta",
+  "aHRs39": "Automatiska svar är inte tillgängliga för det här kontot.",
+  "MfvCUn": "Skicka inte automatiska svar",
+  "N0Z4jk": "Skicka automatiska svar",
+  "d4YgBp": "Skicka bara under den här perioden",
+  "37LdGH": "Inom min organisation",
+  "Clsey2": "Utanför min organisation",
+  "L9Pkkt": "Din administratör tillåter inte automatiska svar utanför organisationen.",
+  "ANfdRq": "Svara personer utanför min organisation",
+  "p4h+Bg": "Bara mina kontakter",
+  "MTXxnh": "Alla utanför min organisation",
+  "idD8Ev": "Sparat",
+  "e3bo7L": "Slutet måste vara efter starten"
 }

@@ -2976,5 +2976,21 @@
   "zVxIom": "Çok fazla GIF araması",
   "RNaVWn": "Yükleniyor %{0}",
   "h9PjLK": "El sallama",
-  "0jtqIx": "{num, plural, one {# üye} other {# üye}}"
+  "0jtqIx": "{num, plural, one {# üye} other {# üye}}",
+  "F296tB": "Otomatik yanıtlar",
+  "Tc1Mx4": "Otomatik yanıtlar açık",
+  "2ZqpRB": "Kapat",
+  "l3JD35": "Siz yokken size yazan kişilere otomatik olarak yanıt verin",
+  "aHRs39": "Bu hesap için otomatik yanıtlar kullanılamıyor.",
+  "MfvCUn": "Otomatik yanıt gönderme",
+  "N0Z4jk": "Otomatik yanıt gönder",
+  "d4YgBp": "Yalnızca bu zaman aralığında gönder",
+  "37LdGH": "Kuruluşumun içinde",
+  "Clsey2": "Kuruluşumun dışında",
+  "L9Pkkt": "Yöneticiniz kuruluş dışına otomatik yanıta izin vermiyor.",
+  "ANfdRq": "Kuruluşum dışındaki kişilere yanıt ver",
+  "p4h+Bg": "Yalnızca kişilerime",
+  "MTXxnh": "Kuruluşum dışındaki herkese",
+  "idD8Ev": "Kaydedildi",
+  "e3bo7L": "Bitiş, başlangıçtan sonra olmalıdır"
 }

@@ -7,6 +7,8 @@ import type { Folder } from "../Folder";
 import { notifyChangedProperty } from "../../util/Observable";
 import { ArrayColl, Collection } from "svelte-collections";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+import { NotSupported } from "../../util/util";
+import type { OutOfOfficeSettings } from "./OutOfOffice";
 
 export class ExchangeMailAccount extends MailAccount {
   readonly port: number = 443;
@@ -19,6 +21,41 @@ export class ExchangeMailAccount extends MailAccount {
   /** Адреса этого ящика по данным сервера: основной SMTP-адрес часто отличается от логина
    * (`nikita.galkin@` при входе как `ngalkin0179@`). Коллеги пишут на основной адрес. */
   serverEmailAddresses: string[] = [];
+  /** Автоответ «Нет на месте» по последним данным сервера; null — ещё не загружен */
+  @notifyChangedProperty
+  outOfOffice: OutOfOfficeSettings | null = null;
+
+  /** Сервер умеет автоответ «Нет на месте» для этого ящика */
+  get canOutOfOffice(): boolean {
+    return false;
+  }
+
+  /** Читает автоответ с сервера и запоминает его в `outOfOffice` */
+  async loadOutOfOffice(): Promise<OutOfOfficeSettings> {
+    let settings = await this.fetchOutOfOffice();
+    this.outOfOffice = settings;
+    return settings;
+  }
+
+  /** Записывает автоответ на сервер */
+  async saveOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    await this.pushOutOfOffice(settings);
+    this.outOfOffice = { ...settings };
+  }
+
+  /** Выключает автоответ, тексты и расписание остаются на сервере */
+  async turnOffOutOfOffice(): Promise<void> {
+    let current = this.outOfOffice ?? await this.loadOutOfOffice();
+    await this.saveOutOfOffice({ ...current, state: "Disabled" });
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    throw new NotSupported("Out of Office");
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    throw new NotSupported("Out of Office");
+  }
 
   /** Запоминает адреса ящика от сервера. @returns true, если список изменился */
   async setServerEmailAddresses(addresses: string[]): Promise<boolean> {

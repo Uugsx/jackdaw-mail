@@ -2976,5 +2976,21 @@
   "zVxIom": "Príliš veľa vyhľadávaní GIF",
   "RNaVWn": "Nahráva sa {0} %",
   "h9PjLK": "Mávanie",
-  "0jtqIx": "{num, plural, one {# člen} few {# členovia} many {# člena} other {# členov}}"
+  "0jtqIx": "{num, plural, one {# člen} few {# členovia} many {# člena} other {# členov}}",
+  "F296tB": "Automatické odpovede",
+  "Tc1Mx4": "Automatické odpovede sú zapnuté",
+  "2ZqpRB": "Vypnúť",
+  "l3JD35": "Automaticky odpovedať ľuďom, ktorí vám píšu počas vašej neprítomnosti",
+  "aHRs39": "Automatické odpovede nie sú pre tento účet k dispozícii.",
+  "MfvCUn": "Neposielať automatické odpovede",
+  "N0Z4jk": "Posielať automatické odpovede",
+  "d4YgBp": "Posielať len v tomto období",
+  "37LdGH": "V rámci mojej organizácie",
+  "Clsey2": "Mimo mojej organizácie",
+  "L9Pkkt": "Správca nepovoľuje automatické odpovede mimo organizácie.",
+  "ANfdRq": "Odpovedať ľuďom mimo mojej organizácie",
+  "p4h+Bg": "Len mojim kontaktom",
+  "MTXxnh": "Komukoľvek mimo mojej organizácie",
+  "idD8Ev": "Uložené",
+  "e3bo7L": "Koniec musí byť po začiatku"
 }

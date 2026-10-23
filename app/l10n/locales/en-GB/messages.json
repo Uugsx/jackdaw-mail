@@ -2976,5 +2976,21 @@
   "zVxIom": "Too many GIF searches",
   "RNaVWn": "Uploading {0} %",
   "h9PjLK": "Wave",
-  "0jtqIx": "{num, plural, one {# member} other {# members}}"
+  "0jtqIx": "{num, plural, one {# member} other {# members}}",
+  "F296tB": "Automatic replies",
+  "Tc1Mx4": "Automatic replies are on",
+  "2ZqpRB": "Turn off",
+  "l3JD35": "Reply automatically to people who write to you while you are away",
+  "aHRs39": "Automatic replies are not available for this account.",
+  "MfvCUn": "Don't send automatic replies",
+  "N0Z4jk": "Send automatic replies",
+  "d4YgBp": "Send only during this time period",
+  "37LdGH": "Inside my organisation",
+  "Clsey2": "Outside my organisation",
+  "L9Pkkt": "Your administrator does not allow automatic replies outside the organisation.",
+  "ANfdRq": "Reply to people outside my organisation",
+  "p4h+Bg": "My contacts only",
+  "MTXxnh": "Anyone outside my organisation",
+  "idD8Ev": "Saved",
+  "e3bo7L": "The end must be after the start"
 }

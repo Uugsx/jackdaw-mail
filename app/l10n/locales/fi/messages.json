@@ -2976,5 +2976,21 @@
   "zVxIom": "Liian monta GIF-hakua",
   "RNaVWn": "Ladataan {0} %",
   "h9PjLK": "Vilkutus",
-  "0jtqIx": "{num, plural, one {# jäsen} other {# jäsentä}}"
+  "0jtqIx": "{num, plural, one {# jäsen} other {# jäsentä}}",
+  "F296tB": "Automaattiset vastaukset",
+  "Tc1Mx4": "Automaattiset vastaukset ovat käytössä",
+  "2ZqpRB": "Poista käytöstä",
+  "l3JD35": "Vastaa automaattisesti niille, jotka kirjoittavat sinulle poissaolosi aikana",
+  "aHRs39": "Automaattiset vastaukset eivät ole käytettävissä tälle tilille.",
+  "MfvCUn": "Älä lähetä automaattisia vastauksia",
+  "N0Z4jk": "Lähetä automaattisia vastauksia",
+  "d4YgBp": "Lähetä vain tänä aikana",
+  "37LdGH": "Organisaationi sisällä",
+  "Clsey2": "Organisaationi ulkopuolella",
+  "L9Pkkt": "Järjestelmänvalvoja ei salli automaattisia vastauksia organisaation ulkopuolelle.",
+  "ANfdRq": "Vastaa organisaationi ulkopuolisille",
+  "p4h+Bg": "Vain yhteystiedoilleni",
+  "MTXxnh": "Kaikille organisaationi ulkopuolisille",
+  "idD8Ev": "Tallennettu",
+  "e3bo7L": "Lopun on oltava alun jälkeen"
 }

@@ -2976,5 +2976,21 @@
   "zVxIom": "For mange GIF-søk",
   "RNaVWn": "Laster opp {0} %",
   "h9PjLK": "Vink",
-  "0jtqIx": "{num, plural, one {# medlem} other {# medlemmer}}"
+  "0jtqIx": "{num, plural, one {# medlem} other {# medlemmer}}",
+  "F296tB": "Automatiske svar",
+  "Tc1Mx4": "Automatiske svar er på",
+  "2ZqpRB": "Slå av",
+  "l3JD35": "Svar automatisk dem som skriver til deg mens du er borte",
+  "aHRs39": "Automatiske svar er ikke tilgjengelige for denne kontoen.",
+  "MfvCUn": "Ikke send automatiske svar",
+  "N0Z4jk": "Send automatiske svar",
+  "d4YgBp": "Send bare i denne perioden",
+  "37LdGH": "Innenfor organisasjonen min",
+  "Clsey2": "Utenfor organisasjonen min",
+  "L9Pkkt": "Administratoren tillater ikke automatiske svar utenfor organisasjonen.",
+  "ANfdRq": "Svar personer utenfor organisasjonen min",
+  "p4h+Bg": "Bare kontaktene mine",
+  "MTXxnh": "Alle utenfor organisasjonen min",
+  "idD8Ev": "Lagret",
+  "e3bo7L": "Slutten må være etter starten"
 }
