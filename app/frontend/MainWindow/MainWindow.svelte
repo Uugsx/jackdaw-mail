@@ -74,6 +74,7 @@
     </vbox>
   </hbox>
   <ComposeFloatingLayer />
+  <SendToast />
 </vbox>
 <MeetBackground />
 <JackdawChatBackground />
@@ -136,6 +137,8 @@
   import SplitterHorizontal from "../Shared/SplitterHorizontal.svelte";
   import MailInBackground from "../Mail/MailInBackground.svelte";
   import ComposeFloatingLayer from "../Mail/Composer/ComposeFloatingLayer.svelte";
+  import SendToast from "../Mail/SendLater/SendToast.svelte";
+  import { startSendQueue } from "../Mail/SendLater/sendQueue";
   import CalendarInBackground from "../Calendar/CalendarInBackground.svelte";
   import MeetBackground from "../Meet/MeetBackground.svelte";
   import JackdawChatBackground from "../Chat/JackdawChatBackground.svelte";
@@ -309,6 +312,8 @@
       // #else
       await loginWebMailOnStartup(console.error);
       // #endif
+      // Письма, отложенные до перезапуска или запланированные на «пока было закрыто»
+      void startSendQueue();
       // Setting $selectedApp late would overwrite commandline/URL handlers
       $selectedAccount = appGlobal.emailAccounts.first;
       // `MailApp` selects the inbox, once we read the folders

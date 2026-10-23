@@ -20,6 +20,7 @@ import { RunOnce } from "../util/flow/RunOnce";
 import { Collection, ArrayColl } from 'svelte-collections';
 import { gt } from "../../l10n/l10n";
 import { ConnectionStatus } from "./connectionStatus";
+import type { EWSDeferredSend } from "./SendLater/EWSDeferredSend";
 
 export class MailAccount extends TCPAccount {
   readonly protocol: string = "mail";
@@ -143,9 +144,17 @@ export class MailAccount extends TCPAccount {
    * and save it in the Sent folder. Nothing else.
    * All higher-level send preparations (signature, encryption etc.)
    * are done in `ComposeActions.send()`.
+   *
+   * @param deferred отправить позже силами сервера.
+   *   Передавать только при `canDeferSendOnServer`.
    */
-  async send(email: EMail): Promise<void> {
+  async send(email: EMail, deferred?: EWSDeferredSend): Promise<void> {
     throw new AbstractFunction();
+  }
+
+  /** Сервер сам отправит письмо в назначенное время (`send(email, deferred)`) */
+  get canDeferSendOnServer(): boolean {
+    return false;
   }
 
   /** Create a folder on the top level, sibling of Inbox.

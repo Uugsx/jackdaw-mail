@@ -6,7 +6,7 @@
     aria-labelledby={titleId}
     tabindex="-1"
     on:keydown={onKeydown}>
-    <h2 id={titleId}>{$t`Remind me if nobody replies by`}</h2>
+    <h2 id={titleId}>{title ?? $t`Remind me if nobody replies by`}</h2>
     <label class="field">
       <span>{$t`Date and time`}</span>
       <input
@@ -25,7 +25,7 @@
         plain
         onClick={cancel} />
       <Button
-        label={$t`Set reminder`}
+        label={submitLabel ?? $t`Set reminder`}
         classes="filled"
         disabled={!value}
         onClick={submit} />
@@ -45,6 +45,11 @@
   /** Срок по умолчанию: завтра в это же время. */
   export let initial: Date;
   export let onDone: (dueAt: Date | null) => void;
+  /** Окно используется и для «Отправить позже»: свои заголовок, кнопка и проверка */
+  export let title: string | null = null;
+  export let submitLabel: string | null = null;
+  /** Своя проверка времени: текст ошибки или null */
+  export let validate: ((dueAt: Date) => string | null) | null = null;
 
   const titleId = `follow-up-date-title-${++nextDialogId}`;
   const minValue = toLocalInputValue(new Date());
@@ -71,7 +76,13 @@
       error = $t`Please enter a date and time.`;
       return;
     }
-    if (dueAt.getTime() <= Date.now()) {
+    if (validate) {
+      let problem = validate(dueAt);
+      if (problem) {
+        error = problem;
+        return;
+      }
+    } else if (dueAt.getTime() <= Date.now()) {
       error = $t`The reminder time has already passed. Pick a later time.`;
       return;
     }

@@ -36,6 +36,7 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray, NotReached, NotSupported, type Json } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
+import { addEWSDeferredSend, type EWSDeferredSend } from "../SendLater/EWSDeferredSend";
 
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
@@ -182,7 +183,7 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
    * This uses Exchange to construct the message rather than
    * building the MIME ourselves.
    */
-  async send(email: EMail): Promise<void> {
+  async send(email: EMail, deferred?: EWSDeferredSend): Promise<void> {
     if (email.iCalMethod) {
       throw new NotSupported("Please use Exchange APIs to send iMIP messages");
     }
@@ -235,6 +236,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       addRecipients(request, "ToRecipients", email.to.contents);
       addRecipients(request, "CcRecipients", email.cc.contents);
     }
+    if (deferred) {
+      // До получателей сырого MIME: порядок элементов важен для старых Exchange
+      addEWSDeferredSend(request.m$CreateItem.m$Items.t$Message, deferred);
+    }
     addRecipients(request, "BccRecipients", email.bcc.contents);
     addRecipients(request, "From", [email.from]);
     if (!email.sendRawMIME && email.replyTo) {
@@ -261,6 +266,11 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       });
     }
     await this.callEWS(request);
+  }
+
+  /** Общие ящики — через локальную очередь: неизвестно, в чьих «Исходящих» сервер держит письмо */
+  get canDeferSendOnServer(): boolean {
+    return !this.isDependentAccount;
   }
 
   get canOutOfOffice(): boolean {

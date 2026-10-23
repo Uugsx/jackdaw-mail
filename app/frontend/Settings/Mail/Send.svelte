@@ -194,6 +194,14 @@
         {$t`Warn when the text mentions an attachment, but no file is attached`}
       </label>
     </hbox>
+    <hbox class="presentation">
+      <label class="presentation-label" for="undo-send-delay">{$t`Undo send:`}</label>
+      <select id="undo-send-delay" bind:value={undoDelay}>
+        {#each kUndoSendDelays as delay}
+          <option value={delay}>{delay == 0 ? $t`Off` : $t`${delay} seconds`}</option>
+        {/each}
+      </select>
+    </hbox>
     {#if !webMail}
       <hbox class="presentation">
         <span class="presentation-label">{$t`Open compose window:`}</span>
@@ -217,6 +225,8 @@
   import Paper from "../../Shared/Paper.svelte";
   import Button from "../../Shared/Button.svelte";
   import { webMail } from "../../../logic/build";
+  import { kUndoSendDelays, normalizeUndoSendDelay } from "../../../logic/Mail/SendLater/SendLater";
+  import { undoSendDelaySetting } from "../../Mail/SendLater/sendQueue";
   import {
     composeDefaultFontFamily,
     composeDefaultFontSize,
@@ -239,6 +249,9 @@
   let quoteAttributionSetting = getLocalStorage("mail.send.quote.attribution", false);
   let spellcheckEnabledSetting = getLocalStorage("mail.send.spellcheck.enabled", false);
   let warnMissingAttachmentSetting = getLocalStorage("mail.send.warnMissingAttachment", true);
+  // Через нормализацию: старое или испорченное значение показывает 5 секунд
+  let undoDelay = normalizeUndoSendDelay(undoSendDelaySetting.value);
+  $: undoSendDelaySetting.value = undoDelay;
   let presentationSetting = getLocalStorage("mail.compose.presentation", "fullscreen");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
   let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
@@ -339,6 +352,10 @@
   .presentation-label {
     font-weight: 600;
     margin-inline-end: 4px;
+  }
+  /* Подпись-<label> без общего отступа меток: в одну линию с «Открывать окно…» */
+  label.presentation-label {
+    margin-inline-start: 0;
   }
   .illustration-paper {
     margin-block-start: 8px;

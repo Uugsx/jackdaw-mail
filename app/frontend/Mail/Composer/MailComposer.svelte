@@ -117,6 +117,7 @@
       hasSML={!!$mail.sml}
       signatureEnabled={signatureEnabled}
       on:send={() => catchErrors(onSend)}
+      on:sendLater={event => catchErrors(() => onSend(event.detail))}
       on:addAttachment={() => catchErrors(onAddAttachment)}
       on:insertSignature={insertSignature}
       on:toggleHighImportance={toggleHighImportance}
@@ -240,6 +241,7 @@
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
   import { addIdentityDefaultRecipients, addSenderToCC, mentionsAttachment } from "../../../logic/Mail/composeRecipients";
   import { closeFloatingCompose } from "./composeFloating";
+  import { queueSend } from "../SendLater/sendQueue";
   import { focusComposeTypingArea } from "./composeCursor";
   import { editorHasNewComposeText } from "./composeBody";
   import { applyQuoteBodyEdit, mergeComposeQuote, quoteDisplayBody, splitComposeQuote } from "./composeQuote";
@@ -278,8 +280,9 @@
   function workspaceWhenOpened(_mail: EMail) {
     return get(selectedWorkspace);
   }
-  /** Detached windows delegate the actual send to the owning renderer. */
-  export let sendInOwner: (() => Promise<void>) | null = null;
+  /** Detached windows delegate the actual send to the owning renderer.
+   * @param sendAt «Отправить позже» */
+  export let sendInOwner: ((sendAt?: Date) => Promise<void>) | null = null;
   /** Detached windows use the owner's authenticated directory for lookups. */
   export let searchContactsInOwner: (
     (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
@@ -945,7 +948,8 @@
   }
 
   let sending = false;
-  async function onSend() {
+  /** @param sendAt «Отправить позже»; без него — сразу (с задержкой для отмены) */
+  async function onSend(sendAt?: Date) {
     if (sending) {
       return;
     }
@@ -976,9 +980,9 @@
         await resolveComposeRecipients(mail);
       }
       if (sendInOwner) {
-        await sendInOwner();
+        await sendInOwner(sendAt);
       } else {
-        await mail.compose.send();
+        await queueSend(mail, { sendAt });
       }
       onClose();
     } finally {

@@ -11,6 +11,7 @@ import {
   dedupeEMailsWithoutPID,
   createFollowUpReminderTable,
   createExchangeTaskTable,
+  createScheduledSendTable,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -37,6 +38,8 @@ export const mailDatabaseMigrations = [
   createFollowUpReminderTable,
   // Одиннадцатая: задачи Exchange.
   createExchangeTaskTable,
+  // Двенадцатая: отмена отправки и «Отправить позже».
+  createScheduledSendTable,
 ];
 
 const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
@@ -68,6 +71,7 @@ export async function makeTestDatabase(): Promise<Database> {
     createEMailLookupIndexes,
     createFollowUpReminderTable,
     createExchangeTaskTable,
+    createScheduledSendTable,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

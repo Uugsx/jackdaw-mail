@@ -14,6 +14,7 @@ import { applyComposeMailPayload } from "./Composer/composeWindow";
 import type { ComposeWindowMail } from "../../logic/Mail/Composer/ComposeWindowProtocol";
 import type { MessageWindowPayload, MessageWindowReplyMode } from "../../logic/Mail/MessageWindowProtocol";
 import { resolveComposeRecipients } from "../../logic/Mail/composeResolveRecipients";
+import { queueSend } from "./SendLater/sendQueue";
 import { deserializeMessageWindowMail } from "./Message/messageWindow";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
@@ -96,7 +97,8 @@ export async function sendNativeComposeWindow(windowID: string, payload: Compose
   assert(mail, "Compose window message is no longer available");
   applyComposeMailPayload(mail, payload);
   await resolveComposeRecipients(mail);
-  await mail.compose.send();
+  let sendAt = payload.sendAt ? new Date(payload.sendAt) : undefined;
+  await queueSend(mail, { sendAt });
 }
 
 /** Открывает штатную форму ответа в текущем окне просмотра, если оно передано. */

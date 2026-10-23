@@ -256,3 +256,44 @@ export const createExchangeTaskTable = sql`
 export const rollbackExchangeTaskTable = sql`
   DROP TABLE IF EXISTS "exchangeTask";
 `;
+
+/**
+ * Очередь отправки: отмена отправки и «Отправить позже».
+ * Письмо хранится целиком (`payload` — JSON редактора с вложениями),
+ * чтобы уйти после перезапуска и вернуться в редактор без потерь.
+ * Время — unixtime в миллисекундах: задержка отмены считается секундами.
+ */
+export const createScheduledSendTable = sql`
+  CREATE TABLE IF NOT EXISTS "scheduledSend" (
+    "id" INTEGER PRIMARY KEY,
+    "queueID" TEXT not null UNIQUE,
+    "accountID" INTEGER not null,
+    -- 'undo' | 'later'
+    "kind" TEXT not null default 'later',
+    -- 'local' | 'server'
+    "mode" TEXT not null default 'local',
+    -- 'pending' | 'sending' | 'failed' | 'paused' | 'server'
+    "status" TEXT not null default 'pending',
+    "sendAt" INTEGER not null,
+    "attempts" INTEGER not null default 0,
+    "lastError" TEXT default null,
+    "subject" TEXT not null default '',
+    "recipients" TEXT not null default '[]',
+    "payload" TEXT not null,
+    -- Метка того, кто сейчас отправляет: защита от двойной отправки
+    "claim" TEXT default null,
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_scheduledSend_status_sendAt
+  ON scheduledSend (status, sendAt);
+`;
+
+/** Откат createScheduledSendTable для инструментов обслуживания базы. */
+export const rollbackScheduledSendTable = sql`
+  DROP INDEX IF EXISTS index_scheduledSend_status_sendAt;
+  DROP TABLE IF EXISTS "scheduledSend";
+`;

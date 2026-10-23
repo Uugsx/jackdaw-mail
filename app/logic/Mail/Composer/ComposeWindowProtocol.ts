@@ -112,6 +112,8 @@ export interface ComposeWindowMail {
   headers: [string, string][];
   attachments: ComposeWindowAttachment[];
   composeSource: ComposeWindowSource | null;
+  /** «Отправить позже», ISO. Необязательно: старые окна его не передают */
+  sendAt?: string | null;
 }
 
 const kMaxIDLength = 512;
@@ -217,7 +219,8 @@ export function isComposeWindowPayload(value: unknown): value is ComposeWindowMa
       typeof mail.hasAttachmentsFlag !== "boolean" || !isHeaders(mail.headers) ||
       !Array.isArray(mail.attachments) || mail.attachments.length > kMaxAttachments || !mail.attachments.every(isAttachment) ||
       !isNullableSource(mail.composeSource) ||
-      !isOptionalFollowUp(mail.followUpReminder)) {
+      !isOptionalFollowUp(mail.followUpReminder) ||
+      !(mail.sendAt === undefined || isDate(mail.sendAt))) {
     return false;
   }
   let bodyLength = (mail.html as string | null)?.length ?? 0;
