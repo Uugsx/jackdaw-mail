@@ -2,7 +2,7 @@ import type { File as FileEntry } from "../../logic/Files/File";
 import { filesApp } from "./FilesJackdawApp";
 import { selectedFile } from "./selected";
 import { goTo, openApp } from "../AppsBar/selectedApp";
-import { openEMailMessage } from "../Mail/open";
+import { openEMailMessageFullscreen } from "../Mail/open";
 import { allAccountsAccount } from "../../logic/Mail/AccountsList/ShowAccounts";
 import { appGlobal } from "../../logic/app";
 import { assert } from "../../logic/util/util";
@@ -44,5 +44,7 @@ async function openEMail(mime: Uint8Array) {
   let email = folder.newEMail();
   email.mime = mime;
   await email.parseMIME();
-  await openEMailMessage(email);
+  // Отдельным экраном: письма из файла нет в списке папки, и обычный просмотр
+  // показывал «Письмо не выбрано»
+  await openEMailMessageFullscreen(email);
 }

@@ -2,7 +2,15 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { appGlobal } from "../../../logic/app";
-import { downloadGIF, getGIFThumbnailURL, parseGIFResults, searchGIFs } from "../../../frontend/Chat/Emoji/media";
+import {
+  downloadGIF,
+  getGIFThumbnailURL,
+  gifMediaURL,
+  GIFSearchError,
+  parseGIFResults,
+  searchGIFs,
+  toGIFSearchError,
+} from "../../../frontend/Chat/Emoji/media";
 import { createStickerFile, filterStickers, stickerCatalog } from "../../../frontend/Chat/Emoji/stickers";
 import {
   insertImage,
@@ -21,107 +29,120 @@ afterEach(() => {
 });
 
 describe("GIF media", () => {
-  test("keeps only safe GIF results", () => {
+  const cdn = "https://static.klipy.com/ii/abc";
+
+  function serverGIF(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      title: `GIF ${id}`,
+      url: `${cdn}/${id}-md.gif`,
+      previewUrl: `${cdn}/${id}-sm.webp`,
+      width: 320,
+      height: 240,
+      size: 1024,
+      ...overrides,
+    };
+  }
+
+  function fakeClient(reply: unknown | Error) {
+    return {
+      searchGIFs: vi.fn(async () => {
+        if (reply instanceof Error) {
+          throw reply;
+        }
+        return reply as { type: string; results: unknown[] };
+      }),
+    };
+  }
+
+  test("keeps only safe GIF results from the provider CDN", () => {
     let result = parseGIFResults({
+      type: "gif-results",
       results: [
-        {
-          id: "valid",
-          title: " A GIF ",
-          url: "https://cdn.example.test/valid.gif",
-          thumbnail: "https://cdn.example.test/valid-preview.gif",
-          filetype: "gif",
-          filesize: 1024,
-        },
-        {
-          id: "http",
-          url: "http://cdn.example.test/http.gif",
-          thumbnail: "https://cdn.example.test/http-preview.gif",
-          filetype: "gif",
-        },
-        {
-          id: "png",
-          url: "https://cdn.example.test/image.png",
-          thumbnail: "https://cdn.example.test/image.png",
-          filetype: "png",
-        },
-        {
-          id: "large",
-          url: "https://cdn.example.test/large.gif",
-          thumbnail: "https://cdn.example.test/large-preview.gif",
-          filetype: "gif",
-          filesize: 16 * 1024 * 1024,
-        },
+        serverGIF("valid", { title: " A\nGIF " }),
+        serverGIF("http", { url: "http://static.klipy.com/ii/abc/http.gif" }),
+        serverGIF("foreign", { url: "https://evil.example.test/foreign.gif" }),
+        serverGIF("lookalike", { url: "https://static.klipy.com.evil.test/x.gif" }),
+        serverGIF("login", { url: "https://user@static.klipy.com/x.gif" }),
+        serverGIF("large", { size: 16 * 1024 * 1024 }),
+        serverGIF("../bad-id"),
+        serverGIF("valid"),
+        null,
+        "junk",
       ],
     });
 
-    expect(result).toEqual([expect.objectContaining({ id: "valid", title: "A GIF" })]);
+    expect(result).toEqual([{
+      id: "valid",
+      title: "A GIF",
+      url: `${cdn}/valid-md.gif`,
+      thumbnail: `${cdn}/valid-sm.webp`,
+      width: 320,
+      height: 240,
+      filesize: 1024,
+    }]);
   });
 
-  test("searches the catalog with the GIF filter", async () => {
-    let fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ results: [] }),
-    }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await searchGIFs("cats");
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    let requestURL = new URL(fetchMock.mock.calls[0][0] as string);
-    expect(requestURL.searchParams.get("q")).toBe("cats");
-    expect(requestURL.searchParams.get("extension")).toBe("gif");
-  });
-
-  test("keeps a GIF when the catalog has no usable thumbnail", () => {
-    let [gif] = parseGIFResults({
-      results: [{
-        id: "source-only",
-        title: "Source GIF",
-        url: "https://cdn.example.test/source-only.gif",
-        filetype: "gif",
-      }],
-    });
-
+  test("falls back to the GIF itself when the preview is missing or foreign", () => {
+    let [gif] = parseGIFResults({ results: [serverGIF("no-preview", { previewUrl: "https://evil.example.test/p.webp" })] });
     expect(gif.thumbnail).toBe(gif.url);
     expect(getGIFThumbnailURL(gif)).toBe(gif.url);
+    expect(parseGIFResults(null)).toEqual([]);
+    expect(parseGIFResults({ results: "x" })).toEqual([]);
   });
 
   test("falls back from a failed catalog thumbnail to the source GIF", () => {
-    let gif = {
-      id: "gif-1",
-      title: "Hello",
-      url: "https://cdn.example.test/hello.gif",
-      thumbnail: "https://api.example.test/thumb/",
-      creator: null,
-      license: null,
-      foreignLandingURL: null,
-      filesize: null,
-    };
-
+    let [gif] = parseGIFResults({ results: [serverGIF("gif-1")] });
     expect(getGIFThumbnailURL(gif)).toBe(gif.thumbnail);
     expect(getGIFThumbnailURL(gif, true)).toBe(gif.url);
   });
 
-  test("does not route the catalog JSON through the desktop bridge", async () => {
-    let fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        results: [{
-          id: "gif-1",
-          title: "Hello",
-          url: "https://cdn.example.test/hello.gif",
-          thumbnail: "https://cdn.example.test/hello-preview.gif",
-          filetype: "gif",
-        }],
-      }),
-    }));
+  test("searches through the Jackdaw server in the interface language", async () => {
+    let client = fakeClient({ type: "gif-results", results: [serverGIF("1")] });
+    let fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    appGlobal.remoteApp = { kyCreate: vi.fn() } as any;
 
-    let result = await searchGIFs("hello");
+    let result = await searchGIFs("  cats   and dogs ", { client, locale: "ru" });
 
-    expect(result).toHaveLength(1);
-    expect(appGlobal.remoteApp.kyCreate).not.toHaveBeenCalled();
+    expect(result.map(gif => gif.id)).toEqual(["1"]);
+    expect(client.searchGIFs).toHaveBeenCalledWith("cats and dogs", "ru", 1);
+    // Ключ провайдера только на сервере: рендерер сам к провайдеру не ходит.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("an empty query asks for trending GIFs", async () => {
+    let client = fakeClient({ type: "gif-results", results: [] });
+    await searchGIFs(null, { client, locale: "en" });
+    expect(client.searchGIFs).toHaveBeenCalledWith("", "en", 1);
+  });
+
+  test("maps server and connection errors to picker states", async () => {
+    let cases: [string, string, boolean][] = [
+      ["gifs_unavailable", "server-unconfigured", false],
+      ["unknown_type", "server-outdated", false],
+      ["gifs_no_license", "no-license", false],
+      ["not_connected", "offline", true],
+      ["rate_limited", "rate-limited", true],
+      ["gifs_failed", "failed", true],
+      ["service_unavailable", "failed", true],
+    ];
+    for (let [code, kind, retryable] of cases) {
+      let error = Object.assign(new Error(code), { code });
+      let rejection = await searchGIFs("x", { client: fakeClient(error), locale: "en" }).catch(ex => ex);
+      expect(rejection).toBeInstanceOf(GIFSearchError);
+      expect(rejection.kind).toBe(kind);
+      expect(rejection.isRetryable).toBe(retryable);
+    }
+    expect(toGIFSearchError(new Error("boom")).kind).toBe("failed");
+  });
+
+  test("accepts only https media from the provider CDN", () => {
+    expect(gifMediaURL(`${cdn}/a.gif`)).toBe(`${cdn}/a.gif`);
+    expect(gifMediaURL("https://static2.klipy.com/a.gif")).toBe("https://static2.klipy.com/a.gif");
+    expect(gifMediaURL("https://static.klipy.com:8443/a.gif")).toBeNull();
+    expect(gifMediaURL("https://api.klipy.com/a.gif")).toBeNull();
+    expect(gifMediaURL("javascript:alert(1)")).toBeNull();
+    expect(gifMediaURL(42)).toBeNull();
   });
 
   test("downloads a selected GIF as an attachment file", async () => {
@@ -131,20 +152,26 @@ describe("GIF media", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    let file = await downloadGIF({
-      id: "gif/42",
-      title: "A GIF",
-      url: "https://cdn.example.test/gif.gif",
-      thumbnail: "https://cdn.example.test/preview.gif",
-      creator: null,
-      license: null,
-      foreignLandingURL: null,
-      filesize: 4,
-    });
+    let [gif] = parseGIFResults({ results: [serverGIF("gif-42")] });
+    let file = await downloadGIF(gif);
 
+    expect(fetchMock).toHaveBeenCalledWith(`${cdn}/gif-42-md.gif`, expect.anything());
     expect(file.name).toBe("gif-gif-42.gif");
     expect(file.type).toBe("image/gif");
     expect(file.size).toBe(4);
+  });
+
+  test("refuses to download from outside the provider CDN or a non-GIF file", async () => {
+    let fetchMock = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    let [gif] = parseGIFResults({ results: [serverGIF("gif-1")] });
+
+    await expect(downloadGIF({ ...gif, url: "https://evil.example.test/x.gif" })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(downloadGIF(gif)).rejects.toThrow("not a GIF");
   });
 });
 

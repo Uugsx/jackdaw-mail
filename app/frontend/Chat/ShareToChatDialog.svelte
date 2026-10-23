@@ -37,7 +37,8 @@
   import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { JackdawChatRoom } from "../../logic/Chat/Jackdaw/JackdawChatRoom";
   import { JackdawChatMessage } from "../../logic/Chat/Jackdaw/JackdawChatMessage";
-  import { shareToChatRequest } from "./shareToChat";
+  import { shareToChatEmail, shareToChatRequest } from "./shareToChat";
+  import { attachEmailToChatMessage } from "../../logic/Chat/Jackdaw/chatLinks";
   import { openChatRoomFromOtherApp } from "./open";
   import LinkCard from "./MessageView/LinkCard.svelte";
   import Button from "../Shared/Button.svelte";
@@ -60,6 +61,7 @@
 
   function close() {
     $shareToChatRequest = null;
+    $shareToChatEmail = null;
     filter = "";
     comment = "";
     target = null;
@@ -67,11 +69,16 @@
 
   async function send() {
     let link = $shareToChatRequest;
+    let email = $shareToChatEmail;
     let room = target;
     if (!link || !room) {
       return;
     }
     let message = room.newMessage() as JackdawChatMessage;
+    if (link.type == "email" && email) {
+      // Само письмо файлом: у получателя нет доступа к нашему ящику
+      link = await attachEmailToChatMessage(message, email, link);
+    }
     message.links = [link];
     message.text = comment.trim(); // строка-заглушка для старых версий добавляется при отправке
     message.outgoing = true;

@@ -11,6 +11,7 @@
  *   node jd.mjs clickxy <порт> <x> <y>                 клик по точке (пиксели CSS)
  *   node jd.mjs hover <порт> <селектор>                навести мышь без клика
  *   node jd.mjs movexy <порт> <x1> <y1> <x2> <y2> [мс] плавно провести мышь (пиксели CSS)
+ *   node jd.mjs drag <порт> <x1> <y1> <x2> <y2> [мс]   перетащить с зажатой кнопкой (пиксели CSS)
  *   node jd.mjs type <порт> <текст>                    ввод текста в элемент с фокусом
  *   node jd.mjs key <порт> <клавиша>                   Enter, Escape, Tab, Backspace, ArrowDown…
  *   node jd.mjs wait <порт> <селектор> [мс]            дождаться элемента
@@ -284,6 +285,22 @@ const commands = {
         await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
         await new Promise(resolve => setTimeout(resolve, Number(durationMs) / steps));
       }
+    });
+  },
+
+  /** Перетащить мышью с зажатой левой кнопкой (пиксели CSS): разделители, ползунки */
+  async drag(port, x1, y1, x2, y2, durationMs = "300") {
+    let steps = 15;
+    await withPage(port, async cdp => {
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Number(x1), y: Number(y1) });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: Number(x1), y: Number(y1), button: "left", buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= steps; i++) {
+        let x = Number(x1) + (Number(x2) - Number(x1)) * i / steps;
+        let y = Number(y1) + (Number(y2) - Number(y1)) * i / steps;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 });
+        await new Promise(resolve => setTimeout(resolve, Number(durationMs) / steps));
+      }
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: Number(x2), y: Number(y2), button: "left", buttons: 0, clickCount: 1 });
     });
   },
 

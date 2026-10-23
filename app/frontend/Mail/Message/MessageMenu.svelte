@@ -39,7 +39,7 @@
   icon={NewAllIcon} />
 {#if message.messageID}
   <MenuItem
-    onClick={() => shareToChat(emailLink(message))}
+    onClick={() => shareToChat(emailLink(message), message)}
     label={$t`Send to chat`}
     tooltip={$t`Send a link to this email to a Jackdaw chat. Colleagues who also have it open their copy.`}
     icon={ShareChatIcon} />

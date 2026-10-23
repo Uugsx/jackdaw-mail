@@ -10,8 +10,10 @@ import { catchErrors } from './Util/error';
 import { gt } from '../l10n/l10n';
 import * as Sentry from "@sentry/svelte";
 import { installTooltips } from './Shared/tooltip';
+import { installNativeDialogs } from './Util/nativeDialogs';
 
 installTooltips(document);
+installNativeDialogs();
 
 if (production) {
   Sentry.init({

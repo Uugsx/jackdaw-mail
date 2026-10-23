@@ -5,6 +5,11 @@
       <li>
         <vbox class="member-text">
           <hbox class="member-line">
+            {#if memberPresence(member.emailAddress, $callClient)}
+              <span class="member-dot" title={statusLabel(memberPresence(member.emailAddress, $callClient))}>
+                <StatusDot status={memberPresence(member.emailAddress, $callClient)} size="8px" />
+              </span>
+            {/if}
             <span class="member-name">{member.name || member.emailAddress}</span>
             <span class="member-email">{member.emailAddress}</span>
           </hbox>
@@ -47,6 +52,18 @@
   import WarningIcon from "lucide-svelte/icons/triangle-alert";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../l10n/l10n";
+  import StatusDot from "./Status/StatusDot.svelte";
+  import { presenceOf, statusLabel, type PresenceState } from "./Status/statusLabels";
+  import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import type { JackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCallClient";
+
+  const callClient = getJackdawCallClient();
+  function memberPresence(email: string, client: JackdawCallClient | null): PresenceState | null {
+    if (!client || client.presenceVersion < 0 || !email) {
+      return null;
+    }
+    return presenceOf(client, [email]);
+  }
 
   export let account: JackdawChatAccount;
   /** in/out: выбранные участники */
@@ -118,6 +135,10 @@
     align-items: baseline;
     gap: 8px;
     min-width: 0;
+  }
+  .member-dot {
+    display: inline-flex;
+    align-self: center;
   }
   .member-name {
     font-weight: 600;
