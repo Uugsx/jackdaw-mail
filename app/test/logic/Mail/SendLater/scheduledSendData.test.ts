@@ -51,10 +51,9 @@ afterEach(async () => {
 });
 
 describe("миграция", () => {
-  test("двенадцатая — в конце, выпущенные не сдвинуты", () => {
+  test("двенадцатая — после одиннадцатой, выпущенные не сдвинуты", () => {
     expect(mailDatabaseMigrations.indexOf(createExchangeTaskTable)).toBe(10);
     expect(mailDatabaseMigrations.indexOf(createScheduledSendTable)).toBe(11);
-    expect(mailDatabaseMigrations.at(-1)).toBe(createScheduledSendTable);
   });
 
   test("база на user_version 11 получает очередь; откат удаляет её; повтор безопасен", async () => {
@@ -66,7 +65,7 @@ describe("миграция", () => {
       INSERT INTO email (id, folderID, messageID, dateSent, dateReceived, subject) VALUES (1, 1, '<m>', 1, 1, 'Hi');
     `);
     expect(await legacy.pragma("user_version", { simple: true })).toBe(11);
-    await legacy.migrate(...mailDatabaseMigrations);
+    await legacy.migrate(...mailDatabaseMigrations.slice(0, 12));
     expect(await legacy.pragma("user_version", { simple: true })).toBe(12);
     expect(await legacy.all(sql`SELECT id, subject FROM email`)).toEqual([{ id: 1, subject: "Hi" }]);
     expect(await legacy.get(sql`SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'scheduledSend'`))

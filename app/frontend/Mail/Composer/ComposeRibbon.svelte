@@ -274,6 +274,15 @@
               on:click={() => dispatch("insertSignature")}>
               <SignatureIcon size="18px" />
             </button>
+            <button type="button" class="ribbon-btn" title={$t`Templates *=> Email templates`}
+              aria-label={$t`Templates *=> Email templates`}
+              aria-haspopup="menu"
+              aria-expanded={templateMenuOpen}
+              class:on={templateMenuOpen}
+              bind:this={templateMenuAnchor}
+              on:click={() => templateMenuOpen = !templateMenuOpen}>
+              <TemplateIcon size="18px" />
+            </button>
             <button type="button" class="ribbon-btn" title={$t`Actions`}
               disabled={!!hasSML}
               on:click={() => dispatch("openActions")}>
@@ -436,6 +445,15 @@
     </Menu>
   {/if}
 
+  {#if templateMenuAnchor}
+    <Menu bind:isMenuOpen={templateMenuOpen} anchor={templateMenuAnchor} boundaryElSel=".mail-composer-window">
+      <TemplateMenuItems
+        onInsert={id => { templateMenuOpen = false; dispatch("insertTemplate", id); }}
+        onSave={() => { templateMenuOpen = false; dispatch("saveAsTemplate"); }}
+        onManage={canManageTemplates ? () => { templateMenuOpen = false; dispatch("manageTemplates"); } : null} />
+    </Menu>
+  {/if}
+
   {#if followUpMenuAnchor}
     <Menu bind:isMenuOpen={followUpMenuOpen} anchor={followUpMenuAnchor} boundaryElSel=".mail-composer-window">
       <FollowUpMenuItems
@@ -569,6 +587,8 @@
   import FlagIcon from "lucide-svelte/icons/flag";
   import BellRingIcon from "lucide-svelte/icons/bell-ring";
   import FollowUpMenuItems from "../FollowUp/FollowUpMenuItems.svelte";
+  import TemplateMenuItems from "../Templates/TemplateMenuItems.svelte";
+  import TemplateIcon from "lucide-svelte/icons/file-text";
   import type { FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
   import Menu from "../../Shared/Menu/Menu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
@@ -605,6 +625,8 @@
   export let signatureEnabled = true;
   export let openLinkDialog = false;
   export let quoteEditor: QuoteEditorHandle | null = null;
+  /** В отдельном окне редактора нет настроек: пункт «Управление шаблонами» скрыт */
+  export let canManageTemplates = true;
 
   const dispatch = createEventDispatcher<{
     send: void;
@@ -622,7 +644,12 @@
     setZoom: number;
     openActions: void;
     setFollowUp: FollowUpChoice | null;
+    insertTemplate: number;
+    saveAsTemplate: void;
+    manageTemplates: void;
   }>();
+  let templateMenuOpen = false;
+  let templateMenuAnchor: HTMLButtonElement;
   let followUpMenuOpen = false;
   let followUpMenuAnchor: HTMLButtonElement;
 
