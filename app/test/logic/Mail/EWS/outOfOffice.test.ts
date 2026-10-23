@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 
-import "../../../../logic/app"; // Avoid import cycle
+import { appGlobal } from "../../../../logic/app"; // Avoid import cycle
+import { OWAAccount } from "../../../../logic/Mail/OWA/OWAAccount";
 import { EWSAccount } from "../../../../logic/Mail/EWS/EWSAccount";
 import { EWSItemError } from "../../../../logic/Mail/EWS/EWSError";
 import {
   checkOutOfOfficeResponse, ewsGetOutOfOfficeRequest, ewsSetOutOfOfficeRequest, isOutOfOfficeActive,
   newOutOfOfficeSettings, outOfOfficeHTMLToText, outOfOfficeTextToHTML, owaGetOutOfOfficeRequest,
   owaSetOutOfOfficeRequest, parseExchangeDate, parseOutOfOfficeResponse, type OutOfOfficeSettings,
+  checkOWAOutOfOfficeResponse, parseOWAOutOfOfficeResponse,
 } from "../../../../logic/Mail/EWS/OutOfOffice";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const kTypes = "http://schemas.microsoft.com/exchange/services/2006/types";
 const kMessages = "http://schemas.microsoft.com/exchange/services/2006/messages";
@@ -75,13 +77,13 @@ describe("EWS: формирование XML", () => {
   test("выключенный автоответ с неверным периодом не шлёт Duration", () => {
     let settings = { ...scheduled(), state: "Disabled" as const, end: new Date("2026-11-01T00:00:00Z") };
     expect(ewsSetOutOfOfficeRequest("ivan@example.com", settings).m$SetUserOofSettingsRequest.t$UserOofSettings.t$Duration).toBeUndefined();
-    expect(owaSetOutOfOfficeRequest("ivan@example.com", settings).Body.UserOofSettings.Duration).toBeUndefined();
+    expect(owaSetOutOfOfficeRequest(settings).Options.StartTime).toBeUndefined();
   });
 
   test("расписание с концом раньше начала не отправляется", () => {
     let settings = { ...scheduled(), end: new Date("2026-11-01T00:00:00Z") };
     expect(() => ewsSetOutOfOfficeRequest("ivan@example.com", settings)).toThrow(RangeError);
-    expect(() => owaSetOutOfOfficeRequest("ivan@example.com", { ...scheduled(), start: null })).toThrow(RangeError);
+    expect(() => owaSetOutOfOfficeRequest({ ...scheduled(), start: null })).toThrow(RangeError);
   });
 });
 
@@ -155,63 +157,86 @@ describe("EWS: разбор ответа", () => {
 });
 
 describe("OWA: JSON", () => {
-  test("GetUserOofSettings", () => {
-    let request = owaGetOutOfOfficeRequest("ivan@example.com");
-    expect(request.action).toBe("GetUserOofSettings");
+  // Exchange 2019, как его присылает Outlook в браузере
+  const kGetResponse = {
+    Header: { ServerVersionInfo: { MajorVersion: 15, MinorVersion: 2, Version: "V2017_07_11" } },
+    ErrorCode: 0,
+    ErrorMessage: null,
+    IsUserError: false,
+    UserPrompt: null,
+    WasSuccessful: true,
+    Options: {
+      AutoReplyState: 2,
+      StartTime: "2026-10-05T09:00:00+02:00",
+      EndTime: "2026-10-19T16:00:00Z",
+      ExternalAudience: 1,
+      ExternalMessage: "<p>I am out of office.</p>",
+      ExternalMessageText: "I am out of office.\r\n",
+      InternalMessage: "<html><body><p>Вернусь <b>19-го</b>.</p></body></html>",
+      InternalMessageText: "Вернусь 19-го.\r\n",
+    },
+  };
+
+  test("чтение: GetMailboxAutoReplyConfiguration с пустым телом", () => {
+    let request = owaGetOutOfOfficeRequest();
+    expect(request.action).toBe("GetMailboxAutoReplyConfiguration");
+    expect(JSON.stringify(request)).toBe("{}");
+  });
+
+  test("запись: SetMailboxAutoReplyConfiguration", () => {
+    let request = owaSetOutOfOfficeRequest(scheduled());
+    expect(request.action).toBe("SetMailboxAutoReplyConfiguration");
     expect(JSON.parse(JSON.stringify(request))).toEqual({
-      __type: "GetUserOofSettingsJsonRequest:#Exchange",
+      __type: "SetMailboxAutoReplyConfigurationRequest:#Exchange",
       Header: { __type: "JsonRequestHeaders:#Exchange", RequestServerVersion: "Exchange2013" },
-      Body: {
-        __type: "GetUserOofSettingsRequest:#Exchange",
-        Mailbox: { __type: "EmailAddress:#Exchange", Address: "ivan@example.com" },
+      Options: {
+        __type: "MailboxAutoReplyConfigurationOptions:#Exchange",
+        AutoReplyState: 2,
+        ExternalAudience: 1,
+        StartTime: "2026-11-02T06:00:00Z",
+        EndTime: "2026-11-09T18:30:00Z",
+        InternalMessage: "<p>В отпуске &amp; без почты</p>",
+        ExternalMessage: "<p>On vacation</p>",
       },
     });
   });
 
-  test("SetUserOofSettings", () => {
-    let request = owaSetOutOfOfficeRequest("ivan@example.com", scheduled());
-    expect(request.action).toBe("SetUserOofSettings");
-    expect(request.Body).toEqual({
-      __type: "SetUserOofSettingsRequest:#Exchange",
-      Mailbox: { __type: "EmailAddress:#Exchange", Address: "ivan@example.com" },
-      UserOofSettings: {
-        __type: "UserOofSettings:#Exchange",
-        OofState: "Scheduled",
-        ExternalAudience: "Known",
-        Duration: { __type: "Duration:#Exchange", StartTime: "2026-11-02T06:00:00Z", EndTime: "2026-11-09T18:30:00Z" },
-        InternalReply: { __type: "ReplyBody:#Exchange", Message: "<p>В отпуске &amp; без почты</p>" },
-        ExternalReply: { __type: "ReplyBody:#Exchange", Message: "<p>On vacation</p>" },
-      },
+  test("запись без расписания не шлёт время", () => {
+    let request = owaSetOutOfOfficeRequest({ ...scheduled(), state: "Disabled" });
+    expect(request.Options.AutoReplyState).toBe(0);
+    expect(request.Options.StartTime).toBeUndefined();
+    expect(request.Options.EndTime).toBeUndefined();
+    expect(owaSetOutOfOfficeRequest({ ...scheduled(), state: "Enabled", externalAudience: "All" }).Options)
+      .toMatchObject({ AutoReplyState: 1, ExternalAudience: 2 });
+  });
+
+  test("разбор ответа Exchange 2019: числа, HTML, время со смещением", () => {
+    expect(parseOWAOutOfOfficeResponse(kGetResponse)).toEqual({
+      state: "Scheduled",
+      externalAudience: "Known",
+      start: new Date("2026-10-05T07:00:00Z"),
+      end: new Date("2026-10-19T16:00:00Z"),
+      internalReply: "<html><body><p>Вернусь <b>19-го</b>.</p></body></html>",
+      externalReply: "<p>I am out of office.</p>",
+      allowExternal: "All",
     });
   });
 
-  test("разбор ответа: Body, даты со смещением, регистр значений", () => {
-    let settings = parseOutOfOfficeResponse({
-      Body: {
-        ResponseMessage: { ResponseClass: "Success" },
-        OofSettings: {
-          OofState: "enabled",
-          ExternalAudience: "Known",
-          Duration: { StartTime: "2026-11-02T09:00:00+03:00", EndTime: "/Date(1794300000000)/" },
-          InternalReply: { Message: "Внутренний" },
-          ExternalReply: { Message: "Внешний" },
-        },
-        AllowExternalOof: "None",
-      },
-    });
-    expect(settings.state).toBe("Enabled");
-    expect(settings.externalAudience).toBe("Known");
-    expect(settings.start).toEqual(new Date("2026-11-02T06:00:00Z"));
-    expect(settings.end).toEqual(new Date(1794300000000));
-    expect(settings.internalReply).toBe("Внутренний");
-    expect(settings.allowExternal).toBe("None");
+  test("разбор ответа Exchange 2013", () => {
+    let response = JSON.parse(String.raw`{"Header":{"ServerVersionInfo":{"MajorVersion":15,"MinorVersion":0,"MajorBuildNumber":1497,"MinorBuildNumber":0,"Version":"V2_23"}},"ErrorCode":0,"ErrorMessage":null,"UserPrompt":null,"WasSuccessful":true,"Options":{"AutoReplyState":0,"EndTime":"2026-10-23T16:00:00Z","ExternalAudience":2,"ExternalMessage":"","ExternalMessageText":"\u000d\u000a","InternalMessage":"","InternalMessageText":"\u000d\u000a","StartTime":"2026-10-22T16:00:00Z"}}`);
+    let settings = parseOWAOutOfOfficeResponse(response);
+    expect(settings.state).toBe("Disabled");
+    expect(settings.externalAudience).toBe("All");
+    expect(settings.internalReply).toBe("");
+    expect(settings.start).toEqual(new Date("2026-10-22T16:00:00Z"));
   });
 
-  test("ошибка во вложенном ResponseMessage", () => {
-    expect(() => checkOutOfOfficeResponse({
-      ResponseMessage: { ResponseClass: "Error", ResponseCode: "ErrorAccessDenied", MessageText: "Access is denied." },
-    })).toThrow("Access is denied.");
-    expect(() => parseOutOfOfficeResponse({ ResponseClass: "Success" })).toThrow();
+  test("ошибка: WasSuccessful false", () => {
+    let failed = { ErrorCode: 5, ErrorMessage: "Access is denied.", WasSuccessful: false };
+    expect(() => parseOWAOutOfOfficeResponse(failed)).toThrow("Access is denied.");
+    expect(() => checkOWAOutOfOfficeResponse(failed)).toThrow("Access is denied.");
+    expect(() => checkOWAOutOfOfficeResponse({ ErrorCode: 0, WasSuccessful: true })).not.toThrow();
+    expect(() => parseOWAOutOfOfficeResponse({ WasSuccessful: true })).toThrow();
   });
 });
 
@@ -243,5 +268,66 @@ describe("состояние и тексты", () => {
     expect(parseExchangeDate("")).toBeNull();
     expect(parseExchangeDate("мусор")).toBeNull();
     expect(parseExchangeDate(undefined)).toBeNull();
+  });
+});
+
+describe("OWA: запросы через OWAAccount", () => {
+  let calls: { url: string, action: string, body: string }[] = [];
+  let responses: any[] = [];
+
+  beforeEach(() => {
+    appGlobal.remoteApp = { OWA: {} } as any;
+    calls = [];
+    vi.stubGlobal("fetch", async (url: string, options: any) => {
+      calls.push({ url, action: options.headers.Action, body: options.body });
+      let json = responses.shift();
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        url,
+        headers: new Headers({ "Content-Type": "application/json; charset=utf-8" }),
+        text: async () => JSON.stringify(json),
+        json: async () => json,
+      };
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function newAccount(): OWAAccount {
+    let account = new OWAAccount();
+    (account as any).hasLoggedIn = true;
+    account.url = "https://mail.example.com/owa/";
+    account.emailAddress = "ivan@example.com";
+    account.authorizationHeader = "Bearer TEST";
+    return account;
+  }
+
+  test("читает, выключает и сохраняет", async () => {
+    let account = newAccount();
+    responses = [{ WasSuccessful: true, ErrorCode: 0, Options: { AutoReplyState: 1, ExternalAudience: 2, InternalMessage: "<p>Нет</p>", ExternalMessage: "" } }];
+    let settings = await account.loadOutOfOffice();
+    expect(calls[0].url).toBe("https://mail.example.com/owa/service.svc?action=GetMailboxAutoReplyConfiguration&EP=1");
+    expect(calls[0].action).toBe("GetMailboxAutoReplyConfiguration");
+    expect(calls[0].body).toBe("{}");
+    expect(settings.state).toBe("Enabled");
+    expect(isOutOfOfficeActive(account.outOfOffice)).toBe(true);
+
+    responses = [{ WasSuccessful: true, ErrorCode: 0 }];
+    await account.turnOffOutOfOffice();
+    expect(calls[1].action).toBe("SetMailboxAutoReplyConfiguration");
+    expect(JSON.parse(calls[1].body).Options).toMatchObject({ AutoReplyState: 0, ExternalAudience: 2, InternalMessage: "<p>Нет</p>" });
+    expect(account.outOfOffice.state).toBe("Disabled");
+  });
+
+  test("ошибка сохранения не меняет состояние", async () => {
+    let account = newAccount();
+    responses = [{ WasSuccessful: true, ErrorCode: 0, Options: { AutoReplyState: 1, ExternalAudience: 0 } }];
+    await account.loadOutOfOffice();
+    responses = [{ WasSuccessful: false, ErrorCode: 7, ErrorMessage: "Access is denied." }];
+    await expect(account.turnOffOutOfOffice()).rejects.toThrow("Access is denied.");
+    expect(account.outOfOffice.state).toBe("Enabled");
   });
 });
