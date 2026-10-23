@@ -55,6 +55,27 @@
         {#if $awaitingReplyExpanded.value}
           <AwaitingReplyList />
         {/if}
+      {:else if view.id == "scheduled"}
+        <!-- Не фильтр папки, а очередь «Отправить позже» всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$scheduledExpanded.value}
+          title={view.label()}
+          aria-expanded={$scheduledExpanded.value}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => scheduledExpanded.value = !scheduledExpanded.value}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if scheduledCount}
+            <span class="count" class:overdue={scheduledFailedCount > 0}
+              title={scheduledFailedCount > 0 ? $t`${scheduledFailedCount} not sent` : null}>
+              {scheduledFailedCount > 0 ? scheduledFailedCount : scheduledCount}
+            </span>
+          {/if}
+        </button>
+        {#if $scheduledExpanded.value}
+          <ScheduledSendList />
+        {/if}
       {:else if view.id == "tasks"}
         <!-- Не фильтр папки, а страница задач Exchange и писем с флажком всех ящиков -->
         <button type="button" class="smart-view"
@@ -126,6 +147,9 @@
   import { followUpSnapshot } from "../FollowUp/followUpReminders";
   import { tasksState, tasksViewOpen, groupOpenItems } from "../Tasks/tasksStore";
   import ListChecksIcon from "lucide-svelte/icons/list-checks";
+  import ClockSendIcon from "lucide-svelte/icons/clock-arrow-up";
+  import ScheduledSendList from "../SendLater/ScheduledSendList.svelte";
+  import { scheduledSends } from "../SendLater/sendQueue";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { onMount } from "svelte";
   import CheckIcon from "lucide-svelte/icons/check";
@@ -171,9 +195,14 @@
     { id: "attachments", label: () => $t`Attachments`, icon: AttachmentIcon },
     { id: "awaiting-reply", label: () => $t`Waiting for a reply`, icon: HourglassIcon },
     { id: "tasks", label: () => $t`Tasks`, icon: ListChecksIcon },
+    { id: "scheduled", label: () => $t`Scheduled`, icon: ClockSendIcon },
   ];
 
   const awaitingReplyExpanded = getLocalStorage("mail.smart-views.awaiting-reply.expanded", false);
+  const scheduledExpanded = getLocalStorage("mail.smart-views.scheduled.expanded", false);
+  $: scheduledVisible = $scheduledSends.items.filter(item => item.kind == "later" || item.status != "pending");
+  $: scheduledCount = scheduledVisible.length;
+  $: scheduledFailedCount = scheduledVisible.filter(item => item.status == "failed").length;
   let minuteTick = Date.now();
   onMount(() => {
     let interval = setInterval(() => minuteTick = Date.now(), 60_000);

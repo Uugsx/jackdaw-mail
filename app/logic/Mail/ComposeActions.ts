@@ -11,7 +11,8 @@ import { fileExtensionForMIMEType } from "../Files/FileType/MIMETypes";
 import { escapeAttr, escapeHTML } from "../Files/FileType/htmlHelper";
 import { backgroundError } from "../../frontend/Util/error";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
-import { UserError, assert, dataURLToBlob, type URLString } from "../util/util";
+import { NotSupported, UserError, assert, dataURLToBlob, type URLString } from "../util/util";
+import type { EWSDeferredSend } from "./SendLater/EWSDeferredSend";
 import { convertTextToHTML } from "../util/convertHTML";
 import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
@@ -539,8 +540,10 @@ export class ComposeActions {
    *
    * Called by composer.
    * The actual send on the protocol level is done by `EMail.send()`
+   *
+   * @param options.deferred отправку держит сервер до `sendAt` (только `canDeferSendOnServer`)
    */
-  async send(): Promise<void> {
+  async send(options: { deferred?: EWSDeferredSend } = {}): Promise<void> {
     let fromIdentity = this.email.identity;
     assert(fromIdentity, "Need identity set on mail");
     if (fromIdentity.replyTo) {
@@ -592,13 +595,21 @@ export class ComposeActions {
     // попала бы старая версия письма. Собираем MIME заново из текущего тела.
     this.email.mime = undefined;
 
+    let deferred = options.deferred;
+    if (deferred && !account.canDeferSendOnServer) {
+      throw new NotSupported("The server cannot send messages later");
+    }
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
-    await account.send(mail);
-    void playNotificationSound("mail-outgoing");
-    notifyMailSent(this.email);
+    if (deferred) {
+      await account.send(mail, deferred);
+    } else {
+      await account.send(mail);
+      void playNotificationSound("mail-outgoing");
+      notifyMailSent(this.email);
+    }
 
     await this.markComposeSourceFlags();
-    await this.startFollowUpAfterSend(account.dbID);
+    await this.startFollowUpAfterSend(account.dbID, deferred?.sendAt);
 
     this.email.folder = previousFolder;
     this.deleteDrafts(previousDrafts)
@@ -606,7 +617,7 @@ export class ComposeActions {
   }
 
   /** Письмо уже ушло: ошибка напоминания не должна выглядеть как ошибка отправки. */
-  protected async startFollowUpAfterSend(accountID: number | string | null): Promise<void> {
+  protected async startFollowUpAfterSend(accountID: number | string | null, sentAt = new Date()): Promise<void> {
     let choice = this.email.followUpReminder;
     if (!choice) {
       return;
@@ -616,7 +627,7 @@ export class ComposeActions {
       let { startFollowUpForEMail } = await import("./FollowUp/trackFollowUp");
       await startFollowUpForEMail(this.email, choice, {
         accountId: accountID,
-        sentAt: new Date(),
+        sentAt,
         emailId: null,
       });
       this.email.followUpReminder = null;

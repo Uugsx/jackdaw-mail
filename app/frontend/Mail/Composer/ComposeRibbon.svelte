@@ -418,6 +418,20 @@
 
   {#if sendMenuAnchor}
     <Menu bind:isMenuOpen={sendMenuOpen} anchor={sendMenuAnchor} boundaryElSel=".mail-composer-window">
+      <MenuLabel label={$t`Send later`} />
+      <MenuItem
+        label={$t`Tomorrow morning` + " · " + formatSendLaterTime(tomorrowMorning())}
+        icon={SunriseIcon}
+        onClick={() => { sendMenuOpen = false; dispatch("sendLater", tomorrowMorning()); }} />
+      <MenuItem
+        label={$t`Monday morning` + " · " + formatSendLaterTime(nextMondayMorning())}
+        icon={CalendarDaysIcon}
+        onClick={() => { sendMenuOpen = false; dispatch("sendLater", nextMondayMorning()); }} />
+      <MenuItem
+        label={$t`Pick date and time…`}
+        icon={CalendarClockIcon}
+        onClick={onPickSendLater} />
+      <MenuDivider />
       <MenuItem label={$t`Save draft`} onClick={() => { sendMenuOpen = false; dispatch("saveDraft"); }} />
     </Menu>
   {/if}
@@ -558,6 +572,13 @@
   import type { FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
   import Menu from "../../Shared/Menu/Menu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
+  import MenuLabel from "../../Shared/Menu/MenuLabel.svelte";
+  import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
+  import SunriseIcon from "lucide-svelte/icons/sunrise";
+  import CalendarDaysIcon from "lucide-svelte/icons/calendar-days";
+  import CalendarClockIcon from "lucide-svelte/icons/calendar-clock";
+  import { nextMondayMorning, tomorrowMorning } from "../../../logic/Mail/SendLater/SendLater";
+  import { formatSendLaterTime, pickSendLaterDate } from "../SendLater/pickSendLaterDate";
   import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import type { MailImportanceLevel } from "../../../logic/Mail/EMail";
@@ -587,6 +608,7 @@
 
   const dispatch = createEventDispatcher<{
     send: void;
+    sendLater: Date;
     addAttachment: void;
     insertSignature: void;
     toggleHighImportance: void;
@@ -620,6 +642,14 @@
   let pasteMenuAnchor: HTMLButtonElement;
   let sendMenuOpen = false;
   let sendMenuAnchor: HTMLButtonElement;
+
+  async function onPickSendLater() {
+    sendMenuOpen = false;
+    let sendAt = await pickSendLaterDate();
+    if (sendAt) {
+      dispatch("sendLater", sendAt);
+    }
+  }
   let textColorMenuOpen = false;
   let textColorMenuAnchor: HTMLButtonElement;
   let highlightMenuOpen = false;
