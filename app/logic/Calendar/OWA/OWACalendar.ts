@@ -8,6 +8,7 @@ import { OWAIncomingInvitation } from "./OWAIncomingInvitation";
 import { type OWAAccount, kMaxFetchCount } from "../../Mail/OWA/OWAAccount";
 import { owaGetPermissionsRequest, owaSetCalendarPermissionsRequest } from "../../Mail/OWA/Request/OWAFolderRequests";
 import { OWAGetUserAvailabilityRequest } from "./Request/OWAGetUserAvailabilityRequest";
+import { owaGetRoomListsRequest, owaGetRoomsRequest, parseOWARoomLists, parseOWARooms, type MeetingRoom } from "../EWS/MeetingRooms";
 import type { OWAEMail } from "../../Mail/OWA/OWAEMail";
 import { owaFindEventsRequest, owaGetCalendarEventsRequest, owaGetEventsRequest } from "./Request/OWAEventRequests";
 import { getSharedPersons, ExchangePermission, deleteExchangePermissions, setExchangePermissions } from "../../Mail/EWS/ExchangePermission";
@@ -73,6 +74,18 @@ export class OWACalendar extends ExchangeCalendar {
       });
     }
     return availabilities;
+  }
+
+  get canBookRooms(): boolean {
+    return true;
+  }
+
+  async listRoomLists(): Promise<MeetingRoom[]> {
+    return parseOWARoomLists(await this.account.callOWA(owaGetRoomListsRequest()));
+  }
+
+  async listRooms(roomList: MeetingRoom): Promise<MeetingRoom[]> {
+    return parseOWARooms(await this.account.callOWA(owaGetRoomsRequest(roomList.emailAddress)));
   }
 
   getEventByItemID(id: string): OWAEvent | undefined {

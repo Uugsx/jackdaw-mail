@@ -343,6 +343,15 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       }
       return json;
     }
+    // Списки комнат и комнаты — тоже своим элементом, ResponseClass прямо на нём
+    let rooms = responseXML.querySelector("GetRoomListsResponse, GetRoomsResponse");
+    if (rooms) {
+      let json: any = XML2JSON(rooms);
+      if (json.ResponseClass == "Error") {
+        throw new EWSItemError(json, aRequest);
+      }
+      return json;
+    }
     // Автоответ отвечает своим элементом, без ResponseMessages
     let outOfOffice = responseXML.querySelector("GetUserOofSettingsResponse, SetUserOofSettingsResponse");
     if (outOfOffice) {

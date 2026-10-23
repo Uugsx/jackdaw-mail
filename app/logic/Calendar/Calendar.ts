@@ -3,6 +3,7 @@ import type { AttachmentStorage } from "../Abstract/Attachment";
 import type { PersonUID } from "../Abstract/PersonUID";
 import { Event } from "./Event";
 import type { Participant } from "./Participant";
+import type { MeetingRoom } from "./EWS/MeetingRooms";
 import type { EMail } from "../Mail/EMail";
 import { ICalIncomingInvitation } from "./ICal/ICalIncomingInvitation";
 import { SQLEvent } from "./SQL/SQLEvent";
@@ -97,6 +98,21 @@ export class Calendar extends Account {
   }
 
   async arePersonsFree(participants: Participant[], from: Date, to: Date): Promise<{ participant: Participant, availability?: { from: Date, to: Date, free: boolean }[] }[]> {
+    return [];
+  }
+
+  /** Можно ли выбрать переговорную комнату с сервера (Exchange) */
+  get canBookRooms(): boolean {
+    return false;
+  }
+
+  /** Списки комнат на сервере, например по зданиям */
+  async listRoomLists(): Promise<MeetingRoom[]> {
+    return [];
+  }
+
+  /** Комнаты в списке `roomList` */
+  async listRooms(roomList: MeetingRoom): Promise<MeetingRoom[]> {
     return [];
   }
 

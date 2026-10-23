@@ -3045,5 +3045,22 @@
   "i5z0eT": "Välj minst en åtgärd",
   "3EFxbo": "Mapp på servern",
   "dKlk8s": "Inte en e-postadress: {0}",
-  "aqolyA": "De här reglerna fungerar bara medan Jackdaw Mail körs. Serverregler fungerar även när appen är stängd."
+  "aqolyA": "De här reglerna fungerar bara medan Jackdaw Mail körs. Serverregler fungerar även när appen är stängd.",
+  "uBRbRP": "Ta bort rum",
+  "w6M9ks": "Läser in rum…",
+  "ALdI0A": "Rumslista",
+  "PBkdKI": "Endast lediga",
+  "xJIP1+": "Det finns inga rum i den här listan",
+  "GP4fb7": "Det gick inte att kontrollera om rummen är lediga",
+  "03OoKp": "Kontrollerar tillgänglighet…",
+  "MXJxiu": "Inga lediga rum vid den här tiden",
+  "6lAoV5": "Ledigt",
+  "t8S1kw": "Upptaget",
+  "IrRG5A": "Inga data",
+  "ylXj1N": "Valt",
+  "rG3WVm": "Välj",
+  "5Gd+8w": "Servern har inga rumslistor. Ange rummets e-postadress.",
+  "4Fdu7D": "Rummets e-postadress",
+  "/FxtqK": "Lägg till rum",
+  "cG3vx/": "Rum"
 }

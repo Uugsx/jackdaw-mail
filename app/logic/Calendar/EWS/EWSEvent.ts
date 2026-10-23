@@ -105,7 +105,7 @@ export class EWSEvent extends ExchangeEvent {
     this.isCancelled = sanitize.boolean(xmljs.IsCancelled, false);
     let organizer: string | undefined;
     let participants: Participant[] = [];
-    if (xmljs.Organizer && (xmljs.RequiredAttendees?.Attendee || xmljs.OptionalAttendees?.Attendee)) {
+    if (xmljs.Organizer && (xmljs.RequiredAttendees?.Attendee || xmljs.OptionalAttendees?.Attendee || xmljs.Resources?.Attendee)) {
       organizer = getEmailAddressOrX400(xmljs.Organizer.Mailbox.EmailAddress);
       xmljs.Organizer.ResponseType = "Organizer";
       addParticipants(xmljs.Organizer, participants);
@@ -115,6 +115,9 @@ export class EWSEvent extends ExchangeEvent {
     }
     if (xmljs.OptionalAttendees?.Attendee) {
       addParticipants(xmljs.OptionalAttendees.Attendee, participants, organizer, true);
+    }
+    if (xmljs.Resources?.Attendee) {
+      addParticipants(xmljs.Resources.Attendee, participants, organizer, false, true);
     }
     this.participants.replaceAll(participants);
     if (xmljs.MyResponseType) {
@@ -291,21 +294,33 @@ export class EWSEvent extends ExchangeEvent {
     request.addField("CalendarItem", "IsAllDayEvent", this.allDay, "calendar:IsAllDayEvent");
     request.addField("CalendarItem", "Location", this.getLocationForServer(), "calendar:Location");
     request.addField("CalendarItem", "RequiredAttendees", !withoutAttendees && this.participants.hasItems ? {
-      t$Attendee: this.participants.contents.filter(p => !p.isOptional).map(entry => ({
+      t$Attendee: this.participants.contents.filter(p => !p.isOptional && !p.isResource).map(entry => ({
         t$Mailbox: {
           t$EmailAddress: entry.emailAddress,
           t$Name: entry.name,
         }
       })),
     } : "", "calendar:RequiredAttendees");
-    request.addField("CalendarItem", "OptionalAttendees", !withoutAttendees && this.participants.contents.some(p => p.isOptional) ? {
-      t$Attendee: this.participants.contents.filter(p => p.isOptional).map(entry => ({
+    request.addField("CalendarItem", "OptionalAttendees", !withoutAttendees && this.participants.contents.some(p => p.isOptional && !p.isResource) ? {
+      t$Attendee: this.participants.contents.filter(p => p.isOptional && !p.isResource).map(entry => ({
         t$Mailbox: {
           t$EmailAddress: entry.emailAddress,
           t$Name: entry.name,
         }
       })),
     } : "", "calendar:OptionalAttendees");
+    let resources = this.resourcesForServer(withoutAttendees);
+    if (resources) {
+      // Пустой список — null: при правке это DeleteItemField
+      request.addField("CalendarItem", "Resources", resources.length ? {
+        t$Attendee: resources.map(entry => ({
+          t$Mailbox: {
+            t$EmailAddress: entry.emailAddress,
+            t$Name: entry.name,
+          }
+        })),
+      } : null, "calendar:Resources");
+    }
     request.addField("CalendarItem", "LegacyFreeBusyStatus", this.freeBusyStatus || "Busy", "calendar:LegacyFreeBusyStatus");
     request.addField("CalendarItem", "Sensitivity", this.isPrivate ? "Private" : "Normal", "item:Sensitivity");
     if (!this.parentEvent) { // Exchange Online requires not to write the `Recurrence` prop for recurrence instances
@@ -477,6 +492,8 @@ export class EWSEvent extends ExchangeEvent {
             }, {
               FieldURI: "calendar:OptionalAttendees",
             }, {
+              FieldURI: "calendar:Resources",
+            }, {
               FieldURI: "calendar:Recurrence",
             }, {
               FieldURI: "calendar:ModifiedOccurrences",
@@ -551,11 +568,11 @@ export class EWSEvent extends ExchangeEvent {
   }
 }
 
-function addParticipants(attendees: { Mailbox: { EmailAddress: string, Name: string }, ResponseType: string }[], participants: Participant[], organizer?: string, isOptional = false) {
+function addParticipants(attendees: { Mailbox: { EmailAddress: string, Name: string }, ResponseType: string }[], participants: Participant[], organizer?: string, isOptional = false, isResource = false) {
   for (let attendee of ensureArray(attendees)) {
     let emailAddress = sanitize.emailAddress(attendee.Mailbox.EmailAddress, null);
     if (emailAddress != organizer && emailAddress) {
-      participants.push(new Participant(emailAddress, sanitize.nonemptystring(attendee.Mailbox.Name, null), sanitize.integer(InvitationResponse[attendee.ResponseType as keyof typeof InvitationResponse], InvitationResponse.Unknown), isOptional));
+      participants.push(new Participant(emailAddress, sanitize.nonemptystring(attendee.Mailbox.Name, null), sanitize.integer(InvitationResponse[attendee.ResponseType as keyof typeof InvitationResponse], InvitationResponse.Unknown), isOptional, isResource));
     }
   }
 }

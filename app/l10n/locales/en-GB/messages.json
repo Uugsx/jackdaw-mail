@@ -3045,5 +3045,22 @@
   "i5z0eT": "Choose at least one action",
   "3EFxbo": "Folder on the server",
   "dKlk8s": "Not an email address: {0}",
-  "aqolyA": "These rules work only while Jackdaw Mail is running. Server rules work even when the app is closed."
+  "aqolyA": "These rules work only while Jackdaw Mail is running. Server rules work even when the app is closed.",
+  "uBRbRP": "Remove room",
+  "w6M9ks": "Loading rooms…",
+  "ALdI0A": "Room list",
+  "PBkdKI": "Only free",
+  "xJIP1+": "There are no rooms in this list",
+  "GP4fb7": "Could not check whether the rooms are free",
+  "03OoKp": "Checking availability…",
+  "MXJxiu": "No free rooms at this time",
+  "6lAoV5": "Free",
+  "t8S1kw": "Busy",
+  "IrRG5A": "No data",
+  "ylXj1N": "Selected",
+  "rG3WVm": "Select",
+  "5Gd+8w": "The server has no room lists. Enter the room's email address.",
+  "4Fdu7D": "Room email address",
+  "/FxtqK": "Add room",
+  "cG3vx/": "Room"
 }
