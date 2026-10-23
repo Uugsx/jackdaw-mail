@@ -116,6 +116,10 @@
       {editorZoom}
       hasSML={!!$mail.sml}
       signatureEnabled={signatureEnabled}
+      canManageTemplates={!standalone}
+      on:insertTemplate={event => catchErrors(() => onInsertTemplate(event.detail))}
+      on:saveAsTemplate={() => catchErrors(onSaveAsTemplate)}
+      on:manageTemplates={() => openSettingsCategoryByID("mail-templates")}
       on:send={() => catchErrors(onSend)}
       on:sendLater={event => catchErrors(() => onSend(event.detail))}
       on:addAttachment={() => catchErrors(onAddAttachment)}
@@ -264,6 +268,9 @@
   import Scroll from "../../Shared/Scroll.svelte";
   import SaveIcon from "lucide-svelte/icons/save";
   import { t, gt } from "../../../l10n/l10n";
+  import { applyTemplateToCompose, loadTemplateForInsert, saveComposeAsTemplate } from "../Templates/mailTemplates";
+  import { templateNameFromSubject } from "../../../logic/Mail/Templates/MailTemplate";
+  import { openSettingsCategoryByID } from "../../Settings/Window/CategoriesUtils";
   import { onDestroy, tick } from "svelte";
   import { selectedWorkspace } from "../../MainWindow/Selected";
   import { get } from "svelte/store";
@@ -662,6 +669,24 @@
     mail.signatureRemovedByUser = false;
     mail.compose.applySignature();
     void reloadEditorFromMail().then(() => setCursorDefault());
+  }
+
+  async function onInsertTemplate(id: number) {
+    let template = await loadTemplateForInsert(id);
+    if (!await waitForComposeReady()) {
+      return;
+    }
+    applyTemplateToCompose(mail, editor, template);
+    syncComposeHtml();
+    // Тема поменялась вне разметки: поле ввода привязано к `mail.subject`
+    mail = mail;
+  }
+
+  async function onSaveAsTemplate() {
+    if (editor) {
+      syncComposeHtml();
+    }
+    await saveComposeAsTemplate(mail, editableHtml, templateNameFromSubject(mail.subject));
   }
 
   function toggleHighImportance() {

@@ -297,3 +297,27 @@ export const rollbackScheduledSendTable = sql`
   DROP INDEX IF EXISTS index_scheduledSend_status_sendAt;
   DROP TABLE IF EXISTS "scheduledSend";
 `;
+
+/**
+ * Шаблоны писем: тема, тело HTML и, по желанию, вложения.
+ * Шаблоны общие для всех ящиков и хранятся только локально.
+ * `attachments` — JSON-массив вложений редактора (содержимое в base64).
+ * Время — unixtime в миллисекундах, как в очереди отправки.
+ */
+export const createMailTemplateTable = sql`
+  CREATE TABLE IF NOT EXISTS "mailTemplate" (
+    "id" INTEGER PRIMARY KEY,
+    "name" TEXT not null,
+    "subject" TEXT not null default '',
+    "html" TEXT not null default '',
+    "attachments" TEXT not null default '[]',
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    "lastUsedAt" INTEGER default null
+  );
+`;
+
+/** Откат createMailTemplateTable для инструментов обслуживания базы. */
+export const rollbackMailTemplateTable = sql`
+  DROP TABLE IF EXISTS "mailTemplate";
+`;

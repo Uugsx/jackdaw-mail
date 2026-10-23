@@ -39,7 +39,8 @@ function deserializePerson(person: ComposeWindowPerson): PersonUID {
   return new PersonUID(person.emailAddress, person.name ?? undefined);
 }
 
-async function serializeAttachment(attachment: Attachment, includeContent = true): Promise<ComposeWindowAttachment> {
+/** Вложение в виде данных: для отдельного окна редактора, очереди отправки и шаблонов */
+export async function serializeAttachment(attachment: Attachment, includeContent = true): Promise<ComposeWindowAttachment> {
   let contentBase64: string | null = null;
   if (includeContent && attachment.content) {
     if (attachment.content.size > composeWindowMaxAttachmentBytes) {
@@ -254,25 +255,31 @@ export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail)
 
   mail.attachments.clear();
   for (let item of payload.attachments) {
-    let attachment = mail.newAttachment();
-    attachment.filename = item.filename;
-    attachment.filepathLocal = item.filepathLocal;
-    attachment.mimeType = item.mimeType ?? "application/octet-stream";
-    attachment.size = item.size;
-    attachment.disposition = item.disposition as ContentDisposition;
-    attachment.related = item.related;
-    attachment.contentID = item.contentID;
-    if (item.contentBase64 !== null) {
-      attachment.content = new File([
-        base64ToUint8Array(item.contentBase64),
-      ], item.filename, { type: attachment.mimeType });
-      attachment.size = attachment.content.size;
-    }
-    mail.attachments.add(attachment);
+    addComposeAttachment(mail, item);
   }
 
   mail.identity = account.identities.find(identity => identity.id === payload.identityID)
     ?? account.identities.find(identity => identity.isEMailAddress(payload.from.emailAddress))
     ?? account.identities.first;
   mail.loadedBody = true;
+}
+
+/** Добавляет в письмо вложение, сохранённое `serializeAttachment` */
+export function addComposeAttachment(mail: EMail, item: ComposeWindowAttachment): Attachment {
+  let attachment = mail.newAttachment();
+  attachment.filename = item.filename;
+  attachment.filepathLocal = item.filepathLocal;
+  attachment.mimeType = item.mimeType ?? "application/octet-stream";
+  attachment.size = item.size;
+  attachment.disposition = item.disposition as ContentDisposition;
+  attachment.related = item.related;
+  attachment.contentID = item.contentID;
+  if (item.contentBase64 !== null) {
+    attachment.content = new File([
+      base64ToUint8Array(item.contentBase64),
+    ], item.filename, { type: attachment.mimeType });
+    attachment.size = attachment.content.size;
+  }
+  mail.attachments.add(attachment);
+  return attachment;
 }

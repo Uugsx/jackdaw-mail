@@ -12,6 +12,7 @@ import {
   createFollowUpReminderTable,
   createExchangeTaskTable,
   createScheduledSendTable,
+  createMailTemplateTable,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -40,6 +41,8 @@ export const mailDatabaseMigrations = [
   createExchangeTaskTable,
   // Двенадцатая: отмена отправки и «Отправить позже».
   createScheduledSendTable,
+  // Тринадцатая: шаблоны писем.
+  createMailTemplateTable,
 ];
 
 const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
@@ -72,6 +75,7 @@ export async function makeTestDatabase(): Promise<Database> {
     createFollowUpReminderTable,
     createExchangeTaskTable,
     createScheduledSendTable,
+    createMailTemplateTable,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");
