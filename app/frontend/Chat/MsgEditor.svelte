@@ -243,6 +243,11 @@
     let doc = new DOMParser().parseFromString(msg.rawHTMLDangerous, "text/html");
     let images = [...doc.querySelectorAll("img")].filter(img => img.src.startsWith("data:"));
     for (let img of images) {
+      // insertImage() уже положил эту картинку во вложения как встроенную: без этого получатель видел её дважды
+      let inline = msg.attachments.find(attachment => attachment.related && attachment.dataURL == img.getAttribute("src"));
+      if (inline) {
+        msg.attachments.remove(inline);
+      }
       let file = dataURLToFile(img.src);
       if (file) {
         let att = msg.newAttachment();

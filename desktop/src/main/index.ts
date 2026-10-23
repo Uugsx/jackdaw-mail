@@ -7,6 +7,7 @@ import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
 import { installSignalServiceCATrust } from './signalServiceCA'
 import { installTestProfileGuards, testJPCPort } from '../../backend/testProfile'
+import { nativeDialogLabels, registerNativeDialogHandlers } from '../../backend/nativeDialogs'
 import { connectOAuth2Window } from './oauth2Window'
 import { getSpellcheckSuggestions } from './spellcheck'
 import {
@@ -125,6 +126,8 @@ function isDemoModeRequested(): boolean {
   return demoModeRequested;
 }
 const nativeMenuLabelKeys = Object.keys(currentNativeMenuLabels) as (keyof NativeMenuLabels)[];
+
+registerNativeDialogHandlers();
 
 ipcMain.on(nativeMenuLabelsChannel, (_event, labels: unknown) => {
   if (!isNativeMenuLabels(labels)) {
@@ -674,16 +677,16 @@ async function createWindow(): Promise<void> {
         event.preventDefault();
         return;
       }
-      // В основном процессе нет локализации интерфейса: язык — по системе, как в backend.ts
-      const russian = app.getLocale().toLowerCase().startsWith('ru');
+      // Подписи на языке интерфейса передаёт рендерер (nativeDialogs.ts), до этого — по языку системы
+      const labels = nativeDialogLabels();
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'question',
-        buttons: russian ? ['Завершить звонок и закрыть', 'Остаться в звонке'] : ['End call and close', 'Stay in call'],
+        buttons: [labels.endCallAndClose, labels.stayInCall],
         defaultId: 1,
         cancelId: 1,
         title: 'Jackdaw Mail',
-        message: russian ? 'Идёт звонок.' : 'A call is in progress.',
-        detail: russian ? 'Если закрыть окно, звонок завершится.' : 'Closing the window will end the call.',
+        message: labels.callInProgress,
+        detail: labels.callCloseDetail,
       });
       if (choice === 0) {
         // preventDefault() здесь разрешает закрытие, вопреки отмене в renderer.

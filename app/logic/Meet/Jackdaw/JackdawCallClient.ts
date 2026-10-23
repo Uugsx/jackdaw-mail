@@ -84,6 +84,10 @@ const LOOKUP_CACHE_MS = 60_000;
 const LOOKUP_DEBOUNCE_MS = 250;
 const LOOKUP_BATCH = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
+/** Поиск GIF: сервер ждёт провайдера до 8 с (call_server/gifs.py), плюс дорога туда и обратно */
+const GIF_SEARCH_TIMEOUT_MS = 12_000;
+/** Сколько поиск GIF ждёт входа по лицензии, если подключение ещё идёт */
+const GIF_CONNECT_WAIT_MS = 6_000;
 const HEARTBEAT_MS = 25_000;
 /** Сколько ждать `pong` на `ping`. После сна системы или смены сети сокет остаётся «открытым»,
  * хотя TCP уже мёртв, и ОС закрывает его лишь через минуты. */
@@ -849,6 +853,51 @@ export class JackdawCallClient extends Observable {
       message.type == "error" && message.requestId == requestId);
     this.send({ type: "lookup", requestId, emails });
     return (await reply).reachable;
+  }
+
+  /**
+   * Поиск GIF через сервер (ключ провайдера хранится только там). Пустой запрос — популярное.
+   * @throws JackdawCallServiceError с кодом:
+   *   `gifs_no_license` — на устройстве нет Pro или сервис отклонил лицензию;
+   *   `not_connected` — нет связи с сервером, повторить можно позже;
+   *   `unknown_type` — старый сервер без поиска GIF; `gifs_unavailable` — на сервере нет ключа;
+   *   `gifs_failed`, `rate_limited`, `invalid_query`, `service_unavailable` (нет ответа за `timeoutMs`).
+   */
+  async searchGIFs(query: string, locale: string, page = 1, timeoutMs = GIF_SEARCH_TIMEOUT_MS):
+    Promise<Extract<JackdawServerMessage, { type: "gif-results" }>> {
+    if (this.status == "connecting") {
+      // Выбор GIF открыли сразу после запуска: вход по лицензии ещё идёт.
+      await this.waitUntilSettled(Math.min(timeoutMs, GIF_CONNECT_WAIT_MS));
+    }
+    if (!this.isOnline) {
+      throw new JackdawCallServiceError(this.status == "disabled" || this.status == "rejected" ? "gifs_no_license" : "not_connected");
+    }
+    let requestId = this.nextRequestID("gif");
+    return await this.request<Extract<JackdawServerMessage, { type: "gif-results" }>>(
+      { type: "gif-search", requestId, query, locale, page },
+      reply => reply.type == "gif-results" && reply.requestId == requestId ||
+        reply.type == "error" && reply.requestId == requestId,
+      timeoutMs);
+  }
+
+  /** Ждёт, пока подключение закончится успехом или неудачей, но не дольше `timeoutMs`. */
+  protected waitUntilSettled(timeoutMs: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      let unsubscribe: (() => void) | null = null;
+      let done = false;
+      let finish = () => {
+        if (done) return;
+        done = true;
+        this.clearTimer(timer);
+        // Не во время рассылки наблюдателям: отписка посреди неё пропустила бы следующего
+        queueMicrotask(() => unsubscribe?.());
+        resolve();
+      };
+      let timer = this.setTimer(finish, timeoutMs);
+      unsubscribe = this.subscribe(() => {
+        if (this.status != "connecting") finish();
+      });
+    });
   }
 
   protected queueLookup(email: string): void {

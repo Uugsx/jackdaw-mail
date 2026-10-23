@@ -245,3 +245,55 @@ export function migrateWidgetListIfNeeded(): void {
     widgetsListSetting.value = normalized;
   }
 }
+
+/** Нижняя часть разделённой панели: вторая встроенная панель (например, чат сверху,
+ * контроль ответа снизу). Больше двух частей не делаем: в низком окне они не помещаются. */
+export interface WidgetSplitState {
+  /** null — панель не разделена */
+  bottomId: string | null;
+  /** Доля высоты верхней части */
+  ratio: number;
+}
+
+export const WIDGET_SPLIT_DEFAULT_RATIO = 0.55;
+export const WIDGET_SPLIT_MIN_RATIO = 0.2;
+export const WIDGET_SPLIT_MAX_RATIO = 0.8;
+/** Меньше этой высоты части уже неудобны (в чате — заголовок, лента и поле ввода): такую панель не делим */
+export const WIDGET_SPLIT_MIN_PART_PX = 240;
+
+export const widgetSplitSetting = getLocalStorage<WidgetSplitState>("widgets.split",
+  { bottomId: null, ratio: WIDGET_SPLIT_DEFAULT_RATIO });
+
+export function clampWidgetSplitRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) {
+    return WIDGET_SPLIT_DEFAULT_RATIO;
+  }
+  let clamped = Math.min(WIDGET_SPLIT_MAX_RATIO, Math.max(WIDGET_SPLIT_MIN_RATIO, ratio));
+  return Math.round(clamped * 1000) / 1000;
+}
+
+/** Доля верхней части для панели этой высоты: ни одна часть не меньше минимума */
+export function fitWidgetSplitRatio(ratio: number, panelHeightPx: number): number {
+  let clamped = clampWidgetSplitRatio(ratio);
+  if (!(panelHeightPx > 0)) {
+    return clamped;
+  }
+  let min = WIDGET_SPLIT_MIN_PART_PX / panelHeightPx;
+  return min >= 0.5 ? 0.5 : Math.min(1 - min, Math.max(min, clamped));
+}
+
+/** Встроенные панели, которые можно открыть внизу. Сайты — только сверху: у каждого
+ * один webview, и перенос вниз перезагружал бы страницу. */
+export function splittableWidgets(list: WidgetEntry[], topId: string | null | undefined): WidgetEntry[] {
+  return list.filter(entry => isBuiltInWidget(entry) && entry.id !== topId);
+}
+
+export function setWidgetSplitBottom(bottomId: string | null) {
+  let current = widgetSplitSetting.value;
+  widgetSplitSetting.value = { bottomId, ratio: clampWidgetSplitRatio(current?.ratio ?? WIDGET_SPLIT_DEFAULT_RATIO) };
+}
+
+export function setWidgetSplitRatio(ratio: number) {
+  let current = widgetSplitSetting.value;
+  widgetSplitSetting.value = { bottomId: current?.bottomId ?? null, ratio: clampWidgetSplitRatio(ratio) };
+}

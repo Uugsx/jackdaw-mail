@@ -91,6 +91,7 @@
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import { gt, t } from "../../../l10n/l10n";
   import { replyingTo } from "../replyState";
+  import { askConfirm } from "../../Shared/askConfirm";
 
   export let message: Message;
 
@@ -100,7 +101,12 @@
   }
   /** Протокол не умеет удалять у собеседников: говорим об этом и спрашиваем */
   async function onDeleteLocalOnly() {
-    if (!confirm($t`Delete this message only for yourself? The other participants will still see it.`)) {
+    let confirmed = await askConfirm({
+      title: $t`Delete this message only for yourself?`,
+      message: $t`The other participants will still see it.`,
+      confirmLabel: $t`Delete for myself`,
+    });
+    if (!confirmed) {
       return;
     }
     await message.deleteMessage();

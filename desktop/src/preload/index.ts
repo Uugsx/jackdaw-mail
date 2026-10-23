@@ -6,6 +6,12 @@ import {
   type NativeMenuLabels,
 } from '../../../app/logic/util/nativeMenu'
 import {
+  nativeConfirmChannel,
+  nativeDialogLabelsChannel,
+  type NativeConfirmRequest,
+  type NativeDialogLabels,
+} from '../../../app/logic/util/nativeDialogs'
+import {
   composeWindowCloseChannel,
   composeWindowClosedChannel,
   composeWindowDataChannel,
@@ -51,6 +57,13 @@ const api = {
   },
   setNativeMenuLabels: (labels: NativeMenuLabels): void => {
     ipcRenderer.send(nativeMenuLabelsChannel, labels)
+  },
+  setNativeDialogLabels: (labels: NativeDialogLabels): void => {
+    ipcRenderer.send(nativeDialogLabelsChannel, labels)
+  },
+  /** Синхронно, как `window.confirm()`: вызывающий код ждёт ответа */
+  showNativeConfirm: (request: NativeConfirmRequest): boolean => {
+    return ipcRenderer.sendSync(nativeConfirmChannel, request) === true
   },
   openComposeWindow: (windowID: string, payload: ComposeWindowMail): void => {
     ipcRenderer.send(composeWindowOpenChannel, windowID, payload)

@@ -3,7 +3,7 @@
  * или недавно ответил коллега. Ничего не блокирует: можно всё равно ответить.
  */
 import type { EMail } from "../../../logic/Mail/EMail";
-import ConfirmDialog from "../../Shared/ConfirmDialog.svelte";
+import { showConfirmDialog } from "../../Shared/askConfirm";
 import { getSharedMailboxPresence, replySource, chatColleague, colleagueName, repliedTime, openColleagueChat } from "./collisionPresence";
 import { backgroundError } from "../../Util/error";
 import { gt } from "../../../l10n/l10n";
@@ -39,26 +39,14 @@ export async function confirmReplyCollision(reply: EMail): Promise<boolean> {
   return choice == "reply";
 }
 
-function askReplyCollision(warning: { title: string; message: string; chat: boolean }): Promise<ReplyCollisionChoice> {
-  return new Promise(resolve => {
-    let dialog = new ConfirmDialog({
-      target: document.body,
-      props: {
-        open: true,
-        title: warning.title,
-        message: warning.message,
-        confirmLabel: gt`Reply anyway`,
-        cancelLabel: gt`Cancel`,
-        extraLabel: warning.chat ? gt`Open chat with colleague` : null,
-      },
-    });
-    let finish = (choice: ReplyCollisionChoice) => {
-      resolve(choice);
-      // После закрытия: диалог возвращает фокус туда, где он был.
-      queueMicrotask(() => dialog.$destroy());
-    };
-    dialog.$on("confirm", () => finish("reply"));
-    dialog.$on("extra", () => finish("chat"));
-    dialog.$on("cancel", () => finish("cancel"));
+async function askReplyCollision(warning: { title: string; message: string; chat: boolean }): Promise<ReplyCollisionChoice> {
+  // `new ConfirmDialog()` в Svelte 5 падает: диалог создаётся через mount() в showConfirmDialog
+  let choice = await showConfirmDialog({
+    title: warning.title,
+    message: warning.message,
+    confirmLabel: gt`Reply anyway`,
+    cancelLabel: gt`Cancel`,
+    extraLabel: warning.chat ? gt`Open chat with colleague` : null,
   });
+  return choice == "confirm" ? "reply" : choice == "extra" ? "chat" : "cancel";
 }

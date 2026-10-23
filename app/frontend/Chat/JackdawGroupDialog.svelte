@@ -39,8 +39,14 @@
     <ul class="member-list">
       {#each $room.memberEmails as email (email)}
         <li>
+          {#if memberPresence(email, $callClient)}
+            <StatusDot status={memberPresence(email, $callClient)} size="8px" />
+          {/if}
           <span class="member-name">{room.account.isOwnEmail(email) ? $t`You` : displayName(email)}</span>
           <span class="member-email">{email}</span>
+          {#if memberPresence(email, $callClient)}
+            <span class="member-status">{statusLabel(memberPresence(email, $callClient))}</span>
+          {/if}
           {#if email == $room.admin}
             <span class="badge">{$t`Admin`}</span>
           {/if}
@@ -62,6 +68,19 @@
   import { ArrayColl } from "svelte-collections";
   import { catchErrors } from "../Util/error";
   import { t } from "../../l10n/l10n";
+  import StatusDot from "./Status/StatusDot.svelte";
+  import { presenceOf, statusLabel, type PresenceState } from "./Status/statusLabels";
+  import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import type { JackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCallClient";
+
+  const callClient = getJackdawCallClient();
+  /** «В сети» / «не в сети» участника; себя не показываем */
+  function memberPresence(email: string, client: JackdawCallClient | null): PresenceState | null {
+    if (!client || client.presenceVersion < 0 || room.account.isOwnEmail(email)) {
+      return null;
+    }
+    return presenceOf(client, [email]);
+  }
 
   export let room: JackdawChatRoom;
   /** in/out: диалог открыт */
@@ -148,7 +167,7 @@
   }
   .member-list li {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     min-width: 0;
   }
@@ -165,6 +184,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .member-status {
+    flex: none;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--main-fg) 65%, transparent);
   }
   .badge {
     font-size: 11px;

@@ -66,25 +66,29 @@
         </vbox>
       </vbox>
     {/if}
-    <Attachments message={$message} />
+    <Attachments message={$message} hideFilenames={linkedFilenames} />
     {#if links.length}
       <vbox class="links">
         {#each links as link}
-          <LinkCard {link} />
+          <LinkCard {link} message={$message} />
         {/each}
       </vbox>
     {/if}
     {#if hasBody || $$slots.bubble}
       <vbox class="bubble" class:deleted={isDeletedForAll}>
         {#if $message.inReplyTo}
-          <div class="quote font-small">
-            {#if quoted}
+          {#if quotedVisible}
+            <div class="quote font-small">
               <span class="quote-author">{quoted.from?.name ?? ""}</span>
               <span class="quote-text">{quoteSnippet(quoted) || $t`File`}</span>
-            {:else}
-              <span class="quote-text">{$t`The original message is not available`}</span>
-            {/if}
-          </div>
+            </div>
+          {:else}
+            <!-- Исходное удалено или не загружено: короткая приглушённая строка вместо пустой цитаты -->
+            <div class="quote-missing font-smallest">
+              <ReplyIcon size="12" aria-hidden="true" />
+              <span>{$t`Reply to a deleted message`}</span>
+            </div>
+          {/if}
         {/if}
         {#if $$slots.menu}
           <hbox class="menu" class:openMenuOnMessageHover>
@@ -149,9 +153,11 @@
   import { onDestroy } from "svelte";
   import LinkCard from "./LinkCard.svelte";
   import type { ChatLinkRef } from "../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+  import { linkedEmailAttachment } from "../../../logic/Chat/Jackdaw/chatLinks";
   import CheckIcon from "lucide-svelte/icons/check";
   import CheckCheckIcon from "lucide-svelte/icons/check-check";
   import ClockIcon from "lucide-svelte/icons/clock";
+  import ReplyIcon from "lucide-svelte/icons/corner-up-left";
   function htmlToPlain(html: string): string {
     return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
   }
@@ -187,6 +193,9 @@
   $: quoted = $message.inReplyTo && $message instanceof ChatMessage
     ? $message.to?.messages.find(m => m.id == $message.inReplyTo) as ChatMessage | undefined
     : undefined;
+  /** Удалённое у всех исходное не цитируем: его текст не должен оставаться в ответах.
+   * `$quoted` — подписка: исходное могут удалить уже после ответа. */
+  $: quotedVisible = !!$quoted && ($quoted as any).deletedForAll !== true;
   $: isEdited = (($message as any).edited ?? false) === true;
   $: isDeletedForAll = (($message as any).deletedForAll ?? false) === true;
   $: previousAuthor = (previousMessage instanceof ChatMessage && previousMessage.from) || previousMessage?.contact;
@@ -199,6 +208,8 @@
   $: reactions = $message.reactions;
   /** Письма и события, которыми поделились в чате */
   $: links = ($message as { links?: ChatLinkRef[] }).links ?? [];
+  /** Письма, отправленные карточкой: файл .eml открывается с карточки, отдельный файл не показываем */
+  $: linkedFilenames = links.map(link => linkedEmailAttachment($message, link)?.filename).filter(Boolean) as string[];
   $: deliveryStatus = $message instanceof ChatMessage ? $message.deliveryStatus : DeliveryStatus.Unknown;
   $: deliveryLabel = deliveryStatus == DeliveryStatus.Sending ? $t`Sending…`
     : deliveryStatus == DeliveryStatus.Server ? $t`Message sent`
@@ -431,6 +442,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.85;
+  }
+  .quote-missing {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-block-end: 4px;
+    font-style: italic;
+    opacity: 0.6;
   }
   .bubble.deleted .text {
     font-style: italic;

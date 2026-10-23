@@ -116,6 +116,8 @@ RATE_LIMITS = {
     # Присутствие в общих ящиках: открытие письма — «читает» и снятие с предыдущего, листают стрелками.
     "presence-watch": 20,
     "presence-set": 240,
+    # Поиск GIF: набор запроса с паузой; лимит обращений к провайдеру — в gifs.py
+    "gif-search": 60,
     "default": 120,
 }
 # Отправка кода на один адрес ограничена отдельно от соединения: иначе можно засыпать чужой ящик письмами.
@@ -672,6 +674,7 @@ class CallHub:
         turn: TurnCredentialIssuer | None = None,
         executor: Any = None,
         presence: Any = None,
+        gifs: Any = None,
     ):
         self.verifier = verifier
         self.verification = verification
@@ -703,6 +706,8 @@ class CallHub:
         self.executor = executor
         # PresenceService из presence.py; None — без присутствия в общих ящиках
         self.presence = presence
+        # GifService из gifs.py; None — поиск GIF отвечает `unknown_type`, как на старом сервере
+        self.gifs = gifs
         # Фоновые шаги без соединения (запись подтверждения из SMTP-приёма): ссылка нужна, чтобы задачу не собрал GC
         self._background: set[asyncio.Task[None]] = set()
 
@@ -827,6 +832,7 @@ class CallHub:
                 "signal": self._signal,
                 **(self.chat.handlers() if self.chat is not None else {}),
                 **(self.presence.handlers() if self.presence is not None else {}),
+                **(self.gifs.handlers() if self.gifs is not None else {}),
             }.get(request_type)
             if handler is None:
                 raise CallError("unknown_type", "Неизвестный тип сообщения.")
@@ -1450,10 +1456,12 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
         future.add_done_callback(finished)
 
     from chat import ChatService, ChatStore
+    from gifs import build_gifs_from_environment
     from presence import PresenceService
 
     data_dir = Path(os.getenv("JACKDAW_CALLS_DATA_DIR", "/var/lib/jackdaw-calls"))
     chat = ChatService(ChatStore(data_dir / "chat.sqlite3", data_dir / "blobs"))
+    gifs = build_gifs_from_environment()
     reverse = None
     reverse_domain = os.getenv("JACKDAW_CALLS_INBOUND_DOMAIN", "").strip().lower()
     if reverse_domain:
@@ -1463,13 +1471,14 @@ def build_hub_from_environment() -> tuple[CallHub, str, int]:
     hub = CallHub(
         CredentialVerifier(database_path), verification, livekit, mailer,
         send_mail=send_mail, chat=chat, stun_urls=stun_urls, reverse=reverse,
-        verified_store=chat.store, turn=turn, presence=PresenceService(),
+        verified_store=chat.store, turn=turn, presence=PresenceService(), gifs=gifs,
         executor=concurrent.futures.ThreadPoolExecutor(max_workers=DATABASE_THREADS, thread_name_prefix="jackdaw-calls-db"),
     )
     mode = "P2P + LiveKit" if livekit is not None else "P2P"
     if turn is not None:
         mode += " + TURN"
     print(f"Jackdaw calls media mode: {mode}", flush=True)
+    print(f"Jackdaw GIF search: {'KLIPY' if gifs.available else 'off (no JACKDAW_CALLS_GIF_API_KEY)'}", flush=True)
     return hub, host, port
 
 

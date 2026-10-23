@@ -37,6 +37,34 @@ STUN помогает клиентам за обычным домашним ил
 - Группы: до 50 участников. Состав и название меняет только создатель группы; сообщения от не-участников отбрасываются клиентом.
 - Клиент запоминает ключи собеседников и предупреждает о новом устройстве или смене ключа.
 
+## Поиск GIF
+
+Вкладка «GIF» выбора смайликов ищет через этот сервис (`gifs.py`), а не напрямую: ключ провайдера не попадает в приложение.
+
+**Провайдер — [KLIPY](https://docs.klipy.com).** Выбор на октябрь 2026:
+
+- **Tenor** закрыт: Google перестал выдавать ключи 13.01.2026 и отключил API для сторонних приложений 30.06.2026 ([9to5Google](https://9to5google.com/2026/06/30/google-tenor-api-gif-updates/), [PC Gamer](https://pcgamer.com/hardware/google-kills-yet-another-api-shutting-out-all-non-google-platforms-from-favoured-gif-database/)).
+- **GIPHY** — бесплатный beta-ключ ограничен 100 запросами в час, продакшен-ключ — по заявке и с индивидуальной ценой ([GIPHY: beta key](https://support.giphy.com/hc/en-us/articles/360035527611-What-is-the-beta-key-What-can-I-do-with-the-beta-key), [GIPHY: fee](https://support.giphy.com/hc/en-us/articles/10389869671322-Is-there-a-fee-for-using-GIPHY-s-API)). Для всех пользователей Jackdaw через один ключ этого мало.
+- **KLIPY** — бесплатный ключ, поиск на любом языке (`q`) и параметр `locale` (страна ISO 3166-1), тренды, фильтр контента, медиа на публичном CDN `static.klipy.com`, `static1.klipy.com`, `static2.klipy.com`; подпись «Powered by KLIPY» по их правилам необязательна, но приложение её показывает ([Search API](https://docs.klipy.com/gifs-api/gifs-search-api), [Trending API](https://docs.klipy.com/gifs-api/gifs-trending-api), [атрибуция](https://docs.klipy.com/attribution), [сеть](https://docs.klipy.com/network-requirements)).
+
+**Как включить.** Ключ получить на https://partner.klipy.com (раздел API Keys), затем:
+
+```bash
+sudoedit /etc/jackdaw-calls/calls.env    # JACKDAW_CALLS_GIF_API_KEY=<ключ>
+sudo systemctl restart jackdaw-calls
+sudo journalctl -u jackdaw-calls -n 20 --no-pager   # «Jackdaw GIF search: KLIPY»
+```
+
+Вместо переменной можно положить ключ в файл и указать `JACKDAW_CALLS_GIF_API_KEY_FILE` (как остальные секреты; файл должен читаться пользователем сервиса). Без ключа в журнале `Jackdaw GIF search: off`, а клиенты показывают «GIF недоступны».
+
+**Протокол** (только для соединений, прошедших проверку лицензии):
+
+- запрос `{"type": "gif-search", "requestId": "gif-7", "query": "кошки", "locale": "ru", "page": 1}`; пустой или отсутствующий `query` — популярное; `locale` — язык интерфейса (`ru`, `pt-BR`, `zh-Hant`), сервер переводит его в код страны для KLIPY; `page` — 1…20;
+- ответ `{"type": "gif-results", "requestId": "gif-7", "provider": "klipy", "query": "кошки", "page": 1, "hasNext": true, "results": [{"id", "title", "url", "width", "height", "size", "previewUrl", "previewWidth", "previewHeight"}]}` — до 24 результатов; `url` — GIF среднего размера (не больше 15 МБ) для отправки, `previewUrl` — маленькое анимированное превью (WebP или GIF);
+- ошибки (`{"type": "error", "requestType": "gif-search", "requestId": …, "code": …}`): `gifs_unavailable` — ключ не задан; `gifs_failed` — провайдер не ответил или ответил непонятно; `invalid_query` — запрос длиннее 100 символов или неверная страница; `rate_limited`; `not_authenticated`. Старый сервер без `gifs.py` отвечает `unknown_type`.
+
+**Ограничения и приватность.** Ответы кешируются в памяти на 10 минут (до 512 запросов, вытесняются самые давние; регистр запроса не важен). К провайдеру одно устройство лицензии ходит не чаще 20 запросов подряд и затем 1 запроса в 3 секунды, весь сервер — 120 подряд и 5 в секунду; ответы из кеша лимит не тратят. Сетевой запрос — в пуле потоков, таймаут 8 с, ответ до 2 МБ. В результатах остаются только https-адреса с CDN KLIPY, реклама (`type: "ad"`) отбрасывается. Провайдер получает текст запроса и страну, но не адрес, лицензию или IP пользователя. В журнал не пишутся ни ключ, ни запросы, ни ответы — только код сбоя (`GIF provider request failed: HTTP 403`). Фильтр контента — `medium`. Сами GIF и превью приложение загружает с CDN KLIPY напрямую (картинки публичные, ключ не нужен).
+
 ## Общие ящики: кто читает и отвечает
 
 Защита от двух ответов клиенту из одного общего ящика (`presence.py`, клиент — `app/logic/Mail/Collision/`).
@@ -98,7 +126,7 @@ IP-адреса собеседников видны друг другу в ICE-�
 2. Файлы сервиса:
    ```bash
    sudo install -d -o jackdaw-license -g jackdaw-license /opt/jackdaw-calls /opt/jackdaw-calls/migrations /var/lib/jackdaw-calls
-   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py call_server/inbound.py call_server/presence.py call_server/requirements.txt /opt/jackdaw-calls/
+   sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/calls.py call_server/chat.py call_server/gifs.py call_server/inbound.py call_server/presence.py call_server/requirements.txt /opt/jackdaw-calls/
    sudo install -o jackdaw-license -g jackdaw-license -m 0644 call_server/migrations/*.sql /opt/jackdaw-calls/migrations/
    sudo -u jackdaw-license python3 -m venv /opt/jackdaw-calls/venv
    sudo -u jackdaw-license /opt/jackdaw-calls/venv/bin/pip install -r /opt/jackdaw-calls/requirements.txt
@@ -125,7 +153,7 @@ IP-адреса собеседников видны друг другу в ICE-�
 
 Схема БД сервиса лицензий не меняется. База чата (`/var/lib/jackdaw-calls/chat.sqlite3`, `JACKDAW_CALLS_DATA_DIR`) создаётся и мигрирует при старте сервиса. Откат: `sudo systemctl disable --now jackdaw-calls`, убрать маршрут `/v1/calls` из Caddy; при необходимости откатить миграции в обратном порядке: `sqlite3 chat.sqlite3 < migrations/003_message_sender_subject.rollback.sql` (нужен SQLite 3.35+), затем `… < migrations/002_verified_emails.rollback.sql`, затем `… < migrations/001_chat.rollback.sql`.
 
-Обновление: повторить шаг 2 для изменённых файлов и `sudo systemctl restart jackdaw-calls`. Без `presence.py` рядом с `calls.py` сервис не запустится (`ModuleNotFoundError`). Состояние звонков хранится в памяти: уже соединённый голос P2P продолжит идти, но сервис о таких звонках забудет, поэтому перезапускать лучше в спокойное время.
+Обновление: повторить шаг 2 для изменённых файлов и `sudo systemctl restart jackdaw-calls`. Без `presence.py` и `gifs.py` рядом с `calls.py` сервис не запустится (`ModuleNotFoundError`). Состояние звонков хранится в памяти: уже соединённый голос P2P продолжит идти, но сервис о таких звонках забудет, поэтому перезапускать лучше в спокойное время.
 
 ## Необязательно: LiveKit SFU
 

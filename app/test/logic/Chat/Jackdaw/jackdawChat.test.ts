@@ -13,7 +13,9 @@ import {
   keyFingerprint,
   ChatDecryptError,
 } from "../../../../logic/Chat/Jackdaw/JackdawChatCrypto";
-import { isFutureChatPayload, parseChatPayload, withLinkFallback, withoutLinkFallback } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { isFutureChatPayload, parseChatPayload, parseLink, withLinkFallback, withoutLinkFallback } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { attachEmailToChatMessage, linkedEmailAttachment } from "../../../../logic/Chat/Jackdaw/chatLinks";
+import { MAX_ATTACHMENT_BYTES } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
 import { JackdawChatAccount } from "../../../../logic/Chat/Jackdaw/JackdawChatAccount";
 import { JackdawChatConnectionError } from "../../../../logic/Chat/Jackdaw/chatConnectionProblem";
 import type { JackdawChatRoom } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
@@ -431,6 +433,44 @@ describe("чат между двумя пользователями", () => {
     let copy = new (received.constructor)(received.to);
     copy.fromExtraJSON(JSON.parse(JSON.stringify(received.toExtraJSON())));
     expect(copy.links).toEqual(msg.links);
+  });
+
+  test("письмо уходит в чат файлом .eml с карточкой и открывается у получателя без доступа к ящику", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let mime = new TextEncoder().encode("From: Дмитрий <d@example.com>\r\nSubject: PHP\r\n\r\nТекст");
+    let email = { subject: "Обновление версий PHP", mime, loadMIME: async () => {} } as any;
+    let msg = room.newMessage() as any;
+    let link = await attachEmailToChatMessage(msg, email,
+      { type: "email", messageID: "<php@example.com>", subject: "Обновление версий PHP", from: "Дмитрий", date: 1_700_000_000_000 });
+    expect(link).toMatchObject({ type: "email", eml: "Обновление версий PHP.eml" });
+    msg.links = [link];
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.links).toEqual([link]);
+    let attachment = linkedEmailAttachment(received, received.links[0])!;
+    expect(attachment.mimeType).toBe("message/rfc822");
+    expect(new Uint8Array(await attachment.content.arrayBuffer())).toEqual(mime);
+    // Сообщения старых версий — только ссылка, вложения нет
+    expect(linkedEmailAttachment(received, { ...link, eml: undefined })).toBeUndefined();
+  });
+
+  test("слишком большое письмо в чат не уходит", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let email = { subject: "Большое", mime: new Uint8Array(MAX_ATTACHMENT_BYTES + 1), loadMIME: async () => {} } as any;
+    await expect(attachEmailToChatMessage(room.newMessage(), email,
+      { type: "email", messageID: "<big@example.com>", subject: "Большое", from: "", date: 0 })).rejects.toThrow(/25 MB/);
+  });
+
+  test("поле eml ссылки разбирается, лишнее отбрасывается", () => {
+    expect(parseLink({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: "S.eml" }))
+      .toEqual({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: "S.eml" });
+    expect(parseLink({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: 5 }))
+      .toEqual({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1 });
   });
 
   test("строки-заглушки для старых версий: уходят в тексте, при показе убираются", () => {

@@ -34,9 +34,11 @@ export interface ChatAttachmentRef {
 }
 
 /** Ссылка на письмо или событие календаря: у получателя открывается его копия, если она у него есть.
- * Старые версии поле `links` не знают и показывают текст сообщения, где ссылка описана словами. */
+ * Старые версии поле `links` не знают и показывают текст сообщения, где ссылка описана словами.
+ * `eml` — имя вложения этого же сообщения с самим письмом (.eml): получатель открывает его
+ * без доступа к ящику отправителя. Старые версии поле не знают и видят письмо обычным файлом. */
 export type ChatLinkRef =
-  | { type: "email"; messageID: string; subject: string; from: string; date: number }
+  | { type: "email"; messageID: string; subject: string; from: string; date: number; eml?: string }
   | { type: "event"; uid: string; title: string; start: number; end: number; location: string };
 
 export const MAX_LINKS = 5;
@@ -134,7 +136,9 @@ export function parseLink(value: any): ChatLinkRef | null {
     let messageID = text(value.messageID, MAX_LINK_FIELD).trim();
     let date = timestamp(value.date);
     if (!messageID || date == null) return null;
-    return { type: "email", messageID, subject: cleanName(text(value.subject, MAX_LINK_FIELD)), from: cleanName(value.from), date };
+    let eml = text(value.eml, MAX_LINK_FIELD).trim();
+    return { type: "email", messageID, subject: cleanName(text(value.subject, MAX_LINK_FIELD)), from: cleanName(value.from), date,
+      ...(eml ? { eml } : {}) };
   }
   if (value.type == "event") {
     let uid = text(value.uid, MAX_LINK_FIELD).trim();

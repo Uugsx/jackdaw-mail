@@ -1,5 +1,6 @@
 import { HTTPServer } from './HTTPServer';
 import { HTTPConnection, type HTTPConnectionOptions } from './HTTPConnection';
+import { nativeDialogLabels } from "./nativeDialogs";
 import { NetSession } from './NetSession';
 import JPCWebSocket from '../../lib/jpc-ws';
 import * as OWA from './owa';
@@ -1468,24 +1469,19 @@ function isExecutableFileType(filePath: string): boolean {
 }
 
 async function confirmOpenExecutableFile(filePath: string): Promise<boolean> {
-  const russian = app.getLocale().toLowerCase().startsWith("ru");
+  // Подписи — на языке интерфейса приложения (их передаёт рендерер), иначе по языку системы
+  const labels = nativeDialogLabels();
   const kOpen = 0;
   const kShowInFolder = 1;
   const kCancel = 2;
   const options: MessageBoxOptions = {
     type: "warning",
-    buttons: russian
-      ? ["Всё равно открыть", "Показать в папке", "Отмена"]
-      : ["Open anyway", "Show in folder", "Cancel"],
+    buttons: [labels.openAnyway, labels.showInFolder, labels.cancel],
     defaultId: kCancel,
     cancelId: kCancel,
     noLink: true,
-    message: russian
-      ? `«${path.basename(filePath)}» — программа или скрипт`
-      : `"${path.basename(filePath)}" is a program or script`,
-    detail: russian
-      ? "При открытии файл запустится на этом компьютере. Открывайте его, только если ждали этот файл и доверяете отправителю."
-      : "Opening it runs it on this computer. Open it only if you expected this file and trust the sender.",
+    message: labels.executableTitle.replace("{name}", () => path.basename(filePath)),
+    detail: labels.executableDetail,
   };
   const parent = BrowserWindow.getFocusedWindow();
   const { response } = parent

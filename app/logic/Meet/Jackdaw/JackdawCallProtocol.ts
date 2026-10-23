@@ -85,7 +85,10 @@ export type JackdawServerMessage =
   | { type: "blob-data"; blobId: string; index: number; total: number; data: string }
   // Присутствие в общих ящиках (call_server/presence.py): `state: "none"` снимает состояние коллеги
   | ({ type: "presence"; mailbox: string } & JackdawPresenceEntry)
-  | { type: "presence-snapshot"; mailboxes: Record<string, JackdawPresenceEntry[]> };
+  | { type: "presence-snapshot"; mailboxes: Record<string, JackdawPresenceEntry[]> }
+  /** Ответ на `gif-search` (call_server/gifs.py). `results` проверяет и разбирает
+   * app/frontend/Chat/Emoji/media.ts (`parseGIFResults`): здесь — только обрезка длины. */
+  | { type: "gif-results"; requestId: string | null; provider: string; hasNext: boolean; results: unknown[] };
 
 export type JackdawPresenceState = "viewing" | "replying" | "replied" | "none";
 
@@ -112,6 +115,8 @@ const PRESENCE_STATES: readonly JackdawPresenceState[] = ["viewing", "replying",
 const MAX_PRESENCE_SNAPSHOT = 5000;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
+/** Как на сервере (call_server/gifs.py, MAX_RESULTS) */
+const MAX_GIF_RESULTS = 50;
 const REVERSE_TOKEN_PATTERN = /^[a-z2-7]{16}$/;
 /** Как на сервере: подтверждение адреса не длиннее 1024 символов, не больше 20 адресов на соединение */
 const MAX_PROOF_LENGTH = 1024;
@@ -407,6 +412,14 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
       }
       return { type: "presence-snapshot", mailboxes };
     }
+    case "gif-results":
+      return {
+        type: "gif-results",
+        requestId: optionalText(data.requestId),
+        provider: text(data.provider),
+        hasNext: data.hasNext === true,
+        results: Array.isArray(data.results) ? data.results.slice(0, MAX_GIF_RESULTS) : [],
+      };
     default:
       return null;
   }
