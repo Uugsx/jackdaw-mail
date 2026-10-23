@@ -248,6 +248,9 @@ class GifSearchTests(GifHubTestCase):
             service = gifs.build_gifs_from_environment()
         self.assertTrue(service.available)
         self.assertIn("/key-from-env/gifs/trending", service.build_url("", None, 1))
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(service.build_url("кот", None, 1, "abc")).query)
+        self.assertEqual(query["customer_id"], ["abc"])
+        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(service.build_url("", None, 1)).query)["customer_id"], ["jackdaw"])
         with mock.patch.dict(os.environ, {"JACKDAW_CALLS_GIF_API_KEY": ""}, clear=False):
             os.environ.pop("JACKDAW_CALLS_GIF_API_KEY_FILE", None)
             self.assertFalse(gifs.build_gifs_from_environment().available)

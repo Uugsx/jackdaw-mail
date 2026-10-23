@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import re
 import threading
@@ -278,9 +279,11 @@ class GifService:
     def handlers(self) -> dict[str, Callable[[Peer, dict[str, Any]], Steps | None]]:
         return {"gif-search": self._search}
 
-    def build_url(self, query: str, country: str | None, page: int) -> str:
+    def build_url(self, query: str, country: str | None, page: int, customer: str = "") -> str:
         params: dict[str, str] = {"page": str(page), "per_page": str(PAGE_SIZE), "content_filter": CONTENT_FILTER,
                                   "format_filter": "gif,webp"}
+        # KLIPY требует постоянный идентификатор пользователя. Лицензия не передаётся: только её хеш.
+        params["customer_id"] = customer or "jackdaw"
         if query:
             params["q"] = query
         if country:
@@ -335,7 +338,8 @@ class GifService:
         if cached is None:
             if not self._allow(f"{credential.subject}|{credential.device_hash}"):
                 raise CallError("rate_limited", "Слишком много запросов GIF. Попробуйте позже.")
-            url = self.build_url(query, country, page)
+            customer = hashlib.sha256(credential.subject.encode()).hexdigest()[:32]
+            url = self.build_url(query, country, page, customer)
 
             def fetch() -> dict[str, Any]:
                 try:
