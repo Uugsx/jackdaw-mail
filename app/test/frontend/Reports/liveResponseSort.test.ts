@@ -18,7 +18,6 @@ vi.mock("../../../frontend/Mail/ResponseReminderWatcher", async () => {
   return {
     getResponseReminderStateSnapshot: () => ({}),
     getResponseReminderSlaStartAt: (request: PendingResponseRequest) => request.receivedAt,
-    isResponseReminderRequestSuppressed: () => false,
     responseReminderMailEpoch: writable(0),
   };
 });
