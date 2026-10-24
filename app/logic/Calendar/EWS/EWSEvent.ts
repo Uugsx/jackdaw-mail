@@ -14,6 +14,7 @@ import { ContentDisposition } from "../../Abstract/Attachment";
 import { k1MinuteMS } from "../../../frontend/Util/date";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, base64ToUint8Array, ensureArray } from "../../util/util";
+import { addEWSTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "../Invitation/TimeProposal";
 import type { ArrayColl } from "svelte-collections";
 
 const ResponseTypes: Record<InvitationResponseInMessage, string> = {
@@ -539,6 +540,15 @@ export class EWSEvent extends ExchangeEvent {
   }
 
   async respondToInvitation(response: InvitationResponseInMessage): Promise<void> {
+    await this.sendInvitationResponse(response);
+  }
+
+  async proposeNewTime(response: ProposalResponse, proposal: TimeProposal): Promise<void> {
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    await this.sendInvitationResponse(response, proposal);
+  }
+
+  protected async sendInvitationResponse(response: InvitationResponseInMessage, proposal?: TimeProposal): Promise<void> {
     assert(this.isIncomingMeeting, "Only invitations can be responded to");
     let itemID = this.itemID;
     // Unfortunately this API won't take an OccurrenceItemId directly.
@@ -563,6 +573,9 @@ export class EWSEvent extends ExchangeEvent {
     }
     let request = new EWSCreateItemRequest({MessageDisposition: "SendAndSaveCopy"});
     request.addField(ResponseTypes[response], "ReferenceItemId", { Id: itemID });
+    if (proposal) {
+      addEWSTimeProposal(request, ResponseTypes[response], proposal);
+    }
     await this.calendar.account.callEWS(request);
     await this.calendar.listEvents(); // Sync whatever Exchange decides to do
   }

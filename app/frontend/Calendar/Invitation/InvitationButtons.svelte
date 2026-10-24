@@ -19,6 +19,13 @@
         onClick={onTentative}
         icon={MaybeIcon}
         classes="maybe font-normal" />
+      {#if canProposeNewTime}
+        <MenuItem
+          label={$t`Propose new time…`}
+          onClick={onProposeNewTime}
+          icon={ProposeIcon}
+          classes="propose font-normal" />
+      {/if}
       <MenuItem
         label={$t`Invite other people`}
         onClick={onForward}
@@ -43,6 +50,13 @@
         onClick={onTentative}
         icon={MaybeIcon}
         classes="maybe font-normal" />
+      {#if canProposeNewTime}
+        <MenuItem
+          label={$t`Propose new time…`}
+          onClick={onProposeNewTime}
+          icon={ProposeIcon}
+          classes="propose font-normal" />
+      {/if}
       <MenuItem
         label={$t`Invite other people`}
         onClick={onForward}
@@ -67,6 +81,13 @@
         onClick={onDecline}
         icon={DeclineIcon}
         classes="decline font-normal" />
+      {#if canProposeNewTime}
+        <MenuItem
+          label={$t`Propose new time…`}
+          onClick={onProposeNewTime}
+          icon={ProposeIcon}
+          classes="propose font-normal" />
+      {/if}
       <MenuItem
         label={$t`Invite other people`}
         onClick={onForward}
@@ -90,6 +111,13 @@
         onClick={onTentative}
         icon={MaybeIcon}
         classes="maybe font-normal" />
+      {#if canProposeNewTime}
+        <MenuItem
+          label={$t`Propose new time…`}
+          onClick={onProposeNewTime}
+          icon={ProposeIcon}
+          classes="propose font-normal" />
+      {/if}
       <MenuItem
         label={$t`Invite other people`}
         onClick={onForward}
@@ -115,6 +143,8 @@
   import MaybeIcon from "lucide-svelte/icons/circle-help";
   import ForwardIcon from "lucide-svelte/icons/forward";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
+  import ProposeIcon from "lucide-svelte/icons/calendar-clock";
+  import { askTimeProposal } from "./proposeTime";
   import { NotReached } from "../../../logic/util/util";
   import { catchErrors } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
@@ -147,6 +177,36 @@
   }
   async function onDecline() {
     await catchErrors(() => respond(InvitationResponse.Decline));
+  }
+
+  $: canProposeNewTime = invitation instanceof IncomingInvitation
+    ? invitation.canProposeNewTime
+    : invitation?.canProposeNewTime;
+
+  /** «Предложить другое время»: ответ «Под вопросом» или «Отклонить» с новым временем, как в Outlook */
+  async function onProposeNewTime() {
+    await catchErrors(async () => {
+      let event = invitation instanceof IncomingInvitation ? invitation.event : invitation;
+      let initial = myParticipation == InvitationResponse.Decline ? InvitationResponse.Decline : InvitationResponse.Tentative;
+      let result = await askTimeProposal(event, initial);
+      if (!result) {
+        return;
+      }
+      let previous = myParticipation;
+      myParticipation = result.response;
+      try {
+        if (invitation instanceof Event) {
+          await invitation.proposeNewTime(result.response, result.proposal);
+        } else if (invitation instanceof IncomingInvitation) {
+          await invitation.proposeNewTimeFromMail(result.response, result.proposal);
+        } else {
+          throw new NotReached();
+        }
+      } catch (ex) {
+        myParticipation = previous;
+        throw ex;
+      }
+    });
   }
 
   async function onOpenInCalendar() {

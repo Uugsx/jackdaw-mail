@@ -13,8 +13,12 @@ import { kMaxCount } from "../../Mail/EWS/EWSFolder";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray } from "../../util/util";
 import { Lock } from "../../util/flow/Lock";
+import { parseExchangeWorkingHours } from "../WorkingHours/CalendarWorkingHours";
+import type { WorkingHoursSchedule } from "../../Reports/WorkingHours";
 import { gt } from "../../../l10n/l10n";
 import type { ArrayColl } from "svelte-collections";
+
+const k1DayMS = 24 * 60 * 60 * 1000;
 
 export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
   readonly protocol: string = "calendar-ews";
@@ -89,6 +93,36 @@ export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
       });
     }
     return availabilities;
+  }
+
+  get canReadWorkingHours(): boolean {
+    return true;
+  }
+
+  async fetchWorkingHours(): Promise<WorkingHoursSchedule | null> {
+    let from = new Date();
+    let request = {
+      m$GetUserAvailabilityRequest: {
+        m$MailboxDataArray: {
+          t$MailboxData: [{
+            t$Email: {
+              // Общий календарь — свой ящик, иначе логин может быть не адресом (DOMAIN\\user)
+              t$Address: this.username != this.account.username ? this.username : this.account.emailAddress,
+            },
+            t$AttendeeType: "Required",
+          }],
+        },
+        t$FreeBusyViewOptions: {
+          t$TimeWindow: {
+            t$StartTime: from.toISOString(),
+            t$EndTime: new Date(from.getTime() + k1DayMS).toISOString(),
+          },
+          t$RequestedView: "FreeBusy",
+        },
+      },
+    };
+    let results = await this.account.callEWS(request);
+    return parseExchangeWorkingHours(ensureArray(results)[0]?.FreeBusyView?.WorkingHours);
   }
 
   get canBookRooms(): boolean {
