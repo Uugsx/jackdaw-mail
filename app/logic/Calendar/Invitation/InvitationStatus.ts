@@ -1,4 +1,4 @@
-export type iCalMethod = "CANCEL" | "REQUEST" | "REPLY";
+export type iCalMethod = "CANCEL" | "REQUEST" | "REPLY" | "COUNTER";
 
 /**
  * For an inbox item that represents a scheduling message, the type of message.
@@ -16,6 +16,9 @@ export enum InvitationMessage {
    * Only valid for outgoing invitations.
    * Corresponds to an iCal method of REPLY */
   ParticipantReply = 6,
+  /** An invitee proposes a new time for your outgoing invitation.
+   * Corresponds to an iCal method of COUNTER (RFC 5546 3.2.7) */
+  CounterProposal = 7,
 }
 
 /**

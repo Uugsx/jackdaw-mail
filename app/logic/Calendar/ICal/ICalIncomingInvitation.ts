@@ -5,6 +5,7 @@ import type { Participant } from "../Participant";
 import type { MailAccount } from "../../Mail/MailAccount";
 import type { MailIdentity } from "../../Mail/MailIdentity";
 import { appGlobal } from "../../app";
+import { applyTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "../Invitation/TimeProposal";
 import { assert } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 
@@ -31,6 +32,30 @@ export class ICalIncomingInvitation extends IncomingInvitation {
       await ICalIncomingInvitation.sendInvitationResponse(event, myParticipant, this.message.folder.account);
     }
     await event.save(); // The other protocols let their server do this
+  }
+
+  /** RFC 5546 3.2.7 COUNTER: своё время встречи организатору; в календаре время не меняется */
+  async proposeNewTimeFromMail(response: ProposalResponse, proposal: TimeProposal) {
+    assert(this.invitationMessage == InvitationMessage.Invitation, "Only invitations can be responded to");
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    let event = this.calEvent();
+    if (!event) {
+      event = this.calendar.newEvent();
+      event.copyFrom(this.event);
+      await event.adoptAttachmentsFrom(this.event);
+      this.calendar.events.add(event);
+    }
+    let { myParticipant } = ICalIncomingInvitation.participantMe(this.event, this.message.folder.account);
+    event.myParticipation = this.myParticipation = myParticipant.response = response;
+    await ICalIncomingInvitation.sendInvitationResponse(event, myParticipant, this.message.folder.account, proposal);
+    await event.save();
+  }
+
+  static async proposeNewTimeFromCalEvent(calEvent: Event, response: ProposalResponse, proposal: TimeProposal, mailAccount?: MailAccount) {
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    let { identity, myParticipant } = this.participantMe(calEvent, mailAccount);
+    calEvent.myParticipation = myParticipant.response = response;
+    await ICalIncomingInvitation.sendInvitationResponse(calEvent, myParticipant, identity.account, proposal);
   }
 
   static async respondToInvitationFromCalEvent(calEvent: Event, response: InvitationResponseInMessage, mailAccount?: MailAccount) {
@@ -62,7 +87,7 @@ export class ICalIncomingInvitation extends IncomingInvitation {
   }
 
   /** Helper for @see Event.respondToInvitation() */
-  protected static async sendInvitationResponse(repliedEvent: Event, myParticipant: Participant, account: MailAccount) {
+  protected static async sendInvitationResponse(repliedEvent: Event, myParticipant: Participant, account: MailAccount, proposal?: TimeProposal) {
     let organizer = repliedEvent.participants.find(participant => participant.response == InvitationResponse.Organizer);
     assert(organizer, "Invitation should have an organizer");
     let email = account.newEMailFrom();
@@ -70,12 +95,16 @@ export class ICalIncomingInvitation extends IncomingInvitation {
     email.from.emailAddress = myParticipant.emailAddress;
     email.from.name = myParticipant.name || email.from.name;
     email.to.add(organizer);
-    email.iCalMethod = "REPLY";
+    email.iCalMethod = proposal ? "COUNTER" : "REPLY";
     const { InvitationEvent } = await import("../Invitation/InvitationEvent"); // avoid circular import: InvitationEvent extends Event
     email.event = new InvitationEvent();
     email.event.copyFrom(repliedEvent);
     // Only myself in reply: RFC 5546 3.2.3
-    email.event.participants.replaceAll([myParticipant]);
+    // COUNTER (3.2.7): организатор и я, новое время в DTSTART/DTEND
+    email.event.participants.replaceAll(proposal ? [organizer, myParticipant] : [myParticipant]);
+    if (proposal) {
+      applyTimeProposal(email.event, proposal);
+    }
     email.event.attachments.clear();
     if (email.event.descriptionText) {
       email.text = email.event.descriptionText;
@@ -89,6 +118,9 @@ export class ICalIncomingInvitation extends IncomingInvitation {
       subject = gt`Declined *=> Refused to join this business meeting`;
     } else if (myParticipant.response == InvitationResponse.Tentative) {
       subject = gt`Tentative *=> Not sure to join this business meeting`;
+    }
+    if (proposal) {
+      subject = gt`New time proposed`;
     }
     if (subject) {
       subject += ": ";

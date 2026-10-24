@@ -33,6 +33,7 @@ import AccountServerRules from "./Mail/Account/ServerRules.svelte";
 import AccountXMPPServer from "./Chat/AccountXMPPServer.svelte";
 import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
+import CalendarWorkingHours from "./Calendar/WorkingHours.svelte";
 import About from "./About/About.svelte";
 import Feedback from "./About/Feedback.svelte";
 import Billing from "./Billing/Billing.svelte";
@@ -76,6 +77,8 @@ globalSettings.subCategories.addAll([
   new SettingsCategory("global-workspaces", gt`Workspaces`, GlobalWorkspaces),
   new SettingsCategory("global-system-integration", gt`System integration`, GlobalSystemIntegration),
   new SettingsCategory("global-keyboard-shortcuts", gt`Keyboard shortcuts`, GlobalKeyboardShortcuts),
+  // Окно настроек показывает только «Общие» и «Почту», поэтому рабочее время календаря здесь
+  new SettingsCategory("calendar-working-hours", gt`Work time`, CalendarWorkingHours),
 ]);
 settingsCategories.add(globalSettings);
 

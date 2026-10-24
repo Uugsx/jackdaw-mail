@@ -3,7 +3,9 @@ import { RecurrenceCase, type Event } from "../Event";
 import { Participant } from "../Participant";
 import { InvitationMessage, InvitationResponse, type InvitationResponseInMessage } from "../Invitation/InvitationStatus";
 import type { EMail } from "../../Mail/EMail";
+import { applyTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "./TimeProposal";
 import { AbstractFunction, NotReached, assert } from "../../util/util";
+import { gt } from "../../../l10n/l10n";
 
 export class IncomingInvitation {
   readonly calendar: Calendar;
@@ -55,6 +57,28 @@ export class IncomingInvitation {
 
   async respondToInvitationFromMail(response: InvitationResponseInMessage) {
     throw new AbstractFunction();
+  }
+
+  /** «Предложить другое время»: ответ «Под вопросом» или «Отклонить» с новым временем */
+  get canProposeNewTime(): boolean {
+    return true;
+  }
+
+  async proposeNewTimeFromMail(response: ProposalResponse, proposal: TimeProposal) {
+    throw new AbstractFunction();
+  }
+
+  /** CounterProposal: организатор принимает предложенное время.
+   * Встреча меняется и сохраняется, участники получают обновление как при обычной правке. */
+  async acceptProposedTime() {
+    assert(this.invitationMessage == InvitationMessage.CounterProposal, "Not a time proposal");
+    let event = this.calEvent();
+    assert(event, gt`The meeting was not found in your calendar`);
+    assert(event.recurrenceCase != RecurrenceCase.Master, gt`Change the time of a recurring meeting in the calendar`);
+    let proposal = { start: this.event.startTime, end: this.event.endTime };
+    assert(!checkTimeProposal(proposal), gt`The proposed time is not valid`);
+    applyTimeProposal(event, proposal);
+    await event.save();
   }
 
   /** CancelledEvent: the organiser cancelled an incoming meeting */

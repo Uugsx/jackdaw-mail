@@ -13,10 +13,14 @@ import type { OWAEMail } from "../../Mail/OWA/OWAEMail";
 import { owaFindEventsRequest, owaGetCalendarEventsRequest, owaGetEventsRequest } from "./Request/OWAEventRequests";
 import { getSharedPersons, ExchangePermission, deleteExchangePermissions, setExchangePermissions } from "../../Mail/EWS/ExchangePermission";
 import { RunOnce } from "../../util/flow/RunOnce";
+import { parseExchangeWorkingHours } from "../WorkingHours/CalendarWorkingHours";
+import type { WorkingHoursSchedule } from "../../Reports/WorkingHours";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl } from "svelte-collections";
+
+const k1DayMS = 24 * 60 * 60 * 1000;
 
 export class OWACalendar extends ExchangeCalendar {
   readonly protocol: string = "calendar-owa";
@@ -74,6 +78,19 @@ export class OWACalendar extends ExchangeCalendar {
       });
     }
     return availabilities;
+  }
+
+  get canReadWorkingHours(): boolean {
+    return true;
+  }
+
+  async fetchWorkingHours(): Promise<WorkingHoursSchedule | null> {
+    let from = new Date();
+    // Запросу нужен только адрес
+    let me = { emailAddress: this.username != this.account.username ? this.username : this.account.emailAddress } as Participant;
+    let results = await this.callOWA(new OWAGetUserAvailabilityRequest([me], from, new Date(from.getTime() + k1DayMS)));
+    let result = results?.Responses?.[0];
+    return parseExchangeWorkingHours(result?.WorkingHours ?? result?.FreeBusyView?.WorkingHours);
   }
 
   get canBookRooms(): boolean {

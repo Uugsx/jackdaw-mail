@@ -1,4 +1,5 @@
 import { ExchangeEvent } from "../EWS/ExchangeEvent";
+import { addEWSTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "../Invitation/TimeProposal";
 import { kSpecialWeekdays, relativeWeekdayString } from "../EWS/EWSEvent";
 import { RecurrenceCase } from "../Event";
 import { Participant } from "../Participant";
@@ -506,6 +507,15 @@ export class OWAEvent extends ExchangeEvent {
   }
 
   async respondToInvitation(response: InvitationResponseInMessage): Promise<void> {
+    await this.sendInvitationResponse(response);
+  }
+
+  async proposeNewTime(response: ProposalResponse, proposal: TimeProposal): Promise<void> {
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    await this.sendInvitationResponse(response, proposal);
+  }
+
+  protected async sendInvitationResponse(response: InvitationResponseInMessage, proposal?: TimeProposal): Promise<void> {
     assert(this.isIncomingMeeting, "Only invitations can be responded to");
     let itemID = this.itemID;
     // Unfortunately this API won't take an OccurrenceItemId directly.
@@ -521,6 +531,9 @@ export class OWAEvent extends ExchangeEvent {
       __type: "ItemId:#Exchange",
       Id: itemID,
     });
+    if (proposal) {
+      addEWSTimeProposal(request, ResponseTypes[response], proposal);
+    }
     await this.calendar.callOWA(request);
     try {
       await this.calendar.getEvents([itemID], new ArrayColl<OWAEvent>(), this.parentEvent);

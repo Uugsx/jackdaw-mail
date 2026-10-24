@@ -4,6 +4,7 @@ import type { PersonUID } from "../Abstract/PersonUID";
 import { Event } from "./Event";
 import type { Participant } from "./Participant";
 import type { MeetingRoom } from "./EWS/MeetingRooms";
+import type { WorkingHoursSchedule } from "../Reports/WorkingHours";
 import type { EMail } from "../Mail/EMail";
 import { ICalIncomingInvitation } from "./ICal/ICalIncomingInvitation";
 import { SQLEvent } from "./SQL/SQLEvent";
@@ -99,6 +100,16 @@ export class Calendar extends Account {
 
   async arePersonsFree(participants: Participant[], from: Date, to: Date): Promise<{ participant: Participant, availability?: { from: Date, to: Date, free: boolean }[] }[]> {
     return [];
+  }
+
+  /** Сервер знает рабочие часы ящика (Exchange `GetUserAvailability` → `WorkingHours`) */
+  get canReadWorkingHours(): boolean {
+    return false;
+  }
+
+  /** Рабочие часы ящика с сервера. null — сервер их не прислал */
+  async fetchWorkingHours(): Promise<WorkingHoursSchedule | null> {
+    return null;
   }
 
   /** Можно ли выбрать переговорную комнату с сервера (Exchange) */
