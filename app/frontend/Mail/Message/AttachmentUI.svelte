@@ -29,6 +29,7 @@
   import { openFileInternallyFromFile, canOpenFileInternally } from "../../Files/open";
   import { assert } from "../../../logic/util/util";
   import AttachmentMenu from "./AttachmentMenu.svelte";
+  import { canPreviewAttachment, previewAttachment } from "../Attachments/attachmentPreview";
   import FileIcon from "../../Files/Thumbnail/FileIcon.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
   import { t } from "../../../l10n/l10n";
@@ -39,6 +40,8 @@
     if (canOpenFileInternally(attachment.mimeType)) {
       let loadedAttachment = await attachment.load();
       await openFileInternallyFromFile(loadedAttachment.content);
+    } else if (canPreviewAttachment(attachment)) {
+      await previewAttachment(attachment);
     } else {
       await attachment.openOSApp();
     }

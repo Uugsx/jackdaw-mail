@@ -3304,5 +3304,14 @@
   "qI91TX": "Visa e-post från den här avsändaren under Prioriterat",
   "1yJdRp": "Visa e-post från den här avsändaren under Övrigt",
   "Qv4yTj": "Hela deras text citeras i senare svar:",
-  "ODyfDB": "Övrigt"
+  "ODyfDB": "Övrigt",
+  "Equh+U": "{0} kan inte dela länkar till filer",
+  "zB0u3/": "{0} returnerade ingen länk för {1}",
+  "OIhptP": "{0} är större än {1}. Många e-postservrar avvisar sådana meddelanden. Ladda upp till {2} och infoga en länk i meddelandet i stället?",
+  "boPHNr": "E-postbilagor",
+  "7J2RyW": "Skicka en länk i stället för filen?",
+  "CWIHRm": "Skicka länk",
+  "X/cEgD": "Skicka länkar i stället för filerna?",
+  "+EkHGn": "Visa filen här utan någon annan app",
+  "sZ/lhL": "Den här filen kan inte visas här."
 }

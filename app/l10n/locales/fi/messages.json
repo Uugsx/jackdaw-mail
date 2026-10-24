@@ -3304,5 +3304,14 @@
   "qI91TX": "Näytä tämän lähettäjän viestit kohdassa Kohdennetut",
   "1yJdRp": "Näytä tämän lähettäjän viestit kohdassa Muut",
   "Qv4yTj": "Niiden koko teksti on lainattu myöhemmissä vastauksissa:",
-  "ODyfDB": "Muut"
+  "ODyfDB": "Muut",
+  "Equh+U": "{0} ei voi jakaa linkkejä tiedostoihin",
+  "zB0u3/": "{0} ei palauttanut linkkiä kohteelle {1}",
+  "OIhptP": "{0} on suurempi kuin {1}. Monet sähköpostipalvelimet hylkäävät tällaiset viestit. Ladataanko palveluun {2} ja lisätäänkö viestiin linkki?",
+  "boPHNr": "Sähköpostin liitteet",
+  "7J2RyW": "Lähetetäänkö linkki tiedoston sijaan?",
+  "CWIHRm": "Lähetä linkki",
+  "X/cEgD": "Lähetetäänkö linkit tiedostojen sijaan?",
+  "+EkHGn": "Näytä tiedosto tässä ilman muuta sovellusta",
+  "sZ/lhL": "Tätä tiedostoa ei voi näyttää tässä."
 }

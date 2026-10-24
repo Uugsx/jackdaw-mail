@@ -3304,5 +3304,14 @@
   "qI91TX": "Mostrar el correo de este remitente en Prioritarios",
   "1yJdRp": "Mostrar el correo de este remitente en Otros",
   "Qv4yTj": "Todo su texto se cita en respuestas posteriores:",
-  "ODyfDB": "Otros"
+  "ODyfDB": "Otros",
+  "Equh+U": "{0} no puede compartir enlaces a archivos",
+  "zB0u3/": "{0} no devolvió un enlace para {1}",
+  "OIhptP": "{0} supera {1}. Muchos servidores de correo rechazan esos mensajes. ¿Subirlo a {2} e insertar un enlace en el mensaje?",
+  "boPHNr": "Archivos adjuntos de correo",
+  "7J2RyW": "¿Enviar un enlace en lugar del archivo?",
+  "CWIHRm": "Enviar enlace",
+  "X/cEgD": "¿Enviar enlaces en lugar de los archivos?",
+  "+EkHGn": "Mostrar el archivo aquí, sin otra aplicación",
+  "sZ/lhL": "Este archivo no se puede mostrar aquí."
 }

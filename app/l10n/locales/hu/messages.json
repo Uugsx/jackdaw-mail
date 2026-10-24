@@ -3304,5 +3304,14 @@
   "qI91TX": "A feladó leveleinek megjelenítése a Kiemeltben",
   "1yJdRp": "A feladó leveleinek megjelenítése az Egyébben",
   "Qv4yTj": "A teljes szövegüket későbbi válaszok idézik:",
-  "ODyfDB": "Egyéb"
+  "ODyfDB": "Egyéb",
+  "Equh+U": "{0} nem tud fájlokra mutató hivatkozást megosztani",
+  "zB0u3/": "{0} nem adott vissza hivatkozást ehhez: {1}",
+  "OIhptP": "{0} nagyobb, mint {1}. Sok levelezőkiszolgáló elutasítja az ilyen üzeneteket. Feltölti a(z) {2} tárhelyre, és hivatkozást szúr be az üzenetbe?",
+  "boPHNr": "Levélmellékletek",
+  "7J2RyW": "Hivatkozást küld a fájl helyett?",
+  "CWIHRm": "Hivatkozás küldése",
+  "X/cEgD": "Hivatkozásokat küld a fájlok helyett?",
+  "+EkHGn": "A fájl megjelenítése itt, más alkalmazás nélkül",
+  "sZ/lhL": "Ez a fájl itt nem jeleníthető meg."
 }

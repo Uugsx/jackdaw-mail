@@ -3304,5 +3304,14 @@
   "qI91TX": "Vis mail fra denne afsender under Fokuseret",
   "1yJdRp": "Vis mail fra denne afsender under Andet",
   "Qv4yTj": "Hele deres tekst er citeret i senere svar:",
-  "ODyfDB": "Andet"
+  "ODyfDB": "Andet",
+  "Equh+U": "{0} kan ikke dele links til filer",
+  "zB0u3/": "{0} returnerede intet link til {1}",
+  "OIhptP": "{0} er større end {1}. Mange mailservere afviser sådanne meddelelser. Upload til {2} og indsæt i stedet et link i meddelelsen?",
+  "boPHNr": "Mailvedhæftninger",
+  "7J2RyW": "Send et link i stedet for filen?",
+  "CWIHRm": "Send link",
+  "X/cEgD": "Send links i stedet for filerne?",
+  "+EkHGn": "Vis filen her uden en anden app",
+  "sZ/lhL": "Denne fil kan ikke vises her."
 }
