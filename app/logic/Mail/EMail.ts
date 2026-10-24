@@ -1,5 +1,6 @@
 import { Message } from "../Abstract/Message";
 import { SpecialFolder, type Folder } from "./Folder";
+import { applySenderLists } from "./Junk/SenderLists";
 import { ComposeActions } from "./ComposeActions";
 import { Attachment, ContentDisposition } from "../Abstract/Attachment";
 import type { Tag } from "../Abstract/Tag";
@@ -669,6 +670,12 @@ export class EMail extends Message {
     await contentSaves.wait();
     this.downloadComplete = true;
     await this.saveWritablePropsLocally(); // save downloadComplete = true
+    // Локальные списки надёжных/заблокированных отправителей (IMAP и др., не Exchange)
+    try {
+      await applySenderLists(this);
+    } catch (ex) {
+      console.error(ex);
+    }
   }
 
   protected async isDownloadCompleteDoublecheck(): Promise<boolean> {

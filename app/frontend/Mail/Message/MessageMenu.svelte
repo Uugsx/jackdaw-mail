@@ -68,6 +68,33 @@
   label={$message.isSpam ? $t`Mark as not spam` : $t`Mark as spam`}
   tooltip={$message.isSpam ? $t`Treat this email as *not* spam` : $t`Treat this email as spam: Move it to the Spam folder, and train the spam filter`}
   icon={$message.isSpam ? NotSpamIcon : SpamIcon} />
+{#if message.from?.emailAddress && !message.outgoing}
+  <SubMenu label={$t`Junk mail`} icon={JunkIcon}>
+    <MenuItem
+      onClick={() => blockSender(message)}
+      classes="danger"
+      label={$t`Block sender`}
+      tooltip={$t`Move mail from ${message.from.emailAddress} to Spam from now on`}
+      icon={BlockIcon} />
+    <MenuItem
+      onClick={() => trustSender(message)}
+      label={$t`Never block sender`}
+      tooltip={$t`Never treat mail from ${message.from.emailAddress} as spam`}
+      icon={NotSpamIcon} />
+    <MenuItem
+      onClick={() => trustSender(message, true)}
+      label={$t`Never block sender's domain`}
+      tooltip={$t`Never treat mail from @${domainOf(message.from.emailAddress)} as spam`}
+      icon={NotSpamIcon} />
+    <MenuDivider />
+    <MenuItem
+      onClick={() => reportPhishing(message)}
+      classes="danger"
+      label={$t`Report phishing`}
+      tooltip={$t`Forward this message as an attachment to the address in the settings, and move it to Spam`}
+      icon={PhishingIcon} />
+  </SubMenu>
+{/if}
 {#if $availableTags.hasItems}
   <MenuDivider />
   <SubMenu label={$t`Set categories`}>
@@ -196,6 +223,10 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import UndoIcon from "lucide-svelte/icons/undo-2";
   import SpamIcon from "lucide-svelte/icons/shield-x";
   import NotSpamIcon from "lucide-svelte/icons/shield-off";
+  import JunkIcon from "lucide-svelte/icons/shield-alert";
+  import BlockIcon from "lucide-svelte/icons/ban";
+  import PhishingIcon from "lucide-svelte/icons/fish";
+  import { blockSender, domainOf, reportPhishing, trustSender } from "../../../logic/Mail/Junk/SenderLists";
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import ArchiveIcon from "lucide-svelte/icons/archive";
   import SaveIcon from "lucide-svelte/icons/save";
