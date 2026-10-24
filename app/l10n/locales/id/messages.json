@@ -3304,5 +3304,14 @@
   "qI91TX": "Tampilkan email dari pengirim ini di Prioritas",
   "1yJdRp": "Tampilkan email dari pengirim ini di Lainnya",
   "Qv4yTj": "Seluruh teksnya dikutip dalam balasan berikutnya:",
-  "ODyfDB": "Lainnya"
+  "ODyfDB": "Lainnya",
+  "Equh+U": "{0} tidak dapat membagikan tautan ke file",
+  "zB0u3/": "{0} tidak mengembalikan tautan untuk {1}",
+  "OIhptP": "{0} lebih besar dari {1}. Banyak server email menolak pesan seperti itu. Unggah ke {2} dan sisipkan tautan ke pesan sebagai gantinya?",
+  "boPHNr": "Lampiran email",
+  "7J2RyW": "Kirim tautan alih-alih file?",
+  "CWIHRm": "Kirim tautan",
+  "X/cEgD": "Kirim tautan alih-alih file-file ini?",
+  "+EkHGn": "Tampilkan file di sini, tanpa aplikasi lain",
+  "sZ/lhL": "File ini tidak dapat ditampilkan di sini."
 }

@@ -203,7 +203,7 @@
 <script lang="ts">
   import type { EMail, MailImportanceLevel } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
-  import { addFilesAsAttachments } from "../../../logic/Abstract/Attachment";
+  import { addAttachmentsOrCloudLinks } from "../CloudAttachments/addAttachments";
   import { insertImage, removeImageForAttachment, removeOrphanedInlineAttachments } from "../../Shared/Editor/InsertImage";
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { MailIdentity } from "../../../logic/Mail/MailIdentity";
@@ -906,11 +906,11 @@
     if (!file) {
       return;
     }
-    addFilesAsAttachments(mail, [file]);
+    await addAttachmentsOrCloudLinks(mail, [file], editor);
   }
 
   function onFilesDrop(event: CustomEvent) {
-    addFilesAsAttachments(mail, event.detail.files as File[]);
+    addAttachmentsOrCloudLinks(mail, event.detail.files as File[], editor).catch(backgroundError);
   }
 
   async function onFileInlineDrop(event: CustomEvent) {

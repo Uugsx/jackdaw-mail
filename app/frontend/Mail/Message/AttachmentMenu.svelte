@@ -1,4 +1,11 @@
 <ButtonMenu>
+  {#if canPreviewAttachment(attachment)}
+    <MenuItem
+      onClick={preview}
+      label={$t`Preview`}
+      tooltip={$t`Show the file here, without another app`}
+      icon={PreviewIcon} />
+  {/if}
   <MenuItem
     onClick={openExternal}
     label={$t`Open in external app`}
@@ -30,6 +37,8 @@
   import OpenIcon from "lucide-svelte/icons/external-link";
   import FolderIcon from "lucide-svelte/icons/folder";
   import SaveIcon from "lucide-svelte/icons/save";
+  import PreviewIcon from "lucide-svelte/icons/eye";
+  import { canPreviewAttachment, previewAttachment } from "../Attachments/attachmentPreview";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
   import { t } from "../../../l10n/l10n";
 
@@ -37,6 +46,9 @@
 
   async function openExternal() {
     await attachment.openOSApp();
+  }
+  async function preview() {
+    await previewAttachment(attachment);
   }
   async function openFolder() {
     await attachment.openOSFolder();

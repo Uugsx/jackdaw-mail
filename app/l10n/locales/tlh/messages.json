@@ -1554,5 +1554,14 @@
   "qI91TX": "Show mail from this sender under Focused",
   "1yJdRp": "Show mail from this sender under Other",
   "Qv4yTj": "Their whole text is quoted in later replies:",
-  "ODyfDB": "Other"
+  "ODyfDB": "Other",
+  "Equh+U": "{0} cannot share links to files",
+  "zB0u3/": "{0} did not return a link for {1}",
+  "OIhptP": "{0} is larger than {1}. Many mail servers reject such messages. Upload to {2} and insert a link into the message instead?",
+  "boPHNr": "Email attachments",
+  "7J2RyW": "Send a link instead of the file?",
+  "CWIHRm": "Send link",
+  "X/cEgD": "Send links instead of the files?",
+  "+EkHGn": "Show the file here, without another app",
+  "sZ/lhL": "This file cannot be shown here."
 }

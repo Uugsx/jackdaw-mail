@@ -3304,5 +3304,14 @@
   "qI91TX": "Mostra la posta di questo mittente in Evidenziata",
   "1yJdRp": "Mostra la posta di questo mittente in Altra",
   "Qv4yTj": "Il loro testo è interamente citato in risposte successive:",
-  "ODyfDB": "Altra"
+  "ODyfDB": "Altra",
+  "Equh+U": "{0} non può condividere link ai file",
+  "zB0u3/": "{0} non ha restituito un link per {1}",
+  "OIhptP": "{0} supera {1}. Molti server di posta rifiutano questi messaggi. Caricarlo su {2} e inserire un link nel messaggio?",
+  "boPHNr": "Allegati email",
+  "7J2RyW": "Inviare un link invece del file?",
+  "CWIHRm": "Invia link",
+  "X/cEgD": "Inviare link invece dei file?",
+  "+EkHGn": "Mostra il file qui, senza un'altra app",
+  "sZ/lhL": "Questo file non può essere mostrato qui."
 }

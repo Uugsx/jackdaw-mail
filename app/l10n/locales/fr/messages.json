@@ -3306,5 +3306,14 @@
   "qI91TX": "Afficher les messages de cet expéditeur dans Prioritaire",
   "1yJdRp": "Afficher les messages de cet expéditeur dans Autres",
   "Qv4yTj": "Tout leur texte est cité dans des réponses ultérieures :",
-  "ODyfDB": "Autres"
+  "ODyfDB": "Autres",
+  "Equh+U": "{0} ne peut pas partager de liens vers des fichiers",
+  "zB0u3/": "{0} n’a renvoyé aucun lien pour {1}",
+  "OIhptP": "{0} dépasse {1}. De nombreux serveurs de messagerie refusent ces messages. Le téléverser sur {2} et insérer un lien dans le message à la place ?",
+  "boPHNr": "Pièces jointes des e-mails",
+  "7J2RyW": "Envoyer un lien au lieu du fichier ?",
+  "CWIHRm": "Envoyer le lien",
+  "X/cEgD": "Envoyer des liens au lieu des fichiers ?",
+  "+EkHGn": "Afficher le fichier ici, sans autre application",
+  "sZ/lhL": "Ce fichier ne peut pas être affiché ici."
 }

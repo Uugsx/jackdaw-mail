@@ -3304,5 +3304,14 @@
   "qI91TX": "Zobrazovat poštu od tohoto odesílatele v Prioritní",
   "1yJdRp": "Zobrazovat poštu od tohoto odesílatele v Ostatní",
   "Qv4yTj": "Jejich celý text je citován v pozdějších odpovědích:",
-  "ODyfDB": "Ostatní"
+  "ODyfDB": "Ostatní",
+  "Equh+U": "{0} neumí sdílet odkazy na soubory",
+  "zB0u3/": "{0} nevrátil odkaz na {1}",
+  "OIhptP": "{0} je větší než {1}. Mnoho poštovních serverů takové zprávy odmítá. Nahrát do {2} a vložit do zprávy odkaz?",
+  "boPHNr": "Přílohy pošty",
+  "7J2RyW": "Poslat odkaz místo souboru?",
+  "CWIHRm": "Poslat odkaz",
+  "X/cEgD": "Poslat odkazy místo souborů?",
+  "+EkHGn": "Zobrazit soubor zde, bez jiné aplikace",
+  "sZ/lhL": "Tento soubor zde nelze zobrazit."
 }

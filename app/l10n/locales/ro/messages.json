@@ -3304,5 +3304,14 @@
   "qI91TX": "Afișează e-mailurile acestui expeditor în Prioritare",
   "1yJdRp": "Afișează e-mailurile acestui expeditor în Altele",
   "Qv4yTj": "Întregul lor text este citat în răspunsuri ulterioare:",
-  "ODyfDB": "Altele"
+  "ODyfDB": "Altele",
+  "Equh+U": "{0} nu poate partaja linkuri către fișiere",
+  "zB0u3/": "{0} nu a returnat un link pentru {1}",
+  "OIhptP": "{0} depășește {1}. Multe servere de e-mail refuză astfel de mesaje. Îl încărcați în {2} și inserați un link în mesaj?",
+  "boPHNr": "Atașări e-mail",
+  "7J2RyW": "Trimiteți un link în loc de fișier?",
+  "CWIHRm": "Trimiteți linkul",
+  "X/cEgD": "Trimiteți linkuri în loc de fișiere?",
+  "+EkHGn": "Afișează fișierul aici, fără altă aplicație",
+  "sZ/lhL": "Acest fișier nu poate fi afișat aici."
 }

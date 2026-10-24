@@ -3304,5 +3304,14 @@
   "qI91TX": "E-Mails dieses Absenders unter „Relevant“ anzeigen",
   "1yJdRp": "E-Mails dieses Absenders unter „Sonstige“ anzeigen",
   "Qv4yTj": "Ihr gesamter Text ist in späteren Antworten zitiert:",
-  "ODyfDB": "Sonstige"
+  "ODyfDB": "Sonstige",
+  "Equh+U": "{0} kann keine Links zu Dateien freigeben",
+  "zB0u3/": "{0} hat keinen Link für {1} zurückgegeben",
+  "OIhptP": "{0} ist größer als {1}. Viele Mailserver lehnen solche Nachrichten ab. Stattdessen in {2} hochladen und einen Link in die Nachricht einfügen?",
+  "boPHNr": "E-Mail-Anhänge",
+  "7J2RyW": "Link statt Datei senden?",
+  "CWIHRm": "Link senden",
+  "X/cEgD": "Links statt Dateien senden?",
+  "+EkHGn": "Datei hier anzeigen, ohne andere App",
+  "sZ/lhL": "Diese Datei kann hier nicht angezeigt werden."
 }

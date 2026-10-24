@@ -3304,5 +3304,14 @@
   "qI91TX": "Pokazuj pocztę od tego nadawcy w Priorytetowych",
   "1yJdRp": "Pokazuj pocztę od tego nadawcy w Innych",
   "Qv4yTj": "Ich cały tekst jest zacytowany w późniejszych odpowiedziach:",
-  "ODyfDB": "Inne"
+  "ODyfDB": "Inne",
+  "Equh+U": "{0} nie umie udostępniać linków do plików",
+  "zB0u3/": "{0} nie zwrócił linku do {1}",
+  "OIhptP": "{0} jest większy niż {1}. Wiele serwerów poczty odrzuca takie wiadomości. Przesłać do {2} i wstawić link do wiadomości?",
+  "boPHNr": "Załączniki poczty",
+  "7J2RyW": "Wysłać link zamiast pliku?",
+  "CWIHRm": "Wyślij link",
+  "X/cEgD": "Wysłać linki zamiast plików?",
+  "+EkHGn": "Pokaż plik tutaj, bez innej aplikacji",
+  "sZ/lhL": "Tego pliku nie można tu pokazać."
 }

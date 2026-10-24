@@ -3304,5 +3304,14 @@
   "qI91TX": "Mostrar e-mails deste remetente em Destaques",
   "1yJdRp": "Mostrar e-mails deste remetente em Outros",
   "Qv4yTj": "Todo o texto delas está citado em respostas posteriores:",
-  "ODyfDB": "Outros"
+  "ODyfDB": "Outros",
+  "Equh+U": "{0} não pode compartilhar links para arquivos",
+  "zB0u3/": "{0} não retornou um link para {1}",
+  "OIhptP": "{0} é maior que {1}. Muitos servidores de e-mail recusam essas mensagens. Enviar para {2} e inserir um link na mensagem?",
+  "boPHNr": "Anexos de e-mail",
+  "7J2RyW": "Enviar um link em vez do arquivo?",
+  "CWIHRm": "Enviar link",
+  "X/cEgD": "Enviar links em vez dos arquivos?",
+  "+EkHGn": "Mostrar o arquivo aqui, sem outro aplicativo",
+  "sZ/lhL": "Este arquivo não pode ser mostrado aqui."
 }
