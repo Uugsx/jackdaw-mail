@@ -12,6 +12,7 @@ export type QuickFilterId =
   | "fromMe"
   | "toMe"
   | "replied"
+  | "mentionsMe"
   | "newest"
   | "oldest"
   | "bySender"
@@ -51,6 +52,7 @@ export const allQuickFilters: QuickFilterDef[] = [
   { id: "toMe", kind: "filter", label: () => gt`To me` },
   { id: "fromMe", kind: "filter", label: () => gt`From me` },
   { id: "replied", kind: "filter", label: () => gt`Replied` },
+  { id: "mentionsMe", kind: "filter", label: () => gt`Mentions me` },
   { id: "newest", kind: "sort", label: () => gt`Newest`, sort: "date-desc" },
   { id: "oldest", kind: "sort", label: () => gt`Oldest`, sort: "date-asc" },
   { id: "bySender", kind: "sort", label: () => gt`By sender`, sort: "sender" },

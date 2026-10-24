@@ -27,6 +27,7 @@
     <CollisionBadge {message} />
     <ReadReceiptBanner {message} />
   {/if}
+  <VotingBanner {message} {readOnly} />
   <hbox class="message-meta">
     {#if $message.contact instanceof Person && $message.contact.picture}
       <PersonPicture person={$message.contact} size={avatarSize} />
@@ -142,6 +143,7 @@
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
   import ShowReplyBanner from "./ShowReplyBanner.svelte";
   import ReadReceiptBanner from "./ReadReceiptBanner.svelte";
+  import VotingBanner from "../Voting/VotingBanner.svelte";
   import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { beginCollisionActivity } from "../Collision/collisionPresence";
   import RoundButton from "../../Shared/RoundButton.svelte";

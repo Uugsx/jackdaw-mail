@@ -381,6 +381,7 @@
               <MailOpenIcon size="16px" />
               <span>{$t`Request delivery receipt`}</span>
             </button>
+            <slot name="tracking" />
           </hbox>
           <span class="group-label">{$t`Tracking`}</span>
         </vbox>

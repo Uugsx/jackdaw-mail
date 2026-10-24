@@ -135,7 +135,9 @@
       on:toggleEmojis={() => showEmojis = !showEmojis}
       on:toggleSpellcheck={() => spellcheckEnabled.value = !spellcheckEnabled.value}
       on:setZoom={event => editorZoom = event.detail}
-      on:openActions={() => showSMLAdd = true} />
+      on:openActions={() => showSMLAdd = true}>
+      <VotingChip slot="tracking" {mail} />
+    </ComposeRibbon>
     </hbox>
     {#if showAttachments}
       <hbox class="attachments-row" aria-label={$t`Attachments`}>
@@ -166,6 +168,7 @@
                 onImagePaste={onImagePaste}
                 extraExtensions={composeEditorExtensions}
                 on:change={onEditorChange} />
+              <MentionSuggest {editor} {mail} searchFunction={searchContactsInOwner} />
             </vbox>
             {#if composeQuoteHtml}
               <vbox class="compose-quote">
@@ -204,6 +207,8 @@
   import type { EMail, MailImportanceLevel } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
   import { addAttachmentsOrCloudLinks } from "../CloudAttachments/addAttachments";
+  import VotingChip from "../Voting/VotingChip.svelte";
+  import MentionSuggest from "../Mentions/MentionSuggest.svelte";
   import { insertImage, removeImageForAttachment, removeOrphanedInlineAttachments } from "../../Shared/Editor/InsertImage";
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { MailIdentity } from "../../../logic/Mail/MailIdentity";
@@ -1282,6 +1287,15 @@
     min-width: 0;
     flex-shrink: 0;
     box-sizing: border-box;
+    /* Подсказка @упоминаний позиционируется относительно редактора */
+    position: relative;
+  }
+  .editor :global(a.jackdaw-mention) {
+    background-color: rgba(0, 120, 212, 0.12);
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+    text-decoration: none;
   }
   .editor.loading {
     pointer-events: none;

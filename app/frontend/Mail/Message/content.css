@@ -75,3 +75,13 @@ footer.signature p,
 .signature p {
   margin-block: 0;
 }
+
+/* @упоминания: наши (класс) и из Outlook/OWA (id «OWAAM…») */
+a.jackdaw-mention,
+a[id^="OWAAM"] {
+  background-color: rgba(0, 120, 212, 0.12);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+  text-decoration: none;
+}
