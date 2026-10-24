@@ -81,9 +81,14 @@ protocols:
   schemes:
     - mailto
 npmRebuild: true
-extraResources:
-  - from: build/gh-update-token.txt
-    to: gh-update-token.txt
+# Токен GitHub в сборку не кладём: репозиторий публичный, а всё внутри установщика
+# может прочитать любой, кто его скачал.
+# Fuses Electron: бинарник приложения нельзя запустить как Node.js (ELECTRON_RUN_AS_NODE,
+# NODE_OPTIONS, --inspect) — иначе чужой код получил бы права приложения: Keychain, камеру, микрофон.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
 extraMetadata:
   productName: Jackdaw Mail
 electronUpdaterCompatibility: ">=2.16"

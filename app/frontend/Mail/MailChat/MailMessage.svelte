@@ -39,7 +39,7 @@
       {#if translationAvailable}
         <MessageTranslateBar {message} compact suggest={false} />
       {/if}
-      {@html displayHtml(translatedHTML ?? bodyHTML, darkTheme)}
+      {@html restrictHTMLForAppDOM(displayHtml(translatedHTML ?? bodyHTML, darkTheme))}
     {/await}
   </svelte:fragment>
   <svelte:fragment slot="menu">
@@ -50,6 +50,7 @@
 </div>
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { Message } from "../../../logic/Abstract/Message";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";

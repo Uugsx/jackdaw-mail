@@ -9,6 +9,10 @@ import { defaultClientConditions } from 'vite';
 
 export default defineConfig({
   main: {
+    define: {
+      // Сборка выпуска в CI: без профиля автопроверок и ключей отладки (backend/testProfile.ts)
+      __JACKDAW_RELEASE_BUILD__: JSON.stringify(process.env.GITHUB_ACTIONS == "true"),
+    },
     plugins: [
       externalizeDepsPlugin({ exclude: ["@radically-straightforward/sqlite"] }),
       replace({

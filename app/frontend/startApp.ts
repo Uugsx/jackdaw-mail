@@ -15,6 +15,8 @@ import { installNativeDialogs } from './Util/nativeDialogs';
 installTooltips(document);
 installNativeDialogs();
 
+const kPrivateBreadcrumbCategories = new Set(["console", "fetch", "xhr", "navigation"]);
+
 if (production) {
   Sentry.init({
     dsn: "https://dade72a5be5a4a84a3171531b279181a@errorlog.jackdaw.app/3",
@@ -22,8 +24,15 @@ if (production) {
     // An array here would *add* to the default integrations, not replace them.
     // `BrowserSession` sends a session to the server on every navigation.
     integrations: defaults => defaults.filter(integration => integration.name != "BrowserSession"),
-    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их
-    beforeBreadcrumb: breadcrumb => breadcrumb.category == "console" ? null : breadcrumb,
+    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их.
+    // Адреса запросов и переходов — тоже: в них адреса почты, поисковые запросы и секрет связи с backend (#jpcSecret).
+    beforeBreadcrumb: breadcrumb => kPrivateBreadcrumbCategories.has(breadcrumb.category ?? "") ? null : breadcrumb,
+    beforeSend: event => {
+      if (event.request?.url) {
+        event.request.url = event.request.url.replace(/#.*$/, "");
+      }
+      return event;
+    },
   });
 }
 

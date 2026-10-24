@@ -6,7 +6,8 @@ import JPCWebSocket from '../../lib/jpc-ws';
 import * as OWA from './owa';
 import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
-import { pickMacDmgAsset } from './updateAssets';
+import { expectedSha512ForAsset, isSha512Match, pickMacDmgAsset } from './updateAssets';
+import { isPublicFetchHost } from './netGuard';
 import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort } from './testProfile';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
@@ -15,7 +16,7 @@ import { createUtilityProcessChannel } from "./sqlite/utilityProcessChannel";
 import sqliteWorkerPath from "./sqlite/worker?modulePath";
 import Zip from "adm-zip";
 import ky from 'ky';
-import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
+import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, net as electronNet, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
 import electronUpdater, { type UpdateCheckResult } from 'electron-updater';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
@@ -31,7 +32,8 @@ import os from "node:os";
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import https from "node:https";
 import { RunOnce } from '../../app/logic/util/flow/RunOnce';
 import {
@@ -49,6 +51,7 @@ const kMaxMailImageBytes = 25 * 1024 * 1024;
 
 const kGhOwner = "Uugsx";
 const kGhRepo = "jackdaw-mail";
+const execFileAsync = promisify(execFile);
 
 /**
  * Electron derives `userData` from the visible application name by default.
@@ -255,6 +258,8 @@ async function createSharedAppObject() {
   };
 }
 
+const kMaxMailImageRedirects = 5;
+
 /** Fetch an email image after an explicit user action, bypassing renderer CORS. */
 async function fetchMailImage(
   url: string,
@@ -275,22 +280,83 @@ async function fetchMailImage(
   if (!sourceSession) {
     return null;
   }
-  let response = await sourceSession.fetch(parsedURL.toString(), { redirect: "follow" });
-  if (!response.ok) {
+  if (!await isPublicFetchHost(parsedURL.hostname)) {
     return null;
   }
-  let contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > kMaxMailImageBytes) {
-    return null;
-  }
-  let buffer = await response.arrayBuffer();
-  if (buffer.byteLength > kMaxMailImageBytes) {
-    return null;
-  }
-  return {
-    bytes: new Uint8Array(buffer),
-    contentType: response.headers.get("content-type") ?? "",
-  };
+  return await requestMailImage(parsedURL, sourceSession);
+}
+
+/** Загрузка с проверкой каждого перенаправления: оно может вести на адрес этого компьютера.
+ * `session.fetch` с `redirect: "manual"` в Electron не сообщает адрес перенаправления, поэтому `net.request`. */
+function requestMailImage(url: URL, sourceSession: Electron.Session): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  return new Promise(resolve => {
+    let redirects = 0;
+    let settled = false;
+    let finish = (result: { bytes: Uint8Array; contentType: string } | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+    let request = electronNet.request({ url: url.toString(), session: sourceSession, redirect: "manual", useSessionCookies: true });
+    request.on("redirect", (_statusCode, _method, redirectURL) => {
+      let target: URL;
+      try {
+        target = new URL(redirectURL);
+      } catch {
+        request.abort();
+        finish(null);
+        return;
+      }
+      if (++redirects > kMaxMailImageRedirects || (target.protocol != "http:" && target.protocol != "https:")) {
+        request.abort();
+        finish(null);
+        return;
+      }
+      isPublicFetchHost(target.hostname).then(allowed => {
+        if (allowed) {
+          request.followRedirect();
+        } else {
+          request.abort();
+          finish(null);
+        }
+      }, () => {
+        request.abort();
+        finish(null);
+      });
+    });
+    request.on("response", response => {
+      let contentLength = Number(response.headers["content-length"]);
+      if (response.statusCode < 200 || response.statusCode >= 300 ||
+          (Number.isFinite(contentLength) && contentLength > kMaxMailImageBytes)) {
+        request.abort();
+        finish(null);
+        return;
+      }
+      let chunks: Buffer[] = [];
+      let received = 0;
+      response.on("data", chunk => {
+        received += chunk.length;
+        if (received > kMaxMailImageBytes) {
+          request.abort();
+          finish(null);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        let contentType = response.headers["content-type"];
+        finish({
+          bytes: new Uint8Array(Buffer.concat(chunks)),
+          contentType: (Array.isArray(contentType) ? contentType[0] : contentType) ?? "",
+        });
+      });
+      response.on("error", () => finish(null));
+    });
+    request.on("error", () => finish(null));
+    request.on("abort", () => finish(null));
+    request.end();
+  });
 }
 
 function createType3MessageFromType2Message(WWWAuthenticate, username, password) {
@@ -1106,8 +1172,10 @@ async function scheduleMacDmgInstallAndQuit(dmgPath: string): Promise<void> {
   let scriptPath = path.join(app.getPath("temp"), `jackdaw-install-${process.pid}.sh`);
   let script = `#!/bin/bash
 set -euo pipefail
-DMG=${JSON.stringify(dmgPath)}
-DEST=${JSON.stringify(destApp)}
+# Пути приходят аргументами, а не текстом скрипта: $() и кавычки в них не выполняются
+DMG="$1"
+DEST="$2"
+SCRIPT="$0"
 PID=${process.pid}
 DB_PID=${sqliteHost.processID ?? ""}
 MOUNT=$(mktemp -d /tmp/jackdaw-update.XXXXXX)
@@ -1123,7 +1191,7 @@ sleep 0.5
 cleanup() {
   hdiutil detach "$MOUNT" -quiet 2>/dev/null || true
   rm -rf "$MOUNT"
-  rm -f ${JSON.stringify(scriptPath)}
+  rm -f "$SCRIPT"
 }
 trap cleanup EXIT
 
@@ -1152,7 +1220,7 @@ open "$DEST"
   await fsPromises.writeFile(scriptPath, script, { mode: 0o755 });
   await writePendingUpdateMarker(updateState.version);
   quittingForUpdate = true;
-  let child = spawn("/bin/bash", [scriptPath], { detached: true, stdio: "ignore" });
+  let child = spawn("/bin/bash", [scriptPath, dmgPath, destApp], { detached: true, stdio: "ignore" });
   child.unref();
 
   await Promise.race([
@@ -1160,6 +1228,22 @@ open "$DEST"
     new Promise<void>(resolve => setTimeout(resolve, kUpdateShutdownTimeoutMs)),
   ]);
   app.exit(0);
+}
+
+/** DMG не подписан Apple: сверяем его с sha512 из `latest-mac.yml`, иначе не ставим */
+async function verifyMacDmgChecksum(dmgPath: string, assetName: string, version: string): Promise<void> {
+  let info = updateState.update?.updateInfo;
+  let expected = info && info.version.replace(/^v/, "") == version.replace(/^v/, "")
+    ? expectedSha512ForAsset(info.files, assetName)
+    : null;
+  let hash = crypto.createHash("sha512");
+  for await (let chunk of fs.createReadStream(dmgPath)) {
+    hash.update(chunk);
+  }
+  if (!isSha512Match(hash.digest("base64"), expected)) {
+    await fsPromises.rm(dmgPath, { force: true });
+    throw new Error(expected ? "Update checksum mismatch" : "No update checksum to verify the download");
+  }
 }
 
 async function downloadMacDmgUpdate(version: string | null | undefined) {
@@ -1181,6 +1265,7 @@ async function downloadMacDmgUpdate(version: string | null | undefined) {
     await downloadGithubAsset(dmgAsset, dmgPath, pct => {
       updateState.progress = pct;
     });
+    await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
     macDmgPendingPath = dmgPath;
     updateState.phase = "downloaded";
     updateState.progress = 100;
@@ -1445,7 +1530,34 @@ async function openFileInNativeApp(filePath: string) {
   if (isExecutableFileType(filePath) && !await confirmOpenExecutableFile(filePath)) {
     return;
   }
+  await markAsDownloaded(filePath).catch(ex => console.warn("Could not mark file as downloaded:", ex?.message ?? ex));
   await shell.openPath(filePath);
+}
+
+/** Метка «скачано из интернета», как у браузера: macOS проверит программу из архива
+ * через Gatekeeper, Windows откроет документ Office в защищённом режиме. */
+async function markAsDownloaded(filePath: string): Promise<void> {
+  if (process.platform == "darwin") {
+    let value = `0081;${Math.floor(Date.now() / 1000).toString(16)};${appName};`;
+    await withOwnerWritable(filePath, () => execFileAsync("/usr/bin/xattr", ["-w", "com.apple.quarantine", value, filePath]));
+  } else if (process.platform == "win32") {
+    await withOwnerWritable(filePath, () => fsPromises.writeFile(`${filePath}:Zone.Identifier`, "[ZoneTransfer]\r\nZoneId=3\r\n"));
+  }
+}
+
+/** Вложения сохраняются только для чтения (0400), а метку ставит лишь владелец с правом записи */
+async function withOwnerWritable(filePath: string, action: () => Promise<unknown>): Promise<void> {
+  let mode = (await fsPromises.stat(filePath)).mode & 0o7777;
+  if (!(mode & 0o200)) {
+    await fsPromises.chmod(filePath, mode | 0o200);
+  }
+  try {
+    await action();
+  } finally {
+    if (!(mode & 0o200)) {
+      await fsPromises.chmod(filePath, mode);
+    }
+  }
 }
 
 /** Типы, которые ОС запускает как программу или скрипт, а не открывает как документ.
@@ -1458,9 +1570,10 @@ const kExecutableFileExtensions = new Set([
   "settingcontent-ms", "library-ms", "search-ms", "searchconnector-ms", "diagcab", "iso", "img", "vhd", "vhdx",
   // macOS
   "app", "command", "tool", "terminal", "pkg", "mpkg", "dmg", "workflow", "scpt", "scptd", "applescript",
-  "webloc", "inetloc", "fileloc",
+  "webloc", "inetloc", "fileloc", "mobileconfig", "shortcut", "saver", "prefpane", "kext", "action", "definition",
   // Linux и кроссплатформенные
   "sh", "bash", "zsh", "csh", "ksh", "desktop", "run", "bin", "appimage", "deb", "rpm", "jar", "py", "pl",
+  "jnlp", "wsb", "xbap", "ppkg", "mht", "mhtml", "docm", "xlsm", "pptm", "dotm", "xltm", "xlam", "ppam", "rb", "php",
 ]);
 
 function isExecutableFileType(filePath: string): boolean {
@@ -1682,7 +1795,14 @@ function wireWidgetWindowNavigation(win: BrowserWindow) {
   });
 }
 
+function assertWidgetURL(url: string): void {
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error("Widget URL must be http or https");
+  }
+}
+
 function createWidgetBrowserWindow(sessionID: string, url: string, title: string): BrowserWindow {
+  assertWidgetURL(url);
   let win = new BrowserWindow({
     width: 520,
     height: 760,
@@ -1694,6 +1814,7 @@ function createWidgetBrowserWindow(sessionID: string, url: string, title: string
       partition: widgetPartitionName(sessionID),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
   });
   wireWidgetWindowNavigation(win);
@@ -1706,6 +1827,7 @@ async function openWidgetSignIn(sessionID: string, url: string, title: string): 
   if (existing && !existing.isDestroyed()) {
     existing.focus();
     if (existing.webContents.getURL() !== url) {
+      assertWidgetURL(url);
       await existing.loadURL(url);
     }
     return waitForWidgetWindowClose(existing);
@@ -1722,6 +1844,7 @@ async function openWidgetPopout(sessionID: string, url: string, title: string): 
   if (existing && !existing.isDestroyed()) {
     existing.focus();
     if (existing.webContents.getURL() !== url) {
+      assertWidgetURL(url);
       await existing.loadURL(url);
     }
     return;
