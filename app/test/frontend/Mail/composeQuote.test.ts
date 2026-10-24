@@ -105,3 +105,25 @@ describe("applyQuoteTextInput", () => {
     root.remove();
   });
 });
+
+describe("splitComposeQuote: своя цитата пользователя", () => {
+  it("голый blockquote в тексте ответа не считается цитатой исходного письма", () => {
+    let full = `<p>Привет</p><blockquote><p>своя цитата</p></blockquote><p>ещё текст</p><footer class="signature">Подпись</footer>`;
+    let { editable, quote } = splitComposeQuote(full);
+    expect(editable).toBe(full);
+    expect(quote).toBe("");
+  });
+
+  it("режет по цитате исходного письма, а не по своей цитате выше неё", () => {
+    let mine = `<p>Ответ</p><blockquote><p>своя</p></blockquote><footer class="signature">Подпись</footer>`;
+    let original = `<blockquote cite="mid:1"><p>старое</p></blockquote>`;
+    let { editable, quote } = splitComposeQuote(mine + original);
+    expect(editable).toBe(mine);
+    expect(quote).toBe(original);
+  });
+
+  it("цитаты Thunderbird и Gmail по-прежнему распознаются", () => {
+    expect(splitComposeQuote(`<p>a</p><blockquote type="cite"><p>q</p></blockquote>`).editable).toBe("<p>a</p>");
+    expect(splitComposeQuote(`<p>a</p><blockquote class="gmail_quote"><p>q</p></blockquote>`).editable).toBe("<p>a</p>");
+  });
+});

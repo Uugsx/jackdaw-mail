@@ -143,6 +143,7 @@ export class SystemNotification {
       body: this.bodyWithSubtitle,
       tag: this.id,
       renotify: true,
+      silent: true,
       // icon: url,
       // image: url,
     });
@@ -162,6 +163,9 @@ export class SystemNotification {
       body: hasSubtitleLine ? this.body : this.bodyWithSubtitle,
       // icon: url,
       urgency: this.urgency,
+      // Звук играем сами (`kinds.sound`, выбранная мелодия). Иначе ОС добавляет
+      // свой сигнал: двойной звук, и даже когда звук в настройках выключен.
+      silent: true,
       hasReply: !!this.onReply,
       replyPlaceholder: this.replyPlaceholder,
       // Windows

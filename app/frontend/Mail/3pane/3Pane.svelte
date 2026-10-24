@@ -6,12 +6,18 @@
     bind:activeTab={$selectedSearchTab}
     slot="left" />
   <vbox flex class="mail-main" slot="right">
+    {#if $tasksViewOpen}
+      <TasksPage />
+    {:else if $notesViewOpen}
+      <NotesPage />
+    {:else}
     <MailToolbar
       {selectedAccount}
       {selectedFolder}
       {selectedMessage}
       {selectedMessages}
       bind:searchMessages />
+    <OutOfOfficeBar account={selectedAccount} />
     <vbox flex>
       <SplitterBidirectional {horizontal}
         name={horizontal ? "mail.3pane.msgs" : "mail.widetable.msgs"}
@@ -20,6 +26,7 @@
         secondMinPx={horizontal ? 30 : 480}>
         <vbox flex class="message-list-pane" slot="first">
           <FolderHeader folder={selectedFolder} {searchMessages} />
+          <FocusedTabs folder={searchMessages ? null : selectedFolder} />
           <MailUndoToast />
           {#key selectedFolder?.id ?? ""}
             <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages}
@@ -35,6 +42,7 @@
         </vbox>
       </SplitterBidirectional>
     </vbox>
+    {/if}
   </vbox>
 </Splitter>
 
@@ -52,10 +60,20 @@
   import Splitter from "../../Shared/Splitter.svelte";
   import SplitterBidirectional from "../../Shared/SplitterBidirectional.svelte";
   import MailUndoToast from "../MailUndoToast.svelte";
+  import OutOfOfficeBar from "../OutOfOfficeBar.svelte";
   import { ArrayColl, type Collection } from 'svelte-collections';
+  import FocusedTabs from "../Focused/FocusedTabs.svelte";
+  import { focusedMessages, focusedTab } from "../Focused/focusedView";
+  import { focusedClassificationChanged, focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
+  const focusedEnabled = focusedInboxEnabled();
+
   import { onMount } from "svelte";
   import { ensureAccountExpanded } from "../mailSidebarState";
   import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
+  import TasksPage from "../Tasks/TasksPage.svelte";
+  import { tasksViewOpen } from "../Tasks/tasksStore";
+  import { notesViewOpen } from "../Notes/notesStore";
+  import NotesPage from "../Notes/NotesPage.svelte";
 
   export let horizontal: boolean = true;
   export let accounts: Collection<MailAccount>; /** in */
@@ -67,7 +85,16 @@
   export let selectedMessages: ArrayColl<EMail>; /** in/out */
   let selectedFolders: ArrayColl<Folder>;
 
-  $: folderMessages = selectedFolder?.messages;
+  $: folderMessages = focusedMessages(selectedFolder, $focusedTab, $focusedEnabled.value, $focusedClassificationChanged);
+  // Выбор папки или письма (в том числе из списка задач) возвращает к почте
+  let lastFolder: Folder | null = null;
+  $: if (selectedFolder !== lastFolder) {
+    if (lastFolder) {
+      $tasksViewOpen = false;
+      $notesViewOpen = false;
+    }
+    lastFolder = selectedFolder;
+  }
   $: messages = searchMessages ?? folderMessages ?? new ArrayColl<EMail>();
   $: if (selectedAccount) {
     ensureAccountExpanded(selectedAccount);

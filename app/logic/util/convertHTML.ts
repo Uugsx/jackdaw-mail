@@ -307,3 +307,33 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
   }
 });
 // </copied>
+
+/** Элементы, которые из чужого HTML действуют на всё окно приложения, а не только на сообщение:
+ * глобальные стили и поддельные формы ввода пароля поверх интерфейса */
+const kAppDOMForbiddenSelector = "style,link,meta,base,form,input,button,textarea,select,option,iframe,frame,object,embed,svg,math,script";
+const kAppDOMForbiddenStyles = ["position", "z-index", "inset", "top", "left", "right", "bottom"];
+
+/**
+ * Уже санитизированный HTML (письмо, сообщение чата, описание встречи) для вставки
+ * через `{@html}` прямо в окно приложения, а не в изолированный `<webview>`.
+ * Убирает то, что выходит за пределы сообщения: `<style>`, формы и элементы ввода,
+ * фиксированное и абсолютное позиционирование.
+ */
+export function restrictHTMLForAppDOM(html: string): string {
+  if (!html || typeof DOMParser == "undefined") {
+    return html ?? "";
+  }
+  let doc = new DOMParser().parseFromString(html, "text/html");
+  for (let element of doc.querySelectorAll(kAppDOMForbiddenSelector)) {
+    element.remove();
+  }
+  for (let element of doc.body.querySelectorAll<HTMLElement>("[style]")) {
+    for (let property of kAppDOMForbiddenStyles) {
+      element.style.removeProperty(property);
+    }
+    if (!element.getAttribute("style")?.trim()) {
+      element.removeAttribute("style");
+    }
+  }
+  return doc.body.innerHTML;
+}

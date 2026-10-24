@@ -8,6 +8,8 @@ let uninstallTooltips: () => void;
 beforeEach(() => {
   vi.useFakeTimers();
   document.body.replaceChildren();
+  // Тест выделения в почтовом WebView оставляет этот класс на body
+  document.body.classList.remove("mail-webview-pointer-active");
   uninstallTooltips = installTooltips(document);
 });
 
@@ -19,6 +21,13 @@ afterEach(() => {
 
 function hover(element: HTMLElement): void {
   element.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+}
+
+/** happy-dom не считает раскладку: задаём размеры, как у обрезанной подписи. */
+function makeTruncated(element: HTMLElement, visibleWidth = 40, fullWidth = 120): void {
+  element.style.overflow = "hidden";
+  Object.defineProperty(element, "clientWidth", { configurable: true, value: visibleWidth });
+  Object.defineProperty(element, "scrollWidth", { configurable: true, value: fullWidth });
 }
 
 describe("renderer tooltips", () => {
@@ -141,6 +150,70 @@ describe("renderer tooltips", () => {
     expect(tooltip?.hidden).toBe(true);
   });
 
+  test("показывает подсказку, равную подписи, если подпись обрезана", () => {
+    const button = document.createElement("button");
+    button.title = "Ответить всем";
+    const label = document.createElement("span");
+    label.textContent = "Ответить всем";
+    makeTruncated(label);
+    button.append(label);
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Ответить всем");
+    expect(tooltip?.dataset.visible).toBe("true");
+  });
+
+  test("у кнопки без title обрезанная подпись показывается в подсказке целиком", () => {
+    const button = document.createElement("button");
+    const label = document.createElement("span");
+    label.textContent = "Облачное хранилище";
+    makeTruncated(label);
+    button.append(label);
+    document.body.append(button);
+
+    hover(label);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Облачное хранилище");
+    expect(tooltip?.dataset.visible).toBe("true");
+
+    button.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
+    vi.advanceTimersByTime(140);
+    expect(button.hasAttribute("title")).toBe(false);
+    expect(button.hasAttribute("data-jackdaw-tooltip")).toBe(false);
+  });
+
+  test("без обрезки и без title у кнопки с подписью подсказки нет", () => {
+    const button = document.createElement("button");
+    button.textContent = "Сохранить";
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
+  });
+
+  test("строка с role=button не получает автоподсказку из всего своего текста", () => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "button");
+    const subject = document.createElement("span");
+    subject.textContent = "Очень длинная тема письма";
+    makeTruncated(subject);
+    row.append(subject);
+    document.body.append(row);
+
+    hover(subject);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
+  });
+
   test("не показывает подсказку во время выделения текста в почтовом WebView", () => {
     const button = document.createElement("button");
     button.title = "Архив";
@@ -173,6 +246,71 @@ describe("renderer tooltips", () => {
 
     expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
     expect(sender.getAttribute("title")).toBe("Galkin Nikita SDS\nnikita.galkin@smartds.ru");
+  });
+
+  test("нажатие мышью прячет подсказку, и она не возвращается, пока мышь на элементе", () => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "button");
+    row.title = "АВТМЦ СМ";
+    document.body.append(row);
+    const tooltip = () => document.querySelector<HTMLElement>("#jackdaw-tooltip");
+
+    hover(row);
+    vi.advanceTimersByTime(420);
+    expect(tooltip()?.dataset.visible).toBe("true");
+
+    row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    row.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    row.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+    expect(tooltip()?.hidden).toBe(true);
+    // Системная подсказка не должна всплыть вместо нашей
+    expect(row.hasAttribute("title")).toBe(false);
+
+    row.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
+    expect(row.getAttribute("title")).toBe("АВТМЦ СМ");
+    hover(row);
+    vi.advanceTimersByTime(420);
+    expect(tooltip()?.dataset.visible).toBe("true");
+  });
+
+  test("контекстное меню закрывает подсказку, и фокус строки её не держит", () => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "button");
+    row.title = "Новых: 0, непрочитанных: 899";
+    const menuItem = document.createElement("div");
+    menuItem.textContent = "Переименовать папку";
+    document.body.append(row, menuItem);
+    const tooltip = () => document.querySelector<HTMLElement>("#jackdaw-tooltip");
+
+    hover(row);
+    row.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 2 }));
+    row.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    row.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: menuItem }));
+    menuItem.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    vi.advanceTimersByTime(2000);
+
+    expect(tooltip()?.hidden).toBe(true);
+    expect(row.getAttribute("title")).toBe("Новых: 0, непрочитанных: 899");
+  });
+
+  test("фокус с клавиатуры после щелчка снова показывает подсказку", () => {
+    const first = document.createElement("button");
+    first.title = "Первая";
+    const second = document.createElement("button");
+    second.title = "Вторая";
+    document.body.append(first, second);
+
+    first.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    first.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    second.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    vi.advanceTimersByTime(260);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.textContent).toBe("Вторая");
+    expect(tooltip?.dataset.visible).toBe("true");
   });
 
   test("restores the native title after leaving and hides the tooltip", () => {

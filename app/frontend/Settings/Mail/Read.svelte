@@ -32,15 +32,41 @@
       </label>
     </vbox>
   </HeaderGroupBox>
+
+  <HeaderGroupBox>
+    <hbox slot="header">
+      {$t`Read receipts`}
+    </hbox>
+    <vbox class="read">
+      <hbox class="description font-small">{$t`When a sender asks to be told that you read the message:`}</hbox>
+      <label class="radio">
+        <input type="radio" value="ask" bind:group={$readReceiptPolicy.value} />
+        {$t`Ask each time`}
+      </label>
+      <label class="radio">
+        <input type="radio" value="always" bind:group={$readReceiptPolicy.value} />
+        {$t`Always send a read receipt`}
+      </label>
+      <label class="radio">
+        <input type="radio" value="never" bind:group={$readReceiptPolicy.value} />
+        {$t`Never send a read receipt`}
+      </label>
+    </vbox>
+  </HeaderGroupBox>
+
+  <Translation />
 </hbox>
 
 <script lang="ts">
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
+  import Translation from "./Translation.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import T from '../../../l10n/T.svelte';
+  import { readReceiptPolicySetting } from "../../../logic/Mail/ReadReceipt/ReadReceipt";
   import { t } from "../../../l10n/l10n";
 
   let readAfter = getLocalStorage("mail.read.after", 0);
+  const readReceiptPolicy = readReceiptPolicySetting();
   let readSeconds = readAfter.value > 0 ? readAfter.value : 5;
 
   const kMinReadSeconds = 1;
@@ -73,7 +99,13 @@
   label {
     margin-inline-start: 8px;
   }
+  .description {
+    margin-block-end: 4px;
+    opacity: 0.75;
+  }
   input[type="number"] {
+    /* Ширина — под цифры, без отступов: общие поля считают ширину с отступами (border-box) */
+    box-sizing: content-box;
     width: 2.5em;
     text-align: end;
   }

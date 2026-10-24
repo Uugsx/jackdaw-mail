@@ -174,6 +174,14 @@
     line-height: 1.15;
     justify-content: center;
   }
+  /* Подпись приходит вложенным hbox: многоточие рисуется только у блочного элемента. */
+  .label > :global(*) {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   @media (prefers-reduced-motion: reduce) {
     .app-button,
     .icon-wrap {

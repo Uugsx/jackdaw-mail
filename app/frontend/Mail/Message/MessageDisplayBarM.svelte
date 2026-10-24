@@ -74,6 +74,7 @@
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
   import { mailApp } from "../MailJackdawApp";
+  import { neighbourMessage } from "../Selected";
   import { SpecialFolder } from "../../../logic/Mail/Folder";
   import { goTo } from "../../AppsBar/selectedApp";
   import MessageMenu from "./MessageMenu.svelte";
@@ -124,10 +125,10 @@
     goToMsgList();
   }
   function onNextMessage() {
-    message = message.nextMessage(false);
+    message = neighbourMessage(message, false) ?? message;
   }
   function onPreviousMessage() {
-    message = message.nextMessage(true);
+    message = neighbourMessage(message, true) ?? message;
   }
 
   let isMenuOpen = false;

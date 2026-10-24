@@ -56,7 +56,7 @@
 {/if}
 
 <script lang="ts">
-  import { NotificationSeverity, type Notification } from "./Notification";
+  import { NotificationSeverity, notificationSeverityRank, type Notification } from "./Notification";
   import Button from "../Shared/Button.svelte";
   import RoundButton from "../Shared/RoundButton.svelte";
   import XIcon from "lucide-svelte/icons/x";
@@ -71,7 +71,7 @@
 
   export let notifications: ArrayColl<Notification>;
 
-  $: notification = notifications.sortBy(n => n.severity).first;
+  $: notification = notifications.sortBy(n => notificationSeverityRank(n.severity)).first;
   $: ex = $notification?.ex as any;
   $: described = ex && !ex.isUserError ? describeError(ex) : null;
   // Подсказка нужна, только если текст на панели — наш понятный, а не свой текст вызывающего

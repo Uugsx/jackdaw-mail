@@ -6,7 +6,11 @@ export function splitComposeQuote(html: string | null | undefined): { editable: 
   // само может содержать <blockquote>. Иначе подпись вставлялась внутрь цитаты.
   let markers = [
     body.search(/<p\b[^>]*\bclass=(["'])quote-header\1/i),
-    body.search(/<blockquote\b/i),
+    // Только цитата исходного письма (`cite`, `type="cite"`, gmail_quote). Цитата,
+    // которую пользователь оформил сам кнопкой на ленте, — голый <blockquote>
+    // внутри его текста: по нему резать нельзя, иначе подпись после неё
+    // не находилась и вставлялась второй раз, а текст уезжал в блок цитаты.
+    body.search(/<blockquote\b[^>]*\b(?:cite=|type=(["'])cite\2|class=(["'])[^"']*\bgmail_quote\b)/i),
     body.search(/<hr\b[^>]*>\s*<p\b[^>]*\bclass=(["'])forward-header\1/i),
   ].filter(index => index >= 0);
   if (markers.length) {
@@ -16,14 +20,27 @@ export function splitComposeQuote(html: string | null | undefined): { editable: 
       quote: body.slice(cut),
     };
   }
-  let hrMatch = body.match(/<hr\b[^>]*\s*\/?>[\s\S]*$/i);
-  if (hrMatch?.index != null) {
+  let hrIndex = firstHrOutsideFooter(body);
+  if (hrIndex >= 0) {
     return {
-      editable: body.slice(0, hrMatch.index),
-      quote: body.slice(hrMatch.index),
+      editable: body.slice(0, hrIndex),
+      quote: body.slice(hrIndex),
     };
   }
   return { editable: body, quote: "" };
+}
+
+/** <hr> внутри подписи — её оформление, а не начало чужого письма. Если резать
+ * по нему, подпись делилась пополам, старая не находилась при замене и удваивалась. */
+function firstHrOutsideFooter(body: string): number {
+  let footers = [...body.matchAll(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi)]
+    .map(match => ({ start: match.index, end: match.index + match[0].length }));
+  for (let hr of body.matchAll(/<hr\b[^>]*>/gi)) {
+    if (!footers.some(footer => hr.index > footer.start && hr.index < footer.end)) {
+      return hr.index;
+    }
+  }
+  return -1;
 }
 
 export function mergeComposeQuote(editable: string | null | undefined, quote: string): string {

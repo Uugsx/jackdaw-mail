@@ -9,9 +9,14 @@ import {
   dedupeEMailPersons,
   createEMailLookupIndexes,
   dedupeEMailsWithoutPID,
+  createFollowUpReminderTable,
+  createExchangeTaskTable,
+  createScheduledSendTable,
+  createMailTemplateTable,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 // <copied from="Mail/SQL/Account/SQLDatabase.ts">
 
@@ -30,16 +35,27 @@ export const mailDatabaseMigrations = [
   createEMailLookupIndexes,
   dedupeEMailPersons,
   dedupeEMailsWithoutPID,
+  // Десятая: «Напомнить, если не ответят».
+  createFollowUpReminderTable,
+  // Одиннадцатая: задачи Exchange.
+  createExchangeTaskTable,
+  // Двенадцатая: отмена отправки и «Отправить позже».
+  createScheduledSendTable,
+  // Тринадцатая: шаблоны писем.
+  createMailTemplateTable,
 ];
+
+const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
+  await database.migrate(...mailDatabaseMigrations);
+  await database.pragma("foreign_keys = true");
+  await database.pragma("journal_mode = WAL");
+});
 
 export async function getDatabase(): Promise<Database> {
   if (mailDatabase) {
     return mailDatabase;
   }
-  mailDatabase = await getSQLiteDatabase("mail.db");
-  await mailDatabase.migrate(...mailDatabaseMigrations);
-  await mailDatabase.pragma("foreign_keys = true");
-  await mailDatabase.pragma("journal_mode = WAL");
+  mailDatabase = await openMailDatabase();
   return mailDatabase;
 }
 
@@ -56,6 +72,10 @@ export async function makeTestDatabase(): Promise<Database> {
     createReportReplyIndexes,
     createResponseReminderIndexes,
     createEMailLookupIndexes,
+    createFollowUpReminderTable,
+    createExchangeTaskTable,
+    createScheduledSendTable,
+    createMailTemplateTable,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

@@ -2126,7 +2126,7 @@
                 on:change={(event) =>
                   onCategoryCheckboxChange(category.name, event)}
               />
-              <span>{category.name}</span>
+              <span title={category.name}>{category.name}</span>
               <small>{formatNumber(category.incoming)}</small>
             </label>
           {/each}
@@ -2181,7 +2181,7 @@
                   on:change={(event) =>
                     onResponderCheckboxChange(category.name, event)}
                 />
-                <span>{category.name}</span>
+                <span title={category.name}>{category.name}</span>
                 <small>{formatNumber(category.incoming)}</small>
               </label>
             {:else}
@@ -3568,7 +3568,9 @@
                   <span>
                     {$t`After-hours leader`}
                     {#if topAfterHoursCategory}
-                      <strong>{topAfterHoursCategory.name}</strong>
+                      <strong title={topAfterHoursCategory.name}
+                        >{topAfterHoursCategory.name}</strong
+                      >
                       <strong
                         >{formatNumber(
                           topAfterHoursCategory.afterHours,
@@ -3608,7 +3610,9 @@
                             (selectedRhythmCategoryName = row.name)}
                         >
                           <span class="rhythm-rank-index">{index + 1}</span>
-                          <span class="rhythm-rank-name">{row.name}</span>
+                          <span class="rhythm-rank-name" title={row.name}
+                            >{row.name}</span
+                          >
                           <span class="rhythm-rank-track" aria-hidden="true"
                             ><span
                               style={`width: ${rhythmBarWidth(row.afterHours, afterHoursCategoryMax)}`}
@@ -4173,8 +4177,9 @@
                             <span class="person-name"
                               >{responder.accountName}</span
                             >
-                            {#if responder.email}<span class="person-email"
-                                >{responder.email}</span
+                            {#if responder.email}<span
+                                class="person-email"
+                                title={responder.email}>{responder.email}</span
                               >{/if}
                           </th>
                           <td class="numeric" data-label={$t`Requests`}
@@ -5131,8 +5136,10 @@
                       {#each sortedChatRooms as room}
                         <tr>
                           <th scope="row"
-                            ><span>{room.roomName}</span><span
-                              class="person-email">{room.accountName}</span
+                            ><span title={room.roomName}>{room.roomName}</span
+                            ><span
+                              class="person-email"
+                              title={room.accountName}>{room.accountName}</span
                             ></th
                           >
                           <td class="numeric">{formatNumber(room.total)}</td>
@@ -5240,8 +5247,12 @@
                       {#each sortedFileDirectories as directory}
                         <tr>
                           <th scope="row"
-                            ><span>{directory.directoryName}</span><span
-                              class="person-email">{directory.accountName}</span
+                            ><span title={directory.directoryName}
+                              >{directory.directoryName}</span
+                            ><span
+                              class="person-email"
+                              title={directory.accountName}
+                              >{directory.accountName}</span
                             ></th
                           >
                           <td class="numeric"
@@ -5882,6 +5893,7 @@
 
   .working-hours-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     min-width: 0;
@@ -6207,6 +6219,7 @@
 
   .report-viewer-nav {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     max-width: 1440px;
     margin: 0 auto 12px;
@@ -6313,12 +6326,11 @@
 
   .report-ready-stats span {
     display: block;
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .report-ready-stats strong {
@@ -6668,12 +6680,11 @@
   }
 
   .response-metric > span {
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .response-metric strong {
@@ -6954,21 +6965,18 @@
   }
 
   .rhythm-focus-stats span {
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .rhythm-focus-stats strong {
     margin: 7px 0 3px;
-    overflow: hidden;
     color: var(--main-fg);
     font-size: 13px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: break-word;
   }
 
   .rhythm-focus-stats small {
@@ -7041,7 +7049,7 @@
   }
 
   .rhythm-overview-table thead th {
-    font-size: clamp(8px, 0.72cqw, 10px);
+    font-size: clamp(11px, 0.8cqw, 12px);
     letter-spacing: 0;
     line-height: 1.15;
     overflow-wrap: break-word;
@@ -7490,11 +7498,13 @@
   }
 
   /* Заголовок подстраивается под фактическую ширину таблицы. Переносим его
-     только между словами: если столбец становится уже, уменьшаем кегль, а
-     не превращаем заголовок в вертикальную колонку букв. */
+     только между словами, а не превращаем в вертикальную колонку букв.
+     Кегль не ниже 11px: 8px не читается; полное название — в подсказке. */
   .table-wrap :global(.table-sort-button) {
-    font-size: clamp(8px, 0.58cqw, 10px);
-    letter-spacing: 0.02em;
+    gap: 3px;
+    padding-inline: 2px;
+    font-size: clamp(11px, 0.8cqw, 12px);
+    letter-spacing: 0;
     overflow-wrap: normal;
     word-break: keep-all;
     hyphens: none;
@@ -8001,6 +8011,14 @@
     }
   }
 
+  /* То же по ширине самой страницы: рядом панель приложений и боковая
+     панель виджетов, поэтому окно шире, чем место под отчёт. */
+  @container reports-page (max-width: 1180px) {
+    .summary-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
   @container reports-page (max-width: 1180px) {
     .dashboard-grid {
       gap: 12px;
@@ -8019,7 +8037,8 @@
     }
   }
 
-  @container reports-page (max-width: 640px) {
+  /* Половинные блоки уже ~400px не вмещают заголовки таблиц: одна колонка. */
+  @container reports-page (max-width: 900px) {
     .dashboard-grid {
       grid-template-columns: minmax(0, 1fr);
       gap: 12px;
@@ -8196,6 +8215,74 @@
     }
   }
 
+  @container reports-page (max-width: 800px) {
+    .report-viewer {
+      padding: 24px 16px 40px;
+    }
+
+    .report-viewer-header {
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .report-viewer-header .header-actions {
+      justify-content: flex-start;
+    }
+
+    .live-control-launch {
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .live-control-launch .secondary-button {
+      margin-left: 44px;
+    }
+
+    .report-ready-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reports-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header-actions {
+      justify-content: flex-start;
+    }
+
+    .summary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .panel {
+      padding: 16px;
+    }
+
+    .panel-header,
+    .heatmap-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .legend {
+      justify-content: flex-start;
+    }
+
+    .peak-callout {
+      align-self: stretch;
+    }
+
+    .response-target-callout {
+      align-self: stretch;
+    }
+
+    .skeleton-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
   @media (max-width: 480px) {
     .summary-grid {
       grid-template-columns: repeat(2, 1fr);
@@ -8211,6 +8298,52 @@
 
     .response-metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .date-separator {
+      display: none;
+    }
+
+    .date-controls .date-field,
+    .date-controls .mail-account-control,
+    .date-controls .mail-folder-control,
+    .date-controls .response-target-control {
+      flex: 1 1 120px;
+    }
+
+    .date-controls .primary-button {
+      flex: 1 1 100%;
+      margin: 4px 0 0;
+    }
+
+    .working-hours-list {
+      grid-template-columns: 1fr;
+    }
+
+    .working-hours-row {
+      flex-wrap: wrap;
+    }
+
+    .working-day-toggle {
+      flex-basis: 100%;
+    }
+
+    .working-day-off {
+      margin-left: 0;
+    }
+  }
+
+  @container reports-page (max-width: 480px) {
+    .summary-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .summary-card:first-child {
+      grid-column: 1 / -1;
+    }
+
+    .summary-card {
+      padding: 13px;
     }
 
     .date-separator {
@@ -8265,7 +8398,7 @@
 
   .preset-list {
     display: inline-flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 0;
     margin: 14px 0;
     overflow: hidden;

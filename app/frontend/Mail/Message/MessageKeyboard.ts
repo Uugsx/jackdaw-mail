@@ -8,6 +8,7 @@ import {
   selectedMessage,
   selectedMessages,
   listVisibleMessages,
+  neighbourMessage,
 } from "../Selected";
 import { openComposer, openEMailMessage } from "../open";
 import { markMessagesRead } from "../mailReadActions";
@@ -109,7 +110,7 @@ function moveSelectedMessage(previous: boolean): boolean {
     return false;
   }
   let selectedMessagesColl = get(selectedMessages);
-  let next = message.nextMessage(previous);
+  let next = neighbourMessage(message, previous);
   selectedMessagesColl.clear();
   if (next) {
     selectedMessagesColl.add(next);
@@ -238,8 +239,9 @@ export async function onKeyOnList(event: KeyboardEvent) {
   }
   let message = get(selectedMessage) ?? messages[0];
 
-  function goToNextMessage(previous = false, from: EMail = message) {
-    let next = from?.nextMessage(previous) ?? null;
+  /** Без `previous` — письмо, которое встанет на место убираемого (ниже, а у края — выше). */
+  function goToNextMessage(previous?: boolean, from: EMail = message) {
+    let next = from ? neighbourMessage(from, previous) : null;
     selectedMessagesColl.clear();
     if (next) {
       selectedMessagesColl.add(next);
@@ -286,7 +288,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
       return;
     } else if (event.key == "f") { // Thunderbird
       consume(event);
-      goToNextMessage();
+      goToNextMessage(false);
       return;
     } else if (event.key == "b") { // Thunderbird
       consume(event);
@@ -382,7 +384,7 @@ export async function onKeyOnMessage(event: KeyboardEvent, onZoomKey?: (event: K
       }
       event.preventDefault();
       event.stopPropagation();
-      let next = message.nextMessage(event.key == "ArrowUp");
+      let next = neighbourMessage(message, event.key == "ArrowUp");
       if (!next) {
         return;
       }

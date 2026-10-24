@@ -74,9 +74,11 @@
     </vbox>
   </hbox>
   <ComposeFloatingLayer />
+  <SendToast />
 </vbox>
 <MeetBackground />
 <JackdawChatBackground />
+<ShareToChatDialog />
 <MailInBackground />
 <CalendarInBackground />
 <WebAppsInBackground />
@@ -92,6 +94,7 @@
   import { getStartObjects as getWebMailStartObjects, loginOnStartup as loginWebMailOnStartup } from "../../logic/WebMail/startup";
   // #endif
   import { notifications } from "./Notification";
+  import { loadStartObjects } from "./startObjectsNotice";
   import { selectedAccount } from "../Mail/Selected";
   import { restoreSelectedWorkspace } from "./Selected";
   import {
@@ -134,9 +137,12 @@
   import SplitterHorizontal from "../Shared/SplitterHorizontal.svelte";
   import MailInBackground from "../Mail/MailInBackground.svelte";
   import ComposeFloatingLayer from "../Mail/Composer/ComposeFloatingLayer.svelte";
+  import SendToast from "../Mail/SendLater/SendToast.svelte";
+  import { startSendQueue } from "../Mail/SendLater/sendQueue";
   import CalendarInBackground from "../Calendar/CalendarInBackground.svelte";
   import MeetBackground from "../Meet/MeetBackground.svelte";
   import JackdawChatBackground from "../Chat/JackdawChatBackground.svelte";
+  import ShareToChatDialog from "../Chat/ShareToChatDialog.svelte";
   import WebAppsInBackground from "../WebApps/Runner/WebAppsInBackground.svelte";
   import WidgetSidebar from "../Widgets/WidgetSidebar.svelte";
   import {
@@ -271,6 +277,17 @@
     // #if [MOBILE]
     SplashScreen.hide();
     // #endif
+    // #if [!WEBMAIL]
+    // Если база занята дольше, чем ждут повторы, — ошибка с кнопкой «Повторить»,
+    // и остальной запуск выполнится после успешной загрузки
+    await loadStartObjects(getDesktopStartObjects, afterStartObjects);
+    // #else
+    await getWebMailStartObjects();
+    await afterStartObjects();
+    // #endif
+  }
+
+  async function afterStartObjects() {
     await startup();
     restoreSelectedWorkspace(appGlobal.workspaces);
     changeTheme($themeSetting.value);
@@ -279,15 +296,12 @@
 
   async function startup() {
     // #if [!WEBMAIL]
-    await getDesktopStartObjects();
     if (isDemoMode()) {
       const { testDataOn } = await import("../../logic/testData");
       await testDataOn();
       $selectedAccount = appGlobal.emailAccounts.first;
       return;
     }
-    // #else
-    await getWebMailStartObjects();
     // #endif
     startUpdateNotificationWatcher();
     if (appGlobal.emailAccounts.isEmpty && appGlobal.chatAccounts.isEmpty) {
@@ -298,6 +312,8 @@
       // #else
       await loginWebMailOnStartup(console.error);
       // #endif
+      // Письма, отложенные до перезапуска или запланированные на «пока было закрыто»
+      void startSendQueue();
       // Setting $selectedApp late would overwrite commandline/URL handlers
       $selectedAccount = appGlobal.emailAccounts.first;
       // `MailApp` selects the inbox, once we read the folders

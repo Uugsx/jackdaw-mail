@@ -6,6 +6,10 @@ import { appGlobal } from "../../app";
 import type { Folder } from "../Folder";
 import { notifyChangedProperty } from "../../util/Observable";
 import { ArrayColl, Collection } from "svelte-collections";
+import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+import { NotSupported } from "../../util/util";
+import type { OutOfOfficeSettings } from "./OutOfOffice";
+import type { InboxRuleList, InboxRuleOperation } from "./InboxRules";
 
 export class ExchangeMailAccount extends MailAccount {
   readonly port: number = 443;
@@ -15,6 +19,89 @@ export class ExchangeMailAccount extends MailAccount {
   /** Root of the optional Exchange Online Archive hierarchy. */
   @notifyChangedProperty
   archiveMailboxRoot: Folder | null = null;
+  /** Адреса этого ящика по данным сервера: основной SMTP-адрес часто отличается от логина
+   * (`nikita.galkin@` при входе как `ngalkin0179@`). Коллеги пишут на основной адрес. */
+  serverEmailAddresses: string[] = [];
+  /** Автоответ «Нет на месте» по последним данным сервера; null — ещё не загружен */
+  @notifyChangedProperty
+  outOfOffice: OutOfOfficeSettings | null = null;
+
+  /** Сервер умеет автоответ «Нет на месте» для этого ящика */
+  get canOutOfOffice(): boolean {
+    return false;
+  }
+
+  /** Читает автоответ с сервера и запоминает его в `outOfOffice` */
+  async loadOutOfOffice(): Promise<OutOfOfficeSettings> {
+    let settings = await this.fetchOutOfOffice();
+    this.outOfOffice = settings;
+    return settings;
+  }
+
+  /** Записывает автоответ на сервер */
+  async saveOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    await this.pushOutOfOffice(settings);
+    this.outOfOffice = { ...settings };
+  }
+
+  /** Выключает автоответ, тексты и расписание остаются на сервере */
+  async turnOffOutOfOffice(): Promise<void> {
+    let current = this.outOfOffice ?? await this.loadOutOfOffice();
+    await this.saveOutOfOffice({ ...current, state: "Disabled" });
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    throw new NotSupported("Out of Office");
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    throw new NotSupported("Out of Office");
+  }
+
+  /** Сервер хранит правила входящих (Inbox Rules) для этого ящика */
+  get canServerRules(): boolean {
+    return false;
+  }
+
+  /** Читает серверные правила входящих, по порядку выполнения */
+  async loadInboxRules(): Promise<InboxRuleList> {
+    throw new NotSupported("Inbox rules");
+  }
+
+  /**
+   * Создаёт, меняет и удаляет серверные правила.
+   * @param removeOutlookRuleBlob Удалить клиентские правила Outlook — только с согласия пользователя
+   */
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    throw new NotSupported("Inbox rules");
+  }
+
+  /** Запоминает адреса ящика от сервера. @returns true, если список изменился */
+  async setServerEmailAddresses(addresses: string[]): Promise<boolean> {
+    let own = this.emailAddress?.toLowerCase();
+    let found = [...new Set(addresses
+      .map(address => sanitize.emailAddress(address, null)?.toLowerCase())
+      .filter((address): address is string => !!address && address != own))].sort();
+    if (found.join(" ") == this.serverEmailAddresses.join(" ")) {
+      return false;
+    }
+    this.serverEmailAddresses = found;
+    await this.save();
+    return true;
+  }
+
+  fromConfigJSON(json: any) {
+    super.fromConfigJSON(json);
+    this.serverEmailAddresses = sanitize.array(json.serverEmailAddresses, [])
+      .map(address => sanitize.emailAddress(address, null)?.toLowerCase())
+      .filter((address): address is string => !!address);
+  }
+
+  toConfigJSON(): any {
+    let json = super.toConfigJSON();
+    json.serverEmailAddresses = this.serverEmailAddresses;
+    return json;
+  }
 
   getAllFolders(): ArrayColl<Folder> {
     let folders = super.getAllFolders();

@@ -440,6 +440,7 @@ block
     margin-inline-end: 4px;
     border: 1px solid var(--toolbar-control-border, var(--border));
     border-radius: 6px;
+    box-shadow: none;
     background: var(--toolbar-control-bg, var(--bg));
     color: var(--text);
     font: inherit;

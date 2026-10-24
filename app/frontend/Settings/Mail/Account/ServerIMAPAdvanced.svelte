@@ -29,6 +29,8 @@
     margin-block-start: 16px;
   }
   input[name="pollInterval"] {
+    /* Ширина — под цифры, без отступов: общие поля считают ширину с отступами (border-box) */
+    box-sizing: content-box;
     width: 3em;
     text-align: center;
     margin-inline-start: 12px;

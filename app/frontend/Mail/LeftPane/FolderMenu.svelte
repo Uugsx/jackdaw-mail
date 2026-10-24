@@ -32,6 +32,11 @@
     label={$t`Clear folder`}
     classes="danger"
     icon={TrashIcon} />
+  <MenuItem
+    onClick={() => cleanUpFolder(folder)}
+    label={$t`Clean up folder`}
+    tooltip={$t`Delete messages whose whole text is quoted in a later reply`}
+    icon={CleanupIcon} />
 {/if}
 {#if !folder.disableSubfolders()}
   <MenuDivider />
@@ -77,6 +82,12 @@
   onClick={() => toggleFavoriteFolder(folder)}
   label={isFavorite ? $t`Remove from favorites` : $t`Show in favorites`}
   icon={StarIcon} />
+{#if canGroupAlerts}
+  <MenuItem
+    onClick={toggleAlertIncidents}
+    label={isAlertFolder ? $t`Show alerts as a plain list` : $t`Group alerts into incidents`}
+    icon={SirenIcon} />
+{/if}
 <MenuItem
   onClick={openFolderSettings}
   label={$t`Folder properties`}
@@ -108,6 +119,8 @@
   import CircleDotIcon from "lucide-svelte/icons/circle-dot";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
   import TrashIcon from "lucide-svelte/icons/trash";
+import CleanupIcon from "lucide-svelte/icons/brush-cleaning";
+import { cleanUpFolder } from "../Cleanup/cleanup";
   import NewFolderIcon from "lucide-svelte/icons/folder-plus";
   import RenameIcon from "lucide-svelte/icons/pencil";
   import FolderSettingsIcon from "lucide-svelte/icons/folder-cog";
@@ -115,6 +128,7 @@
   import MoveDownIcon from "lucide-svelte/icons/arrow-down";
   import StarIcon from "lucide-svelte/icons/star";
   import EyeOffIcon from "lucide-svelte/icons/eye-off";
+  import SirenIcon from "lucide-svelte/icons/siren";
   import { createEventDispatcher, getContext } from "svelte";
   import { t } from "../../../l10n/l10n";
   import {
@@ -123,6 +137,14 @@
     toggleFavoriteFolder,
   } from "./favoriteFolders";
   import { hideFolder } from "./hiddenFolders";
+  import {
+    alertFolderNameRulesSetting,
+    alertIncidentFolderSetting,
+    alertIncidentsEnabledSetting,
+    canGroupAlertFolder,
+    isAlertIncidentFolder,
+    updateAlertIncidentFolderSettings,
+  } from "../alertIncidentSettings";
 
   export let folder: Folder;
   const dispatch = createEventDispatcher<{
@@ -135,6 +157,13 @@
 
   $: favoriteRefs = $favoriteFoldersSetting.value ?? [];
   $: isFavorite = isFavoriteFolderRef(folder, favoriteRefs);
+  $: canGroupAlerts = canGroupAlertFolder(folder, $alertIncidentsEnabledSetting.value);
+  $: alertSetting = alertIncidentFolderSetting(folder);
+  $: isAlertFolder = isAlertIncidentFolder(folder, $alertSetting.value, $alertFolderNameRulesSetting.value);
+
+  function toggleAlertIncidents() {
+    updateAlertIncidentFolderSettings(folder, { enabled: !isAlertFolder });
+  }
 
   async function getNewMessages() {
     let account = folder.account;

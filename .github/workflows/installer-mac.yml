@@ -33,7 +33,10 @@ jobs:
     - run: cd desktop/backend; yarn install
     - run: |
         mkdir -p ~/private_keys/
-        echo '${{ secrets.APPLE_API_KEY }}' > ~/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+        printf '%s\n' "$APPLE_API_KEY_CONTENT" > ~/private_keys/AuthKey_"$APPLE_API_KEY_ID".p8
+      env:
+        APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+        APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
     - run: cd desktop; yarn run build:release:mac
       if: github.event_name == 'push' || inputs.release_type == 'release'
       env: &build_env

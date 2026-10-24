@@ -122,8 +122,7 @@ export async function startAudioCall(to: CallRecipient): Promise<VideoConfMeetin
   return await startCall(to, false);
 }
 
-/** Порядок способов: WhatsApp, затем звонок между пользователями Jackdaw по email.
- * Звонок Jackdaw — только голосовой, даже если просили видео. */
+/** Порядок способов: WhatsApp, затем звонок между пользователями Jackdaw по email. */
 async function startCall(to: CallRecipient, video: boolean): Promise<VideoConfMeeting> {
   // Второй звонок поверх идущего разговора не начинаем.
   assertNoActiveCall();
@@ -141,11 +140,13 @@ async function startCall(to: CallRecipient, video: boolean): Promise<VideoConfMe
   throw new UserError(gt`Calls to this contact are not available yet. Calls work with contacts who use Jackdaw Mail and are online, or have a linked WhatsApp account.`);
 }
 
-/** Можно ли сейчас позвонить с видео. Между пользователями Jackdaw — только голосовые звонки,
- * поэтому видео есть только через WhatsApp. */
+/** Можно ли сейчас позвонить с видео: через WhatsApp или собеседнику в Jackdaw. */
 export function canStartVideoCall(to: CallRecipient | null | undefined): boolean {
   let person = to instanceof PersonUID ? to.findPerson() : to;
-  return person instanceof Person && !!findWhatsAppCallTarget(person);
+  if (person instanceof Person && findWhatsAppCallTarget(person)) {
+    return true;
+  }
+  return (to instanceof Person || to instanceof PersonUID) && canJackdawCall(to);
 }
 
 /** Есть ли сейчас способ позвонить. Кнопки звонка показываются только тогда.

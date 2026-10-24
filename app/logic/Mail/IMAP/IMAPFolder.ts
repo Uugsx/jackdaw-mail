@@ -172,7 +172,10 @@ export class IMAPFolder extends Folder {
         await this.checkDeletedMessages();
         return new ArrayColl<IMAPEMail>();
       }
-      if (reconcileDeletions) {
+      // Локальных писем больше, чем на сервере: их удалили или перенесли в другом
+      // клиенте. CONDSTORE (`changedSince`) удалений не сообщает, а счётчик мог уже
+      // уменьшиться опросом соседней папки — без сверки письма висели «призраками».
+      if (reconcileDeletions || this.messages.length > this.countTotal) {
         // После удаления сверяем UID, но не считаем старые сообщения новыми.
         return await this.listAllUnknownMessages(false);
       }

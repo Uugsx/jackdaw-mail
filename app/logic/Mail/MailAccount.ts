@@ -19,6 +19,8 @@ import { notifyChangedProperty } from "../util/Observable";
 import { RunOnce } from "../util/flow/RunOnce";
 import { Collection, ArrayColl } from 'svelte-collections';
 import { gt } from "../../l10n/l10n";
+import { ConnectionStatus } from "./connectionStatus";
+import type { EWSDeferredSend } from "./SendLater/EWSDeferredSend";
 
 export class MailAccount extends TCPAccount {
   readonly protocol: string = "mail";
@@ -50,6 +52,12 @@ export class MailAccount extends TCPAccount {
 
   readonly rootFolders: Collection<Folder> = new ArrayColl<Folder>();
   readDBRunOnce = new RunOnce();
+  /** Есть ли связь с сервером. Сбой показывается в списке аккаунтов.
+   * Общие ящики сообщают о связи через основной аккаунт: @see `connectionStatusSource` */
+  readonly connectionStatus = new ConnectionStatus(
+    () => this.notifyObservers(),
+    () => this.name,
+    () => this.id);
 
   async startup() {
     await super.startup();
@@ -81,6 +89,13 @@ export class MailAccount extends TCPAccount {
   }
   findFolder(findFunc: (folder: Folder) => boolean): Folder | null {
     return findSubFolderFromList(this.rootFolders, findFunc);
+  }
+
+  /** Чьё состояние связи показывать у этого аккаунта: общий ящик OWA
+   * ходит на сервер через основной аккаунт, своих запросов у него нет. */
+  get connectionStatusSource(): MailAccount {
+    let main = this.mainAccount;
+    return main instanceof MailAccount ? main : this;
   }
 
   get inbox(): Folder | null {
@@ -129,9 +144,32 @@ export class MailAccount extends TCPAccount {
    * and save it in the Sent folder. Nothing else.
    * All higher-level send preparations (signature, encryption etc.)
    * are done in `ComposeActions.send()`.
+   *
+   * @param deferred отправить позже силами сервера.
+   *   Передавать только при `canDeferSendOnServer`.
    */
-  async send(email: EMail): Promise<void> {
+  async send(email: EMail, deferred?: EWSDeferredSend): Promise<void> {
     throw new AbstractFunction();
+  }
+
+  /** Сервер сам отправит письмо в назначенное время (`send(email, deferred)`) */
+  get canDeferSendOnServer(): boolean {
+    return false;
+  }
+
+  /** Умеет ответить на запрос о прочтении (RFC 8098 MDN) */
+  get canSendReadReceipt(): boolean {
+    return false;
+  }
+
+  /** Отправить готовое уведомление `mdn` (`sendRawMIME`) об отметке `original` прочитанным.
+   * Копию в «Отправленные» не сохраняем, как Outlook. */
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    throw new AbstractFunction();
+  }
+
+  /** Отметить запрос о прочтении обработанным на сервере, без отправки */
+  async suppressReadReceipt(original: EMail): Promise<void> {
   }
 
   /** Create a folder on the top level, sibling of Inbox.
@@ -191,7 +229,7 @@ export class MailAccount extends TCPAccount {
     }
     let normalizedAddress = emailAddress.toLowerCase();
     return this.emailAddress?.toLowerCase() == normalizedAddress ||
-      this.identities.some(id => id.isEMailAddress(emailAddress));
+      this.identities.some(id => !id.isDelegate && id.isEMailAddress(emailAddress));
   }
 
   /**
@@ -199,7 +237,7 @@ export class MailAccount extends TCPAccount {
    * @see also global function `findIdentityForEMailAddress()`, which searches all accounts. */
   findIdentityForEMailAddress(emailAddress: string): MailIdentity | null {
     for (let identity of this.identities) {
-      if (identity.isEMailAddress(emailAddress)) {
+      if (!identity.isDelegate && identity.isEMailAddress(emailAddress)) {
         return identity;
       }
     }
@@ -214,6 +252,26 @@ export class MailAccount extends TCPAccount {
    * the root folder instead. */
   findSpecialFolder(specialFolder: SpecialFolder): Folder | null {
     return this.getAllFolders().find(folder => folder.specialFolder == specialFolder) ?? null;
+  }
+
+  /**
+   * Папка для «В архив»: по роли, иначе уже созданная раньше подпапка «Архив»
+   * во Входящих, иначе новая. Роль сохраняется в базе: без этого после
+   * перезапуска папка становилась обычной, и следующее архивирование пыталось
+   * создать её снова — сервер отвечал «уже существует», и в дереве появлялся дубль.
+   */
+  async getOrCreateArchiveFolder(): Promise<Folder> {
+    let archive = this.findSpecialFolder(SpecialFolder.Archive);
+    if (archive) {
+      return archive;
+    }
+    let name = gt`Archive`;
+    archive = this.inbox.subFolders.find(folder =>
+      folder.name == name || folder.name.toLowerCase() == "archive") ??
+      await this.inbox.createSubFolder(name);
+    archive.specialFolder = SpecialFolder.Archive;
+    await archive.save();
+    return archive;
   }
 
   /** Get the `specialFolder` in this account. Falls back to a related folder,

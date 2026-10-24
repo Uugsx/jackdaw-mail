@@ -6,6 +6,12 @@ import {
   type NativeMenuLabels,
 } from '../../../app/logic/util/nativeMenu'
 import {
+  nativeConfirmChannel,
+  nativeDialogLabelsChannel,
+  type NativeConfirmRequest,
+  type NativeDialogLabels,
+} from '../../../app/logic/util/nativeDialogs'
+import {
   composeWindowCloseChannel,
   composeWindowClosedChannel,
   composeWindowDataChannel,
@@ -51,6 +57,13 @@ const api = {
   },
   setNativeMenuLabels: (labels: NativeMenuLabels): void => {
     ipcRenderer.send(nativeMenuLabelsChannel, labels)
+  },
+  setNativeDialogLabels: (labels: NativeDialogLabels): void => {
+    ipcRenderer.send(nativeDialogLabelsChannel, labels)
+  },
+  /** Синхронно, как `window.confirm()`: вызывающий код ждёт ответа */
+  showNativeConfirm: (request: NativeConfirmRequest): boolean => {
+    return ipcRenderer.sendSync(nativeConfirmChannel, request) === true
   },
   openComposeWindow: (windowID: string, payload: ComposeWindowMail): void => {
     ipcRenderer.send(composeWindowOpenChannel, windowID, payload)
@@ -168,19 +181,45 @@ const api = {
   }
 }
 
+/** Окну нужны только каналы входа OAuth (`logic/Auth/UI/OAuth2Window.ts`).
+ * Полный `ipcRenderer` и `process.env` при XSS отдали бы странице все каналы и переменные окружения. */
+const kRendererIPCChannelPrefix = 'oauth2-'
+
+function isRendererIPCChannel(channel: unknown): channel is string {
+  return typeof channel === 'string' && channel.startsWith(kRendererIPCChannelPrefix)
+}
+
+const restrictedElectronAPI = {
+  ipcRenderer: {
+    send: (channel: string, ...args: unknown[]): void => {
+      if (isRendererIPCChannel(channel)) {
+        electronAPI.ipcRenderer.send(channel, ...args)
+      }
+    },
+    on: (channel: string, listener: (...args: any[]) => void): (() => void) => {
+      return isRendererIPCChannel(channel) ? electronAPI.ipcRenderer.on(channel, listener) : () => undefined
+    },
+    removeListener: (channel: string, listener: (...args: any[]) => void): void => {
+      if (isRendererIPCChannel(channel)) {
+        electronAPI.ipcRenderer.removeListener(channel, listener)
+      }
+    },
+  },
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('electron', restrictedElectronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-ignore (define in dts)
-  window.electron = electronAPI
+  window.electron = restrictedElectronAPI
   // @ts-ignore (define in dts)
   window.api = api
 }

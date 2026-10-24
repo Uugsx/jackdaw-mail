@@ -278,7 +278,9 @@ export class JMAPAccount extends MailAccount {
   async httpGet(url: string, options?: any): Promise<any> {
     let ky = await this.ky(options);
     try {
-      return await ky.get(url);
+      let result = await ky.get(url);
+      this.connectionStatus.reportSuccess();
+      return result;
     } catch (ex) {
       await this.httpError(ex);
     }
@@ -287,7 +289,9 @@ export class JMAPAccount extends MailAccount {
   async httpPost(url: string, sendJSON: any): Promise<any> {
     let ky = await this.ky();
     try {
-      return await ky.post(url, { json: sendJSON });
+      let result = await ky.post(url, { json: sendJSON });
+      this.connectionStatus.reportSuccess();
+      return result;
     } catch (ex) {
       await this.httpError(ex);
     }
@@ -296,7 +300,9 @@ export class JMAPAccount extends MailAccount {
   async httpPostBinary(url: string, body: any, options?: any): Promise<any> {
     let ky = await this.ky(options);
     try {
-      return await ky.post(url, { body: body });
+      let result = await ky.post(url, { body: body });
+      this.connectionStatus.reportSuccess();
+      return result;
     } catch (ex) {
       await this.httpError(ex);
     }
@@ -304,6 +310,9 @@ export class JMAPAccount extends MailAccount {
 
   /** @throws an appropriate exception (always throws) */
   protected async httpError(ex: Error) {
+    // Тела ответа у ошибки нет, а JMAP сообщает об ошибках методов в HTTP 200,
+    // поэтому 5xx — отказ самого сервера
+    this.connectionStatus.reportRequestError(ex);
     if (ex.name == "HTTPError") {
       // HTTPFetchError from backend.ts, which has only scalar properties, not the HTTP response body
       let ext = ex as any;
@@ -375,6 +384,34 @@ export class JMAPAccount extends MailAccount {
         await this.storage.saveFolderProperties(folder);
       } else {
         await this.storage.saveFolder(folder);
+      }
+    }
+  }
+
+  /**
+   * Счётчики всех папок с сервера. Раньше они читались только в listFolders(),
+   * то есть при запуске: бейджи не менялись ни от новой почты, ни от чтения
+   * в веб-почте, ни от очистки корзины.
+   */
+  async refreshFolderCounts(): Promise<void> {
+    let response = await this.makeSingleCall("Mailbox/get", {
+      accountId: this.accountID,
+      ids: null,
+      properties: ["id", "totalEmails", "unreadEmails"],
+    }) as TJMAPGetResponse<TJMAPFolder>;
+    for (let json of response.list ?? []) {
+      let folder = this.getFolderByID(json.id);
+      if (!folder) {
+        continue;
+      }
+      let countTotal = sanitize.integer(json.totalEmails, folder.countTotal);
+      let countUnread = sanitize.integer(json.unreadEmails, folder.countUnread);
+      if (folder.countTotal != countTotal || folder.countUnread != countUnread) {
+        folder.countTotal = countTotal;
+        folder.countUnread = countUnread;
+        if (folder.dbID) {
+          await this.storage.saveFolderProperties(folder);
+        }
       }
     }
   }

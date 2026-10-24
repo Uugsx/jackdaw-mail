@@ -19,7 +19,6 @@ import {
   getResponseSlaProgress,
   isResponseRequestExcluded,
   isResponseRequestTakenInWork,
-  isResponseRequestSuppressedUntilTakenInWork,
   isResponseReminderAccountInLiveScope,
   isResponseReminderRequestAfterActivation,
   normalizeResponseReminderIntervals,
@@ -172,20 +171,6 @@ export function getResponseReminderStateSnapshot(): Record<
   return readState();
 }
 
-/** Возвращает, скрыто ли письмо из SLA до следующего взятия в работу. */
-export function isResponseReminderRequestSuppressed(
-  request: PendingResponseRequest,
-  excludedCategoryNames: readonly string[] = [],
-  stateSnapshot?: Record<string, ResponseReminderStateEntry>,
-): boolean {
-  const state = stateSnapshot ?? readState();
-  return isResponseRequestSuppressedUntilTakenInWork(
-    request,
-    state[responseReminderKey(request)],
-    excludedCategoryNames,
-  );
-}
-
 /**
  * Возвращает якорь SLA и фиксирует переход письма вне рабочего графика
  * в непрерывный режим отсчёта.
@@ -206,20 +191,8 @@ export function getResponseReminderSlaStartAt(
     request,
     excludedCategoryNames,
   );
-  if (
-    isResponseRequestSuppressedUntilTakenInWork(
-      request,
-      previous,
-      excludedCategoryNames,
-    )
-  ) {
-    const nextStateEntry = suppressedResponseReminderState(receivedAt);
-    if (responseReminderStateEntryChanged(previous, nextStateEntry)) {
-      state[key] = nextStateEntry;
-      responseReminderStateSetting.value = state;
-    }
-    return request.receivedAt;
-  }
+  // Флаг прежних версий, скрывавших письмо после возврата в непрочитанное:
+  // такое письмо снова отслеживается с исходного времени поступления.
   const previousForTracking =
     previous?.suppressedUntilTakenInWork === true
       ? {
@@ -419,20 +392,6 @@ async function evaluateResponseReminders(): Promise<void> {
           }
           const receivedAt = candidate.receivedAt.getTime();
           const previous = state[key];
-          if (
-            isResponseRequestSuppressedUntilTakenInWork(
-              candidate,
-              previous,
-              config.excludedCategoryNames,
-            )
-          ) {
-            const suppressedEntry = suppressedResponseReminderState(receivedAt);
-            if (responseReminderStateEntryChanged(previous, suppressedEntry)) {
-              state[key] = suppressedEntry;
-              stateChanged = true;
-            }
-            continue;
-          }
           const entry =
             previous?.receivedAt == receivedAt
               ? previous
@@ -679,18 +638,6 @@ function getTakenInWorkStartAt(
   const isRecoveredInterimState =
     previous.takenInWork === true && previous.startedAt == null;
   return isNewTakenInWork || isRecoveredInterimState ? now.getTime() : undefined;
-}
-
-function suppressedResponseReminderState(
-  receivedAt: number,
-): ResponseReminderStateEntry {
-  return {
-    receivedAt,
-    firedIntervalsMinutes: [],
-    takenInWork: false,
-    suppressedUntilTakenInWork: true,
-    overdue: false,
-  };
 }
 
 function responseReminderStateEntryChanged(

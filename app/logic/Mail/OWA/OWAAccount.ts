@@ -1,19 +1,24 @@
 import { ExchangeMailAccount } from "../EWS/ExchangeMailAccount";
+import { owaVotingProperties } from "../Voting/VotingExchange";
 import { MailIdentity } from "../MailIdentity";
 import { AuthMethod, type Account } from "../../Abstract/Account";
 import { Provider } from "../../Auth/OAuth2URLs";
 import type { EMail } from "../EMail";
+import { rethrowSendAsDenied } from "../SendAs/SendAsError";
 import { SpecialFolder, type Folder, type MailShareCombinedPermissions, type MailShareIndividualPermissions } from "../Folder";
 import { OWAFolder } from "./OWAFolder";
 import type { OWAEMail } from "./OWAEMail";
 import { owaCategoriesPresent } from "./OWAEMail";
 import { OWAError } from "./OWAError";
+import { checkOWAInboxRulesResponse, owaCreatedInboxRuleID, owaEnableInboxRuleRequest, owaGetInboxRulesRequest, owaInboxRuleRequest, parseOWAInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "../EWS/InboxRules";
+import { checkOWAOutOfOfficeResponse, owaGetOutOfOfficeRequest, owaSetOutOfOfficeRequest, parseOWAOutOfOfficeResponse, type OutOfOfficeSettings } from "../EWS/OutOfOffice";
 import type { OWANotifications } from "./Notification/OWANotifications";
 import { OWAExchangeNotifications } from "./Notification/OWAExchangeNotifications";
 import { OWAOffice365Notifications } from "./Notification/OWAOffice365Notifications";
 import { newAccountForProtocol } from "../AccountsList/MailAccounts";
 import { newAddressbookForProtocol } from "../../Contacts/AccountsList/Addressbooks";
 import { OWAGAL } from "../../Contacts/OWA/OWAGAL";
+import { owaResolveNamesRequest } from "../../Contacts/OWA/Request/OWAPersonRequests";
 import { OWAAddressbook } from "../../Contacts/OWA/OWAAddressbook";
 import { newCalendarForProtocol} from "../../Calendar/AccountsList/Calendars";
 import { OWACalendar } from "../../Calendar/OWA/OWACalendar";
@@ -268,6 +273,7 @@ export class OWAAccount extends ExchangeMailAccount {
       };
       if (this.authorizationHeader) {
         let response = await fetch(url, options);
+        this.reportServerResponse({ status: response.status, statusText: response.statusText });
         if ([401, 440].includes(response.status)) {
           return false;
         }
@@ -279,6 +285,7 @@ export class OWAAccount extends ExchangeMailAccount {
         }
       }
       let response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
+      this.reportServerResponse(response);
       if ([401, 440].includes(response.status)) {
         return false;
       }
@@ -287,6 +294,7 @@ export class OWAAccount extends ExchangeMailAccount {
       }
       return Boolean(response.ok || response.json);
     } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
       if (isNetworkError(ex)) {
         this.scheduleNetworkRecovery(ex);
       }
@@ -470,6 +478,10 @@ export class OWAAccount extends ExchangeMailAccount {
           : this.loadCategoryColors().catch(() => {
             // Optional category metadata
           });
+        if (!this.isDependentAccount) {
+          // Плашка автоответа в почте: необязательные данные, ошибка не мешает запуску
+          this.loadOutOfOffice().catch(() => undefined);
+        }
         try {
           if (this.sharedFolderRoot) {
             if (inbox) {
@@ -552,9 +564,37 @@ export class OWAAccount extends ExchangeMailAccount {
    * This is optional metadata and must not prevent mail startup if the server
    * does not expose the configuration endpoint.
    */
+  /**
+   * Основной адрес ящика может отличаться от логина (`nikita.galkin@` при входе как `ngalkin0179@`):
+   * коллеги пишут на основной, и по нему должны находить нас в чате и звонках.
+   * Берём его из настроек сеанса OWA, а если их нет — из каталога по адресу входа.
+   */
+  protected async loadServerEmailAddresses(config: any): Promise<void> {
+    let session = config?.SessionSettings ?? config?.sessionSettings;
+    let addresses = [session?.UserEmailAddress, session?.LogonEmailAddress];
+    if (!addresses.some(address => typeof address == "string" && address.toLowerCase() != this.emailAddress?.toLowerCase())) {
+      try {
+        let response = await this.callOWA(owaResolveNamesRequest(this.emailAddress));
+        let resolutions = ensureArray(response?.ResolutionSet?.Resolution ?? response?.ResolutionSet);
+        // Несколько совпадений — это не наш ящик однозначно, ничего не берём
+        let mailbox = resolutions.length == 1 ? resolutions[0]?.Mailbox : null;
+        if (mailbox && (!mailbox.RoutingType || mailbox.RoutingType == "SMTP")) {
+          addresses.push(mailbox.EmailAddress);
+        }
+      } catch {
+        // Каталог недоступен: попробуем при следующем входе
+      }
+    }
+    await this.setServerEmailAddresses(addresses.filter((address): address is string => typeof address == "string"));
+  }
+
   protected async loadCategoryColors(): Promise<void> {
     try {
       let config = await this.callOWA(new OWAGetUserConfigurationRequest());
+
+      await this.loadServerEmailAddresses(config).catch(() => {
+        // Без основного адреса чат работает по адресу входа, как раньше
+      });
 
       // Load user signature if configured on the server
       let userOptions = config?.UserOptions ?? config?.userOptions ?? config?.Options ?? config?.options ?? config;
@@ -1764,15 +1804,18 @@ export class OWAAccount extends ExchangeMailAccount {
           Content: await attachment.contentAsBase64(),
         }))), "item:Attachments");
       }
-      if (email.headers.hasItems) {
-        request.addField("Message", "ExtendedProperty", [...email.headers.entries()].map(([header, value]) => ({
-          ExtendedFieldURI: {
-            PropertyName: header,
-            DistinguishedPropertySetId: "InternetHeaders",
-            PropertyType: "String",
-          },
-          Value: value,
-        })), null);
+      let extendedProperties = [...email.headers.entries()].map(([header, value]) => ({
+        ExtendedFieldURI: {
+          PropertyName: header,
+          DistinguishedPropertySetId: "InternetHeaders",
+          PropertyType: "String",
+        },
+        Value: value,
+      }) as any);
+      // Кнопки голосования и ответ на них — свойства Exchange, чтобы их видел Outlook
+      extendedProperties.push(...owaVotingProperties(email));
+      if (extendedProperties.length) {
+        request.addField("Message", "ExtendedProperty", extendedProperties, null);
       }
       if (email.inReplyTo) {
         request.addField("Message", "InReplyTo", email.inReplyTo, "item:InReplyTo");
@@ -1806,8 +1849,45 @@ export class OWAAccount extends ExchangeMailAccount {
         CompleteDate: null,
       }, "item:Flag");
     }
-    let result = await this.callOWA(request);
+    let result: any;
+    try {
+      result = await this.callOWA(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, email.from?.emailAddress);
+    }
     await this.refreshAfterSend(email, folder, result);
+  }
+
+  get canSendReadReceipt(): boolean {
+    return true;
+  }
+
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    assert(mdn.sendRawMIME, "Need MDN MIME");
+    // Без копии в «Отправленных», как Outlook
+    let request = new OWACreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("Message", "MimeContent", { CharacterSet: "UTF-8", Value: btoa(mdn.sendRawMIME) });
+    try {
+      await this.callOWA(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, mdn.from?.emailAddress);
+    }
+    // Уведомление уже ушло: сбой отметки не должен вызывать повторную отправку
+    await this.suppressReadReceipt(original).catch(this.errorCallback);
+  }
+
+  /** Exchange `SuppressReadReceipt`: снимает запрос на сервере, чтобы не спросили другие программы */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+    let itemID = (original as OWAEMail).itemID;
+    if (!itemID) {
+      return;
+    }
+    let request = new OWACreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("SuppressReadReceipt", "ReferenceItemId", {
+      __type: "ItemId:#Exchange",
+      Id: itemID,
+    });
+    await this.callOWA(request);
   }
 
   /** Push Sent (and Inbox for send-to-self) without waiting for RowNotification. */
@@ -1965,6 +2045,42 @@ export class OWAAccount extends ExchangeMailAccount {
     return false;
   }
 
+  get canOutOfOffice(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    return parseOWAOutOfOfficeResponse(await this.callOWA(owaGetOutOfOfficeRequest()));
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    checkOWAOutOfOfficeResponse(await this.callOWA(owaSetOutOfOfficeRequest(settings)));
+  }
+
+  get canServerRules(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  async loadInboxRules(): Promise<InboxRuleList> {
+    return parseOWAInboxRulesResponse(await this.callOWA(owaGetInboxRulesRequest()));
+  }
+
+  /** OWA: по команде на операцию, включение и выключение — отдельной командой */
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    for (let operation of operations) {
+      let response = await this.callOWA(owaInboxRuleRequest(operation, removeOutlookRuleBlob));
+      checkOWAInboxRulesResponse(response);
+      if (operation.kind == "delete") {
+        continue;
+      }
+      let id = operation.kind == "create" ? owaCreatedInboxRuleID(response) : operation.rule.id;
+      // Новое правило сервер создаёт включённым
+      if (id && (operation.kind == "set" || !operation.rule.enabled)) {
+        checkOWAInboxRulesResponse(await this.callOWA(owaEnableInboxRuleRequest(id, operation.rule.enabled, removeOutlookRuleBlob)));
+      }
+    }
+  }
+
   async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {
     if (this.mainAccount) {
       let mainAccount = this.mainAccount as OWAAccount;
@@ -2063,6 +2179,13 @@ export class OWAAccount extends ExchangeMailAccount {
     }
   }
 
+  /** Сервер ответил: связь есть, если только это не отказ самого сервера —
+   * 502/503/504 или 5xx со страницей ошибки вместо ответа OWA. HTTP 500 с JSON
+   * OWA отдаёт и на обычные ошибки вроде удалённого письма, сервер при этом работает. */
+  protected reportServerResponse(response: { status?: number, statusText?: string, json?: any }): void {
+    this.connectionStatus.reportHTTPResponse(Number(response?.status) || 0, response?.statusText ?? "", !!response?.json);
+  }
+
   async callOWAShared(url: string, options: RequestInit, throttleRetries = 0, sessionRetried = false) {
     if (!this.hasLoggedIn) {
       throw new LoginError(null, gt`Please login`);
@@ -2095,11 +2218,13 @@ export class OWAAccount extends ExchangeMailAccount {
         response = await appGlobal.remoteApp.OWA.fetchJSON(this.partition, url, options);
       }
     } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
       this.scheduleNetworkRecovery(ex);
       throw ex;
     } finally {
       lock.release();
     }
+    this.reportServerResponse(response);
     if (this.isMailboxSessionLimitError(response)) {
       let headers = options.headers as Record<string, string>;
       let mailbox = headers?.["x-owa-explicitlogonuser"]

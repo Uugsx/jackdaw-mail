@@ -8,7 +8,8 @@
         <IdentitySelector bind:selectedIdentity={fromIdentity}
           bind:fromAddress={mail.from.emailAddress}
           bind:fromName={mail.from.name}
-          workspace={standalone ? mail.folder?.account.workspace : $selectedWorkspace}
+          workspace={composeWorkspace}
+          allowOtherAddress
           compact />
         <EncryptionButtons {mail} identity={fromIdentity} />
         <hbox flex class="spacer" />
@@ -34,7 +35,7 @@
           <span class="label">{$t`To`}</span>
         </hbox>
         <hbox flex class="to-row">
-          <MailAutocomplete bind:this={toAutocomplete} addresses={mail.to} collapseAfter={3}
+          <MailAutocomplete bind:this={toAutocomplete} addresses={mail.to} otherRecipients={[mail.cc, mail.bcc]} collapseAfter={3}
             placeholder={$t`Add recipient`} tabindex={1} autofocus={mail.to.isEmpty && !floating}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
@@ -65,7 +66,7 @@
         </hbox>
         {#if showCC}
           <hbox class="label-cell"><span class="label">{$t`Cc`}</span></hbox>
-          <MailAutocomplete bind:this={ccAutocomplete} addresses={mail.cc} collapseAfter={3}
+          <MailAutocomplete bind:this={ccAutocomplete} addresses={mail.cc} otherRecipients={[mail.to, mail.bcc]} collapseAfter={3}
             placeholder={$t`Add CC recipient`} tabindex={1}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person={person}>
@@ -76,7 +77,7 @@
         {/if}
         {#if showBCC}
           <hbox class="label-cell"><span class="label">{$t`Bcc`}</span></hbox>
-          <MailAutocomplete bind:this={bccAutocomplete} addresses={mail.bcc} collapseAfter={3}
+          <MailAutocomplete bind:this={bccAutocomplete} addresses={mail.bcc} otherRecipients={[mail.to, mail.cc]} collapseAfter={3}
             placeholder={$t`Add BCC recipient`} tabindex={1}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
@@ -91,6 +92,10 @@
         <span class="label">{$t`Subject`}</span>
         <input type="text" bind:value={mail.subject} tabindex={1} placeholder={$t`Subject`} class="font-normal" />
       </hbox>
+      {#if mail.composeSource && mail.inReplyTo}
+        <!-- Коллега по общему ящику тоже отвечает на это письмо или уже ответил -->
+        <CollisionBadge message={mail.composeSource} />
+      {/if}
     </vbox>
     {#if $mail.shouldEncrypt}
       <EncryptionDetails {mail} identity={fromIdentity} bind:encryptionError />
@@ -106,12 +111,18 @@
       requestReadReceipt={mail.requestReadReceipt}
       requestDeliveryReceipt={mail.requestDeliveryReceipt}
       isFlagged={mail.isStarred}
+      followUpReminder={$mail.followUpReminder}
       {showEmojis}
       spellcheckOn={$spellcheckEnabled.value}
       {editorZoom}
       hasSML={!!$mail.sml}
       signatureEnabled={signatureEnabled}
+      canManageTemplates={!standalone}
+      on:insertTemplate={event => catchErrors(() => onInsertTemplate(event.detail))}
+      on:saveAsTemplate={() => catchErrors(onSaveAsTemplate)}
+      on:manageTemplates={() => openSettingsCategoryByID("mail-templates")}
       on:send={() => catchErrors(onSend)}
+      on:sendLater={event => catchErrors(() => onSend(event.detail))}
       on:addAttachment={() => catchErrors(onAddAttachment)}
       on:insertSignature={insertSignature}
       on:toggleHighImportance={toggleHighImportance}
@@ -119,11 +130,14 @@
       on:toggleReadReceipt={() => mail.requestReadReceipt = !mail.requestReadReceipt}
       on:toggleDeliveryReceipt={() => mail.requestDeliveryReceipt = !mail.requestDeliveryReceipt}
       on:toggleFlag={() => mail.isStarred = !mail.isStarred}
+      on:setFollowUp={event => mail.followUpReminder = event.detail}
       on:saveDraft={() => catchErrors(onSaveDraft)}
       on:toggleEmojis={() => showEmojis = !showEmojis}
       on:toggleSpellcheck={() => spellcheckEnabled.value = !spellcheckEnabled.value}
       on:setZoom={event => editorZoom = event.detail}
-      on:openActions={() => showSMLAdd = true} />
+      on:openActions={() => showSMLAdd = true}>
+      <VotingChip slot="tracking" {mail} />
+    </ComposeRibbon>
     </hbox>
     {#if showAttachments}
       <hbox class="attachments-row" aria-label={$t`Attachments`}>
@@ -154,6 +168,7 @@
                 onImagePaste={onImagePaste}
                 extraExtensions={composeEditorExtensions}
                 on:change={onEditorChange} />
+              <MentionSuggest {editor} {mail} searchFunction={searchContactsInOwner} />
             </vbox>
             {#if composeQuoteHtml}
               <vbox class="compose-quote">
@@ -191,11 +206,14 @@
 <script lang="ts">
   import type { EMail, MailImportanceLevel } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
-  import { addFilesAsAttachments } from "../../../logic/Abstract/Attachment";
+  import { addAttachmentsOrCloudLinks } from "../CloudAttachments/addAttachments";
+  import VotingChip from "../Voting/VotingChip.svelte";
+  import MentionSuggest from "../Mentions/MentionSuggest.svelte";
   import { insertImage, removeImageForAttachment, removeOrphanedInlineAttachments } from "../../Shared/Editor/InsertImage";
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { MailIdentity } from "../../../logic/Mail/MailIdentity";
   import { WriteMailJackdawApp, mailApp } from "../MailJackdawApp";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { SpecialFolder } from "../../../logic/Mail/Folder";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { goBack } from "../../AppsBar/selectedApp";
@@ -233,6 +251,7 @@
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
   import { addIdentityDefaultRecipients, addSenderToCC, mentionsAttachment } from "../../../logic/Mail/composeRecipients";
   import { closeFloatingCompose } from "./composeFloating";
+  import { queueSend } from "../SendLater/sendQueue";
   import { focusComposeTypingArea } from "./composeCursor";
   import { editorHasNewComposeText } from "./composeBody";
   import { applyQuoteBodyEdit, mergeComposeQuote, quoteDisplayBody, splitComposeQuote } from "./composeQuote";
@@ -255,16 +274,28 @@
   import Scroll from "../../Shared/Scroll.svelte";
   import SaveIcon from "lucide-svelte/icons/save";
   import { t, gt } from "../../../l10n/l10n";
+  import { applyTemplateToCompose, loadTemplateForInsert, saveComposeAsTemplate } from "../Templates/mailTemplates";
+  import { templateNameFromSubject } from "../../../logic/Mail/Templates/MailTemplate";
+  import { openSettingsCategoryByID } from "../../Settings/Window/CategoriesUtils";
   import { onDestroy, tick } from "svelte";
   import { selectedWorkspace } from "../../MainWindow/Selected";
+  import { get } from "svelte/store";
   import type { Editor } from '@tiptap/core';
   import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
 
   export let mail: EMail;
   export let floating = false;
   export let standalone = false;
-  /** Detached windows delegate the actual send to the owning renderer. */
-  export let sendInOwner: (() => Promise<void>) | null = null;
+  /** Пространство на момент открытия письма. Плавающий редактор глобальный:
+   * при переключении пространства выбор личностей сужался, и «От» с подписью
+   * молча менялись на личность другого пространства. */
+  $: composeWorkspace = standalone ? mail.folder?.account.workspace : workspaceWhenOpened(mail);
+  function workspaceWhenOpened(_mail: EMail) {
+    return get(selectedWorkspace);
+  }
+  /** Detached windows delegate the actual send to the owning renderer.
+   * @param sendAt «Отправить позже» */
+  export let sendInOwner: ((sendAt?: Date) => Promise<void>) | null = null;
   /** Detached windows use the owner's authenticated directory for lookups. */
   export let searchContactsInOwner: (
     (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
@@ -357,6 +388,7 @@
     showBCCForce = mail.bcc.hasItems;
     identityDefaultsFor = null;
     identityDefaultsAdded = [];
+    copyToSelfAdded = null;
     ensureCopyToSelf();
     // setAuthor() called
 
@@ -645,6 +677,24 @@
     void reloadEditorFromMail().then(() => setCursorDefault());
   }
 
+  async function onInsertTemplate(id: number) {
+    let template = await loadTemplateForInsert(id);
+    if (!await waitForComposeReady()) {
+      return;
+    }
+    applyTemplateToCompose(mail, editor, template);
+    syncComposeHtml();
+    // Тема поменялась вне разметки: поле ввода привязано к `mail.subject`
+    mail = mail;
+  }
+
+  async function onSaveAsTemplate() {
+    if (editor) {
+      syncComposeHtml();
+    }
+    await saveComposeAsTemplate(mail, editableHtml, templateNameFromSubject(mail.subject));
+  }
+
   function toggleHighImportance() {
     mail.importanceLevel = mail.importanceLevel === "high" ? "normal" : "high";
   }
@@ -809,11 +859,21 @@
     showBCCForce ||= mail.bcc.hasItems;
   }
 
+  /** Адрес «копия себе», добавленный редактором. При смене отправителя прежний
+   * адрес иначе оставался в Cc: письмо уходило и на него, и получатели его видели. */
+  let copyToSelfAdded: PersonUID | null = null;
   function ensureCopyToSelf() {
-    if (!fromIdentity?.account.copyToSelf || !mail?.from?.emailAddress) {
+    let address = mail?.from?.emailAddress?.toLowerCase();
+    if (copyToSelfAdded && copyToSelfAdded.emailAddress?.toLowerCase() != address) {
+      mail.cc.remove(copyToSelfAdded);
+      copyToSelfAdded = null;
+    }
+    if (!fromIdentity?.account.copyToSelf || !address) {
       return;
     }
+    let before = new Set(mail.cc.contents);
     addSenderToCC(mail);
+    copyToSelfAdded = mail.cc.contents.find(person => !before.has(person)) ?? copyToSelfAdded;
     showCCForce = mail.cc.hasItems;
   }
 
@@ -851,11 +911,11 @@
     if (!file) {
       return;
     }
-    addFilesAsAttachments(mail, [file]);
+    await addAttachmentsOrCloudLinks(mail, [file], editor);
   }
 
   function onFilesDrop(event: CustomEvent) {
-    addFilesAsAttachments(mail, event.detail.files as File[]);
+    addAttachmentsOrCloudLinks(mail, event.detail.files as File[], editor).catch(backgroundError);
   }
 
   async function onFileInlineDrop(event: CustomEvent) {
@@ -919,7 +979,8 @@
   }
 
   let sending = false;
-  async function onSend() {
+  /** @param sendAt «Отправить позже»; без него — сразу (с задержкой для отмены) */
+  async function onSend(sendAt?: Date) {
     if (sending) {
       return;
     }
@@ -950,9 +1011,9 @@
         await resolveComposeRecipients(mail);
       }
       if (sendInOwner) {
-        await sendInOwner();
+        await sendInOwner(sendAt);
       } else {
-        await mail.compose.send();
+        await queueSend(mail, { sendAt });
       }
       onClose();
     } finally {
@@ -1204,6 +1265,7 @@
   .subject-row input {
     width: 100%;
     border: none;
+    box-shadow: none;
     background: transparent;
     color: inherit;
     padding: 4px 0;
@@ -1226,6 +1288,15 @@
     min-width: 0;
     flex-shrink: 0;
     box-sizing: border-box;
+    /* Подсказка @упоминаний позиционируется относительно редактора */
+    position: relative;
+  }
+  .editor :global(a.jackdaw-mention) {
+    background-color: rgba(0, 120, 212, 0.12);
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+    text-decoration: none;
   }
   .editor.loading {
     pointer-events: none;
@@ -1247,6 +1318,14 @@
   }
   .editor :global(.ProseMirror p) {
     margin-block: 0;
+  }
+  /* Тёмная тема: ссылки читаемые голубые, как в просмотре письма.
+     Остальные цвета адаптирует расширение DarkModeColors. */
+  @media (prefers-color-scheme: dark) {
+    .editor :global(.ProseMirror a),
+    .editor :global(.ProseMirror a span) {
+      color: #6cb4ff !important;
+    }
   }
   .compose-quote {
     margin: 0 12px 12px;

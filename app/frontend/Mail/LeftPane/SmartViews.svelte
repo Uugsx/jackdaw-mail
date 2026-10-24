@@ -1,6 +1,6 @@
 <vbox class="smart-views">
   <hbox class="smart-views-header">
-    <hbox class="section-title">{$t`Smart Views`}</hbox>
+    <hbox class="section-title" title={$t`Smart Views`}>{$t`Smart Views`}</hbox>
     <hbox flex />
     <ButtonMenu
       label={$t`Customize smart views`}
@@ -32,20 +32,92 @@
 
   {#if expanded}
     {#each orderedViews as view (view.id)}
-      <button type="button" class="smart-view"
-        class:active={isActive(view.id, $quickSearch)}
-        title={view.label()}
-        aria-pressed={isActive(view.id, $quickSearch)}
-        disabled={!folder}
-        on:contextmenu={(event) => openViewMenu(event, view.id)}
-        on:click={() => catchErrors(() => activate(view.id))}>
-        <svelte:component this={view.icon} size="14px" />
-        <span>{view.label()}</span>
-        <hbox flex />
-        {#if isActive(view.id, $quickSearch)}
-          <CheckIcon size="13px" />
+      {#if view.id == "awaiting-reply"}
+        <!-- Не фильтр папки, а список отслеживаемых писем всех ящиков со сроками -->
+        <button type="button" class="smart-view"
+          class:active={$awaitingReplyExpanded.value}
+          title={view.label()}
+          aria-expanded={$awaitingReplyExpanded.value}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => awaitingReplyExpanded.value = !awaitingReplyExpanded.value}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if $followUpSnapshot.reminders.length}
+            <span class="count" class:overdue={awaitingOverdueCount > 0}
+              title={awaitingOverdueCount > 0
+                ? $t`${awaitingOverdueCount} overdue of ${$followUpSnapshot.reminders.length}`
+                : null}>
+              {awaitingOverdueCount > 0 ? awaitingOverdueCount : $followUpSnapshot.reminders.length}
+            </span>
+          {/if}
+        </button>
+        {#if $awaitingReplyExpanded.value}
+          <AwaitingReplyList />
         {/if}
-      </button>
+      {:else if view.id == "scheduled"}
+        <!-- Не фильтр папки, а очередь «Отправить позже» всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$scheduledExpanded.value}
+          title={view.label()}
+          aria-expanded={$scheduledExpanded.value}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => scheduledExpanded.value = !scheduledExpanded.value}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if scheduledCount}
+            <span class="count" class:overdue={scheduledFailedCount > 0}
+              title={scheduledFailedCount > 0 ? $t`${scheduledFailedCount} not sent` : null}>
+              {scheduledFailedCount > 0 ? scheduledFailedCount : scheduledCount}
+            </span>
+          {/if}
+        </button>
+        {#if $scheduledExpanded.value}
+          <ScheduledSendList />
+        {/if}
+      {:else if view.id == "tasks"}
+        <!-- Не фильтр папки, а страница задач Exchange и писем с флажком всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$tasksViewOpen}
+          title={view.label()}
+          aria-pressed={$tasksViewOpen}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => $tasksViewOpen = !$tasksViewOpen}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if dueTaskCount}
+            <span class="count" class:overdue={overdueTaskCount > 0}>{dueTaskCount}</span>
+          {/if}
+        </button>
+      {:else if view.id == "notes"}
+        <!-- Страница заметок Exchange (IPM.StickyNote) всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$notesViewOpen}
+          title={view.label()}
+          aria-pressed={$notesViewOpen}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => $notesViewOpen = !$notesViewOpen}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+        </button>
+      {:else}
+        <button type="button" class="smart-view"
+          class:active={isActive(view.id, $quickSearch)}
+          title={view.label()}
+          aria-pressed={isActive(view.id, $quickSearch)}
+          disabled={!folder}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => catchErrors(() => activate(view.id))}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+          <hbox flex />
+          {#if isActive(view.id, $quickSearch)}
+            <CheckIcon size="13px" />
+          {/if}
+        </button>
+      {/if}
     {/each}
   {/if}
 </vbox>
@@ -81,6 +153,18 @@
   import MailIcon from "lucide-svelte/icons/mail";
   import FlagIcon from "lucide-svelte/icons/flag";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
+  import HourglassIcon from "lucide-svelte/icons/hourglass";
+  import AwaitingReplyList from "../FollowUp/AwaitingReplyList.svelte";
+  import { followUpSnapshot } from "../FollowUp/followUpReminders";
+  import { tasksState, tasksViewOpen, groupOpenItems } from "../Tasks/tasksStore";
+  import ListChecksIcon from "lucide-svelte/icons/list-checks";
+  import { notesViewOpen } from "../Notes/notesStore";
+  import StickyNoteIcon from "lucide-svelte/icons/sticky-note";
+  import ClockSendIcon from "lucide-svelte/icons/clock-arrow-up";
+  import ScheduledSendList from "../SendLater/ScheduledSendList.svelte";
+  import { scheduledSends } from "../SendLater/sendQueue";
+  import { getLocalStorage } from "../../Util/LocalStorage";
+  import { onMount } from "svelte";
   import CheckIcon from "lucide-svelte/icons/check";
   import ChevronUpIcon from "lucide-svelte/icons/chevron-up";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
@@ -122,7 +206,29 @@
     { id: "unread", label: () => $t`Unread`, icon: MailIcon },
     { id: "starred", label: () => $t`Flagged`, icon: FlagIcon },
     { id: "attachments", label: () => $t`Attachments`, icon: AttachmentIcon },
+    { id: "awaiting-reply", label: () => $t`Waiting for a reply`, icon: HourglassIcon },
+    { id: "tasks", label: () => $t`Tasks`, icon: ListChecksIcon },
+    { id: "notes", label: () => $t`Notes *=> Exchange sticky notes`, icon: StickyNoteIcon },
+    { id: "scheduled", label: () => $t`Scheduled`, icon: ClockSendIcon },
   ];
+
+  const awaitingReplyExpanded = getLocalStorage("mail.smart-views.awaiting-reply.expanded", false);
+  const scheduledExpanded = getLocalStorage("mail.smart-views.scheduled.expanded", false);
+  $: scheduledVisible = $scheduledSends.items.filter(item => item.kind == "later" || item.status != "pending");
+  $: scheduledCount = scheduledVisible.length;
+  $: scheduledFailedCount = scheduledVisible.filter(item => item.status == "failed").length;
+  let minuteTick = Date.now();
+  onMount(() => {
+    let interval = setInterval(() => minuteTick = Date.now(), 60_000);
+    return () => clearInterval(interval);
+  });
+  $: awaitingOverdueCount = $followUpSnapshot.reminders
+    .filter(reminder => reminder.dueAt.getTime() <= minuteTick).length;
+  // Сроки «сегодня» и просроченные — после первого открытия страницы задач
+  $: dueTaskSections = groupOpenItems($tasksState.items, new Date(minuteTick))
+    .filter(section => section.group == "overdue" || section.group == "today");
+  $: dueTaskCount = dueTaskSections.reduce((sum, section) => sum + section.items.length, 0);
+  $: overdueTaskCount = dueTaskSections.find(section => section.group == "overdue")?.items.length ?? 0;
 
   let contextMenu: ContextMenu;
   let contextViewId: SmartViewId | null = null;
@@ -210,6 +316,8 @@
     if (!folder) {
       return;
     }
+    $tasksViewOpen = false;
+    $notesViewOpen = false;
     let generation = ++searchGeneration;
     let currentFolder = folder;
     if (isActive(id, $quickSearch)) {
@@ -349,6 +457,17 @@
     font-size: 12px;
     text-align: start;
     cursor: default;
+    min-width: 0;
+  }
+  /* Длинное название (например, «Запланированные» в узкой панели) сокращается, счётчик виден */
+  .smart-view > span:not(.count) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smart-view > :global(svg) {
+    flex: 0 0 auto;
   }
   .smart-view:hover:not(:disabled):not(.active) {
     background: var(--hover-bg);
@@ -365,5 +484,22 @@
   }
   .smart-view:disabled {
     opacity: 0.45;
+  }
+  .count {
+    flex: 0 0 auto;
+    min-width: 18px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--leftbar-fg) 12%, transparent);
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .count.overdue {
+    background: var(--danger-fg, #c62828);
+    color: #fff;
+    font-weight: 600;
   }
 </style>

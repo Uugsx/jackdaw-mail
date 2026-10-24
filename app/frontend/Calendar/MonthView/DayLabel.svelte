@@ -95,4 +95,19 @@
   .today-icon :global(svg) {
     stroke-width: 1px;
   }
+  /* В очень узкой сетке кружок «сегодня» и иконка наезжали на соседний день. */
+  @container (max-width: 260px) {
+    .day,
+    .today {
+      justify-content: center;
+      padding-inline: 0;
+      font-size: 11px;
+    }
+    .today .date-number {
+      padding: 1px 2px;
+    }
+    .day.today .today-icon {
+      display: none;
+    }
+  }
 </style>

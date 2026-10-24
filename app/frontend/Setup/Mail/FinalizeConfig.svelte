@@ -63,6 +63,11 @@
   }
   input {
     font-size: 20px !important;
+    padding-block: 2px;
+    border: none;
+    border-bottom: 1px solid var(--input-line);
+    border-radius: 0;
+    box-shadow: none;
     margin-block-start: 32px;
     padding-inline-start: 0px;
     margin-inline-start: -1px;

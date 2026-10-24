@@ -13,6 +13,18 @@
         />
     {/if}
   {/if}
+  {#if !$room.isGroup && $room.peerEmail}
+    <MenuItem
+      label={$t`Rename contact`}
+      icon={EditIcon}
+      onClick={startRename}
+      />
+  {/if}
+  <MenuItem
+    label={muted ? $t`Turn on notifications` : $t`Mute notifications`}
+    icon={muted ? BellIcon : BellOffIcon}
+    onClick={() => setChatRoomMuted(room.id, !muted)}
+    />
   <MenuItem
     label={$t`Delete chat`}
     icon={DeleteIcon}
@@ -20,6 +32,18 @@
     />
 </ButtonMenu>
 
+<ConfirmDialog
+  bind:open={renaming}
+  title={$t`Rename contact`}
+  message={$t`The name is changed only on this device. Leave it empty to use the name from the address book.`}
+  confirmLabel={$t`Save`}
+  on:confirm={() => catchErrors(rename)}
+  >
+  <!-- svelte-ignore a11y_autofocus -->
+  <input class="rename" type="text" bind:value={newName} maxlength="120" autofocus
+    placeholder={$room.peerEmail} aria-label={$t`Contact name`}
+    on:keydown={event => { if (event.key == "Enter") { renaming = false; catchErrors(rename); } }} />
+</ConfirmDialog>
 <ConfirmDialog
   bind:open={confirmLeave}
   title={$t`Leave the group "${$room.name}"?`}
@@ -45,6 +69,9 @@
   import MembersIcon from "lucide-svelte/icons/users";
   import LeaveIcon from "lucide-svelte/icons/log-out";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
+  import BellIcon from "lucide-svelte/icons/bell";
+  import BellOffIcon from "lucide-svelte/icons/bell-off";
+  import { mutedChatRoomsSetting, setChatRoomMuted } from "./chatNotificationPrefs";
   import { catchErrors } from "../Util/error";
   import { t } from "../../l10n/l10n";
 
@@ -56,6 +83,19 @@
 
   let isMenuOpen = false;
   let confirmLeave = false;
+  let renaming = false;
+  let newName = "";
+
+  function startRename() {
+    newName = room.account.customNameOf(room.peerEmail) ?? room.name;
+    renaming = true;
+  }
+
+  async function rename() {
+    await room.account.renameContact(room.peerEmail, newName);
+  }
+  const mutedRooms = mutedChatRoomsSetting;
+  $: muted = Array.isArray($mutedRooms.value) && $mutedRooms.value.includes(room.id);
 
   /** Администратор передаёт группу следующему участнику: говорим, кому */
   $: nextAdmin = $room.isAdmin ? $room.memberEmails.find(email => !room.account.isOwnEmail(email)) : null;
@@ -78,3 +118,11 @@
     await room.account.deleteRoom(room);
   }
 </script>
+
+<style>
+  .rename {
+    width: 100%;
+    box-sizing: border-box;
+    margin-block-end: 16px;
+  }
+</style>

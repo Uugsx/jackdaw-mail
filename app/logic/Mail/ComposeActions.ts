@@ -11,7 +11,8 @@ import { fileExtensionForMIMEType } from "../Files/FileType/MIMETypes";
 import { escapeAttr, escapeHTML } from "../Files/FileType/htmlHelper";
 import { backgroundError } from "../../frontend/Util/error";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
-import { UserError, assert, dataURLToBlob, type URLString } from "../util/util";
+import { NotSupported, UserError, assert, dataURLToBlob, type URLString } from "../util/util";
+import type { EWSDeferredSend } from "./SendLater/EWSDeferredSend";
 import { convertTextToHTML } from "../util/convertHTML";
 import { getDateTimeLocale, gt } from "../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
@@ -20,6 +21,7 @@ import { playNotificationSound } from "../../frontend/Shared/NotificationSound";
 import { normalizeSignatureHTML } from "./SignatureHTML";
 import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
 import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
+import { notifyMailSent } from "./Collision/mailSent";
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -304,7 +306,9 @@ export class ComposeActions {
     let forward = this._forward();
     let a = forward.newAttachment();
     a.mimeType = "message/rfc822";
-    a.disposition = ContentDisposition.inline;
+    // Inline-вложение скрыто в редакторе: его не было видно, не удалить,
+    // и проверка «упомянуто вложение» считала письмо без вложений
+    a.disposition = ContentDisposition.attachment;
     a.filename = sanitize.filename(this.email.subject, "email") + ".eml";
     a.content = new File([this.email.mime], a.filename);
     a.size = this.email.size;
@@ -536,8 +540,10 @@ export class ComposeActions {
    *
    * Called by composer.
    * The actual send on the protocol level is done by `EMail.send()`
+   *
+   * @param options.deferred отправку держит сервер до `sendAt` (только `canDeferSendOnServer`)
    */
-  async send(): Promise<void> {
+  async send(options: { deferred?: EWSDeferredSend } = {}): Promise<void> {
     let fromIdentity = this.email.identity;
     assert(fromIdentity, "Need identity set on mail");
     if (fromIdentity.replyTo) {
@@ -589,15 +595,45 @@ export class ComposeActions {
     // попала бы старая версия письма. Собираем MIME заново из текущего тела.
     this.email.mime = undefined;
 
+    let deferred = options.deferred;
+    if (deferred && !account.canDeferSendOnServer) {
+      throw new NotSupported("The server cannot send messages later");
+    }
     let mail = await SendEncrypted.encryptAsNeeded(this.email);
-    await account.send(mail);
-    void playNotificationSound("mail-outgoing");
+    if (deferred) {
+      await account.send(mail, deferred);
+    } else {
+      await account.send(mail);
+      void playNotificationSound("mail-outgoing");
+      notifyMailSent(this.email);
+    }
 
     await this.markComposeSourceFlags();
+    await this.startFollowUpAfterSend(account.dbID, deferred?.sendAt);
 
     this.email.folder = previousFolder;
     this.deleteDrafts(previousDrafts)
       .catch(backgroundError);
+  }
+
+  /** Письмо уже ушло: ошибка напоминания не должна выглядеть как ошибка отправки. */
+  protected async startFollowUpAfterSend(accountID: number | string | null, sentAt = new Date()): Promise<void> {
+    let choice = this.email.followUpReminder;
+    if (!choice) {
+      return;
+    }
+    try {
+      // Динамически: модуль тянет mail.db, а ComposeActions загружается вместе с EMail.
+      let { startFollowUpForEMail } = await import("./FollowUp/trackFollowUp");
+      await startFollowUpForEMail(this.email, choice, {
+        accountId: accountID,
+        sentAt,
+        emailId: null,
+      });
+      this.email.followUpReminder = null;
+    } catch (ex) {
+      backgroundError(ex);
+    }
   }
 
   async saveAsDraft(): Promise<void> {

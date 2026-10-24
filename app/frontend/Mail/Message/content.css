@@ -1,5 +1,7 @@
+/* auto, не 100%: у body поля 16px (content-body.css), и при 100% текст уходил
+   за правый край письма на ширину полей и обрезался */
 body {
-  width: 100%;
+  width: auto;
   max-width: none;
   box-sizing: border-box;
   overflow-x: hidden;
@@ -72,4 +74,14 @@ footer.signature {
 footer.signature p,
 .signature p {
   margin-block: 0;
+}
+
+/* @упоминания: наши (класс) и из Outlook/OWA (id «OWAAM…») */
+a.jackdaw-mention,
+a[id^="OWAAM"] {
+  background-color: rgba(0, 120, 212, 0.12);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+  text-decoration: none;
 }

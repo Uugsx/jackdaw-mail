@@ -6,6 +6,7 @@
   import { VideoStream } from "../../../../logic/Meet/VideoStream";
   import { catchErrors } from "../../../Util/error";
   import { onDestroy } from "svelte";
+  import { routeToLoudspeaker } from "../../callSounds";
 
   export let audioOnly: VideoStream;
 
@@ -13,6 +14,8 @@
   $: audioEl && catchErrors(audioOnly.stream ? startAudio : stopAudio);
   async function startAudio() {
     audioEl.srcObject = audioOnly.stream;
+    // Голос собеседника — в динамик, выбранный в настройках встреч
+    await routeToLoudspeaker(audioEl as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> });
     try {
       await audioEl.play();
     } catch (ex) {

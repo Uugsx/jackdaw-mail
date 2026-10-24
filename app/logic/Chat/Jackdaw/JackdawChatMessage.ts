@@ -1,7 +1,7 @@
 import { ChatMessage, DeliveryStatus } from "../ChatMessage";
 import { Attachment } from "../../Abstract/Attachment";
 import type { JackdawChatRoom } from "./JackdawChatRoom";
-import { parseAttachment, type ChatAttachmentRef } from "./JackdawChatProtocol";
+import { parseAttachment, type ChatAttachmentRef, parseLink, type ChatLinkRef } from "./JackdawChatProtocol";
 import { notifyChangedProperty } from "../../util/Observable";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert } from "../../util/util";
@@ -17,6 +17,9 @@ export class JackdawChatAttachment extends Attachment {
   /** Скачать не удалось. Интерфейс показывает ошибку с кнопкой «Повторить». */
   @notifyChangedProperty
   downloadError: Error | null = null;
+  /** Загрузка своего файла на сервер, 0…1. null — не загружается. */
+  @notifyChangedProperty
+  uploadProgress: number | null = null;
 
   /** Есть ли что скачивать: ссылка на файл на сервере известна, а самого файла у нас нет */
   get needsDownload(): boolean {
@@ -37,17 +40,51 @@ export class JackdawChatMessage extends ChatMessage {
   attachmentRefs: Record<string, ChatAttachmentRef> = {};
   /** Группа: кто из участников прочитал наше сообщение */
   readBy: string[] = [];
+  /** Ссылки на письма и события календаря */
+  @notifyChangedProperty
+  links: ChatLinkRef[] = [];
+  /** Автор изменил текст после отправки */
+  @notifyChangedProperty
+  edited = false;
+  /** Автор удалил сообщение у всех: остаётся только отметка */
+  @notifyChangedProperty
+  deletedForAll = false;
 
-  /** Ответы и пересылка в чате Jackdaw пока не поддерживаются */
   get canReply(): boolean {
-    return false;
+    return !this.deletedForAll;
   }
+  /** Пересылки в чате Jackdaw пока нет */
   get canForward(): boolean {
     return false;
   }
-  /** Удаление — только у себя: протокол пока не умеет отзывать отправленное */
+  /** Править и удалять у всех можно только своё отправленное сообщение */
+  get canEdit(): boolean {
+    return this.outgoing && !this.deletedForAll && this.deliveryStatus != DeliveryStatus.Failed;
+  }
+  get canDeleteForOthers(): boolean {
+    return this.canEdit;
+  }
+  /** Чужое сообщение удаляется только у нас: интерфейс так и подписывает кнопку и спрашивает */
   get deletesOnlyLocally(): boolean {
-    return true;
+    return !this.outgoing;
+  }
+  override canReact = true;
+
+  /** Базовый класс меняет только HTML: текст (превью в списке чатов) приводим в соответствие */
+  override async deleteForOthers(): Promise<void> {
+    await super.deleteForOthers();
+    this.regenerateTextFromHTML();
+    this.reactions.clear();
+    await this.save();
+  }
+
+  protected override async sendRetractionToOthers(): Promise<void> {
+    await this.to.sendDeleteForAll(this);
+    this.deletedForAll = true;
+  }
+
+  override async setMyReactionOnServer(emoji: string | null): Promise<void> {
+    await this.to.sendReaction(this, emoji);
   }
 
   /** Прочитали входящее — сообщаем собеседнику (в группе — участникам) и своим устройствам */
@@ -74,7 +111,10 @@ export class JackdawChatMessage extends ChatMessage {
   toExtraJSON(): any {
     // Статус доставки базовый класс не сохраняет, а для чата он виден пользователю.
     return { ...super.toExtraJSON(), deliveryStatus: this.deliveryStatus, isRead: this.isRead, attachmentRefs: this.attachmentRefs,
-      ...(this.readBy.length ? { readBy: this.readBy } : {}) };
+      ...(this.readBy.length ? { readBy: this.readBy } : {}),
+      ...(this.links.length ? { links: this.links } : {}),
+      ...(this.edited ? { edited: true } : {}),
+      ...(this.deletedForAll ? { deletedForAll: true } : {}) };
   }
 
   fromExtraJSON(json: any): void {
@@ -84,6 +124,9 @@ export class JackdawChatMessage extends ChatMessage {
     }
     this.isRead = sanitize.boolean(json?.isRead, this.outgoing);
     this.readBy = Array.isArray(json?.readBy) ? json.readBy.filter((e: unknown) => typeof e == "string") : [];
+    this.edited = json?.edited === true;
+    this.links = Array.isArray(json?.links) ? json.links.map(parseLink).filter(Boolean) as ChatLinkRef[] : [];
+    this.deletedForAll = json?.deletedForAll === true;
     let refs = json?.attachmentRefs;
     this.attachmentRefs = {};
     if (refs && typeof refs == "object" && !Array.isArray(refs)) {

@@ -8,11 +8,13 @@ import {
   composeWindowMaxAttachmentBytes,
   isComposeWindowPayload,
   type ComposeWindowAttachment,
+  type ComposeWindowFollowUp,
   type ComposeWindowMail,
   type ComposeWindowPerson,
   type ComposeWindowSource,
 } from "../../../logic/Mail/Composer/ComposeWindowProtocol";
 import { blobToBase64, assert, base64ToUint8Array } from "../../../logic/util/util";
+import { normalizeFollowUpChoice, type FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
 
 function serializeDate(date: Date | null | undefined): string | null {
   return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
@@ -37,7 +39,8 @@ function deserializePerson(person: ComposeWindowPerson): PersonUID {
   return new PersonUID(person.emailAddress, person.name ?? undefined);
 }
 
-async function serializeAttachment(attachment: Attachment, includeContent = true): Promise<ComposeWindowAttachment> {
+/** Вложение в виде данных: для отдельного окна редактора, очереди отправки и шаблонов */
+export async function serializeAttachment(attachment: Attachment, includeContent = true): Promise<ComposeWindowAttachment> {
   let contentBase64: string | null = null;
   if (includeContent && attachment.content) {
     if (attachment.content.size > composeWindowMaxAttachmentBytes) {
@@ -140,6 +143,7 @@ export async function serializeComposeMail(
     requestReadReceipt: !!mail.requestReadReceipt,
     requestDeliveryReceipt: !!mail.requestDeliveryReceipt,
     signatureRemovedByUser: !!mail.signatureRemovedByUser,
+    followUpReminder: serializeFollowUp(mail.followUpReminder),
     isDraft: !!mail.isDraft,
     isDeleted: !!mail.isDeleted,
     shouldEncrypt: !!mail.shouldEncrypt,
@@ -155,6 +159,15 @@ export async function serializeComposeMail(
     assert(isComposeWindowPayload(payload), "Compose window: payload is too large or malformed");
   }
   return payload;
+}
+
+function serializeFollowUp(choice: FollowUpChoice | null): ComposeWindowFollowUp | null {
+  if (!choice) {
+    return null;
+  }
+  return choice.mode == "date"
+    ? { mode: "date", dueAt: choice.dueAt.toISOString() }
+    : { mode: choice.mode, days: choice.days };
 }
 
 function deserializeSource(folder: ReturnType<MailAccount["getSpecialFolder"]>, source: ComposeWindowSource): EMail {
@@ -221,6 +234,7 @@ export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail)
   mail.requestReadReceipt = payload.requestReadReceipt;
   mail.requestDeliveryReceipt = payload.requestDeliveryReceipt;
   mail.signatureRemovedByUser = payload.signatureRemovedByUser === true;
+  mail.followUpReminder = normalizeFollowUpChoice(payload.followUpReminder);
   mail.isDraft = payload.isDraft;
   mail.isDeleted = payload.isDeleted;
   mail.shouldEncrypt = payload.shouldEncrypt;
@@ -241,25 +255,31 @@ export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail)
 
   mail.attachments.clear();
   for (let item of payload.attachments) {
-    let attachment = mail.newAttachment();
-    attachment.filename = item.filename;
-    attachment.filepathLocal = item.filepathLocal;
-    attachment.mimeType = item.mimeType ?? "application/octet-stream";
-    attachment.size = item.size;
-    attachment.disposition = item.disposition as ContentDisposition;
-    attachment.related = item.related;
-    attachment.contentID = item.contentID;
-    if (item.contentBase64 !== null) {
-      attachment.content = new File([
-        base64ToUint8Array(item.contentBase64),
-      ], item.filename, { type: attachment.mimeType });
-      attachment.size = attachment.content.size;
-    }
-    mail.attachments.add(attachment);
+    addComposeAttachment(mail, item);
   }
 
   mail.identity = account.identities.find(identity => identity.id === payload.identityID)
     ?? account.identities.find(identity => identity.isEMailAddress(payload.from.emailAddress))
     ?? account.identities.first;
   mail.loadedBody = true;
+}
+
+/** Добавляет в письмо вложение, сохранённое `serializeAttachment` */
+export function addComposeAttachment(mail: EMail, item: ComposeWindowAttachment): Attachment {
+  let attachment = mail.newAttachment();
+  attachment.filename = item.filename;
+  attachment.filepathLocal = item.filepathLocal;
+  attachment.mimeType = item.mimeType ?? "application/octet-stream";
+  attachment.size = item.size;
+  attachment.disposition = item.disposition as ContentDisposition;
+  attachment.related = item.related;
+  attachment.contentID = item.contentID;
+  if (item.contentBase64 !== null) {
+    attachment.content = new File([
+      base64ToUint8Array(item.contentBase64),
+    ], item.filename, { type: attachment.mimeType });
+    attachment.size = attachment.content.size;
+  }
+  mail.attachments.add(attachment);
+  return attachment;
 }

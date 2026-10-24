@@ -43,7 +43,7 @@
       {#each sortDefs as sort (sort.id)}
         <MenuItem
           label={sort.label()}
-          selected={$mailListSort == sort.sort}
+          selected={sortMenuMatches(sort.sort, $mailListSort)}
           onClick={() => selectSort(sort.sort)} />
       {/each}
     </Menu>
@@ -70,6 +70,7 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { quickSearch } from "../Selected";
   import {
+    type QuickFilterDef,
     type QuickFilterId,
     type MailListSort,
     activateMailListSort,
@@ -87,6 +88,7 @@
   import ListFilterIcon from "lucide-svelte/icons/list-filter";
   import XIcon from "lucide-svelte/icons/x";
   import { hideTooltips } from "../../Shared/tooltip";
+  import { mailListSortColumn, mailListSortLabel } from "../mailListColumns";
 
   type UnreadSyncFolder = Folder & {
     syncUnreadMessages?: () => Promise<boolean | void>;
@@ -107,8 +109,9 @@
   $: filterDefs = allQuickFilters.filter(f => f.kind == "filter");
   $: sortDefs = allQuickFilters.filter(f => f.kind == "sort");
   $: activateMailListSort(folder);
-  $: currentSortDef = sortDefs.find(s => s.sort === $mailListSort) ?? sortDefs[0];
-  $: currentSortLabel = currentSortDef?.label() ?? $t`Newest`;
+  $: currentSortDef = sortDefs.find(s => s.sort === $mailListSort);
+  // Сортировки из заголовков столбцов (размер, флажок…) в меню нет
+  $: currentSortLabel = sortLabel(currentSortDef, $mailListSort, $t);
   $: sortTooltip = `${$t`Sort messages`}: ${currentSortLabel}`;
   $: activeFilterCount = [
     $quickSearch.isRead === false,
@@ -117,6 +120,7 @@
     $quickSearch.hasAttachment === true,
     $quickSearch.isOutgoing === true || $quickSearch.isOutgoing === false,
     $quickSearch.isReplied === true,
+    $quickSearch.mentionsMe === true,
   ].filter(Boolean).length;
   $: anyActive = activeFilterCount > 0;
   $: filterTooltip = anyActive
@@ -145,6 +149,7 @@
       case "fromMe": return search.isOutgoing === true;
       case "toMe": return search.isOutgoing === false;
       case "replied": return search.isReplied === true;
+      case "mentionsMe": return search.mentionsMe === true;
     }
     return false;
   }
@@ -171,6 +176,9 @@
         break;
       case "replied":
         quickSearch.isReplied = quickSearch.isReplied ? null : true;
+        break;
+      case "mentionsMe":
+        quickSearch.mentionsMe = quickSearch.mentionsMe ? null : true;
         break;
     }
     hideTooltips();
@@ -200,6 +208,22 @@
     }, 0);
   }
 
+  /** `_t` — чтобы подпись обновлялась при смене языка */
+  function sortLabel(def: QuickFilterDef | undefined, sort: MailListSort, _t: unknown): string {
+    return def?.label() ?? mailListSortLabel(sort);
+  }
+
+  /** «По отправителю» и «По теме» отмечены при любом направлении, заданном в заголовке столбца. */
+  function sortMenuMatches(menuSort: MailListSort | undefined, current: MailListSort): boolean {
+    if (!menuSort || menuSort == current) {
+      return menuSort == current;
+    }
+    if (menuSort != "sender" && menuSort != "subject") {
+      return false;
+    }
+    return mailListSortColumn(menuSort).column == mailListSortColumn(current).column;
+  }
+
   function selectSort(sort: MailListSort) {
     setMailListSort(folder, sort);
     hideTooltips();
@@ -213,6 +237,7 @@
     quickSearch.hasAttachment = null;
     quickSearch.isOutgoing = null;
     quickSearch.isReplied = null;
+    quickSearch.mentionsMe = null;
     filterMenuOpen = false;
     hideTooltips();
   }

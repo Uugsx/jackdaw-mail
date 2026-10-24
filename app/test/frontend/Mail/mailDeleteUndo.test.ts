@@ -8,10 +8,12 @@ import type { Folder } from "../../../logic/Mail/Folder";
 
 const mocks = vi.hoisted(() => ({
   openEMailMessage: vi.fn(async () => undefined),
+  openMailFolder: vi.fn(),
 }));
 
 vi.mock("../../../frontend/Mail/open", () => ({
   openEMailMessage: mocks.openEMailMessage,
+  openMailFolder: mocks.openMailFolder,
 }));
 vi.mock("../../../logic/Mail/Folder", () => ({
   SpecialFolder: { Normal: "normal", Trash: "trash", Spam: "spam" },
@@ -120,6 +122,18 @@ function currentUndo(): () => Promise<void> {
   return state!.undo;
 }
 
+/** Перенос как в IMAP: на сервере письмо вернулось, а в списке папки появится
+ * только новой копией после синхронизации. Объект из Корзины помечен удалённым. */
+function moveOnServerOnly(target: FakeFolder) {
+  target.moveMessagesHere = vi.fn(async (messages: Collection<EMail>) => {
+    for (let message of messages.contents) {
+      (message.folder as FakeFolder).messages.remove(message);
+      (message as any).isDeleted = true;
+      target.pendingOnServer.push({ pID: `back-${message.pID}`, messageID: message.messageID, folder: target, isDeleted: false } as unknown as EMail);
+    }
+  }) as Folder["moveMessagesHere"];
+}
+
 describe("отмена удаления писем", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -217,5 +231,46 @@ describe("отмена удаления писем", () => {
     await expect(currentUndo()()).rejects.toBe(serverError);
     expect(mocks.openEMailMessage).not.toHaveBeenCalled();
     expect(get(mailUndoToast)).toBeNull();
+  });
+
+  test("открывает вернувшуюся копию в исходной папке, а не удалённый объект в Корзине", async () => {
+    let account = makeAccount();
+    let inbox = makeFolder(account);
+    let trash = makeFolder(account, SpecialFolder.Trash);
+    account.trash = trash;
+    copyToTrash(inbox, trash);
+    moveOnServerOnly(inbox);
+    let [message] = [makeMessage(inbox, "a")];
+
+    await deleteMessagesWithUndo([message]);
+    await currentUndo()();
+
+    expect(inbox.fetchCalls).toBe(1);
+    expect(mocks.openEMailMessage).toHaveBeenCalledTimes(1);
+    let opened = (mocks.openEMailMessage.mock.calls[0] as unknown as [EMail])[0];
+    expect(opened.folder).toBe(inbox);
+    expect(opened.messageID).toBe("a@example.com");
+    expect(opened.isDeleted).toBe(false);
+  });
+
+  test("если копия ещё не пришла, показывает исходную папку", async () => {
+    let account = makeAccount();
+    let inbox = makeFolder(account);
+    let trash = makeFolder(account, SpecialFolder.Trash);
+    account.trash = trash;
+    copyToTrash(inbox, trash);
+    inbox.moveMessagesHere = vi.fn(async (messages: Collection<EMail>) => {
+      for (let message of messages.contents) {
+        (message.folder as FakeFolder).messages.remove(message);
+        (message as any).isDeleted = true;
+      }
+    }) as Folder["moveMessagesHere"];
+    let message = makeMessage(inbox, "a");
+
+    await deleteMessagesWithUndo([message]);
+    await currentUndo()();
+
+    expect(mocks.openEMailMessage).not.toHaveBeenCalled();
+    expect(mocks.openMailFolder).toHaveBeenCalledWith(inbox);
   });
 });

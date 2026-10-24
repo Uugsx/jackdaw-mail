@@ -40,6 +40,16 @@ const realFileSharingAccounts = new ArrayColl<FileSharingAccount>();
 let realMe: Person;
 
 export async function testDataOn() {
+  // Тестовая сборка автопроверок: у профиля копии одни и те же демо-чаты при каждом запуске
+  // (проверка перезапуска), у разных копий — разные адреса. Поэтому случайности здесь — только из faker.
+  if (import.meta.env.VITE_JACKDAW_UI_TEST == "1") {
+    let seed = Number(localStorage.getItem("uiTest.demoSeed"));
+    if (!seed) {
+      seed = Math.floor(Math.random() * 1e9) + 1;
+      localStorage.setItem("uiTest.demoSeed", String(seed));
+    }
+    faker.seed(seed);
+  }
   realAddressbooks.replaceAll(appGlobal.addressbooks);
   realMailAccounts.replaceAll(appGlobal.emailAccounts);
   realChatAccounts.replaceAll(appGlobal.chatAccounts);
@@ -138,9 +148,9 @@ export function fakeGroups(groupCount = 10, maxMemberCount = 20, addressbook: Ad
     let group = new Group();
     group.name = unique(faker.person.jobTitle);
     group.addressbook = addressbook;
-    let memberCount = 2 + Math.floor(Math.random() * (maxMemberCount - 2));
+    let memberCount = 2 + Math.floor(faker.number.float() * (maxMemberCount - 2));
     for (let iG = 1; iG <= memberCount; iG++) {
-      let person = persons.getIndex(Math.floor(Math.random() * persons.length));
+      let person = persons.getIndex(Math.floor(faker.number.float() * persons.length));
       if (group.participants.has(person)) {
         continue;
       }
@@ -158,7 +168,7 @@ export class FakeChatPerson extends Person {
   constructor() {
     super();
     this.id = faker.string.uuid();
-    let male = Math.random() < 0.5;
+    let male = faker.number.float() < 0.5;
     this.firstName = faker.person.firstName(male ? "male" : "female");
     this.lastName = faker.person.lastName();
     this.name = this.firstName + " " + this.lastName;
@@ -299,32 +309,32 @@ class FakeEMail extends EMail {
     this.id = emailNr + '@' + this.folder.account.emailAddress;
     this.sent = faker.date.recent({ days: 30 });
     this.received = new Date(this.sent.getTime() + 500);
-    this.size = Math.ceil(Math.random() * 2048 + 200);
+    this.size = Math.ceil(faker.number.float() * 2048 + 200);
     this.isRead = this.received < lastReadTime;
     this.subject = faker.hacker.phrase().replace("!", "").replace(/,.*/, "");
-    this.outgoing = Math.random() < 0.4;
+    this.outgoing = faker.number.float() < 0.4;
     this.contact = person;
     this.from = this.outgoing ? meUID : pUID;
     this.to.add(this.outgoing ? pUID : meUID);
-    for (let i = Math.floor(Math.random() * 3); i > 0; i--) {
+    for (let i = Math.floor(faker.number.float() * 3); i > 0; i--) {
       this.to.add(new FakeMailPerson());
     }
-    for (let i = Math.floor(Math.random() * 10); i > 0; i--) {
+    for (let i = Math.floor(faker.number.float() * 10); i > 0; i--) {
       this.cc.add(new FakeMailPerson());
     }
-    if (Math.random() < 0.2) {
+    if (faker.number.float() < 0.2) {
       this.bcc.add(new FakeMailPerson());
     }
     let paragraphs: string[] = [];
-    for (let iP = Math.floor(Math.random() * 7) + 1; iP > 0; iP--) {
+    for (let iP = Math.floor(faker.number.float() * 7) + 1; iP > 0; iP--) {
       let paragraph = faker.hacker.phrase().replace("!", ".");
-      for (let iS = Math.floor(Math.random() * 5); iS > 0; iS--) {
+      for (let iS = Math.floor(faker.number.float() * 5); iS > 0; iS--) {
         paragraph += " " + faker.hacker.phrase().replace("!", ".");
       }
       paragraphs.push(paragraph);
     }
     this.text = paragraphs.join("\n\n");
-    if (Math.random() > 0.3) {
+    if (faker.number.float() > 0.3) {
       this.html = `<p>${paragraphs.join("</p><p>")}</p>`;
     }
   }
@@ -433,12 +443,12 @@ class FakeChatMessage extends ChatMessage {
     this.id = faker.string.uuid();
     this.to = chat;
     this.contact = chat.contact;
-    this.outgoing = Math.random() < 0.4;
+    this.outgoing = faker.number.float() < 0.4;
     this.text = faker.hacker.phrase().replace("!", "");
     this.html = this.text;
   }
   setFakeTime(lastTime: Date) {
-    let isFollowup = Math.random() < 0.5;
+    let isFollowup = faker.number.float() < 0.5;
     this.sent = isFollowup
       ? faker.date.soon({ days: 1, refDate: lastTime })
       : faker.date.recent({ days: 30 });
@@ -477,9 +487,9 @@ class FakeEvent extends Event {
     this.title = faker.company.buzzPhrase();
     this.descriptionText = faker.hacker.phrase() + "\n" + faker.hacker.phrase();
     this.location = faker.datatype.boolean() ? faker.location.streetAddress() : faker.location.nearbyGPSCoordinate().join(", ");
-    let participantsCount = Math.random() * 5;
+    let participantsCount = faker.number.float() * 5;
     for (let i = 1; i < participantsCount; i++) {
-      let participant = this.calendar.randomParticipants.getIndex(Math.floor(Math.random() * this.calendar.randomParticipants.length));
+      let participant = this.calendar.randomParticipants.getIndex(Math.floor(faker.number.float() * this.calendar.randomParticipants.length));
       this.participants.add(participant);
     }
   }
@@ -497,7 +507,7 @@ export class FakeFileSharingAccount extends FileSharingAccount {
   constructor() {
     super();
     this.name = "G Drive";
-    let dirCount = Math.random() * 10;
+    let dirCount = faker.number.float() * 10;
     let dirs: Directory[] = [];
     for (let i = 0; i < dirCount; i++) {
       let parentDir = this.newDirectory(faker.system.fileName({ extensionCount: 0 }));
@@ -516,7 +526,7 @@ export function fakeSharedDir(persons: Collection<Person>): Directory {
     personDirectory.sentToFrom = person;
     personDirectory.lastMod = faker.date.past();
     sharedDirectory.subDirs.add(personDirectory);
-    let dirCount = 2 + Math.random() * 10;
+    let dirCount = 2 + faker.number.float() * 10;
     for (let i = 0; i < dirCount; i++) {
       fakeDir(personDirectory).sentToFrom = person;
     }
@@ -528,12 +538,12 @@ export function fakeDir(parentDir: Directory): Directory {
   let name = unique(() => faker.system.fileName({ extensionCount: 0 }));
   let directory = parentDir.newDirectory(name);
   directory.lastMod = faker.date.past();
-  let dirCount = Math.random() * 6;
+  let dirCount = faker.number.float() * 6;
   dirCount -= 4;
   for (let i = 0; i < dirCount; i++) {
     fakeDir(directory);
   }
-  let fileCount = 2 + Math.random() * 20;
+  let fileCount = 2 + faker.number.float() * 20;
   for (let i = 0; i < fileCount; i++) {
     fakeFile(directory);
   }
@@ -579,7 +589,7 @@ function avatar(male: boolean): string {
   let list = avatarFiles[listName];
   assert(list, "Call readAvatarList() first");
   assert(list?.hasItems, "No avatars found");
-  let i = Math.floor(Math.random() * list.length);
+  let i = Math.floor(faker.number.float() * list.length);
   console.log(listName, list.get(i));
   return list.get(i);
 }

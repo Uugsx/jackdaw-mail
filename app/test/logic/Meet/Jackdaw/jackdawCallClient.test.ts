@@ -12,13 +12,19 @@ class FakeSocket implements CallSocket {
   readyState = 0;
   sent: any[] = [];
   closed: { code?: number } | null = null;
+  /** Живой сервер отвечает на ping. false — TCP мёртв, хотя сокет ещё «открыт» */
+  answersPings = true;
   onopen: ((event: unknown) => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: unknown) => void) | null = null;
   onerror: ((event: unknown) => void) | null = null;
 
   send(data: string) {
-    this.sent.push(JSON.parse(data));
+    let message = JSON.parse(data);
+    this.sent.push(message);
+    if (message.type == "ping" && this.answersPings) {
+      this.receive({ type: "pong" });
+    }
   }
   close(code?: number) {
     this.readyState = 3;
@@ -157,6 +163,8 @@ describe("клиент сигналинга", () => {
   let credential: any;
   let incoming: any[];
   let client: JackdawCallClient;
+  /** Ящики в приложении этого устройства; пусто — как старый клиент или аккаунты ещё не загружены */
+  let mailboxes: string[];
 
   function socket() {
     return sockets[sockets.length - 1];
@@ -167,6 +175,7 @@ describe("клиент сигналинга", () => {
       url: "wss://calls.test/v1/calls",
       getCredential: () => credential,
       getDisplayName: () => "Alice",
+      getMailboxEmails: () => mailboxes,
       createSocket: () => {
         let created = new FakeSocket();
         sockets.push(created);
@@ -192,7 +201,146 @@ describe("клиент сигналинга", () => {
     storage = new MemoryStorage();
     credential = { kind: "license", licenseKey: "JACKDAW-PRO-AAAA-BBBB-CCCC-DDDD", deviceId: "device-1234" };
     incoming = [];
+    mailboxes = [];
     client = makeClient();
+  });
+
+  test("вход сообщает серверу ящики этого устройства", () => {
+    mailboxes = ["Bob@Example.com", "", "bob@example.com", "support@example.com"];
+    client.start();
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toEqual(["bob@example.com", "support@example.com"]);
+  });
+
+  test("узнали основной адрес ящика после входа — переподключение сообщает его серверу", () => {
+    // Вход в Exchange по логину; основной адрес приходит из настроек OWA уже после подключения к звонкам
+    mailboxes = ["ngalkin0179@example.com"];
+    connectOnline(["ngalkin0179@example.com"]);
+    let before = sockets.length;
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before);
+    mailboxes = ["ngalkin0179@example.com", "nikita.galkin@example.com"];
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before + 1);
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toEqual(["ngalkin0179@example.com", "nikita.galkin@example.com"]);
+    socket().receive({
+      type: "welcome", emails: ["ngalkin0179@example.com", "nikita.galkin@example.com"], resumedCalls: [],
+      proofs: { "nikita.galkin@example.com": "proof-primary" },
+    });
+    expect(client.verifiedEmails).toEqual(["ngalkin0179@example.com", "nikita.galkin@example.com"]);
+    // Больше не переподключается
+    socket().receive({ type: "pong" });
+    timers.advance(25_000);
+    expect(sockets.length).toBe(before + 1);
+  });
+
+  test("адрес коллеги с той же лицензией не становится своим и забывается", () => {
+    // Так было до исправления сервера: подтверждение сотрудника приходило всем устройствам лицензии
+    mailboxes = ["bob@example.com"];
+    storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({
+      "bob@example.com": "proof-bob",
+      "alice@example.com": "proof-alice-from-license",
+    }));
+    client.start();
+    socket().open();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-bob"]);
+    socket().receive({
+      type: "welcome", emails: ["alice@example.com", "bob@example.com"], resumedCalls: [],
+      proofs: { "alice@example.com": "proof-alice-2" },
+    });
+    expect(client.verifiedEmails).toEqual(["bob@example.com"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "bob@example.com": "proof-bob" });
+  });
+
+  test("подтверждение адреса коллеги, пришедшее в сети, не делает его своим", () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    socket().receive({ type: "verified", email: "alice@example.com", proof: "proof-alice" });
+    expect(client.verifiedEmails).toEqual(["bob@example.com"]);
+    expect(storage.getItem("jackdaw.calls.email-proofs.v1")).toBeNull();
+  });
+
+  test("подтверждение, начатое на этом устройстве, принимается и вне списка ящиков", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123 456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    expect(client.verifiedEmails).toEqual(["alias@example.com", "bob@example.com"]);
+    socket().receive({ type: "verified", email: "primary@example.com", proof: "proof-primary", requestedEmail: "bob@example.com" });
+    expect(client.verifiedEmails).toContain("primary@example.com");
+  });
+
+  test("псевдоним, подтверждённый на этом устройстве, остаётся своим после переподключения", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123 456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    // Новое соединение, как после сна или перезапуска сервера
+    client.stop();
+    client = makeClient();
+    client.start();
+    socket().open();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-alias"]);
+    expect(socket().last("hello").mailboxEmails).toEqual(["bob@example.com"]);
+    socket().receive({ type: "welcome", emails: ["alias@example.com", "bob@example.com"], resumedCalls: [] });
+    expect(client.verifiedEmails).toEqual(["alias@example.com", "bob@example.com"]);
+    expect(JSON.parse(storage.getItem("jackdaw.calls.email-proofs.v1")!)).toEqual({ "alias@example.com": "proof-alias" });
+  });
+
+  test("отключённый псевдоним больше не считается своим", async () => {
+    mailboxes = ["bob@example.com"];
+    connectOnline(["bob@example.com"]);
+    let finished = client.finishVerification("alias@example.com", "123456");
+    socket().receive({ type: "verified", email: "alias@example.com", proof: "proof-alias" });
+    await finished;
+    client.forgetEmail("alias@example.com");
+    expect(storage.getItem("jackdaw.calls.own-aliases.v1")).toBeNull();
+  });
+
+  test("пока ящики неизвестны, сохранённые подтверждения не отбрасываются", () => {
+    storage.setItem("jackdaw.calls.email-proofs.v1", JSON.stringify({ "alice@example.com": "proof-1" }));
+    client.start();
+    socket().open();
+    expect(socket().last("hello").mailboxEmails).toBeUndefined();
+    expect(socket().last("hello").emailProofs).toEqual(["proof-1"]);
+  });
+
+  test("статус «не беспокоить» уходит на сервер, сохраняется и сам снимается по сроку", () => {
+    connectOnline();
+    client.setMyStatus("dnd", 60);
+    expect(socket().last("status-set")).toMatchObject({ type: "status-set", status: "dnd", untilIn: 60 });
+    expect(client.myStatus).toBe("dnd");
+    expect(JSON.parse(storage.getItem("jackdaw.calls.status.v1")!).status).toBe("dnd");
+    timers.advance(61_000);
+    expect(client.myStatus).toBe("available");
+    expect(storage.getItem("jackdaw.calls.status.v1")).toBeNull();
+  });
+
+  test("сохранённый статус отправляется при входе, а статус с другого устройства применяется", () => {
+    storage.setItem("jackdaw.calls.status.v1", JSON.stringify({ status: "busy", until: null }));
+    client = makeClient();
+    client.start();
+    socket().open();
+    expect(socket().last("hello").status).toBe("busy");
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    socket().receive({ type: "status", status: "dnd", untilIn: 30 });
+    expect(client.myStatus).toBe("dnd");
+    expect(client.myStatusUntil).toBe(timers.now + 30_000);
+  });
+
+  test("статус собеседника берётся из справочника", () => {
+    connectOnline();
+    socket().receive({
+      type: "lookup-result", reachable: { "bob@example.com": true, "carol@example.com": true },
+      statuses: { "bob@example.com": "dnd", "carol@example.com": "weird" },
+    });
+    expect(client.statusOf("Bob@Example.com")).toBe("dnd");
+    expect(client.statusOf("carol@example.com")).toBe("available");
+    socket().receive({ type: "lookup-result", reachable: { "bob@example.com": false } });
+    expect(client.statusOf("bob@example.com")).toBe("available");
   });
 
   test("без лицензии не подключается", () => {
@@ -294,6 +442,139 @@ describe("клиент сигналинга", () => {
     expect(socket().last("hello").activeCalls).toEqual(["call-0001", "call-0002", "call-0003"]);
     socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: ["call-0002"] });
     expect(reconnected).toEqual([["call-0001", false], ["call-0002", true]]);
+  });
+
+  test("закрытие 1008 до welcome без error не останавливает клиент: переподключение с паузой", () => {
+    // Сервер закрывает 1008 и при «slow consumer» / «closed by server» — это не отказ в лицензии.
+    client.start();
+    socket().open();
+    socket().drop(1008);
+    expect(client.status).toBe("offline");
+    expect(client.lastError).toBeNull();
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+  });
+
+  test("повторные закрытия 1008 до welcome — паузы растут, клиент не сдаётся", () => {
+    client.start();
+    for (let attempt = 0; attempt < RECONNECT_DELAYS_MS.length + 2; attempt++) {
+      socket().open();
+      socket().drop(1008);
+      expect(client.status).toBe("offline");
+      timers.advance(reconnectDelay(attempt));
+    }
+    expect(sockets).toHaveLength(RECONNECT_DELAYS_MS.length + 3);
+  });
+
+  test("перезапуск сервера: закрытие 1001 и обрыв до welcome ведут к переподключению", () => {
+    connectOnline();
+    socket().drop(1001);
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    // Сервис ещё не поднялся: прокси обрывает соединение до открытия.
+    socket().drop(1006);
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[1]);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    expect(sockets).toHaveLength(3);
+  });
+
+  test("временная ошибка входа (сервис лицензий недоступен) — переподключение с причиной", () => {
+    for (let code of ["service_unavailable", "rate_limited", "internal_error"]) {
+      sockets = [];
+      client = makeClient();
+      client.start();
+      socket().open();
+      socket().receive({ type: "error", code, message: "x", requestType: "hello" });
+      expect(client.status, code).toBe("offline");
+      expect(client.lastError, code).toBeTruthy();
+      expect(socket().closed, code).toBeTruthy();
+      timers.advance(RECONNECT_DELAYS_MS[0]);
+      expect(sockets, code).toHaveLength(2);
+      socket().open();
+      socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+      expect(client.status, code).toBe("online");
+      expect(client.lastError, code).toBeNull();
+      client.stop();
+    }
+  });
+
+  test("отказ устройству или неверные учётные данные — тоже окончательный отказ", () => {
+    for (let code of ["device_not_activated", "invalid_credential"]) {
+      sockets = [];
+      client = makeClient();
+      client.start();
+      socket().open();
+      socket().receive({ type: "error", code, message: "x", requestType: "hello" });
+      expect(client.status, code).toBe("rejected");
+      timers.advance(120_000);
+      expect(sockets, code).toHaveLength(1);
+    }
+  });
+
+  test("отзыв лицензии у подключённого клиента: error на hello, затем закрытие 1008 — отказ", () => {
+    connectOnline();
+    socket().receive({ type: "error", code: "license_inactive", message: "x", requestType: "hello" });
+    socket().drop(1008);
+    expect(client.status).toBe("rejected");
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(1);
+  });
+
+  test("после отказа restart() подключается снова", () => {
+    client.start();
+    socket().open();
+    socket().receive({ type: "error", code: "license_inactive", message: "x", requestType: "hello" });
+    expect(client.status).toBe("rejected");
+    client.restart();
+    expect(client.status).toBe("connecting");
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    expect(client.lastError).toBeNull();
+  });
+
+  test("сервер не отвечает на hello — соединение пересоздаётся по таймауту", () => {
+    client.start();
+    socket().open();
+    expect(client.status).toBe("connecting");
+    timers.advance(20_000);
+    expect(client.status).toBe("offline");
+    expect(sockets[0].closed).toBeTruthy();
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    // После входа таймаут не срабатывает.
+    let count = sockets.length;
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(count);
+    expect(client.status).toBe("online");
+  });
+
+  test("время потери связи: с первого обрыва, не сбрасывается кнопкой, сбрасывается после входа", () => {
+    timers.now = 1_000_000;
+    connectOnline();
+    expect(client.offlineSince).toBeNull();
+    socket().drop();
+    expect(client.offlineSince).toBe(1_000_000);
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    socket().drop();
+    expect(client.offlineSince).toBe(1_000_000);
+    client.restart();
+    expect(client.offlineSince).toBe(1_000_000);
+    socket().open();
+    socket().receive({ type: "welcome", emails: [], resumedCalls: [] });
+    expect(client.offlineSince).toBeNull();
+    client.stop();
+    expect(client.offlineSince).toBeNull();
   });
 
   test("stop() не переподключается", () => {
@@ -457,6 +738,85 @@ describe("клиент сигналинга", () => {
     connectOnline();
     timers.advance(25_000);
     expect(socket().last()).toEqual({ type: "ping" });
+  });
+
+  test("сервер отвечает на ping — живое соединение не рвётся часами", () => {
+    connectOnline();
+    // Три часа: таймеры здесь отсчитываются от конца шага, поэтому шаг — один интервал сердцебиения.
+    for (let i = 0; i < 3 * 60 * 60 / 25; i++) {
+      timers.advance(25_000);
+    }
+    expect(sockets).toHaveLength(1);
+    expect(socket().closed).toBeNull();
+    expect(client.status).toBe("online");
+    expect(socket().sent.filter(m => m.type == "ping").length).toBe(3 * 60 * 60 / 25);
+  });
+
+  test("pong не пришёл — сокет закрывается и клиент переподключается, ожидания отклоняются", async () => {
+    connectOnline();
+    let dead = socket();
+    dead.answersPings = false;
+    let pending = client.request({ type: "chat-send" }, reply => reply.type == "chat-sent" as any);
+    timers.advance(25_000);
+    expect(dead.last()).toEqual({ type: "ping" });
+    timers.advance(9_999);
+    expect(client.status).toBe("online");
+    timers.advance(1);
+    expect(dead.closed).toBeTruthy();
+    expect(client.status).toBe("offline");
+    expect(client.verifiedEmails).toEqual([]);
+    await expect(pending).rejects.toBeInstanceOf(JackdawCallServiceError);
+    // Запоздалое закрытие мёртвого сокета ничего не ломает.
+    dead.drop();
+    expect(client.status).toBe("offline");
+    timers.advance(RECONNECT_DELAYS_MS[0]);
+    expect(sockets).toHaveLength(2);
+    socket().open();
+    socket().receive({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+    expect(client.status).toBe("online");
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  test("запоздалый pong отменяет переподключение", () => {
+    connectOnline();
+    socket().answersPings = false;
+    timers.advance(25_000 + 5_000);
+    socket().receive({ type: "pong" });
+    timers.advance(10_000);
+    expect(client.status).toBe("online");
+    expect(sockets).toHaveLength(1);
+  });
+
+  test("проверка соединения: короткий срок, звонок не обрывается, повторная проверка срок не продлевает", () => {
+    connectOnline();
+    let signals: any[] = [];
+    client.register({ callID: "call-0001", onSignal: message => signals.push(message) });
+    client.checkConnection(5_000);
+    expect(socket().last()).toEqual({ type: "ping" });
+    expect(socket().closed).toBeNull();
+    expect(sockets).toHaveLength(1);
+    socket().receive({ type: "signal", callId: "call-0001", kind: "ice", candidate: null });
+    expect(signals).toHaveLength(1);
+
+    socket().answersPings = false;
+    client.checkConnection(5_000);
+    timers.advance(4_000);
+    client.checkConnection(5_000);
+    timers.advance(1_000);
+    expect(client.status).toBe("offline");
+    expect(socket().closed).toBeTruthy();
+  });
+
+  test("проверка соединения вне связи ничего не шлёт", () => {
+    client.checkConnection();
+    client.start();
+    socket().open();
+    client.checkConnection();
+    expect(socket().sent.filter(m => m.type == "ping")).toHaveLength(0);
+    client.stop();
+    timers.advance(120_000);
+    expect(sockets).toHaveLength(1);
   });
 });
 

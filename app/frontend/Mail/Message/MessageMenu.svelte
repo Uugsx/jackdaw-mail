@@ -37,6 +37,13 @@
   label={$t`New topic`}
   tooltip={$t`Send a new, unrelated message to all recipients`}
   icon={NewAllIcon} />
+{#if message.messageID}
+  <MenuItem
+    onClick={() => shareToChat(emailLink(message), message)}
+    label={$t`Send to chat`}
+    tooltip={$t`Send a link to this email to a Jackdaw chat. Colleagues who also have it open their copy.`}
+    icon={ShareChatIcon} />
+{/if}
 <MenuDivider />
 <MenuItem
   onClick={toggleRead}
@@ -61,6 +68,33 @@
   label={$message.isSpam ? $t`Mark as not spam` : $t`Mark as spam`}
   tooltip={$message.isSpam ? $t`Treat this email as *not* spam` : $t`Treat this email as spam: Move it to the Spam folder, and train the spam filter`}
   icon={$message.isSpam ? NotSpamIcon : SpamIcon} />
+{#if message.from?.emailAddress && !message.outgoing}
+  <SubMenu label={$t`Junk mail`} icon={JunkIcon}>
+    <MenuItem
+      onClick={() => blockSender(message)}
+      classes="danger"
+      label={$t`Block sender`}
+      tooltip={$t`Move mail from ${message.from.emailAddress} to Spam from now on`}
+      icon={BlockIcon} />
+    <MenuItem
+      onClick={() => trustSender(message)}
+      label={$t`Never block sender`}
+      tooltip={$t`Never treat mail from ${message.from.emailAddress} as spam`}
+      icon={NotSpamIcon} />
+    <MenuItem
+      onClick={() => trustSender(message, true)}
+      label={$t`Never block sender's domain`}
+      tooltip={$t`Never treat mail from @${domainOf(message.from.emailAddress)} as spam`}
+      icon={NotSpamIcon} />
+    <MenuDivider />
+    <MenuItem
+      onClick={() => reportPhishing(message)}
+      classes="danger"
+      label={$t`Report phishing`}
+      tooltip={$t`Forward this message as an attachment to the address in the settings, and move it to Spam`}
+      icon={PhishingIcon} />
+  </SubMenu>
+{/if}
 {#if $availableTags.hasItems}
   <MenuDivider />
   <SubMenu label={$t`Set categories`}>
@@ -103,6 +137,68 @@
         <hbox slot="icon" class="tag-dot" style="--tag-color: {tag.color}" />
       </MenuItem>
     {/each}
+  </SubMenu>
+{/if}
+{#if message.messageID}
+  <SubMenu label={$t`Snooze`} icon={SnoozeIcon}>
+    <SnoozeMenuItems {message} />
+  </SubMenu>
+{/if}
+<MenuItem
+  onClick={() => toggleMessagePinned(message)}
+  label={isMessagePinned(message) ? $t`Unpin` : $t`Pin`}
+  tooltip={isMessagePinned(message) ? $t`Remove this message from the top of the list` : $t`Keep this message at the top of the list`}
+  icon={isMessagePinned(message) ? UnpinIcon : PinIcon} />
+{#if quickSteps.length}
+  <SubMenu label={$t`Quick steps`} icon={QuickStepIcon}>
+    {#each quickSteps as step (step.id)}
+      <MenuItem
+        label={step.name}
+        icon={QuickStepIcon}
+        onClick={() => runQuickStepInApp(step, actionTargets())} />
+    {/each}
+    <MenuDivider />
+    <MenuItem
+      label={$t`Manage quick steps…`}
+      icon={SettingsIcon}
+      onClick={() => openSettingsCategoryByID("mail-quick-steps")} />
+  </SubMenu>
+{:else}
+  <MenuItem
+    label={$t`Create a quick step…`}
+    tooltip={$t`Move, mark, forward or reply with a template in one click`}
+    icon={QuickStepIcon}
+    onClick={() => openSettingsCategoryByID("mail-quick-steps")} />
+{/if}
+<MenuItem
+  onClick={() => cleanUpConversation(message)}
+  label={$t`Clean up conversation`}
+  tooltip={$t`Delete messages of this conversation whose whole text is quoted in a later reply`}
+  icon={CleanupIcon} />
+{#if isFocusedFolder(message.folder, $focusedEnabled.value) && message.from?.emailAddress}
+  {#if focusedTabOfMessage == "focused"}
+    <MenuItem
+      onClick={() => setSenderOverride(message.from.emailAddress, "other")}
+      label={$t`Always move to Other`}
+      tooltip={$t`Show mail from this sender under Other`}
+      icon={OtherIcon} />
+  {:else}
+    <MenuItem
+      onClick={() => setSenderOverride(message.from.emailAddress, "focused")}
+      label={$t`Always move to Focused`}
+      tooltip={$t`Show mail from this sender under Focused`}
+      icon={FocusedIcon} />
+  {/if}
+{/if}
+<SubMenu label={$t`Follow up`} icon={MailFlagIcon}>
+  <FlagMenuItems {message} messages={flagTargets} />
+</SubMenu>
+{#if canFollowUpMessage(message)}
+  <SubMenu label={$t`Remind me if nobody replies`} icon={BellRingIcon}>
+    <FollowUpMenuItems
+      dueAt={followUp?.dueAt ?? null}
+      onSelect={choice => setFollowUpForMessage(message, choice)}
+      onClear={() => followUp ? cancelFollowUp(followUp) : undefined} />
   </SubMenu>
 {/if}
 <MenuItem
@@ -160,8 +256,13 @@
   import { getMessageContentRenderingSetting } from "./messageViewerAppearance";
   import type Print from "./MessagePrint.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
+import { shareToChat } from "../../Chat/shareToChat";
+import { emailLink } from "../../../logic/Chat/Jackdaw/chatLinks";
+import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
   import SubMenu from "../../Shared/Menu/SubMenu.svelte";
+  import FlagMenuItems from "../Tasks/FlagMenuItems.svelte";
+  import MailFlagIcon from "lucide-svelte/icons/flag";
   import ReplyIcon from "lucide-svelte/icons/reply";
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
   import NewAllIcon from "lucide-svelte/icons/plus";
@@ -173,6 +274,26 @@
   import UndoIcon from "lucide-svelte/icons/undo-2";
   import SpamIcon from "lucide-svelte/icons/shield-x";
   import NotSpamIcon from "lucide-svelte/icons/shield-off";
+  import JunkIcon from "lucide-svelte/icons/shield-alert";
+  import SnoozeIcon from "lucide-svelte/icons/alarm-clock";
+  import PinIcon from "lucide-svelte/icons/pin";
+  import UnpinIcon from "lucide-svelte/icons/pin-off";
+  import SnoozeMenuItems from "../Snooze/SnoozeMenuItems.svelte";
+  import { isMessagePinned, toggleMessagePinned } from "../../../logic/Mail/Pin/PinnedMessages";
+  import QuickStepIcon from "lucide-svelte/icons/zap";
+  import SettingsIcon from "lucide-svelte/icons/settings";
+  import CleanupIcon from "lucide-svelte/icons/brush-cleaning";
+  import OtherIcon from "lucide-svelte/icons/inbox";
+  import FocusedIcon from "lucide-svelte/icons/target";
+  import { getQuickSteps, quickStepsChanged } from "../../../logic/Mail/QuickSteps/QuickSteps";
+  import { runQuickStepInApp } from "../QuickSteps/quickStepHost";
+  import { cleanUpConversation } from "../Cleanup/cleanup";
+  import { classifyMessage, focusedClassificationChanged, focusedInboxEnabled, setSenderOverride } from "../../../logic/Mail/Focused/FocusedInbox";
+  import { isFocusedFolder } from "../Focused/focusedView";
+  import { openSettingsCategoryByID } from "../../Settings/Window/CategoriesUtils";
+  import BlockIcon from "lucide-svelte/icons/ban";
+  import PhishingIcon from "lucide-svelte/icons/fish";
+  import { blockSender, domainOf, reportPhishing, trustSender } from "../../../logic/Mail/Junk/SenderLists";
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import ArchiveIcon from "lucide-svelte/icons/archive";
   import SaveIcon from "lucide-svelte/icons/save";
@@ -186,28 +307,51 @@
   import { runMailActions } from "../mailBulkActions";
   import { moveMessagesToArchive } from "../mailArchiveActions";
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
-  import { selectedMessage, selectedMessages } from "../Selected";
+  import { neighbourMessage, selectedMessage, selectedMessages } from "../Selected";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+  // Вне блока `#if`: в рабочей сборке он вырезается, и меню падало с «onDestroy is not defined»
+  import { onDestroy } from "svelte";
   // #if [!PRODUCTION]
   import { tick } from "svelte";
   import { openMessageDOMInspector } from "./messageDOMInspector";
   // #endif
 
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import FollowUpMenuItems from "../FollowUp/FollowUpMenuItems.svelte";
+  import BellRingIcon from "lucide-svelte/icons/bell-ring";
+  import {
+    cancelFollowUp,
+    canFollowUpMessage,
+    findFollowUpForMessage,
+    followUpSnapshot,
+    setFollowUpForMessage,
+  } from "../FollowUp/followUpReminders";
 
   export let message: EMail;
   export let printE: Print | null = null;
   export let onMove: (() => void) | null = null;
 
+  $: followUp = findFollowUpForMessage($followUpSnapshot.reminders, message);
+  $: quickSteps = ($quickStepsChanged, getQuickSteps());
+  const focusedEnabled = focusedInboxEnabled();
+  $: focusedTabOfMessage = ($focusedClassificationChanged, classifyMessage(message));
+
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   $: {
     replyAllUnsub?.();
     replyAllUnsub = subscribeCanReplyAll(message, () => replyAllRev++);
   }
   $: canReplyAllMenu = (replyAllRev, computeCanReplyAll(message));
+  $: flagTargets = targetsAt($selectedMessages, message);
+
+  /** Параметры — зависимости для пересчёта выше */
+  function targetsAt(_selection: unknown, _message: EMail): EMail[] {
+    return actionTargets();
+  }
 
   function actionTargets(): EMail[] {
     return ($selectedMessages?.hasItems && message && $selectedMessages.contents.some(target => messagesRepresentSameMail(target, message))
@@ -347,7 +491,7 @@
   }
 
   function goToNextMessage(anchor: EMail = message) {
-    let next = anchor?.nextMessage();
+    let next = anchor ? neighbourMessage(anchor) : null;
     // Mutate rather than replace: FastList and the ribbon observe this exact
     // collection, and a new instance would silently detach them.
     $selectedMessages.replaceAll(next ? [next] : []);

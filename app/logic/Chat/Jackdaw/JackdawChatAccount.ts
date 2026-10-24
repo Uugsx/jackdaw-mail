@@ -24,13 +24,18 @@ import {
   type DeviceKeys,
   type RemoteDevice,
 } from "./JackdawChatCrypto";
-import { ciphertextBytes, parseChatPayload, type ChatPayload, type ChatRoomRef, MAX_ACK_IDS, MAX_CIPHERTEXT_BYTES, MAX_GROUP_MEMBERS } from "./JackdawChatProtocol";
-import { JackdawCallServiceError, type JackdawCallClient } from "../../Meet/Jackdaw/JackdawCallClient";
+import { ciphertextBytes, isFutureChatPayload, parseChatPayload, type ChatPayload, type ChatRoomRef, MAX_ACK_IDS, MAX_CIPHERTEXT_BYTES, MAX_GROUP_MEMBERS } from "./JackdawChatProtocol";
+import { JackdawCallServiceError, type JackdawCallClient, type JackdawCallStatus } from "../../Meet/Jackdaw/JackdawCallClient";
 import type { JackdawServerMessage } from "../../Meet/Jackdaw/JackdawCallProtocol";
 import { normalizeCallEmail } from "../../Meet/Jackdaw/JackdawCallProtocol";
 import { getPassword, setPassword } from "../../Auth/passwordLocalStorage";
+import { proEntitlement } from "../../Billing/ProEntitlement";
+import { chatConnectionProblem, JackdawChatConnectionError, type ChatConnectionProblem } from "./chatConnectionProblem";
 import { notifyChangedProperty } from "../../util/Observable";
 import { UserError, assert } from "../../util/util";
+import { findDirectoryAddresses, findDirectoryName } from "./directoryAddresses";
+import { nameFromChatID } from "../ChatPersonUID";
+import { appGlobal } from "../../app";
 import { gt } from "../../../l10n/l10n";
 
 export const JACKDAW_CHAT_PROTOCOL = "jackdaw";
@@ -38,6 +43,27 @@ const DEVICE_KEYS_SECRET = "jackdaw-chat.device-keys";
 const DEVICE_CACHE_MS = 60_000;
 const BLOB_CHUNK_BYTES = 64 * 1024;
 const BLOB_TIMEOUT_MS = 30_000;
+/** Сколько ждать каталог организации при поиске адреса собеседника */
+const DIRECTORY_TIMEOUT_MS = 5_000;
+const MAX_CONTACT_NAME_LENGTH = 120;
+
+/** Имя, собранное из адреса (`nlevchenko0181@` → «Nlevchenko0181»), или сам адрес: его стоит заменить настоящим */
+function isNameFromAddress(name: string | null | undefined, email: string): boolean {
+  return !name || name == email || name == nameFromChatID(email);
+}
+
+function readNames(value: unknown): Record<string, string> {
+  let names: Record<string, string> = {};
+  if (value && typeof value == "object" && !Array.isArray(value)) {
+    for (let [email, name] of Object.entries(value)) {
+      let key = normalizeCallEmail(email);
+      if (key && typeof name == "string" && name.trim()) {
+        names[key] = name.trim().slice(0, MAX_CONTACT_NAME_LENGTH);
+      }
+    }
+  }
+  return names;
+}
 /** Сообщение не расшифровалось: просим сервер больше его не присылать, но не теряем молча */
 const UNDECRYPTABLE_TEXT = () => gt`This message could not be decrypted. Ask the sender to send it again.`;
 /** Сколько удалённых групп помним, чтобы их не создало снова старое сообщение администратора */
@@ -63,6 +89,11 @@ export class JackdawChatPerson extends ChatPersonUID {
   }
 }
 
+/** Сколько кнопка «Переподключить» ждёт входа и регистрации устройства */
+const RECONNECT_WAIT_MS = 30_000;
+/** Состояния, в которых переподключение ещё идёт */
+const WAITING_PROBLEMS = new Set<ChatConnectionProblem["kind"]>(["connecting", "registering"]);
+
 export class JackdawChatAccount extends ChatAccount {
   readonly protocol: string = JACKDAW_CHAT_PROTOCOL;
   /** Ключи этого устройства. Секретный ключ хранится отдельно через шифрование ОС. */
@@ -73,6 +104,19 @@ export class JackdawChatAccount extends ChatAccount {
   /** id групп, которые мы удалили у себя. Создать такую группу снова может только
    * новое объявление состава от администратора, где мы есть (он пригласил нас снова). */
   protected deletedGroups: string[] = [];
+  /** Псевдоним собеседника → адрес, на котором у него чат (из каталога организации).
+   * Чат с человеком часто заведён на адрес из писем (`nikita.levchenko@`), а его устройство
+   * подключено на адрес ящика (`nlevchenko0181@`): без этого сообщения были «Не отправлено». */
+  protected addressAliases: Record<string, string> = {};
+  /** Имена собеседников, заданные пользователем в чате: адрес → имя */
+  protected contactNames: Record<string, string> = {};
+  /** Имена из каталога организации: адрес → имя */
+  protected directoryNames: Record<string, string> = {};
+  /** Собеседники, чей адрес уже проверен при подключении: каталог не опрашиваем при каждом переподключении */
+  protected peersChecked = new Set<string>();
+  /** Другие адреса человека из каталога организации. Заменяется в тестах. */
+  directoryAddresses: (email: string) => Promise<string[]> =
+    email => findDirectoryAddresses(email, appGlobal.searchOnlyAddressbooks.contents);
   /** Адреса, для которых устройство зарегистрировано на сервере */
   @notifyChangedProperty
   registeredEmails: string[] = [];
@@ -183,6 +227,90 @@ export class JackdawChatAccount extends ChatAccount {
     return new JackdawChatPerson(userID, name);
   }
 
+  /** Имя собеседника: своё (переименован в чате), из адресной книги или каталога организации.
+   * Имя из адреса (`Nlevchenko0181`) — только когда другого нет. */
+  getPersonUID(userID: string, name?: string): ChatPersonUID {
+    let person = super.getPersonUID(userID, name);
+    let better = this.knownNameOf(userID);
+    if (better && person.name != better && (this.customNameOf(userID) || isNameFromAddress(person.name, userID))) {
+      person.name = better;
+    }
+    return person;
+  }
+
+  /** Своё имя для собеседника, заданное в чате. null — не переименован. */
+  customNameOf(email: string): string | null {
+    let key = normalizeCallEmail(email);
+    return key ? this.contactNames[key] ?? null : null;
+  }
+
+  /** Лучшее известное имя без запросов в сеть. null — только имя из адреса. */
+  protected knownNameOf(email: string): string | null {
+    let key = normalizeCallEmail(email);
+    if (!key) {
+      return null;
+    }
+    let primary = this.addressAliases[key];
+    let fromBook = [key, primary].filter(Boolean)
+      .map(address => appGlobal.addressbooks.contents
+        .flatMap(book => book.persons.contents)
+        .find(person => person.name && person.emailAddresses.some(entry => normalizeCallEmail(entry.value) == address))?.name)
+      .find(Boolean);
+    return this.contactNames[key] ?? fromBook ?? this.directoryNames[key] ?? null;
+  }
+
+  /** Переименовать собеседника в чате (только у себя). Пустое имя — вернуть имя по умолчанию. */
+  async renameContact(email: string, name: string): Promise<void> {
+    let key = normalizeCallEmail(email);
+    if (!key) {
+      return;
+    }
+    let trimmed = name.trim().slice(0, MAX_CONTACT_NAME_LENGTH);
+    if (trimmed) {
+      this.contactNames[key] = trimmed;
+    } else {
+      delete this.contactNames[key];
+    }
+    await this.save();
+    let person = this.getPersonUID(key);
+    person.name = this.knownNameOf(key) ?? nameFromChatID(key);
+    await this.saveRoomsWith(key);
+  }
+
+  /** Имя из каталога организации (Exchange GAL) для собеседника. Один раз за сеанс. */
+  protected async loadDirectoryName(email: string): Promise<void> {
+    let key = normalizeCallEmail(email);
+    if (!key || this.contactNames[key] || this.directoryNames[key]) {
+      return;
+    }
+    let lookup = this.directoryName(this.addressAliases[key] ?? key).catch(() => null);
+    let timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), DIRECTORY_TIMEOUT_MS));
+    let name = (await Promise.race([lookup, timeout]))?.trim();
+    if (!name) {
+      return;
+    }
+    this.directoryNames[key] = name.slice(0, MAX_CONTACT_NAME_LENGTH);
+    await this.save();
+    let person = this.getPersonUID(key);
+    if (isNameFromAddress(person.name, key)) {
+      person.name = this.knownNameOf(key) ?? person.name;
+      await this.saveRoomsWith(key);
+    }
+  }
+
+  /** Имя человека по адресу из каталога организации. Заменяется в тестах. */
+  directoryName: (email: string) => Promise<string | null> =
+    email => findDirectoryName(email, appGlobal.searchOnlyAddressbooks.contents);
+
+  protected async saveRoomsWith(email: string): Promise<void> {
+    for (let room of this.rooms.contents) {
+      if (room instanceof JackdawChatRoom && !room.isGroup && room.peerEmail == email) {
+        room.notifyObservers();
+        await room.save().catch(this.errorCallback);
+      }
+    }
+  }
+
   getOwnContact(): ChatPersonUID {
     let email = this.client?.verifiedEmails[0] ?? this.registeredEmails[0] ?? "";
     return this.getPersonUID(email, this.realname);
@@ -199,12 +327,27 @@ export class JackdawChatAccount extends ChatAccount {
     this.deletedGroups = Array.isArray(json?.deletedGroups)
       ? json.deletedGroups.filter((id: unknown) => typeof id == "string").slice(-MAX_DELETED_GROUPS)
       : [];
+    this.contactNames = readNames(json?.contactNames);
+    this.directoryNames = readNames(json?.directoryNames);
+    let aliases = json?.addressAliases;
+    this.addressAliases = {};
+    if (aliases && typeof aliases == "object" && !Array.isArray(aliases)) {
+      for (let [alias, address] of Object.entries(aliases)) {
+        let from = normalizeCallEmail(alias), to = typeof address == "string" ? normalizeCallEmail(address) : null;
+        if (from && to && from != to) {
+          this.addressAliases[from] = to;
+        }
+      }
+    }
   }
 
   toConfigJSON(): any {
     let json = super.toConfigJSON();
+    json.contactNames = this.contactNames;
+    json.directoryNames = this.directoryNames;
     json.pinnedKeys = this.pinnedKeys;
     json.deletedGroups = this.deletedGroups;
+    json.addressAliases = this.addressAliases;
     return json;
   }
 
@@ -308,24 +451,74 @@ export class JackdawChatAccount extends ChatAccount {
       room.resumeDownloads();
       await room.sendUnsent();
     }
+    // Статус собеседника в списке чатов: псевдонимы узнаём заранее, не дожидаясь отправки
+    for (let room of this.rooms.contents) {
+      if (room instanceof JackdawChatRoom && !room.isGroup && room.peerEmail && !this.peersChecked.has(room.peerEmail)) {
+        this.peersChecked.add(room.peerEmail);
+        await this.chatAddressFor(room.peerEmail).catch(() => null);
+        await this.loadDirectoryName(room.peerEmail).catch(() => null);
+      }
+    }
   }
 
-  /** Соединение с сервером для запроса. Нет связи или чат не подключён — понятная ошибка. */
+  /** Почему чат сейчас не на связи. null — можно отправлять. */
+  connectionProblem(): ChatConnectionProblem | null {
+    let client = this.client;
+    let status: JackdawCallStatus | null = !client ? null
+      : client.isOnline ? "online"
+      : client.status && client.status != "online" ? client.status : "offline";
+    return chatConnectionProblem({
+      status,
+      proChecking: proEntitlement.value.status == "checking",
+      proMessage: proEntitlement.value.message,
+      lastError: client?.lastError ?? null,
+      offlineSince: client?.offlineSince != null ? new Date(client.offlineSince) : null,
+      hasVerifiedEmail: !!client?.verifiedEmails.length,
+      isRegistered: this.registeredEmails.length > 0,
+    });
+  }
+
+  /** Соединение с сервером для запроса. Нет связи или чат не подключён — понятная ошибка
+   * с причиной; баннер с ней предлагает переподключиться. */
   requireOnline(): JackdawCallClient {
-    if (!this.client?.isOnline) {
-      // Лицензию отклонили — переподключение не поможет, говорим почему
-      if (this.client?.status == "rejected" && this.client.lastError) {
-        throw new UserError(this.client.lastError);
+    let problem = this.connectionProblem();
+    if (problem) {
+      throw new JackdawChatConnectionError(problem, this);
+    }
+    return this.client!; // без соединения `connectionProblem()` вернул бы причину
+  }
+
+  /**
+   * Кнопка «Переподключить»: входит заново сразу, без паузы и после отказа.
+   * Неотправленное досылается после регистрации устройства, как при любом переподключении (`onReconnected`).
+   * @param timeoutMs сколько ждать связи
+   * @throws JackdawChatConnectionError с причиной, если связь не появилась
+   */
+  async reconnect(timeoutMs = RECONNECT_WAIT_MS): Promise<void> {
+    this.client?.restart();
+    await new Promise<void>((resolve, reject) => {
+      let done = false;
+      let stops: (() => void)[] = [];
+      let finish = (problem: ChatConnectionProblem | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        // Не во время рассылки наблюдателям: отписка посреди неё пропустила бы следующего наблюдателя
+        queueMicrotask(() => stops.forEach(stop => stop()));
+        problem ? reject(new JackdawChatConnectionError(problem, this)) : resolve();
+      };
+      let check = () => {
+        let problem = this.isOnline ? null : this.connectionProblem();
+        // Подключение и регистрация устройства идут: ждём их результата
+        if (problem && WAITING_PROBLEMS.has(problem.kind)) return;
+        finish(problem);
+      };
+      let timer = setTimeout(() => finish(this.connectionProblem()), timeoutMs);
+      stops.push(this.subscribe(check));
+      if (this.client) {
+        stops.push(this.client.subscribe(check));
       }
-      throw new UserError(gt`No connection to the Jackdaw server. Unsent messages will be sent automatically when the connection is restored.`);
-    }
-    if (!this.client.verifiedEmails.length) {
-      throw new UserError(gt`The chat is not connected. Confirm your address in Settings → Jackdaw Pro → Calls and chat.`);
-    }
-    if (!this.registeredEmails.length) {
-      throw new UserError(gt`The chat is still connecting. Try again in a moment.`);
-    }
-    return this.client;
+    });
   }
 
   // --- ключи устройств --------------------------------------------------------
@@ -400,6 +593,7 @@ export class JackdawChatAccount extends ChatAccount {
   async sendPayload(recipients: string[], payload: ChatPayload, ephemeral = false, from?: string): Promise<Extract<JackdawServerMessage, { type: "chat-sent" }>> {
     let client = this.requireOnline();
     await this.loadDeviceKeys();
+    recipients = [...new Set(await Promise.all(recipients.map(email => this.chatAddressFor(email))))];
     let own = this.registeredEmails;
     // Сервер ограничивает шифротекст; проверяем заранее и говорим понятно, а не «сервер отклонил запрос»
     if (ciphertextBytes(payload) > MAX_CIPHERTEXT_BYTES) {
@@ -441,7 +635,8 @@ export class JackdawChatAccount extends ChatAccount {
     }
   }
 
-  async uploadBlob(data: Uint8Array): Promise<string> {
+  /** @param onProgress доля загруженного, 0…1, после каждой части */
+  async uploadBlob(data: Uint8Array, onProgress?: (done: number) => void): Promise<string> {
     let client = this.requireOnline();
     let blobId = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
     let total = Math.max(1, Math.ceil(data.length / BLOB_CHUNK_BYTES));
@@ -450,6 +645,7 @@ export class JackdawChatAccount extends ChatAccount {
       await client.request({ type: "blob-put", blobId, index, total, data: toBase64(chunk) },
         reply => (reply.type == "blob-stored" && reply.index == index || reply.type == "error") && reply.blobId == blobId,
         BLOB_TIMEOUT_MS);
+      onProgress?.((index + 1) / total);
     }
     return blobId;
   }
@@ -481,9 +677,12 @@ export class JackdawChatAccount extends ChatAccount {
     await this.loadDeviceKeys();
     let payload: ChatPayload | null = null;
     let sender: RemoteDevice | null = null;
+    let fromNewerVersion = false;
     try {
       sender = await this.senderDevice(message.from, message.fromDevice);
-      payload = sender ? parseChatPayload(decryptMessage(message.ciphertext, message.key, message.messageId, sender, this.deviceKeys!)) : null;
+      let decrypted = sender ? decryptMessage(message.ciphertext, message.key, message.messageId, sender, this.deviceKeys!) : null;
+      payload = parseChatPayload(decrypted);
+      fromNewerVersion = !payload && isFutureChatPayload(decrypted);
     } catch (ex) {
       payload = null;
     }
@@ -493,7 +692,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (payload) {
       let fromMe = this.isOwnEmail(message.from) || await this.isOwnDevice(sender!);
       await this.applyPayload(payload, message.from, new Date(message.sentAt || Date.now()), fromMe);
-    } else if (!message.ephemeral) {
+    } else if (!message.ephemeral && !fromNewerVersion) {
       await this.addUndecryptable(message.messageId, message.from, new Date(message.sentAt || Date.now()));
     }
     if (!message.ephemeral) {
@@ -528,7 +727,8 @@ export class JackdawChatAccount extends ChatAccount {
 
   protected async applyPayload(payload: ChatPayload, from: string, sentAt: Date, fromMe = this.isOwnEmail(from)): Promise<void> {
     // Отметка о прочтении относится к уже существующему чату и новый не создаёт
-    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind != "read", payload.kind == "group");
+    // Новый чат создают только сообщение и объявление группы; отметки, правки, реакции — только в существующем
+    let room = await this.roomForPayload(payload.room, from, fromMe, payload.kind == "message" || payload.kind == "group", payload.kind == "group");
     if (!room) return;
     switch (payload.kind) {
       case "message":
@@ -536,6 +736,18 @@ export class JackdawChatAccount extends ChatAccount {
         break;
       case "read":
         room.markSeen(payload.ids, fromMe, from);
+        break;
+      case "edit":
+        await room.applyEdit(payload, from, fromMe);
+        break;
+      case "delete":
+        await room.applyDelete(payload, from, fromMe);
+        break;
+      case "reaction":
+        await room.applyReaction(payload, from, fromMe);
+        break;
+      case "typing":
+        room.applyTyping(from, fromMe);
         break;
       case "group":
         // Метаданные группы от администратора уже применены в roomForPayload()
@@ -555,7 +767,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (ref.type == "direct") {
       let peer = fromMe ? ref.peer : from;
       if (!peer || this.isOwnEmail(peer)) return null;
-      let room = create ? await this.getDirectRoom(peer) : this.findRoomByID(`direct:${normalizeCallEmail(peer)}`);
+      let room = create ? await this.getDirectRoom(peer) : this.findDirectRoom(normalizeCallEmail(peer) ?? peer);
       // Наш адрес в этом чате: собеседник писал на ref.peer, наше другое устройство — с from
       if (room?.rememberOwnEmail(fromMe ? from : ref.peer)) {
         await room.save();
@@ -635,7 +847,7 @@ export class JackdawChatAccount extends ChatAccount {
     if (this.isOwnEmail(email)) {
       throw new UserError(gt`This is your own address.`);
     }
-    let existing = this.findRoomByID(`direct:${email}`);
+    let existing = this.findDirectRoom(email);
     if (existing) return existing;
     let person = this.getPersonUID(email);
     if (!this.roster.includes(person)) {
@@ -725,6 +937,64 @@ export class JackdawChatAccount extends ChatAccount {
   async canChatWith(emailAddress: string): Promise<boolean> {
     let email = normalizeCallEmail(emailAddress);
     if (!email || !this.isOnline || this.isOwnEmail(email)) return false;
-    return ((await this.devicesFor([email])).get(email) ?? []).length > 0;
+    let target = await this.chatAddressFor(email);
+    return ((await this.devicesFor([target])).get(target) ?? []).length > 0;
+  }
+
+  // --- псевдонимы -------------------------------------------------------------
+
+  /** Адрес, на котором у собеседника чат: известный по каталогу, иначе сам `email`. Без запросов. */
+  primaryAddressOf(emailAddress: string): string | null {
+    let email = normalizeCallEmail(emailAddress);
+    return email ? this.addressAliases[email] ?? null : null;
+  }
+
+  /**
+   * Куда писать: сам адрес, если на нём есть чат, иначе другой адрес того же человека
+   * из каталога организации, на котором чат есть. Найденное запоминается.
+   */
+  async chatAddressFor(emailAddress: string): Promise<string> {
+    let email = normalizeCallEmail(emailAddress);
+    if (!email || this.isOwnEmail(email)) {
+      return email ?? emailAddress;
+    }
+    let known = this.addressAliases[email];
+    if (known) {
+      return known;
+    }
+    if (((await this.devicesFor([email])).get(email) ?? []).length) {
+      return email;
+    }
+    // Каталог может не ответить (нет входа в Exchange): отправка не ждёт его дольше нескольких секунд
+    let lookup = this.directoryAddresses(email).catch(() => [] as string[]);
+    let timeout = new Promise<string[]>(resolve => setTimeout(() => resolve([]), DIRECTORY_TIMEOUT_MS));
+    let candidates = (await Promise.race([lookup, timeout]))
+      .filter(address => address != email && !this.isOwnEmail(address));
+    if (!candidates.length) {
+      return email;
+    }
+    let devices = await this.devicesFor(candidates);
+    let target = candidates.find(address => (devices.get(address) ?? []).length);
+    if (!target) {
+      return email;
+    }
+    this.addressAliases[email] = target;
+    await this.save();
+    // Статус и звонок по псевдониму берутся теперь с найденного адреса: обновляем интерфейс
+    if (this.client) {
+      this.client.presenceVersion++;
+    }
+    return target;
+  }
+
+  /** Личный чат с человеком: по его адресу или по псевдониму, у которого этот адрес основной */
+  protected findDirectRoom(email: string): JackdawChatRoom | null {
+    let room = this.findRoomByID(`direct:${email}`);
+    if (room) {
+      return room;
+    }
+    let alias = Object.keys(this.addressAliases).find(known =>
+      this.addressAliases[known] == email && this.findRoomByID(`direct:${known}`));
+    return alias ? this.findRoomByID(`direct:${alias}`) : null;
   }
 }

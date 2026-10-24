@@ -1,7 +1,7 @@
 {#if hiddenFolderCount}
   <details class="hidden-folders">
     <summary>
-      <span class="summary-label">
+      <span class="summary-label" title={$t`Hidden folders`}>
         <EyeOffIcon size="14px" aria-hidden="true" />
         <span>{$t`Hidden folders`}</span>
       </span>

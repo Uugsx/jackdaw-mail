@@ -59,7 +59,7 @@
     height: 24px;
   }
   input:invalid {
-    border-bottom-color: red;
+    border-color: red;
   }
   .icon {
     min-width: 32px;

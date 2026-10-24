@@ -79,6 +79,8 @@ async function showReminder() {
   for (let event of dueEvents) {
     let notification = new SystemNotification(kinds, event.title, event.descriptionText, event.id, "calendar");
     notification.icon = CalendarIcon;
+    // Бейдж Dock показывает непрочитанную почту; напоминание оставляло на нём «1»
+    notification.updatesTaskbarBadge = false;
     notification.onClick = () => openEventInApp(event);
     await notification.show();
   }

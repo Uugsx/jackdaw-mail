@@ -108,6 +108,7 @@
   }
   select {
     border: none;
+    box-shadow: none;
     color: inherit;
     background-color: transparent;
   }

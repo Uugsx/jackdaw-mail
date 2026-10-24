@@ -1,6 +1,11 @@
 <hbox class="search" class:has-search={searchInput} class:toolbar={variant == "toolbar"}>
-  <SearchIcon size="16px" />
+  {#if busy}
+    <hbox class="busy" title={$t`Searching…`}><Loader size={14} stroke={2} /></hbox>
+  {:else}
+    <SearchIcon size="16px" />
+  {/if}
   <input type="search"
+    aria-busy={busy}
     bind:value={searchInput}
     on:input={onInput}
     on:keydown={onKeyPress}
@@ -17,6 +22,7 @@
 
 <script lang="ts">
   import RoundButton from "./RoundButton.svelte";
+  import Loader from "./Loader.svelte";
   import SearchIcon from "lucide-svelte/icons/search";
   import XIcon from "lucide-svelte/icons/x";
   import { createEventDispatcher } from "svelte";
@@ -32,6 +38,8 @@
   export let showX: boolean | null = null; /** null = only when text entered */
   /** toolbar: matches mail toolbar controls; default: generic field style */
   export let variant: "default" | "toolbar" = "default";
+  /** Идёт поиск: вместо лупы крутится индикатор */
+  export let busy = false;
 
   let searchInput: string;
   $: searchInput = searchTerm;
@@ -64,6 +72,14 @@
 </script>
 
 <style>
+  .busy {
+    width: 16px;
+    height: 16px;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: var(--icon-primary, currentColor);
+  }
   .search {
     align-items: center;
     border: 1px solid var(--border);
@@ -108,7 +124,9 @@
   input[type="search"] {
     width: 100%;
     height: 24px;
+    padding: 1px 2px;
     border: none;
+    box-shadow: none;
     margin-inline-start: 4px;
     border-radius: var(--border-radius);
     background-color: inherit;

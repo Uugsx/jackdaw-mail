@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { NativeMenuLabels } from '../../../app/logic/util/nativeMenu'
+import type { NativeConfirmRequest, NativeDialogLabels } from '../../../app/logic/util/nativeDialogs'
 import type {
   ComposeWindowMail,
   ComposeWindowPerson,
@@ -16,6 +17,8 @@ declare global {
     api: {
       onNativeMenuAction(callback: (action: string) => void): () => void
       setNativeMenuLabels(labels: NativeMenuLabels): void
+      setNativeDialogLabels(labels: NativeDialogLabels): void
+      showNativeConfirm(request: NativeConfirmRequest): boolean
       openComposeWindow(windowID: string, payload: ComposeWindowMail): void
       focusComposeWindow(windowID: string): void
       closeComposeWindow(windowID: string): void

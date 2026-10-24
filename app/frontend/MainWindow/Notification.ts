@@ -45,6 +45,16 @@ export enum NotificationSeverity {
   Info = "info",
 }
 
+/** Значения enum — строки, и по алфавиту «info» шло раньше ошибок и сбоя.
+ * Порядок важности — порядок объявления выше. */
+const kSeverityOrder = Object.values(NotificationSeverity);
+
+/** Меньше — важнее. Панель показывает самое важное уведомление. */
+export function notificationSeverityRank(severity: NotificationSeverity): number {
+  let rank = kSeverityOrder.indexOf(severity);
+  return rank < 0 ? kSeverityOrder.length : rank;
+}
+
 export function showNotificationToast(message: string, notifications: ArrayColl<Notification>) {
   showNotification(message, NotificationSeverity.Info, 3, notifications);
 }

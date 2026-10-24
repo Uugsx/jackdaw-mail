@@ -14,9 +14,12 @@ import { applyComposeMailPayload } from "./Composer/composeWindow";
 import type { ComposeWindowMail } from "../../logic/Mail/Composer/ComposeWindowProtocol";
 import type { MessageWindowPayload, MessageWindowReplyMode } from "../../logic/Mail/MessageWindowProtocol";
 import { resolveComposeRecipients } from "../../logic/Mail/composeResolveRecipients";
+import { queueSend } from "./SendLater/sendQueue";
 import { deserializeMessageWindowMail } from "./Message/messageWindow";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
+import { confirmReplyCollision, replyCollisionWarning } from "./Collision/replyCollisionWarning";
+import { backgroundError } from "../Util/error";
 import { assert } from "../../logic/util/util";
 
 export class MailJackdawApp extends JackdawApp {
@@ -25,7 +28,15 @@ export class MailJackdawApp extends JackdawApp {
   icon = mailIcon;
   appURL = "/mail";
 
-  writeMail(mail: EMail, options: { nativeWindowID?: string; forceMainWindow?: boolean } = {}) {
+  /** @param options.collisionChecked предупреждение об ответе коллеги уже показано */
+  writeMail(mail: EMail, options: { nativeWindowID?: string; forceMainWindow?: boolean; collisionChecked?: boolean } = {}) {
+    // Ответ из отдельного окна письма: диалог в главном окне там не виден, поэтому не показываем его.
+    if (!options.collisionChecked && !options.nativeWindowID && replyCollisionWarning(mail)) {
+      confirmReplyCollision(mail)
+        .then(reply => reply && this.writeMail(mail, { ...options, collisionChecked: true }))
+        .catch(backgroundError);
+      return;
+    }
     let composerApp = new WriteMailJackdawApp();
     composerApp.title = derived(mail, () => mail.subject ?? composerApp.name);
     composerApp.windowParams = {
@@ -86,7 +97,8 @@ export async function sendNativeComposeWindow(windowID: string, payload: Compose
   assert(mail, "Compose window message is no longer available");
   applyComposeMailPayload(mail, payload);
   await resolveComposeRecipients(mail);
-  await mail.compose.send();
+  let sendAt = payload.sendAt ? new Date(payload.sendAt) : undefined;
+  await queueSend(mail, { sendAt });
 }
 
 /** Открывает штатную форму ответа в текущем окне просмотра, если оно передано. */

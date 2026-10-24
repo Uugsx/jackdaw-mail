@@ -1,6 +1,6 @@
 <vbox class="calling" flex bind:clientWidth={width}>
   <SplitterBidirectional name="calling-contact-history"
-    hasFirst={showContactHistory}
+    hasSecond={!!showContactHistory}
     initialSecondRatio={0.4}
     horizontal={width < 1000}>
     <vbox flex state={$meeting.state} slot="first">
@@ -16,9 +16,17 @@
                   {$t`Do you want to call?`}
                 {:else if $meeting.state == MeetingState.OutgoingCall}
                   {$t`You're calling...`}
-                {:else if $meeting.state == MeetingState.IncomingCall} <!---->
+                {:else if $meeting.state == MeetingState.IncomingCall}
+                  <!-- Сразу видно, видео это или голос: от этого зависит, отвечать ли сейчас -->
+                  {$meeting.hasVideo ? $t`Incoming video call` : $t`Incoming audio call`}
                 {/if}
               </hbox>
+              {#if $meeting.hasVideo && $meeting.state != MeetingState.IncomingCall}
+                <hbox class="call-kind">
+                  <VideoIcon size="16px" />
+                  {$t`Video call`}
+                </hbox>
+              {/if}
               <hbox class="who">
                 {#if $participants.length == 1 && meeting instanceof JackdawCall && meeting.remoteNameUnverified}
                   <!-- Имя не из контактов: звонящий указал его сам, рядом всегда его адрес -->
@@ -32,7 +40,9 @@
               {#if $participants.length == 1}
                 <hbox class="who-id">
                   <!-- Phone number -->
-                  {#if participants.first.emailAddress != kDummyPerson.emailAddress}
+                  <!-- Без имени в строке выше уже адрес: второй раз не повторяем -->
+                  {#if participants.first.emailAddress != kDummyPerson.emailAddress &&
+                    participants.first.emailAddress != participants.first.name}
                     {participants.first.emailAddress}
                   {/if}
                 </hbox>
@@ -76,9 +86,12 @@
                 {/if}
               </hbox>
               <hbox flex />
-              <hbox class="mic-setup">
-                <DeviceSetup withVideo={false} openDevices={!(meeting instanceof JackdawCall && meeting.state == MeetingState.IncomingCall)} />
-              </hbox>
+              <!-- У видеозвонка микрофон — в карточке камеры рядом: второй выбор того же микрофона не нужен -->
+              {#if !$meeting.hasVideo}
+                <hbox class="mic-setup">
+                  <DeviceSetup withVideo={false} openDevices={!(meeting instanceof JackdawCall && meeting.state == MeetingState.IncomingCall)} />
+                </hbox>
+              {/if}
               <hbox flex />
               <hbox class="buttons">
                 {#if $meeting.state != MeetingState.OutgoingCall}
@@ -147,7 +160,7 @@
 <svelte:window on:keydown={ev => enterStartsCall($meeting.state) && catchErrors(() => onKeyEnter(ev, accept))} />
 
 {#if $meeting.state == MeetingState.IncomingCall || $meeting.state == MeetingState.OutgoingCall }
-  <audio src="sound/ringtone1.mp3" loop autoplay />
+  <CallSound incoming={$meeting.state == MeetingState.IncomingCall} />
 {/if}
 
 {#if ($meeting.state == MeetingState.IncomingCall || $meeting.state == MeetingState.OutgoingCall) &&
@@ -164,6 +177,7 @@
 {/if}
 
 <script lang="ts">
+  import CallSound from "./CallSound.svelte";
   import { MeetingState, enterStartsCall, type VideoConfMeeting } from "../../../logic/Meet/VideoConfMeeting";
   import { JackdawCall } from "../../../logic/Meet/Jackdaw/JackdawCall";
   import { appGlobal } from "../../../logic/app";
@@ -180,6 +194,8 @@
   import XIcon from "lucide-svelte/icons/x";
   import OpenIcon from "lucide-svelte/icons/door-open";
   import HourglassIcon from "lucide-svelte/icons/hourglass";
+  import VideoIcon from "lucide-svelte/icons/video";
+  import { cameraOnSetting } from "../Setup/selectedDevices";
   import { t, plural } from "../../../l10n/l10n";
   import { onKeyEnter } from "../../Util/util";
   import { catchErrors } from "../../Util/error";
@@ -192,6 +208,12 @@
   $: showAvatar = $meeting.state != MeetingState.Init && $meeting.state != MeetingState.JoinConference;
   $: showContactHistory = person && !$meeting.hasVideo && !appGlobal.isMobile;
   let width: number;
+
+  /* Видеозвонок Jackdaw выбран кнопкой «Видеозвонок», и в разговоре камера включится сама
+     (InMeetingToolbar). Предпросмотр показывает это заранее, а не чёрную карточку. */
+  if (meeting instanceof JackdawCall && meeting.hasVideo && meeting.state == MeetingState.OutgoingCallConfirm) {
+    cameraOnSetting.value = true;
+  }
 
   const now = new Date();
   const maxUpcoming = new Date(); // TODO now + 15 min
@@ -222,6 +244,12 @@
     background-color: #494558;
     color: white;
   }
+  /* Рядом панель истории или виджетов: окно широкое, а места под две карточки
+     по 400px нет. Карточки переносятся и не шире доступного места. */
+  .boxes {
+    flex-wrap: wrap;
+    align-content: center;
+  }
   @media (max-width: 800px) {
     .boxes {
       flex-direction: column;
@@ -237,13 +265,13 @@
     color: var(--inverted-fg);
   }
   .box {
-    min-width: 400px;
+    min-width: min(400px, 100%);
     max-width: 400px;
     max-height: 400px;
     padding: 40px;
   }
   .device-setup {
-    min-width: 400px;
+    min-width: min(400px, 100%);
     max-width: 400px;
     max-height: 440px;
     padding: 20px 0px;
@@ -252,6 +280,15 @@
     align-items: center;
     justify-content: center;
     margin-block-end: 20px;
+  }
+  .call-kind {
+    align-items: center;
+    gap: 6px;
+    margin-block-end: 6px;
+    padding: 2px 10px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 12%);
+    font-size: 13px;
   }
   .text .who {
     font-size: 24px;
@@ -284,7 +321,9 @@
     background-color: #F34949 !important;
   }
   .actions :global(button.hangup svg) {
-    transform: rotate(135deg);
+    /* Отдельное свойство rotate складывается с transform кнопки при наведении,
+     * поэтому трубка остаётся опущенной. */
+    rotate: 135deg;
   }
   .mic-setup :global(.buttons) {
     margin-block-start: 14px;

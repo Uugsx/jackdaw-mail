@@ -308,15 +308,19 @@ value,
   font-variant-numeric: tabular-nums;
 }
 
-input[type="number"],
-input[type="password"],
-input[type="email"],
-input[type="url"],
-input[type="date"],
-input[type="time"],
-input[type="tel"],
-input[type="search"],
-input[type="text"] {
+/* Базовые поля — в :where(), без веса: стили компонента всегда сильнее
+ * общих, а общий вид полей на компьютере задан ниже, у .main-window и .standalone-window. */
+:where(
+  input[type="number"],
+  input[type="password"],
+  input[type="email"],
+  input[type="url"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="search"],
+  input[type="text"]
+) {
   background-color: var(--input-bg);
   color: var(--input-fg);
   border: none;
@@ -326,6 +330,8 @@ input[type="text"] {
 }
 input:focus {
   outline: none;
+}
+:where(input:focus) {
   border-bottom: 1px solid var(--input-focus);
 }
 input::placeholder {
@@ -345,8 +351,7 @@ input[type="radio"],
 input[type="checkbox"] {
   accent-color: var(--fg);
 }
-input[type="date"],
-input[type="time"] {
+:where(input[type="date"], input[type="time"]) {
   background: url('/icon/chevron-down.svg') no-repeat right center;
 }
 input[type="date"]::-webkit-calendar-picker-indicator,
@@ -356,15 +361,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 input[type="number"]::-webkit-inner-spin-button {
   margin-left: 8px;
 }
-select {
+:where(select) {
   border: none;
   background-color: var(--leftbar-bg);
   color: var(--leftbar-fg);
   font-size: 14px;
   border-bottom: 1px solid var(--input-line);
+  /* Без отступа текст на залитом фоне начинался от самого края и первая буква срезалась */
+  padding-block: 4px;
+  padding-inline-start: 8px;
 }
 select:focus {
   outline: none;
+}
+:where(select:focus) {
   border-bottom: 1px solid var(--input-focus);
 }
 /* Своя стрелка у выпадающих списков: системная прижата к краю. Свойства фона
@@ -467,8 +477,10 @@ a:hover {
   background: var(--main-bg);
 }
 
-/* Jackdaw desktop: warm surfaces + liquid glass (all apps) */
-.main-window:not(.mobile) {
+/* Jackdaw desktop: warm surfaces + liquid glass (all apps).
+ * Палитра — и у отдельных окон письма и черновика (.standalone-window): у них нет .main-window. */
+.main-window:not(.mobile),
+.standalone-window {
   --bg: #F6F5F2;
   --fg: #1B1C1D;
   --inverted-bg: #17191A;
@@ -498,6 +510,13 @@ a:hover {
   --input-line: #C4BEB4;
   --input-placeholder: #6A655D;
   --input-focus: #D28A1B;
+  /* Рамка поля: контраст 3:1 к фону (WCAG 1.4.11), как у полей Outlook */
+  --input-border: #8E887E;
+  --input-border-hover: #6F6A62;
+  /* Рамка в фокусе темнее --input-focus: контраст 3:1 к белому полю */
+  --input-focus-border: #B97616;
+  --input-focus-ring: rgba(210, 138, 27, 0.28);
+  --input-disabled-bg: #F0EDE7;
   --link-fg: #B36C12;
   --link-hover-fg: #8B500D;
   --button-bg: #FFFFFF;
@@ -526,7 +545,8 @@ a:hover {
 }
 
 @media (prefers-color-scheme: dark) {
-  .main-window:not(.mobile) {
+  .main-window:not(.mobile),
+  .standalone-window {
     --bg: #111314;
     --fg: #EEEAE3;
     --inverted-bg: #EEEAE3;
@@ -556,6 +576,11 @@ a:hover {
     --input-line: #434546;
     --input-placeholder: #9B9891;
     --input-focus: #D79A31;
+    --input-border: #6E6A64;
+    --input-border-hover: #8E8A83;
+    --input-focus-border: #D79A31;
+    --input-focus-ring: rgba(215, 154, 49, 0.32);
+    --input-disabled-bg: #151718;
     --link-fg: #E2A842;
     --link-hover-fg: #F0BD62;
     --button-bg: #1A1C1E;
@@ -581,6 +606,77 @@ a:hover {
   }
 }
 
+/* Поля ввода и выпадающие списки на компьютере: рамка со скруглением, высота 32px,
+ * как у кнопок ленты. Всё в :where(), без веса, поэтому поля со своим видом
+ * (поиск, тема письма, чипы, мелкие списки) остаются как задумано в компоненте.
+ * Ошибка — aria-invalid="true" или класс .invalid. */
+:where(.main-window:not(.mobile), .standalone-window)
+  :where(
+    input[type="number"],
+    input[type="password"],
+    input[type="email"],
+    input[type="url"],
+    input[type="date"],
+    input[type="time"],
+    input[type="tel"],
+    input[type="search"],
+    input[type="text"],
+    input:not([type]),
+    select,
+    textarea
+  ) {
+  box-sizing: border-box;
+  padding: 5px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--border-radius);
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  font-size: 14px;
+  line-height: 1.4286; /* 20px при 14px, растёт с крупным шрифтом */
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:hover:not(:disabled):not(:focus)) {
+  border-color: var(--input-border-hover);
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:focus) {
+  border-color: var(--input-focus-border);
+  box-shadow: 0 0 0 3px var(--input-focus-ring);
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid) {
+  border-color: var(--danger-fg);
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid):where(:focus) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-fg) 25%, transparent);
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:disabled) {
+  background-color: var(--input-disabled-bg);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(input[type="date"], input[type="time"]) {
+  background-position: right 8px center;
+  padding-inline-end: 28px;
+}
+:where(.main-window:not(.mobile), .standalone-window) :where(textarea) {
+  padding-block: 6px;
+  resize: vertical;
+}
+.main-window:not(.mobile) select option,
+.standalone-window select option {
+  background-color: var(--main-bg);
+  color: var(--main-fg);
+}
+/* Обводку фокуса у многострочного поля заменяет кольцо выше */
+:where(.main-window:not(.mobile), .standalone-window) textarea:focus {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea) {
+    transition: none;
+  }
+}
 
 /* Liquid glass panels */
 .main-window:not(.mobile) .app-bar,
@@ -626,7 +722,10 @@ a:hover {
     0 0 0 1px rgba(var(--shadow-color), 0.08),
     0 14px 30px rgba(var(--shadow-color), 0.18);
 }
-.main-window:not(.mobile) .menu {
+/* Только всплывающее меню. Обёртка кнопки ButtonMenu — тоже `.menu` (`menu button`):
+   с min-width она растягивалась до 190px, и рядом с кнопкой появлялась дыра
+   (панель действий сообщения, выбор микрофона и камеры у звонка, «Новый чат»). */
+.main-window:not(.mobile) .menu:not(.button) {
   min-width: 190px;
   padding: 5px;
   border-radius: var(--border-radius);

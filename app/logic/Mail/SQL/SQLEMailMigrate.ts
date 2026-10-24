@@ -178,3 +178,146 @@ export const dedupeEMailsWithoutPID = sql`
 
   DROP TABLE temp."emailDuplicate";
 `;
+
+/**
+ * «Напомнить, если не ответят»: отслеживаемые исходящие письма. Отдельная
+ * таблица без изменения `email`: создаётся мгновенно и на базе больше 1 ГБ.
+ *
+ * `messageID` — Message-ID отправленного письма, `emailID` — найденная
+ * отправленная копия (null, пока её не сохранила синхронизация; строки email
+ * пересоздаются при пересинхронизации, поэтому связь — по Message-ID).
+ * Время — unixtime в секундах, как в `email`.
+ */
+export const createFollowUpReminderTable = sql`
+  CREATE TABLE IF NOT EXISTS "followUpReminder" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    "messageID" TEXT not null,
+    "threadID" TEXT default null,
+    "emailID" INTEGER default null,
+    "subject" TEXT not null default '',
+    -- JSON-массив адресов получателей в нижнем регистре
+    "recipients" TEXT not null default '[]',
+    "sentAt" INTEGER not null,
+    "dueAt" INTEGER not null,
+    -- 'calendar' | 'working' | 'date'
+    "scheduleMode" TEXT not null default 'calendar',
+    "durationDays" INTEGER default null,
+    -- 'waiting' | 'replied' | 'cancelled'
+    "status" TEXT not null default 'waiting',
+    "notifiedAt" INTEGER default null,
+    "repliedAt" INTEGER default null,
+    "replyEmailID" INTEGER default null,
+    "createdAt" INTEGER not null,
+    UNIQUE("accountID", "messageID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_followUpReminder_status_dueAt
+  ON followUpReminder (status, dueAt);
+`;
+
+/** Откат createFollowUpReminderTable для инструментов обслуживания базы. */
+export const rollbackFollowUpReminderTable = sql`
+  DROP INDEX IF EXISTS index_followUpReminder_status_dueAt;
+  DROP TABLE IF EXISTS "followUpReminder";
+`;
+
+/**
+ * Задачи Exchange (папка «Задачи»). Отдельная таблица без изменения `email`.
+ * Сроки — день `YYYY-MM-DD` без времени, остальное время — unixtime в секундах.
+ */
+export const createExchangeTaskTable = sql`
+  CREATE TABLE IF NOT EXISTS "exchangeTask" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    -- ItemId на сервере
+    "itemID" TEXT not null,
+    "changeKey" TEXT default null,
+    "subject" TEXT not null default '',
+    "notes" TEXT not null default '',
+    "startDay" TEXT default null,
+    "dueDay" TEXT default null,
+    "completedAt" INTEGER default null,
+    -- 'Low' | 'Normal' | 'High'
+    "importance" TEXT not null default 'Normal',
+    -- 'NotStarted' | 'InProgress' | 'Completed' | 'WaitingOnOthers' | 'Deferred'
+    "status" TEXT not null default 'NotStarted',
+    "lastModified" INTEGER default null,
+    UNIQUE("accountID", "itemID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+`;
+
+/** Откат createExchangeTaskTable для инструментов обслуживания базы. */
+export const rollbackExchangeTaskTable = sql`
+  DROP TABLE IF EXISTS "exchangeTask";
+`;
+
+/**
+ * Очередь отправки: отмена отправки и «Отправить позже».
+ * Письмо хранится целиком (`payload` — JSON редактора с вложениями),
+ * чтобы уйти после перезапуска и вернуться в редактор без потерь.
+ * Время — unixtime в миллисекундах: задержка отмены считается секундами.
+ */
+export const createScheduledSendTable = sql`
+  CREATE TABLE IF NOT EXISTS "scheduledSend" (
+    "id" INTEGER PRIMARY KEY,
+    "queueID" TEXT not null UNIQUE,
+    "accountID" INTEGER not null,
+    -- 'undo' | 'later'
+    "kind" TEXT not null default 'later',
+    -- 'local' | 'server'
+    "mode" TEXT not null default 'local',
+    -- 'pending' | 'sending' | 'failed' | 'paused' | 'server'
+    "status" TEXT not null default 'pending',
+    "sendAt" INTEGER not null,
+    "attempts" INTEGER not null default 0,
+    "lastError" TEXT default null,
+    "subject" TEXT not null default '',
+    "recipients" TEXT not null default '[]',
+    "payload" TEXT not null,
+    -- Метка того, кто сейчас отправляет: защита от двойной отправки
+    "claim" TEXT default null,
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_scheduledSend_status_sendAt
+  ON scheduledSend (status, sendAt);
+`;
+
+/** Откат createScheduledSendTable для инструментов обслуживания базы. */
+export const rollbackScheduledSendTable = sql`
+  DROP INDEX IF EXISTS index_scheduledSend_status_sendAt;
+  DROP TABLE IF EXISTS "scheduledSend";
+`;
+
+/**
+ * Шаблоны писем: тема, тело HTML и, по желанию, вложения.
+ * Шаблоны общие для всех ящиков и хранятся только локально.
+ * `attachments` — JSON-массив вложений редактора (содержимое в base64).
+ * Время — unixtime в миллисекундах, как в очереди отправки.
+ */
+export const createMailTemplateTable = sql`
+  CREATE TABLE IF NOT EXISTS "mailTemplate" (
+    "id" INTEGER PRIMARY KEY,
+    "name" TEXT not null,
+    "subject" TEXT not null default '',
+    "html" TEXT not null default '',
+    "attachments" TEXT not null default '[]',
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    "lastUsedAt" INTEGER default null
+  );
+`;
+
+/** Откат createMailTemplateTable для инструментов обслуживания базы. */
+export const rollbackMailTemplateTable = sql`
+  DROP TABLE IF EXISTS "mailTemplate";
+`;

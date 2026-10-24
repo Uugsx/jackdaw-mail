@@ -266,6 +266,8 @@
     margin-block-start: 2px;
   }
   .time-box :global(input:not([type="date"])) {
+    /* 5em — ширина текста, без отступов: у общих полей border-box, и время обрезалось */
+    box-sizing: content-box;
     max-width: 5em;
     text-align: right;
   }

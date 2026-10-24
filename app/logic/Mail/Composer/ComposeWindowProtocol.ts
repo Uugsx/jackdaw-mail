@@ -42,6 +42,10 @@ export interface ComposeWindowPerson {
   name: string | null;
 }
 
+export type ComposeWindowFollowUp =
+  | { mode: "calendar" | "working"; days: number }
+  | { mode: "date"; dueAt: string };
+
 export interface ComposeWindowAttachment {
   filename: string;
   filepathLocal: string | null;
@@ -96,6 +100,8 @@ export interface ComposeWindowMail {
   requestDeliveryReceipt: boolean;
   /** Необязательно: старые окна редактора его не передают */
   signatureRemovedByUser?: boolean;
+  /** «Напомнить, если не ответят». Необязательно: старые окна его не передают */
+  followUpReminder?: ComposeWindowFollowUp | null;
   isDraft: boolean;
   isDeleted: boolean;
   shouldEncrypt: boolean;
@@ -106,6 +112,8 @@ export interface ComposeWindowMail {
   headers: [string, string][];
   attachments: ComposeWindowAttachment[];
   composeSource: ComposeWindowSource | null;
+  /** «Отправить позже», ISO. Необязательно: старые окна его не передают */
+  sendAt?: string | null;
 }
 
 const kMaxIDLength = 512;
@@ -210,7 +218,9 @@ export function isComposeWindowPayload(value: unknown): value is ComposeWindowMa
       typeof mail.wasEncrypted !== "boolean" || !isNullableString(mail.signedByKeyID, kMaxIDLength) ||
       typeof mail.hasAttachmentsFlag !== "boolean" || !isHeaders(mail.headers) ||
       !Array.isArray(mail.attachments) || mail.attachments.length > kMaxAttachments || !mail.attachments.every(isAttachment) ||
-      !isNullableSource(mail.composeSource)) {
+      !isNullableSource(mail.composeSource) ||
+      !isOptionalFollowUp(mail.followUpReminder) ||
+      !(mail.sendAt === undefined || isDate(mail.sendAt))) {
     return false;
   }
   let bodyLength = (mail.html as string | null)?.length ?? 0;
@@ -221,6 +231,22 @@ export function isComposeWindowPayload(value: unknown): value is ComposeWindowMa
   let attachmentContentLength = (mail.attachments as ComposeWindowAttachment[])
     .reduce((total, attachment) => total + (attachment.contentBase64?.length ?? 0), 0);
   return attachmentContentLength <= kMaxAttachmentContentLength * 4;
+}
+
+function isOptionalFollowUp(value: unknown): value is ComposeWindowFollowUp | null | undefined {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  let followUp = value as Record<string, unknown>;
+  if (followUp.mode === "date") {
+    return isDate(followUp.dueAt) && followUp.dueAt !== null;
+  }
+  return (followUp.mode === "calendar" || followUp.mode === "working") &&
+    typeof followUp.days === "number" && Number.isInteger(followUp.days) &&
+    followUp.days >= 1 && followUp.days <= 365;
 }
 
 function isNullablePerson(value: unknown): value is ComposeWindowPerson | null {

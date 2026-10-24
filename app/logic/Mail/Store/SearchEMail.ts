@@ -4,6 +4,7 @@ import type { MailAccount } from "../MailAccount";
 import type { Folder } from "../Folder";
 import { getTagByName, type Tag } from "../../Abstract/Tag";
 import { findPerson } from "../../Abstract/PersonUID";
+import { mentionsMe } from "../Mentions/Mentions";
 import { appGlobal } from "../../app";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { notifyChangedProperty, Observable } from "../../util/Observable";
@@ -57,6 +58,9 @@ export class SearchEMail extends Observable {
   isReplied: boolean | null = null;
   @notifyChangedProperty
   isImportant: boolean | null = null;
+  /** Владелец ящика @упомянут в тексте (см. Mentions.ts). Только локальная проверка загруженного тела. */
+  @notifyChangedProperty
+  mentionsMe: boolean | null = null;
   readonly tags = new SetColl<Tag>();
   /**
    * При включении письмо подходит хотя бы по одному выбранному тегу.
@@ -81,6 +85,31 @@ export class SearchEMail extends Observable {
     throw new AbstractFunction();
   }
 
+  /**
+   * true — `startSearch()` только готовит поиск на сервере, не дожидаясь его:
+   * первую страницу вызывающий запрашивает сам через `loadMoreFromServer()`,
+   * а локальные результаты показываются сразу.
+   */
+  deferServerSearch = false;
+
+  /** Есть ещё результаты на сервере («Ещё результаты с сервера») */
+  get hasMoreOnServer(): boolean {
+    return false;
+  }
+
+  /** Ошибки папок при поиске на сервере: остальные папки они не останавливают */
+  get serverSearchErrors(): readonly unknown[] {
+    return [];
+  }
+
+  /**
+   * Следующая страница с сервера в тот же список результатов.
+   * @returns сколько новых писем добавилось
+   */
+  async loadMoreFromServer(emails: ArrayColl<EMail>): Promise<number> {
+    return 0;
+  }
+
   fromJSON(json: any) {
     function boolean(value: boolean | null): boolean | null {
       return typeof (value) == "boolean" ? value : null;
@@ -91,6 +120,7 @@ export class SearchEMail extends Observable {
     this.isReplied = boolean(json.isReplied);
     this.isStarred = boolean(json.isStarred);
     this.isImportant = boolean(json.isImportant);
+    this.mentionsMe = boolean(json.mentionsMe);
     this.hasAttachment = boolean(json.hasAttachment);
     this.hasAttachmentMIMETypes.replaceAll(sanitize.array(
       json.hasAttachmentMIMETypes?.map(mimetype => sanitize.string(mimetype)), []));
@@ -118,6 +148,7 @@ export class SearchEMail extends Observable {
       isReplied: this.isReplied,
       isStarred: this.isStarred,
       isImportant: this.isImportant,
+      mentionsMe: this.mentionsMe,
       hasAttachment: this.hasAttachment,
       hasAttachmentMIMETypes: this.hasAttachmentMIMETypes.contents,
       sizeMin: this.sizeMin,
@@ -170,6 +201,9 @@ export class SearchEMail extends Observable {
       return false;
     }
     if (!matchesBoolean(this.isImportant, email.isImportant)) {
+      return false;
+    }
+    if (this.mentionsMe != null && !matchesBoolean(this.mentionsMe, mentionsMe(email))) {
       return false;
     }
     if (!matchesBoolean(this.hasAttachment, email.hasVisibleAttachments)) {

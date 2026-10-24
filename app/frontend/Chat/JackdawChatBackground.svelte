@@ -14,6 +14,9 @@
   import { mailApp } from "../Mail/MailJackdawApp";
   import { openChatRoomFromOtherApp } from "./open";
   import { NotificationKinds, SystemNotification } from "../Shared/SystemNotification";
+  import { chatNotificationKinds } from "./chatNotificationPrefs";
+  import { getNotificationSound, playNotificationSound } from "../Shared/NotificationSound";
+  import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { notifications, Notification, NotificationSeverity } from "../MainWindow/Notification";
   import { backgroundError } from "../Util/error";
   import { gt } from "../../l10n/l10n";
@@ -64,17 +67,27 @@
   }
 
   function notifyIncoming(room: JackdawChatRoom, message: ChatMessage) {
+    let kinds = chatNotificationKinds(room.id, getJackdawCallClient().myStatus);
     if (isSeenNow(room)) {
       markRead(room); // пользователь видит это сообщение — оно прочитано, собеседник получит отметку
+      if (kinds.includes("sound") && getNotificationSound("chat") != "none") {
+        // Чат открыт: без всплывающего окна, но с тихим щелчком — новое сообщение не пройдёт незамеченным
+        playNotificationSound("chat", { sound: "pop" }).catch(backgroundError);
+      }
       return;
     }
+    if (!kinds.length) {
+      return;
+    }
+    // Заголовок — откуда уведомление: имя собеседника одно не говорит, что это чат Jackdaw Mail
     let notification = new SystemNotification(
-      new NotificationKinds(["popup", "sound"]),
-      room.name,
+      new NotificationKinds(kinds),
+      gt`Jackdaw Mail chat`,
       message.text || (message.attachments.length ? gt`File` : ""),
       `chat-${room.id}`,
       "chat",
     );
+    notification.subtitle = room.name;
     notification.updatesTaskbarBadge = false;
     notification.onClick = () => {
       openChatRoomFromOtherApp(room);

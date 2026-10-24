@@ -20,6 +20,8 @@
       <InvitationCancellationInMail />
     {:else if message.invitationMessage == InvitationMessage.ParticipantReply}
       <InvitationResponseInMail {message} />
+    {:else if $message.invitationMessage == InvitationMessage.CounterProposal}
+      <CounterProposalInMail {message} />
     {/if}
   </vbox>
   {#if $message.event && width > 600}
@@ -35,6 +37,7 @@
   import IncomingInvitationInMail from "./IncomingInvitationInMail.svelte";
   import InvitationResponseInMail from "./InvitationResponseInMail.svelte";
   import InvitationCancellationInMail from "./InvitationCancellationInMail.svelte";
+  import CounterProposalInMail from "./CounterProposalInMail.svelte";
   import EventInDayView from "../DisplayEvent/EventInDayView.svelte";
   import { t } from "../../../l10n/l10n";
 

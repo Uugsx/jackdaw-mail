@@ -2,13 +2,15 @@ import { SearchEMail } from "../Store/SearchEMail";
 import { SQLEMail } from "./SQLEMail";
 import { getDatabase } from "./SQLDatabase";
 import type { EMail } from "../EMail";
-import { Folder, SpecialFolder } from "../Folder";
+import { Folder } from "../Folder";
 import { appGlobal } from "../../app";
 import { backgroundError } from "../../../frontend/Util/error";
 import { assert } from "../../util/util";
 import { ArrayColl, MapColl } from "svelte-collections";
 import sql, { type Query } from "../../../../lib/rs-sqlite";
 import { gt } from "../../../l10n/l10n";
+import { ServerMailSearch, serverItemKey } from "../Search/ServerMailSearch";
+import { htmlMentionsAccount } from "../Mentions/Mentions";
 
 export class SQLSearchEMail extends SearchEMail {
   /** Start a database search based on the critera set on this object */
@@ -26,6 +28,7 @@ export class SQLSearchEMail extends SearchEMail {
     let query = sql`
       SELECT
         email.id as id, folderID
+        $${this.mentionsMe === true ? sql`, email.html as html, email.outgoing as outgoing ` : sql``}
       FROM email
       $${this.account?.dbID ? sql` LEFT JOIN folder ON (email.folderID = folder.id) ` : sql``}
       $${this.includesPerson ? sql` LEFT JOIN emailPersonRel ON (email.id = emailPersonRel.emailID) LEFT JOIN emailPerson ON (emailPersonRel.emailPersonID = emailPerson.id) ` : sql``}
@@ -37,6 +40,7 @@ export class SQLSearchEMail extends SearchEMail {
         $${typeof (this.isOutgoing) == "boolean" ? sql` AND outgoing = ${this.isOutgoing ? 1 : 0} ` : sql``}
         $${typeof (this.isRead) == "boolean" ? sql` AND isRead = ${this.isRead ? 1 : 0} ` : sql``}
         $${typeof (this.isStarred) == "boolean" ? sql` AND isStarred = ${this.isStarred ? 1 : 0} ` : sql``}
+        $${this.mentionsMe === true ? sql` AND email.html LIKE ${"%mailto:%"} ` : sql``}
         $${typeof (this.isReplied) == "boolean" ? sql` AND isReplied = ${this.isReplied ? 1 : 0} ` : sql``}
         $${typeof (this.isImportant) == "boolean" ? sql` AND isImportant = ${this.isImportant ? 1 : 0} ` : sql``}
         $${typeof (this.threadID) == "string" ? sql` AND threadID = ${this.threadID} ` : sql``}
@@ -110,6 +114,10 @@ export class SQLSearchEMail extends SearchEMail {
     };
     for (let row of rows) {
       let folder = findFolder(row.folderID);
+      // Упоминания: ссылку на свой адрес проверяем по HTML из базы — тело письма в памяти может быть не загружено
+      if (this.mentionsMe === true && (row.outgoing || !htmlMentionsAccount(row.html, (folder ?? randomFolder)?.account))) {
+        continue;
+      }
       let existing = findExisting(folder, row.id);
       if (existing) {
         emails.add(existing);
@@ -125,10 +133,12 @@ export class SQLSearchEMail extends SearchEMail {
       emails.add(email);
     }
 
-    // OWA: also search the server for unsynced mail matching the text query
-    if (this.bodyText?.trim()) {
+    // EWS и OWA: первая страница поиска на сервере — письма, которых нет в локальной базе
+    this.serverSearch = null;
+    // Сервер ищет только по тексту: с другими условиями он вернул бы лишние письма
+    if (this.bodyText?.trim() && this.isTextOnlySearch()) {
       try {
-        await this.mergeOWAServerSearch(emails, limit);
+        await this.mergeServerSearch(emails, !this.deferServerSearch);
       } catch (ex) {
         parseError(ex);
       }
@@ -137,52 +147,66 @@ export class SQLSearchEMail extends SearchEMail {
     return emails;
   }
 
-  protected async mergeOWAServerSearch(emails: ArrayColl<EMail>, limit?: number): Promise<void> {
-    const { OWAAccount } = await import("../OWA/OWAAccount");
-    const { OWAFolder } = await import("../OWA/OWAFolder");
+  /** Постраничный поиск на сервере после `startSearch()`; null — сервер не участвует */
+  serverSearch: ServerMailSearch | null = null;
+
+  get hasMoreOnServer(): boolean {
+    return !!this.serverSearch?.hasMore;
+  }
+
+  get serverSearchErrors(): readonly unknown[] {
+    return this.serverSearch?.errors ?? [];
+  }
+
+  async loadMoreFromServer(emails: ArrayColl<EMail>): Promise<number> {
+    if (!this.serverSearch?.hasMore) {
+      return 0;
+    }
+    return mergeNewResults(emails, await this.serverSearch.nextPage());
+  }
+
+  /** Кроме текста заданы только ящик и папка */
+  protected isTextOnlySearch(): boolean {
+    let ignored = ["bodyText", "accountID", "folderID", "tagsMatchAny"];
+    return Object.entries(this.toJSON()).every(([key, value]) =>
+      ignored.includes(key) || value == null || (Array.isArray(value) && !value.length));
+  }
+
+  protected async mergeServerSearch(emails: ArrayColl<EMail>, loadFirstPage = true): Promise<void> {
     let accounts = this.account
       ? [this.account]
       : appGlobal.emailAccounts.contents;
-    let query = this.bodyText!.trim();
-    let remaining = limit ? Math.max(0, limit - emails.length) : 50;
-    if (!remaining) {
+    let search = ServerMailSearch.forAccounts(accounts, this.bodyText!, this.folder);
+    if (!search.hasMore) {
       return;
     }
-    for (let account of accounts) {
-      if (!(account instanceof OWAAccount) || !account.isLoggedIn) {
-        continue;
-      }
-      let folders: Folder[] = [];
-      if (this.folder) {
-        folders = [this.folder];
-      } else {
-        // Prefer selected specials + Archive; avoid scanning every custom folder.
-        folders = [
-          account.inbox,
-          account.findSpecialFolder(SpecialFolder.Sent),
-          account.findSpecialFolder(SpecialFolder.Drafts),
-          account.findSpecialFolder(SpecialFolder.Archive),
-          account.findSpecialFolder(SpecialFolder.Trash),
-        ].filter(Boolean) as Folder[];
-      }
-      for (let folder of folders) {
-        if (!(folder instanceof OWAFolder) || !folder.id) {
-          continue;
-        }
-        let found = await folder.searchMessages(query, Math.min(remaining, 50));
-        for (let email of found) {
-          if (!emails.find(e => e === email ||
-              ((e as any).itemID && (e as any).itemID === (email as any).itemID))) {
-            emails.add(email);
-            remaining--;
-            if (remaining <= 0) {
-              return;
-            }
-          }
-        }
-      }
+    this.serverSearch = search;
+    if (!loadFirstPage) {
+      return;
+    }
+    mergeNewResults(emails, await search.nextPage());
+    if (search.errors.length) {
+      backgroundError(search.errors[0] as Error);
     }
   }
+}
+
+/** Добавляет письма с сервера, которых ещё нет в результатах (локальные найдены по тому же ItemId) */
+function mergeNewResults(emails: ArrayColl<EMail>, found: EMail[]): number {
+  let known = new Set(emails.contents.map(serverItemKey).filter(Boolean));
+  let added = found.filter(email => {
+    let key = serverItemKey(email);
+    if (!key) {
+      return !emails.contents.includes(email);
+    }
+    if (known.has(key)) {
+      return false;
+    }
+    known.add(key);
+    return true;
+  });
+  emails.addAll(added);
+  return added.length;
 }
 
 /** For debugging, returns the rs-sql SQL query as a string */

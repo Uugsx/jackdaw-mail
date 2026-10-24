@@ -1,6 +1,6 @@
 <svelte:window on:keydown={onKeydown} />
 
-<vbox flex class="standalone-message">
+<vbox flex class="standalone-message standalone-window">
   {#if loading}
     <vbox flex class="message-state" aria-live="polite">
       <Spinner size="36px" />

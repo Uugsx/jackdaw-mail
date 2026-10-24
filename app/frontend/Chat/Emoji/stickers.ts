@@ -1,3 +1,5 @@
+import { gt } from "../../../l10n/l10n";
+
 export interface StickerDefinition {
   id: string;
   emoji: string;
@@ -27,13 +29,36 @@ export const stickerCatalog: readonly StickerDefinition[] = [
   { id: "coffee", emoji: "☕", title: "Coffee", keywords: ["coffee", "break", "кофе", "перерыв"], background: "#D6D3D1" },
 ];
 
+/** Название стикера на языке интерфейса (`title` — английское, для поиска на любом языке) */
+export function stickerTitle(sticker: StickerDefinition): string {
+  switch (sticker.id) {
+    case "thumbs-up": return gt`Thumbs up`;
+    case "heart": return gt`Heart`;
+    case "laugh": return gt`Laughing`;
+    case "party": return gt`Party`;
+    case "fire": return gt`Fire`;
+    case "clap": return gt`Clap`;
+    case "thanks": return gt`Thanks`;
+    case "hug": return gt`Hug`;
+    case "cool": return gt`Cool`;
+    case "hundred": return gt`One hundred`;
+    case "rocket": return gt`Rocket`;
+    case "sparkles": return gt`Sparkles`;
+    case "wave": return gt`Wave`;
+    case "thinking": return gt`Thinking`;
+    case "eyes": return gt`Eyes`;
+    case "coffee": return gt`Coffee`;
+    default: return sticker.title;
+  }
+}
+
 export function filterStickers(searchTerm: string | null): StickerDefinition[] {
   let term = searchTerm?.trim().toLocaleLowerCase();
   if (!term) {
     return [...stickerCatalog];
   }
   return stickerCatalog.filter(sticker =>
-    [sticker.title, sticker.emoji, ...sticker.keywords]
+    [sticker.title, stickerTitle(sticker), sticker.emoji, ...sticker.keywords]
       .some(value => value.toLocaleLowerCase().includes(term)));
 }
 

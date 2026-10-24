@@ -19,7 +19,9 @@
   import {
     findRelatedEmails,
     groupRelatedMailMatches,
-    type RelatedMailGroupKind,
+    type RelatedMailFeature,
+    type RelatedMailFeatureKind,
+    type RelatedMailGroup,
     type RelatedMailMatch,
     type RelatedMailReason,
   } from "../../../logic/Mail/RelatedEMail";
@@ -32,6 +34,10 @@
   let status: RelatedState = "idle";
   let matches: RelatedMailMatch[] = [];
   let expandedGroupKeys = new Set<string>();
+  /** Пользователь сам раскрывал группы: не перестраиваем их при догрузке */
+  let groupsToggled = false;
+  /** Быстрые результаты уже показаны, идёт поиск по тексту писем */
+  let scanningText = false;
   let popupOpen = false;
   let triggerElement: HTMLButtonElement;
   let popupCloseButton: HTMLButtonElement;
@@ -66,19 +72,38 @@
     const token = ++loadToken;
     status = "loading";
     matches = [];
+    groupsToggled = false;
+    scanningText = false;
     try {
-      const result = await findRelatedEmails(message);
+      const result = await findRelatedEmails(message, undefined, partial => {
+        if (token != loadToken) {
+          return;
+        }
+        showMatches(partial);
+        scanningText = true;
+      });
       if (token != loadToken) {
         return;
       }
-      matches = result;
-      expandedGroupKeys = new Set();
-      status = "ready";
+      showMatches(result);
     } catch {
       if (token == loadToken) {
         status = "error";
       }
+    } finally {
+      if (token == loadToken) {
+        scanningText = false;
+      }
     }
+  }
+
+  function showMatches(result: RelatedMailMatch[]) {
+    matches = result;
+    if (!groupsToggled) {
+      const firstGroup = groupRelatedMailMatches(result)[0];
+      expandedGroupKeys = new Set(firstGroup ? [firstGroup.key] : []);
+    }
+    status = "ready";
   }
 
   function togglePopup() {
@@ -113,6 +138,7 @@
   }
 
   function toggleGroup(groupKey: string) {
+    groupsToggled = true;
     const nextKeys = new Set(expandedGroupKeys);
     if (nextKeys.has(groupKey)) {
       nextKeys.delete(groupKey);
@@ -122,15 +148,85 @@
     expandedGroupKeys = nextKeys;
   }
 
-  function groupReasonLabel(kind: RelatedMailGroupKind): string {
-    switch (kind) {
+  function groupReasonLabel(group: RelatedMailGroup): string {
+    if (group.feature) {
+      return featureGroupLabel(group.feature);
+    }
+    switch (group.kind) {
       case "identifier":
         return reasonLabel("same-identifier");
       case "conversation":
         return reasonLabel("same-thread");
+      case "contact":
+        return reasonLabel("same-contact");
       case "topic":
         return reasonLabel("same-topic");
     }
+  }
+
+  /** Почему письма группы связаны с открытым */
+  function featureGroupLabel(kind: RelatedMailFeatureKind): string {
+    switch (kind) {
+      case "duplicate":
+        return $t`Exact duplicate`;
+      case "thread":
+        return $t`Same conversation`;
+      case "ticket":
+        return $t`Same reference number`;
+      case "customer":
+        return $t`Same client number (ICN)`;
+      case "order":
+        return $t`Same order or parcel`;
+      case "inn":
+        return $t`Same tax ID (INN)`;
+      case "address":
+        return $t`Same client (address)`;
+      case "company":
+        return $t`Same company`;
+      case "reference":
+        return $t`Same number`;
+      case "domain":
+        return $t`Same organization (domain)`;
+      case "subject":
+        return $t`Similar topic`;
+    }
+  }
+
+  /** Короткая пометка дополнительного признака на письме */
+  function featureChipLabel(feature: RelatedMailFeature): string {
+    switch (feature.kind) {
+      case "duplicate":
+        return $t`Exact duplicate`;
+      case "thread":
+        return $t`Same conversation`;
+      case "subject":
+        return $t`Similar topic`;
+      case "ticket":
+        return $t`Request ${feature.label}`;
+      case "customer":
+        return $t`ICN ${feature.label}`;
+      case "order":
+        return $t`Order ${feature.label}`;
+      case "inn":
+        return $t`INN ${feature.label}`;
+      case "address":
+        return $t`Client ${feature.label}`;
+      case "company":
+        return feature.label;
+      case "reference":
+        return $t`Number ${feature.label}`;
+      case "domain":
+        return $t`Domain ${feature.label}`;
+    }
+  }
+
+  /** Признаки письма, кроме того, по которому оно уже стоит в группе */
+  function extraFeatures(match: RelatedMailMatch): RelatedMailFeature[] {
+    return match.features?.slice(1) ?? [];
+  }
+
+  function isMonospaceGroup(group: RelatedMailGroup): boolean {
+    return group.kind == "identifier" || group.feature == "address" || group.feature == "domain";
   }
 
   function reasonLabel(reason: RelatedMailReason): string {
@@ -141,6 +237,12 @@
         return $t`Same conversation`;
       case "same-identifier":
         return $t`Same reference number`;
+      case "same-contact":
+        return $t`Same client (address)`;
+      case "same-company":
+        return $t`Same company`;
+      case "same-domain":
+        return $t`Same organization (domain)`;
       case "same-topic":
         return $t`Same subject`;
       case "similar-topic":
@@ -168,7 +270,7 @@
   aria-label={triggerLabel}
   aria-expanded={popupOpen}
   aria-controls={popupId}
-  aria-busy={status == "loading"}
+  aria-busy={status == "loading" || scanningText}
   title={triggerLabel}
   bind:this={triggerElement}
   on:click={togglePopup}
@@ -197,7 +299,7 @@
     role="dialog"
     aria-modal="false"
     aria-labelledby={titleId}
-    aria-busy={status == "loading"}
+    aria-busy={status == "loading" || scanningText}
     >
     <header class="related-popup-header">
       <div class="related-title">
@@ -212,13 +314,19 @@
             <span class="related-summary">
               {$t`Found related messages: ${matches.length}`}
             </span>
+            {#if scanningText}
+              <span class="related-summary scanning" role="status">
+                <span class="trigger-loading" aria-hidden="true"></span>
+                {$t`Searching message text…`}
+              </span>
+            {/if}
           {:else}
             <span class="related-summary">{$t`Could not check related messages.`}</span>
           {/if}
         </div>
       </div>
       <div class="related-actions">
-        {#if status == "ready" || status == "error"}
+        {#if (status == "ready" && !scanningText) || status == "error"}
           <button
             type="button"
             class="popup-icon-button"
@@ -257,6 +365,11 @@
           <span>{$t`The local search is temporarily unavailable.`}</span>
           <Button label={$t`Try again`} classes="secondary" onClick={loadRelated} />
         </div>
+      {:else if !matches.length && scanningText}
+        <div class="loading-row" aria-live="polite">
+          <span class="skeleton-line short"></span>
+          <span class="skeleton-line"></span>
+        </div>
       {:else if !matches.length}
         <p class="state-row empty-state" role="status">
           {$t`No related messages found in local mail.`}
@@ -280,8 +393,8 @@
                   {/if}
                 </span>
                 <span class="group-copy">
-                  <span class="group-reason">{groupReasonLabel(group.kind)}</span>
-                  <span class:group-identifier={group.kind == "identifier"} class="group-label">
+                  <span class="group-reason">{groupReasonLabel(group)}</span>
+                  <span class:group-identifier={isMonospaceGroup(group)} class="group-label">
                     {group.label || $t`No subject`}
                   </span>
                 </span>
@@ -305,8 +418,13 @@
                           </span>
                         </div>
                         <div class="item-details">
-                          <span class="reason">{reasonLabel(match.reason)}</span>
+                          {#if !match.features?.length}
+                            <span class="reason">{reasonLabel(match.reason)}</span>
+                          {/if}
                           <span class="item-contact">{contactLabel(match.email)}</span>
+                          {#if match.email.folder}
+                            <span class="item-folder" title={match.email.folder.account?.name}>{match.email.folder.name}</span>
+                          {/if}
                           {#if match.email.isReplied}
                             <span class="reply-status">{$t`Reply was sent`}</span>
                           {:else if match.email.outgoing}
@@ -314,10 +432,17 @@
                           {:else}
                             <span class="reply-status">{$t`Received message`}</span>
                           {/if}
-                          {#if sharedContextLabel(match)}
-                            <span class="identifier">{sharedContextLabel(match)}</span>
+                          {#if !match.features && sharedContextLabel(match)}
+                            <span class="identifier" title={sharedContextLabel(match)}>{sharedContextLabel(match)}</span>
                           {/if}
                         </div>
+                        {#if extraFeatures(match).length}
+                          <div class="item-features" aria-label={$t`Also linked by`}>
+                            {#each extraFeatures(match) as feature (feature.kind + ":" + feature.value)}
+                              <span class="feature-chip" title={featureGroupLabel(feature.kind)}>{featureChipLabel(feature)}</span>
+                            {/each}
+                          </div>
+                        {/if}
                       </button>
                     </li>
                   {/each}
@@ -424,11 +549,17 @@
   }
   .related-summary,
   .item-contact,
+  .item-folder,
   .reply-status,
   .identifier,
   .item-date {
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
+  }
+  .related-summary.scanning {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .related-summary {
     display: block;
@@ -589,6 +720,7 @@
     font-weight: 600;
   }
   .item-contact,
+  .item-folder,
   .reply-status,
   .identifier {
     overflow: hidden;
@@ -597,6 +729,24 @@
   }
   .identifier {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .item-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+  .feature-chip {
+    max-width: 100%;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--icon-primary) 10%, transparent);
+    color: color-mix(in srgb, var(--main-fg) 78%, var(--icon-primary));
+    font-size: 11px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .state-row {
     justify-content: space-between;

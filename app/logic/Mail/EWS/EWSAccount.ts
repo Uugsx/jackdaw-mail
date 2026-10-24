@@ -2,6 +2,8 @@ import { ExchangeMailAccount } from "./ExchangeMailAccount";
 import { MailIdentity } from "../MailIdentity";
 import { AuthMethod, type Account } from "../../Abstract/Account";
 import type { EMail } from "../EMail";
+import type { EWSEMail } from "./EWSEMail";
+import { rethrowSendAsDenied } from "../SendAs/SendAsError";
 import { SpecialFolder, type Folder, type MailShareCombinedPermissions, type MailShareIndividualPermissions } from "../Folder";
 import { EWSFolder, getEWSItem } from "./EWSFolder";
 import { deleteExchangePermissions, setExchangePermissions } from "./ExchangePermission";
@@ -9,6 +11,8 @@ import { EWSCreateItemRequest } from "./Request/EWSCreateItemRequest";
 import type { EWSDeleteItemRequest } from "./Request/EWSDeleteItemRequest";
 import type { EWSUpdateItemRequest } from "./Request/EWSUpdateItemRequest";
 import { EWSError, EWSItemError } from "./EWSError";
+import { checkInboxRulesResponse, ewsGetInboxRulesRequest, ewsUpdateInboxRulesRequest, parseInboxRulesResponse, type InboxRuleList, type InboxRuleOperation } from "./InboxRules";
+import { checkOutOfOfficeResponse, ewsGetOutOfOfficeRequest, ewsSetOutOfOfficeRequest, parseOutOfOfficeResponse, type OutOfOfficeSettings } from "./OutOfOffice";
 import type { EWSAddressbook } from "../../Contacts/EWS/EWSAddressbook";
 import type { EWSCalendar } from "../../Calendar/EWS/EWSCalendar";
 import { EWSGAL } from "../../Contacts/EWS/EWSGAL";
@@ -34,6 +38,8 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray, NotReached, NotSupported, type Json } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
+import { addEWSDeferredSend, addEWSExtendedProperties, type EWSDeferredSend } from "../SendLater/EWSDeferredSend";
+import { ewsVotingProperties } from "../Voting/VotingExchange";
 
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
@@ -142,6 +148,8 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         // `listFolders()` will subscribe to new user-added addressbooks and calendars
 
         await this.subscribeToNotifications();
+        // Плашка автоответа в почте: необязательные данные, ошибка не мешает запуску
+        this.loadOutOfOffice().catch(() => undefined);
       } finally { // Even when the mail folders failed, so that calendar and addressbook still work
         await this.startupDependentAccounts();
       }
@@ -178,7 +186,7 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
    * This uses Exchange to construct the message rather than
    * building the MIME ourselves.
    */
-  async send(email: EMail): Promise<void> {
+  async send(email: EMail, deferred?: EWSDeferredSend): Promise<void> {
     if (email.iCalMethod) {
       throw new NotSupported("Please use Exchange APIs to send iMIP messages");
     }
@@ -231,6 +239,15 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       addRecipients(request, "ToRecipients", email.to.contents);
       addRecipients(request, "CcRecipients", email.cc.contents);
     }
+    if (deferred) {
+      // До получателей сырого MIME: порядок элементов важен для старых Exchange
+      addEWSDeferredSend(request.m$CreateItem.m$Items.t$Message, deferred);
+    }
+    let votingProperties = ewsVotingProperties(email);
+    if (votingProperties.length) {
+      // Кнопки голосования и ответ на них — свойства Exchange, чтобы их видел Outlook
+      addEWSExtendedProperties(request.m$CreateItem.m$Items.t$Message, votingProperties);
+    }
     addRecipients(request, "BccRecipients", email.bcc.contents);
     addRecipients(request, "From", [email.from]);
     if (!email.sendRawMIME && email.replyTo) {
@@ -256,7 +273,75 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         t$CompleteDate: null,
       });
     }
+    try {
+      await this.callEWS(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, email.from?.emailAddress);
+    }
+  }
+
+  get canSendReadReceipt(): boolean {
+    return true;
+  }
+
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    assert(mdn.sendRawMIME, "Need MDN MIME");
+    // Без копии в «Отправленных», как Outlook
+    let request = new EWSCreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("Message", "MimeContent", btoa(mdn.sendRawMIME), "item:MimeContent");
+    try {
+      await this.callEWS(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, mdn.from?.emailAddress);
+    }
+    // Уведомление уже ушло: сбой отметки не должен вызывать повторную отправку
+    await this.suppressReadReceipt(original).catch(this.errorCallback);
+  }
+
+  /** EWS `SuppressReadReceipt`: снимает запрос на сервере, чтобы не спросили другие программы */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+    let itemID = (original as EWSEMail).itemID;
+    if (!itemID) {
+      return;
+    }
+    let request = new EWSCreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("SuppressReadReceipt", "ReferenceItemId", { Id: itemID });
     await this.callEWS(request);
+  }
+
+  /** Общие ящики — через локальную очередь: неизвестно, в чьих «Исходящих» сервер держит письмо */
+  get canDeferSendOnServer(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  get canOutOfOffice(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  protected async fetchOutOfOffice(): Promise<OutOfOfficeSettings> {
+    let response = await this.callEWS(ewsGetOutOfOfficeRequest(this.emailAddress));
+    checkOutOfOfficeResponse(response);
+    return parseOutOfOfficeResponse(response);
+  }
+
+  protected async pushOutOfOffice(settings: OutOfOfficeSettings): Promise<void> {
+    let response = await this.callEWS(ewsSetOutOfOfficeRequest(this.emailAddress, settings));
+    checkOutOfOfficeResponse(response);
+  }
+
+  get canServerRules(): boolean {
+    return !this.isDependentAccount;
+  }
+
+  async loadInboxRules(): Promise<InboxRuleList> {
+    let response = await this.callEWS(ewsGetInboxRulesRequest());
+    checkInboxRulesResponse(response);
+    return parseInboxRulesResponse(response);
+  }
+
+  async updateInboxRules(operations: InboxRuleOperation[], removeOutlookRuleBlob = false): Promise<void> {
+    let response = await this.callEWS(ewsUpdateInboxRulesRequest(operations, removeOutlookRuleBlob));
+    checkInboxRulesResponse(response);
   }
 
   request2XML(aRequest: JsonRequest): string {
@@ -292,6 +377,40 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     let delegate = responseXML.querySelector("GetDelegateResponse");
     if (delegate?.getAttribute("ResponseClass") == "Success") {
       return [...responseXML.querySelectorAll("DelegateUser")].map(user => XML2JSON(user));
+    }
+    // Правила входящих отвечают своим элементом, ResponseClass прямо на нём
+    let inboxRules = responseXML.querySelector("GetInboxRulesResponse, UpdateInboxRulesResponse");
+    if (inboxRules) {
+      let json: any = XML2JSON(inboxRules);
+      if (json.ResponseClass == "Error") {
+        let error = new EWSItemError(json, aRequest);
+        try {
+          checkInboxRulesResponse(json);
+        } catch (ex) {
+          // С подробностями из RuleOperationErrors, например «папка не найдена»
+          error.message = ex.message;
+        }
+        throw error;
+      }
+      return json;
+    }
+    // Списки комнат и комнаты — тоже своим элементом, ResponseClass прямо на нём
+    let rooms = responseXML.querySelector("GetRoomListsResponse, GetRoomsResponse");
+    if (rooms) {
+      let json: any = XML2JSON(rooms);
+      if (json.ResponseClass == "Error") {
+        throw new EWSItemError(json, aRequest);
+      }
+      return json;
+    }
+    // Автоответ отвечает своим элементом, без ResponseMessages
+    let outOfOffice = responseXML.querySelector("GetUserOofSettingsResponse, SetUserOofSettingsResponse");
+    if (outOfOffice) {
+      let json: any = XML2JSON(outOfOffice);
+      if (json.ResponseMessage?.ResponseClass == "Error") {
+        throw new EWSItemError(json.ResponseMessage, aRequest);
+      }
+      return json;
     }
     let messages = responseXML.querySelector("ResponseMessages");
     if (!messages) {
@@ -403,6 +522,9 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       response = this.authMethod == AuthMethod.NTLM
         ? await this.ntlm.request(this.request2XML(aRequest), { headers: { 'Content-Type': kXMLContentType } })
         : await fetch(this.url, this.createRequestOptions({ body: this.request2XML(aRequest) }));
+    } catch (ex) {
+      this.connectionStatus.reportFailure(ex);
+      throw ex;
     } finally {
       lock.release();
     }
@@ -411,6 +533,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     } catch (ex) {
       response.responseText = "";
     }
+    // SOAP-ответ с ошибкой (HTTP 500) — ответ работающего сервера,
+    // страница ошибки балансировщика — нет
+    this.connectionStatus.reportHTTPResponse(response.status, response.statusText,
+      /<(?:\w+:)?Envelope\b/.test(response.responseText));
     this.fatalError = null;
     if (response.status == 200) {
       try {

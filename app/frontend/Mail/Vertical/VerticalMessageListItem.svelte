@@ -1,10 +1,12 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <vbox class="message"
+  class:table={!!columns}
   class:starred={$message.isStarred}
   class:unread={!$message.isRead}
   class:show-account-color={$emailAccounts.length > 1}
   draggable="true" on:dragstart={(event) => catchErrors(() => onDragStartMail(event, message))}
+  on:pointerdown={() => message.mime || message.loadMIME().catch(() => undefined)}
   style="--account-color: {$message.folder.account.color};"
   on:contextmenu={contextMenu.onContextMenu}
   on:click
@@ -13,6 +15,58 @@
   on:swipeleft={() => catchErrors(markAsSpam)}
   bind:this={popupAnchor}
   >
+  {#if columns}
+  {#each columns as column (column)}
+    {#if column == "importance"}
+      <hbox class="cell icon-cell t-importance" title={$message.isImportant ? $t`High importance` : undefined}>
+        {#if $message.isImportant}
+          <ImportantIcon size={14} class="important" />
+        {/if}
+      </hbox>
+    {:else if column == "status"}
+      <hbox class="cell icon-cell t-status button" class:unread={!$message.isRead} class:dot={unreadDot}>
+        <Button
+          icon={$message.isReplied ? ReplyIcon : $message.isForwarded ? ForwardIcon : $message.isRead ? MailOpenIcon : CircleIcon}
+          iconSize={unreadDot ? "9px" : "14px"}
+          iconOnly
+          label={statusTitle}
+          onClick={toggleRead}
+          plain
+          />
+      </hbox>
+    {:else if column == "attachment"}
+      <hbox class="cell icon-cell t-attachment">
+        {#if $message.hasVisibleAttachments}
+          <AttachmentIcon size="13px" />
+        {/if}
+      </hbox>
+    {:else if column == "from"}
+      <hbox class="cell text-cell t-from" title={contactName}>{contactName}</hbox>
+    {:else if column == "subject"}
+      <hbox class="cell t-subject-cell">
+        <span class="text-cell t-subject" title={$message.subject}>{$message.subject}</span>
+        <CollisionBadge {message} compact />
+      </hbox>
+    {:else if column == "received"}
+      <hbox class="cell text-cell t-date" title={fullDate}>{getDateTimeString(listDate)}</hbox>
+    {:else if column == "size"}
+      <hbox class="cell text-cell t-size" title={sizeLabel}>{sizeLabel}</hbox>
+    {:else if column == "categories"}
+      <hbox class="cell t-categories"><MessageTags tags={$tags} /></hbox>
+    {:else if column == "flag"}
+      <hbox class="cell icon-cell t-flag button" class:starred={$message.isStarred}>
+        <Button
+          icon={FlagIcon}
+          iconSize="13px"
+          iconOnly
+          label={$message.isStarred ? $t`Clear flag` : $t`Flag this message`}
+          onClick={toggleStar}
+          plain
+          />
+      </hbox>
+    {/if}
+  {/each}
+  {:else}
   <hbox class="top-row">
     <hbox class="direction" title={actionTitle}>
       {#if $message.isReplied}
@@ -26,7 +80,7 @@
         <hbox class="action-date font-smallest">{actionDate}</hbox>
       {/if}
     </hbox>
-    <hbox class="contact font-small">{contactName}</hbox>
+    <hbox class="contact font-small" title={contactName}>{contactName}</hbox>
     <hbox flex />
     <hbox class="date font-smallest">{getDateTimeString($message.listDisplayDate())}</hbox>
     <hbox class="unread-dot button" class:unread={!$message.isRead}>
@@ -41,7 +95,8 @@
     </hbox>
   </hbox>
   <hbox class="bottom-row">
-    <hbox class="subject font-small">{$message.subject}</hbox>
+    <hbox class="subject font-small" title={$message.subject}>{$message.subject}</hbox>
+    <CollisionBadge {message} compact />
     <MessageTags tags={$tags} />
     {#if !isMobile}
       <hbox class="move button">
@@ -53,6 +108,11 @@
           onClick={onPopupToggle}
           plain
           />
+      </hbox>
+    {/if}
+    {#if pinned}
+      <hbox class="pinned" title={$t`Pinned`}>
+        <PinIcon size="14px" />
       </hbox>
     {/if}
     <hbox class="star button" class:starred={$message.isStarred}>
@@ -71,6 +131,7 @@
       {/if}
     </hbox>
   </hbox>
+  {/if}
 </vbox>
 <ContextMenu bind:this={contextMenu}>
   <MessageMenu {message} onMove={onPopupToggle} />
@@ -101,17 +162,26 @@
   import ForwardIcon from "lucide-svelte/icons/forward";
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import StarIcon from "lucide-svelte/icons/star";
+  import PinIcon from "lucide-svelte/icons/pin";
+  import { isMessagePinned, pinnedMessagesChanged } from "../../../logic/Mail/Pin/PinnedMessages";
   import CircleIcon from "lucide-svelte/icons/circle";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
   import FolderActionsIcon from "lucide-svelte/icons/folder-dot";
+  import FlagIcon from "lucide-svelte/icons/flag";
+  import MailOpenIcon from "lucide-svelte/icons/mail-open";
   import { isMobile } from "../../../logic/build";
-  import { getDateTimeString } from "../../Util/date";
+  import { getDateTimeString, getFormattedDateString } from "../../Util/date";
   import { catchErrors } from "../../Util/error";
   import { deleteMessagesFromUI } from "../mailDeleteUndo";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
+  import { mailSizeLabel, type MailListColumnId } from "../mailListColumns";
 
   export let message: EMail;
+  $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
+  /** Столбцы табличного вида; null — двухстрочная карточка */
+  export let columns: MailListColumnId[] | null = null;
 
   $: tags = message.tags;
   $: contactName = personDisplayName($message.contact);
@@ -125,6 +195,17 @@
     : $message.isForwarded
       ? actionDate ? $t`Forwarded: ${actionDate}` : $t`Forwarded`
       : "";
+  $: listDate = $message.listDisplayDate();
+  $: fullDate = columns && listDate
+    ? getFormattedDateString(listDate, {
+      weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "numeric",
+    })
+    : "";
+  $: sizeLabel = columns ? mailSizeLabel($message.size) : "";
+  $: readTitle =$message.isRead ? $t`Mark this message as unread` : $t`Mark this message as read`;
+  $: statusTitle = actionTitle ? `${actionTitle}. ${readTitle}` : readTitle;
+  /** Непрочитанное без ответа и пересылки: залитая точка, как в Outlook */
+  $: unreadDot = !$message.isRead && !$message.isReplied && !$message.isForwarded;
 
   async function toggleRead() {
     await message.markRead(!message.isRead);
@@ -182,6 +263,8 @@
 
 <style>
   .message {
+    /* Ссылочный цвет темы контрастен фону и в светлой, и в тёмной теме */
+    --unread-fg: var(--link-fg, var(--icon-primary));
     padding: 4px 12px 4px 8px !important;
     justify-content: baseline;
     align-items: baseline;
@@ -234,8 +317,13 @@
   .unread .date {
     font-weight: 700;
   }
-  .unread .subject {
-    color: var(--main-fg, var(--fg));
+  .unread .subject,
+  .unread .date {
+    color: var(--unread-fg);
+  }
+  :global(.row.selected) .unread .subject,
+  :global(.row.selected) .unread .date {
+    color: inherit;
   }
   :global(.row.selected) .subject {
     color: inherit;
@@ -268,6 +356,11 @@
   }
   .star {
     margin-inline-end: 1px; /* for alignment with unread button */
+  }
+  .pinned {
+    align-self: center;
+    color: var(--icon-primary, currentColor);
+    margin-inline-end: 4px;
   }
   .attachments :global(> *) {
     margin-inline-end: 3px; /* for alignment with unread button */
@@ -398,8 +491,115 @@
     display: none;
   }
 
+  /* Табличный вид: одна строка, столбцы как в заголовке списка */
+  .message.table {
+    display: grid;
+    grid-template-columns: var(--mail-list-grid);
+    column-gap: var(--mail-list-column-gap, 8px);
+    align-items: center;
+    box-sizing: border-box;
+    height: var(--mail-list-table-row-height, 28px);
+    min-width: 0;
+    padding: 0 var(--mail-list-row-padding-end, 8px) 0 var(--mail-list-row-padding-start, 8px) !important;
+    overflow: hidden;
+  }
+  .message.table.show-account-color::before {
+    inset-inline-start: 3px;
+    top: 20%;
+    height: 60%;
+  }
+  .cell {
+    min-width: 0;
+    align-items: center;
+    overflow: hidden;
+  }
+  .icon-cell {
+    justify-content: center;
+    width: 100%;
+  }
+  .text-cell {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--msg-list-fs, 13px);
+  }
+  .t-subject-cell {
+    gap: 6px;
+  }
+  .t-subject {
+    flex: 0 1 auto;
+    color: color-mix(in srgb, var(--main-fg, var(--fg)) 82%, transparent);
+  }
+  .t-date,
+  .t-size {
+    font-size: var(--msg-list-fs-sm, 12px);
+    font-variant-numeric: tabular-nums;
+  }
+  .t-size {
+    text-align: end;
+  }
+  .unread .t-from,
+  .unread .t-subject,
+  .unread .t-date {
+    font-weight: 700;
+  }
+  /* Непрочитанные заметны в любой теме, как в Outlook: цвет акцента темы */
+  .unread .t-from,
+  .unread .t-subject,
+  .unread .t-date {
+    color: var(--unread-fg);
+  }
+  :global(.row.selected) .unread .t-from,
+  :global(.row.selected) .unread .t-subject,
+  :global(.row.selected) .unread .t-date {
+    color: inherit;
+  }
+  :global(.row.selected) .t-subject {
+    color: inherit;
+  }
+  .t-categories :global(.message-tags) {
+    width: 100%;
+    min-width: 0;
+  }
+  .t-importance :global(svg.important) {
+    color: crimson;
+  }
+  .t-attachment {
+    opacity: 60%;
+  }
+  .t-status :global(svg),
+  .t-flag :global(svg) {
+    stroke-width: 1.5px;
+  }
+  .t-status:not(.unread) :global(svg) {
+    opacity: 0.55;
+  }
+  .t-status.unread :global(svg) {
+    color: var(--unread-fg);
+  }
+  .t-status.dot :global(svg) {
+    fill: currentColor;
+  }
+  .t-flag.starred :global(svg) {
+    color: crimson;
+    fill: crimson;
+  }
+  :global(.row:not(:hover)) .t-flag:not(.starred) :global(svg) {
+    visibility: hidden;
+  }
+  :global(.row.selected) .t-importance :global(svg.important),
+  :global(.row.selected) .t-status.unread :global(svg),
+  :global(.row.selected) .t-flag.starred :global(svg) {
+    color: var(--selected-fg);
+  }
+  :global(.row.selected) .t-flag.starred :global(svg) {
+    fill: var(--selected-fg);
+  }
+
   /* Однострочный режим списка для дополнительной плотности интерфейса. */
-  :global(.desktop.main-window.ui-density-extra-compact) .message {
+  :global(.desktop.main-window.ui-density-extra-compact) .message:not(.table) {
     display: grid;
     grid-template-columns: 22px minmax(0, 23%) minmax(4rem, 1fr) minmax(0, 22%) auto 18px 18px auto auto;
     grid-template-rows: 24px;
@@ -496,7 +696,7 @@
     grid-column: 9;
     grid-row: 1;
   }
-  :global(.desktop.main-window.ui-density-extra-compact) .message::before {
+  :global(.desktop.main-window.ui-density-extra-compact) .message:not(.table)::before {
     inset-inline-start: 5px;
     top: 10%;
     height: 80%;

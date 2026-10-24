@@ -119,24 +119,58 @@ export function formatWorkingTime(minutes: number): string {
   return `${String(hours).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-/** Проверяет, находится ли локальный момент внутри рабочего интервала. */
+/** День недели (понедельник = 0) и минуты от полуночи.
+ * Без `timeZone` — местное время устройства, иначе — в этом часовом поясе IANA. */
+export function weekdayAndMinutes(
+  date: Date,
+  timeZone?: string | null,
+): { weekday: number; minutes: number } {
+  if (!timeZone) {
+    return {
+      weekday: localWeekday(date),
+      minutes:
+        date.getHours() * MINUTES_PER_HOUR +
+        date.getMinutes() +
+        date.getSeconds() / 60 +
+        date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND),
+    };
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type == type)?.value ?? "";
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return {
+    weekday: Math.max(0, weekdays.indexOf(value("weekday"))),
+    minutes:
+      (Number(value("hour")) % 24) * MINUTES_PER_HOUR +
+      Number(value("minute")) +
+      Number(value("second")) / 60 +
+      date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND),
+  };
+}
+
+/** Проверяет, находится ли момент внутри рабочего интервала.
+ * @param timeZone часовой пояс графика; по умолчанию местное время */
 export function isWithinWorkingHours(
   date: Date,
   schedule: WorkingHoursSchedule = DEFAULT_WORKING_HOURS_SCHEDULE,
+  timeZone?: string | null,
 ): boolean {
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
     return false;
   }
   const normalized = normalizeWorkingHoursSchedule(schedule);
-  const day = normalized.days[localWeekday(date)];
+  const { weekday, minutes: minutesSinceMidnight } = weekdayAndMinutes(date, timeZone);
+  const day = normalized.days[weekday];
   if (!day?.enabled || day.startMinutes >= day.endMinutes) {
     return false;
   }
-  const minutesSinceMidnight =
-    date.getHours() * MINUTES_PER_HOUR +
-    date.getMinutes() +
-    date.getSeconds() / 60 +
-    date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND);
   return (
     minutesSinceMidnight >= day.startMinutes &&
     minutesSinceMidnight < day.endMinutes

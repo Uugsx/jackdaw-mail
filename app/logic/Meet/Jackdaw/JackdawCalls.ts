@@ -1,17 +1,20 @@
 /**
  * Точка входа звонков Jackdaw ↔ Jackdaw: один клиент сигналинга на приложение.
  */
-import { JackdawCallClient } from "./JackdawCallClient";
-import { JackdawCall, JackdawCallAccount } from "./JackdawCall";
+import { JackdawCallClient, type JackdawCallStatus } from "./JackdawCallClient";
+import { JackdawCall, JackdawCallAccount, setJackdawCallFinishedHandler } from "./JackdawCall";
 import { callServiceURL, normalizeCallEmail, type JackdawServerMessage } from "./JackdawCallProtocol";
-import { getProCallCredential, proEntitlement, refreshProEntitlement } from "../../Billing/ProEntitlement";
-import { BILLING_LICENSE_API_URL } from "../../Billing/Billing";
+import { getProCallCredential, proEntitlement, refreshProEntitlement, type ProCallCredential } from "../../Billing/ProEntitlement";
+import { BILLING_LICENSE_API_URL, UI_TEST_CALLS_URL } from "../../Billing/Billing";
 import { Person } from "../../Abstract/Person";
 import { PersonUID } from "../../Abstract/PersonUID";
 import { MeetingState, type VideoConfMeeting } from "../VideoConfMeeting";
 import { appGlobal } from "../../app";
-import { startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
+import { getJackdawChatAccount, startJackdawChat } from "../../Chat/Jackdaw/JackdawChats";
+import { recordCallInChat } from "../../Chat/Jackdaw/callHistory";
+import { recordCallInLog } from "./callLog";
 import { UserError } from "../../util/util";
+import { getComputerOn, type ComputerOn } from "../../util/backend-wrapper";
 import { gt } from "../../../l10n/l10n";
 
 /** Статусы entitlement, при которых сервис звонков примет устройство */
@@ -28,15 +31,28 @@ function storage(): Storage | null {
   }
 }
 
+/** Адреса ящиков и личностей в приложении: по ним сервер решает, какие адреса лицензии наши */
+export function myMailboxEmails(): string[] {
+  return appGlobal.emailAccounts.contents.flatMap(account => [
+    account.emailAddress,
+    // Основной адрес Exchange-ящика, если вход по другому адресу (логину)
+    ...((account as { serverEmailAddresses?: string[] }).serverEmailAddresses ?? []),
+    ...account.identities.contents
+      .filter(identity => !identity.isCatchAll)
+      .map(identity => identity.emailAddress),
+  ]).filter(Boolean);
+}
+
 function myDisplayName(): string {
   return appGlobal.me?.name || appGlobal.emailAccounts.first?.realname || "";
 }
 
 export function getJackdawCallClient(): JackdawCallClient {
   client ??= new JackdawCallClient({
-    url: callServiceURL(BILLING_LICENSE_API_URL),
+    url: UI_TEST_CALLS_URL ?? callServiceURL(BILLING_LICENSE_API_URL),
     getCredential: () => CALL_ENTITLEMENT_STATUSES.has(proEntitlement.value.status) ? getProCallCredential() : null,
     getDisplayName: myDisplayName,
+    getMailboxEmails: myMailboxEmails,
     storage: storage(),
     onIncoming: message => handleIncomingJackdawCall(message),
   });
@@ -93,35 +109,87 @@ export function getJackdawCallAccount(): JackdawCallAccount {
 
 let stopWatching: (() => void) | null = null;
 
+/** Состояния, из которых стоит переподключиться сразу, не дожидаясь паузы или новой лицензии */
+const STALLED_STATUSES = new Set<JackdawCallStatus>(["offline", "rejected"]);
+/** После сна или смены сети ответа живого соединения ждём недолго: пользователь сразу пишет в чат */
+const WAKE_PONG_TIMEOUT_MS = 5_000;
+
+/** Отличает учётные данные: новый ключ при том же статусе лицензии тоже требует нового входа */
+function credentialKey(credential: ProCallCredential | null): string {
+  return credential ? `${credential.kind}:${credential.kind == "license" ? credential.licenseKey : ""}` : "";
+}
+
+function computerOnOrNull(): ComputerOn | null {
+  try {
+    return getComputerOn() ?? null;
+  } catch {
+    return null; // Нет связи с процессом приложения (тесты, ранний запуск): остаётся событие `online`
+  }
+}
+
+/**
+ * Сеть вернулась или система проснулась: соединение без связи или с отказом пробует войти сразу,
+ * а соединение на связи проверяет, живо ли оно: сокет мог пережить сон «открытым» при мёртвом TCP.
+ * @param computerOn для тестов
+ * @returns отписка
+ */
+export function watchCallReconnectTriggers(callClient: JackdawCallClient, computerOn = computerOnOrNull()): () => void {
+  let reconnectIfStalled = () => {
+    if (STALLED_STATUSES.has(callClient.status)) {
+      callClient.restart();
+    } else if (callClient.status == "online") {
+      // Не restart(): он оборвал бы идущий звонок. Живое соединение ответит и останется.
+      callClient.checkConnection(WAKE_PONG_TIMEOUT_MS);
+    }
+  };
+  globalThis.addEventListener?.("online", reconnectIfStalled);
+  let wasSleeping = computerOn?.isSleeping ?? false;
+  let stopWake = computerOn?.subscribe(() => {
+    let woke = wasSleeping && !computerOn.isSleeping;
+    wasSleeping = computerOn.isSleeping;
+    if (woke) {
+      reconnectIfStalled();
+    }
+  });
+  return () => {
+    globalThis.removeEventListener?.("online", reconnectIfStalled);
+    stopWake?.();
+  };
+}
+
 /** Подключает звонки и следит за лицензией: при её смене соединение переоткрывается. */
 export function startJackdawCalls(): () => void {
   let callClient = getJackdawCallClient();
   if (!stopWatching) {
     let lastStatus: string | null = null;
+    let lastCredential: string | null = null;
     let unsubscribe = proEntitlement.subscribe(() => {
       let status = proEntitlement.value.status;
-      if (status == lastStatus) return;
+      let credential = credentialKey(getProCallCredential());
+      if (status == lastStatus && credential == lastCredential) return;
       let wasAllowed = lastStatus != null && CALL_ENTITLEMENT_STATUSES.has(lastStatus);
+      let credentialChanged = lastCredential != null && credential != lastCredential;
       lastStatus = status;
+      lastCredential = credential;
       if (CALL_ENTITLEMENT_STATUSES.has(status)) {
         // Смена ключа или переход с пробного на платный тоже меняет учётные данные.
-        wasAllowed ? callClient.start() : callClient.restart();
+        wasAllowed && !credentialChanged ? callClient.start() : callClient.restart();
       } else if (status != "checking") {
         callClient.stop();
       }
     });
-    let onOnline = () => {
-      if (callClient.status == "offline") {
-        callClient.restart();
-      }
-    };
-    globalThis.addEventListener?.("online", onOnline);
+    let stopTriggers = watchCallReconnectTriggers(callClient);
     // Чат идёт по тому же соединению и включается вместе со звонками.
     let stopChat = startJackdawChat(callClient);
+    // Звонок — строкой в истории личного чата с собеседником и в журнале звонков
+    setJackdawCallFinishedHandler(call => {
+      recordCallInLog(call);
+      recordCallInChat(call).catch(ex => console.error(ex));
+    });
     stopWatching = () => {
       unsubscribe();
       stopChat();
-      globalThis.removeEventListener?.("online", onOnline);
+      stopTriggers();
       stopWatching = null;
     };
   }
@@ -151,7 +219,11 @@ export function callTargetEmails(target: CallTarget | null | undefined): string[
   } else if (target instanceof Person) {
     emails.push(...target.emailAddresses.contents.slice().sort((a, b) => a.preference - b.preference).map(e => normalizeCallEmail(e.value)));
   }
-  return [...new Set(emails.filter((email): email is string => !!email))];
+  // Псевдоним из писем → адрес, на котором у человека чат и звонки (найден по каталогу организации)
+  let chat = getJackdawChatAccount();
+  let known = emails.filter((email): email is string => !!email);
+  let primaries = chat ? known.map(email => chat.primaryAddressOf(email)) : [];
+  return [...new Set([...known, ...primaries].filter((email): email is string => !!email))];
 }
 
 /** Можно ли позвонить сейчас. Для кнопок: undefined, пока справочник не ответил. */
@@ -174,7 +246,7 @@ function findPersonByEmail(email: string): Person | null {
  * @returns null, если звонок через Jackdaw невозможен (тогда вызывающий выбирает другой способ)
  * @throws UserError, если уже идёт другой звонок
  */
-export async function startJackdawCall(target: CallTarget, _video = false): Promise<JackdawCall | null> {
+export async function startJackdawCall(target: CallTarget, video = false): Promise<JackdawCall | null> {
   assertNoActiveCall();
   let callClient = getJackdawCallClient();
   if (!callClient.isOnline || !callClient.verifiedEmails.length) return null;
@@ -190,7 +262,7 @@ export async function startJackdawCall(target: CallTarget, _video = false): Prom
   closeUnconfirmedCalls();
   let person = target instanceof Person ? target : target.findPerson();
   let call = getJackdawCallAccount().newMeeting();
-  call.prepareOutgoing(email, person?.name || target.name || "", false, person);
+  call.prepareOutgoing(email, person?.name || target.name || "", video, person);
   appGlobal.meetings.add(call);
   return call;
 }

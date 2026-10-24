@@ -12,6 +12,7 @@
 <script lang="ts">
   import type { Account } from "../../../logic/Abstract/Account";
   import { MailAccount } from "../../../logic/Mail/MailAccount";
+  import { ExchangeMailAccount } from "../../../logic/Mail/EWS/ExchangeMailAccount";
   import { accountSettings, type SettingsCategory } from "../SettingsCategory";
   import { selectedCategory, selectedAccount } from "./selected";
   import { getSettingsCategoryForAccount, openSettingsCategoryForAccount } from "./CategoriesUtils";
@@ -30,6 +31,12 @@
   function showCat(category: SettingsCategory, account: Account): boolean {
     if (category.id == "mail-sharing" && account instanceof MailAccount) {
       return account.canShareWithPersons();
+    }
+    if (category.id == "mail-out-of-office") {
+      return account instanceof ExchangeMailAccount && account.canOutOfOffice;
+    }
+    if (category.id == "mail-server-rules") {
+      return account instanceof ExchangeMailAccount && account.canServerRules;
     }
     return true;
   }

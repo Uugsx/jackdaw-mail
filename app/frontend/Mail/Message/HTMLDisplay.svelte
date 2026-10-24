@@ -10,6 +10,7 @@
   import { adaptEmailHtmlForDarkMode } from "./emailDarkMode";
   import WebView from "../../Shared/WebView.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
+  import { darkColorScheme } from "../Composer/composeDarkColors";
   import {
     getMessageViewerBackgroundSetting,
     normalizeMessageViewerBackground,
@@ -30,6 +31,9 @@
   export let webviewE: HTMLIFrameElement = null;
 
   let themeSetting = getLocalStorage("appearance.theme", "system");
+  /* Автотема: macOS переходит в тёмный режим вечером, а настройка темы не меняется.
+   * Без подписки на системную схему письмо оставалось со светлыми цветами. */
+  const systemDark = darkColorScheme;
   let colorsSetting = getLocalStorage("appearance.colors", {});
   let messageBackgroundSetting = getMessageViewerBackgroundSetting();
   let displayE: HTMLElement;
@@ -40,8 +44,9 @@
       max-width: 100% !important;
       overflow-x: hidden !important;
     }
+    /* auto, не 100%: у body поля 16px, и при 100% текст уходил за правый край и срезался */
     body {
-      width: 100% !important;
+      width: auto !important;
       max-width: 100% !important;
       overflow-x: hidden !important;
       overflow-wrap: anywhere !important;
@@ -59,23 +64,22 @@
     displayReady = true;
   });
 
-  function resolveDarkTheme(theme: string): boolean {
+  function resolveDarkTheme(theme: string, isSystemDark: boolean): boolean {
     if (theme == "dark") {
       return true;
     }
     if (theme == "light") {
       return false;
     }
-    return typeof window != "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return isSystemDark;
   }
 
   $: messageBackground = normalizeMessageViewerBackground($messageBackgroundSetting.value);
   $: darkEmail = messageBackground == "dark" ||
-    (messageBackground == "theme" && resolveDarkTheme($themeSetting.value));
+    (messageBackground == "theme" && resolveDarkTheme($themeSetting.value, $systemDark));
   $: bodyClass = `jackdaw-email-${darkEmail ? "dark" : "light"} jackdaw-email-background-${messageBackground}`;
   $: displayHtml = darkEmail ? adaptEmailHtmlForDarkMode(html) : html;
-  $: displayColors = readDisplayColors(messageBackground, darkEmail, displayReady, $colorsSetting.value);
+  $: displayColors = readDisplayColors(messageBackground, darkEmail, displayReady, $colorsSetting.value, $systemDark);
   $: headHTML = `<style>\n${cssBody}\n${fitContent ? cssBodyEmbed + "\n" : ""}${cssContent}\n${cssBodyDark}\n${cssScrollableMessage}\n${displayColorsCSS(messageBackground, darkEmail, displayColors)}\n</style>`;
 
   function readDisplayColors(
@@ -83,6 +87,7 @@
     isDark: boolean,
     ready: boolean,
     _colors: unknown,
+    _systemDark: boolean,
   ): { background: string; foreground: string } {
     if (backgroundMode == "white") {
       return { background: "#ffffff", foreground: "#111827" };

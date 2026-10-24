@@ -2,12 +2,21 @@
   shows as a file chip you can open or drag out. The bytes arrive via a background
   download (WhatsApp/XMPP) or are already present (our own outgoing message), and
   `Attachment` is observable, so this updates when `content`/`size` fill in. -->
+{#if viewing && $attachment.blobURL}
+  <ImageViewer url={$attachment.blobURL} filename={$attachment.filename}
+    onSave={() => attachment.saveFile()} close={() => viewing = false} />
+{/if}
 {#if isImage}
   <vbox class="image-wrap">
     {#if $attachment.content}
       <Clickable onClick={onOpen}>
-        <img class="image" src={$attachment.blobURL} alt={$attachment.filename} />
+        <img class="image" src={$attachment.blobURL} alt={$attachment.filename} title={$t`Open ${$attachment.filename}`} />
       </Clickable>
+      {#if uploadProgress != null}
+        <vbox class="upload-over">
+          <progress class="upload" max="1" value={uploadProgress} aria-label={$t`Uploading ${$attachment.filename}`}></progress>
+        </vbox>
+      {/if}
       <hbox class="image-menu">
         <AttachmentMenu {attachment} />
       </hbox>
@@ -42,7 +51,12 @@
         </hbox>
         <hbox class="bottom-row font-smallest">
           <hbox class="size">
-            {#if downloadError}
+            {#if uploadProgress != null}
+              <hbox class="uploading">
+                <progress class="upload" max="1" value={uploadProgress} aria-label={$t`Uploading ${$attachment.filename}`}></progress>
+                <span>{Math.round(uploadProgress * 100)} %</span>
+              </hbox>
+            {:else if downloadError}
               <hbox class="download-error" role="alert" title={downloadError.message}>{$t`Download failed`}</hbox>
               <Button label={$t`Retry`} icon={RetryIcon} iconSize="14px" iconOnly plain onClick={onRetryDownload} />
             {:else if $attachment.size}
@@ -70,13 +84,17 @@
   import Button from "../../Shared/Button.svelte";
   import RetryIcon from "lucide-svelte/icons/rotate-cw";
   import { JackdawChatAttachment } from "../../../logic/Chat/Jackdaw/JackdawChatMessage";
+  import ImageViewer from "./ImageViewer.svelte";
   import { t } from "../../../l10n/l10n";
 
   export let attachment: Attachment;
+  let viewing = false;
 
   $: isImage = $attachment.mimeType?.startsWith("image/");
   /** Файл чата Jackdaw не скачался: показываем ошибку с повтором вместо вечного «Downloading…» */
   $: downloadError = $attachment instanceof JackdawChatAttachment && !$attachment.content ? $attachment.downloadError : null;
+  /** Свой файл загружается на сервер: полоса загрузки, 0…1 */
+  $: uploadProgress = $attachment instanceof JackdawChatAttachment ? $attachment.uploadProgress : null;
 
   async function onRetryDownload(event?: Event) {
     event?.stopPropagation(); // не открывать файл по клику на «Повторить»
@@ -91,6 +109,10 @@
     }
     if (!attachment.content) {
       return; // not downloaded yet
+    }
+    if (isImage) {
+      viewing = true; // картинку смотрим здесь же, а не через сохранение файла
+      return;
     }
     if (canOpenFileInternally(attachment.mimeType)) {
       await openFileInternallyFromFile(attachment.content);
@@ -110,13 +132,6 @@
 </script>
 
 <style>
-  :global(.bubble) :has(.image) {
-    background-color: blue;
-    padding: 20px;
-  }
-  :global(.bubble:before) :has(.image) {
-    display: none;
-  }
   .image-wrap {
     position: relative;
   }
@@ -133,13 +148,31 @@
   .image-wrap:hover .image-menu {
     opacity: 1;
   }
+  /* Превью, а не картинка во всю ленту: полный размер открывается по клику */
   .image {
-    max-width: 280px;
-    max-height: 320px;
-    border-radius: 3px;
+    display: block;
+    max-width: 240px;
+    max-height: 200px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
     object-fit: contain;
-    cursor: pointer;
-    margin: -8px -14px;
+    cursor: zoom-in;
+  }
+  .upload-over {
+    position: absolute;
+    inset-inline: 8px;
+    bottom: 8px;
+  }
+  .upload {
+    width: 100%;
+    min-width: 80px;
+    height: 4px;
+    accent-color: var(--selected-border, var(--icon-primary));
+  }
+  .uploading {
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
   }
   .loading {
     padding: 24px;

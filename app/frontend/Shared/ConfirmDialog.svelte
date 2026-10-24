@@ -15,12 +15,22 @@
       on:keydown={onKeydown}>
       <h2 id={titleId}>{title}</h2>
       <p id={messageId}>{message}</p>
+      <slot />
       <div class="actions">
-        <Button
-          label={resolvedCancelLabel}
-          plain
-          bind:buttonEl={cancelButton}
-          onClick={cancel} />
+        {#if showCancel}
+          <Button
+            label={resolvedCancelLabel}
+            plain
+            bind:buttonEl={cancelButton}
+            onClick={cancel} />
+        {/if}
+        {#if extraLabel}
+          <Button
+            label={extraLabel}
+            classes="secondary"
+            bind:buttonEl={extraButton}
+            onClick={extra} />
+        {/if}
         <Button
           label={resolvedConfirmLabel}
           classes="filled"
@@ -41,8 +51,12 @@
   export let message = "";
   export let confirmLabel: string = null;
   export let cancelLabel: string = null;
+  /** Третий вариант между отменой и подтверждением; null — кнопки нет */
+  export let extraLabel: string = null;
+  /** false — только сообщение с одной кнопкой «OK» */
+  export let showCancel = true;
 
-  const dispatch = createEventDispatcher<{ confirm: void; cancel: void }>();
+  const dispatch = createEventDispatcher<{ confirm: void; cancel: void; extra: void }>();
   const dialogNumber = ++nextDialogId;
   const titleId = `confirm-dialog-title-${dialogNumber}`;
   const messageId = `confirm-dialog-message-${dialogNumber}`;
@@ -50,6 +64,7 @@
   let dialogElement: HTMLElement;
   let cancelButton: HTMLButtonElement;
   let confirmButton: HTMLButtonElement;
+  let extraButton: HTMLButtonElement;
   let previouslyFocused: HTMLElement = null;
   let wasOpen = false;
 
@@ -89,6 +104,11 @@
     dispatch("confirm");
   }
 
+  function extra() {
+    open = false;
+    dispatch("extra");
+  }
+
   function onKeydown(event: KeyboardEvent) {
     if (event.key == "Escape") {
       event.preventDefault();
@@ -99,7 +119,7 @@
       return;
     }
 
-    let buttons = [cancelButton, confirmButton].filter(
+    let buttons = [cancelButton, extraLabel ? extraButton : null, confirmButton].filter(
       (button): button is HTMLButtonElement => !!button,
     );
     if (!buttons.length) {
@@ -164,6 +184,7 @@
   }
   .actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 20px;

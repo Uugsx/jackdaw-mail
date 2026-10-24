@@ -13,8 +13,11 @@ import {
   keyFingerprint,
   ChatDecryptError,
 } from "../../../../logic/Chat/Jackdaw/JackdawChatCrypto";
-import { parseChatPayload } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { isFutureChatPayload, parseChatPayload, parseLink, withLinkFallback, withoutLinkFallback } from "../../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+import { attachEmailToChatMessage, linkedEmailAttachment } from "../../../../logic/Chat/Jackdaw/chatLinks";
+import { MAX_ATTACHMENT_BYTES } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
 import { JackdawChatAccount } from "../../../../logic/Chat/Jackdaw/JackdawChatAccount";
+import { JackdawChatConnectionError } from "../../../../logic/Chat/Jackdaw/chatConnectionProblem";
 import type { JackdawChatRoom } from "../../../../logic/Chat/Jackdaw/JackdawChatRoom";
 import { DummyChatStorage } from "../../../../logic/Chat/SQL/DummyChatStorage";
 import { DeliveryStatus } from "../../../../logic/Chat/ChatMessage";
@@ -171,13 +174,28 @@ class FakeServer {
 
 class FakeClient {
   isOnline = true;
+  status = "online";
+  lastError: string | null = null;
+  offlineSince: number | null = null;
   deviceId = "";
   listeners = new Set<(m: any) => void>();
+  observers = new Set<(o: any) => void>();
+  /** Что делает `restart()`: по умолчанию ничего */
+  onRestart: () => void = () => {};
   waiters: { match: (m: any) => boolean; resolve: (m: any) => void; reject: (e: Error) => void }[] = [];
   counter = 0;
   constructor(public server: FakeServer, public verifiedEmails: string[]) {}
   addListener(fn: (m: any) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  subscribe(fn: (o: any) => void) { fn(this); return () => {}; }
+  subscribe(fn: (o: any) => void) { fn(this); this.observers.add(fn); return () => this.observers.delete(fn); }
+  /** Состояние соединения, как у настоящего клиента: наблюдатели узнают о смене */
+  setStatus(status: string, lastError: string | null = null, offlineSince: number | null = null) {
+    this.status = status;
+    this.isOnline = status == "online";
+    this.lastError = lastError;
+    this.offlineSince = offlineSince;
+    for (let fn of [...this.observers]) fn(this);
+  }
+  restart() { this.onRestart(); }
   nextRequestID(prefix: string) { return `${prefix}-${++this.counter}`; }
   send(msg: any) { queueMicrotask(() => this.server.handle(this, JSON.parse(JSON.stringify(msg)))); }
   request(msg: any, match: (m: any) => boolean) {
@@ -325,6 +343,38 @@ describe("чат между двумя пользователями", () => {
     expect(await alice.account.canChatWith("nobody@example.com")).toBe(false);
   });
 
+  test("псевдоним из писем: сообщение уходит на адрес ящика из каталога, ответ — в тот же чат", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    // Чат у Боба подключён на адрес ящика, а Алиса знает его по псевдониму из писем
+    let bob = await makeAccount(server, "bob.box@example.com");
+    alice.account.directoryAddresses = async email => email == "bob@example.com" ? ["bob.box@example.com"] : [];
+    expect(await alice.account.canChatWith("bob@example.com")).toBe(true);
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    msg.text = "по псевдониму";
+    await room.sendMessage(msg);
+    await settle();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+    expect(server.sent.at(-1).recipients).toEqual(["bob.box@example.com"]);
+    expect(alice.account.primaryAddressOf("Bob@example.com")).toBe("bob.box@example.com");
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    expect((bobRoom.messages.first as any).text).toBe("по псевдониму");
+    let reply = bobRoom.newMessage();
+    reply.text = "ответ";
+    await bobRoom.sendMessage(reply);
+    await settle();
+    // Ответ с адреса ящика попадает в чат, заведённый на псевдоним, а не в новый
+    expect(alice.account.findRoomByID("direct:bob.box@example.com")).toBeNull();
+    expect(room.messages.contents.map((m: any) => m.text)).toEqual(["по псевдониму", "ответ"]);
+  });
+
+  test("псевдоним без чата и без записи в каталоге — по-прежнему «не пользуется чатом»", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.account.directoryAddresses = async () => ["nobody.box@example.com"];
+    expect(await alice.account.canChatWith("nobody@example.com")).toBe(false);
+    expect(alice.account.primaryAddressOf("nobody@example.com")).toBeNull();
+  });
+
   test("файл шифруется, загружается частями и расшифровывается у получателя", async () => {
     let alice = await makeAccount(server, "alice@example.com");
     let bob = await makeAccount(server, "bob@example.com");
@@ -345,6 +395,125 @@ describe("чат между двумя пользователями", () => {
     let att = received.attachments.first;
     expect(att.filename).toBe("photo.png");
     expect(new Uint8Array(await att.content.arrayBuffer())).toEqual(bytes);
+  });
+
+  test("загрузка файла показывает ход и после неё сбрасывается", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    let attachment = msg.newAttachment() as any;
+    attachment.fromFile(new File([new Uint8Array(150_000)], "big.bin", { type: "application/octet-stream" }));
+    msg.attachments.add(attachment);
+    let seen: number[] = [];
+    attachment.subscribe(() => attachment.uploadProgress != null && seen.push(attachment.uploadProgress));
+    await room.sendMessage(msg);
+    await settle();
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(1);
+    expect(attachment.uploadProgress).toBeNull();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+  });
+
+  test("ссылка на письмо и событие доходит и сохраняется", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage() as any;
+    msg.text = "Посмотри письмо";
+    msg.links = [
+      { type: "email", messageID: "<abc@example.com>", subject: "Счёт", from: "Иван", date: 1_700_000_000_000 },
+      { type: "event", uid: "uid-1", title: "Планёрка", start: 1_700_000_000_000, end: 1_700_003_600_000, location: "Зал" },
+    ];
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.links).toEqual(msg.links);
+    expect(received.text).toBe("Посмотри письмо");
+    let copy = new (received.constructor)(received.to);
+    copy.fromExtraJSON(JSON.parse(JSON.stringify(received.toExtraJSON())));
+    expect(copy.links).toEqual(msg.links);
+  });
+
+  test("письмо уходит в чат файлом .eml с карточкой и открывается у получателя без доступа к ящику", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let mime = new TextEncoder().encode("From: Дмитрий <d@example.com>\r\nSubject: PHP\r\n\r\nТекст");
+    let email = { subject: "Обновление версий PHP", mime, loadMIME: async () => {} } as any;
+    let msg = room.newMessage() as any;
+    let link = await attachEmailToChatMessage(msg, email,
+      { type: "email", messageID: "<php@example.com>", subject: "Обновление версий PHP", from: "Дмитрий", date: 1_700_000_000_000 });
+    expect(link).toMatchObject({ type: "email", eml: "Обновление версий PHP.eml" });
+    msg.links = [link];
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.links).toEqual([link]);
+    let attachment = linkedEmailAttachment(received, received.links[0])!;
+    expect(attachment.mimeType).toBe("message/rfc822");
+    expect(new Uint8Array(await attachment.content.arrayBuffer())).toEqual(mime);
+    // Сообщения старых версий — только ссылка, вложения нет
+    expect(linkedEmailAttachment(received, { ...link, eml: undefined })).toBeUndefined();
+  });
+
+  test("слишком большое письмо в чат не уходит", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let email = { subject: "Большое", mime: new Uint8Array(MAX_ATTACHMENT_BYTES + 1), loadMIME: async () => {} } as any;
+    await expect(attachEmailToChatMessage(room.newMessage(), email,
+      { type: "email", messageID: "<big@example.com>", subject: "Большое", from: "", date: 0 })).rejects.toThrow(/25 MB/);
+  });
+
+  test("поле eml ссылки разбирается, лишнее отбрасывается", () => {
+    expect(parseLink({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: "S.eml" }))
+      .toEqual({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: "S.eml" });
+    expect(parseLink({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1, eml: 5 }))
+      .toEqual({ type: "email", messageID: "<a@b>", subject: "S", from: "F", date: 1 });
+  });
+
+  test("строки-заглушки для старых версий: уходят в тексте, при показе убираются", () => {
+    let links = [
+      { type: "email" as const, messageID: "<a@b>", subject: "Счёт", from: "Иван", date: 0 },
+      { type: "event" as const, uid: "u", title: "Планёрка", start: 0, end: 0, location: "" },
+    ];
+    let sent = withLinkFallback("Глянь", links);
+    expect(sent).toBe("Глянь\n✉️ Счёт — Иван\n📅 Планёрка, 1970-01-01 00:00 UTC");
+    expect(withoutLinkFallback(sent, links)).toBe("Глянь");
+    expect(withoutLinkFallback(withLinkFallback("", links), links)).toBe("");
+    // Текст без заглушек (другой клиент) не трогаем
+    expect(withoutLinkFallback("Просто текст", links)).toBe("Просто текст");
+  });
+
+  test("собеседник переименован у себя; имя из каталога вместо имени из адреса", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "nlevchenko0181@example.com");
+    alice.account.directoryName = async email => email == "nlevchenko0181@example.com" ? "Левченко Никита" : null;
+    let room = await alice.account.getDirectRoom("nlevchenko0181@example.com");
+    expect(room.name).toBe("Nlevchenko0181");
+    await (alice.account as any).loadDirectoryName("nlevchenko0181@example.com");
+    expect(room.name).toBe("Левченко Никита");
+    await alice.account.renameContact("nlevchenko0181@example.com", "  Никита  ");
+    expect(room.name).toBe("Никита");
+    expect(alice.account.toConfigJSON().contactNames).toEqual({ "nlevchenko0181@example.com": "Никита" });
+    await alice.account.renameContact("nlevchenko0181@example.com", "");
+    expect(room.name).toBe("Левченко Никита");
+  });
+
+  test("чужое сообщение удаляется только у себя, своё — можно у всех", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let msg = room.newMessage();
+    msg.text = "моё";
+    await room.sendMessage(msg);
+    await settle();
+    let received = bob.account.findRoomByID("direct:alice@example.com")!.messages.first as any;
+    expect(received.canDeleteForOthers).toBe(false);
+    expect(received.deletesOnlyLocally).toBe(true);
+    expect((msg as any).canDeleteForOthers).toBe(true);
+    expect((msg as any).deletesOnlyLocally).toBe(false);
   });
 
   test("группа: создание, сообщение, посторонний не может писать", async () => {
@@ -634,6 +803,79 @@ describe("надёжность чата", () => {
     expect(alice.account.keyWarnings[0]).toMatch(/Your address alice@example.com/);
   });
 
+  test("отказ сервера без причины: честный текст, «Переподключить» входит заново и досылает неотправленное", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    alice.client.setStatus("rejected");
+    expect(alice.account.isOnline).toBe(false);
+    let msg = room.newMessage();
+    msg.text = "после отказа";
+    let error = await room.sendMessage(msg).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("rejected");
+    expect(error.canReconnect).toBe(true);
+    expect(error.message).toMatch(/refused the connection/);
+    expect(error.message).not.toMatch(/No connection/);
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Failed);
+
+    let restarts = 0;
+    alice.client.onRestart = () => {
+      restarts++;
+      alice.client.setStatus("connecting");
+      queueMicrotask(() => {
+        alice.client.setStatus("online");
+        // Сервер приветствует, чат регистрирует устройство заново — как после настоящего входа
+        alice.client.emit({ type: "welcome", emails: ["alice@example.com"], resumedCalls: [] });
+      });
+    };
+    await alice.account.reconnect();
+    expect(restarts).toBe(1);
+    expect(alice.account.isOnline).toBe(true);
+    await settle();
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.User);
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    expect(bobRoom.messages.contents.map((m: any) => m.text)).toEqual(["после отказа"]);
+  });
+
+  test("«Переподключить» без связи: ошибка с причиной и временем, сообщение ждёт", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    await makeAccount(server, "bob@example.com");
+    let room = await alice.account.getDirectRoom("bob@example.com");
+    let since = Date.now() - 60_000;
+    alice.client.setStatus("offline", null, since);
+    let msg = room.newMessage();
+    msg.text = "ждёт";
+    await expect(room.sendMessage(msg)).rejects.toThrow(/No connection to the Jackdaw server since/);
+    alice.client.onRestart = () => {
+      alice.client.setStatus("connecting", null, since);
+      queueMicrotask(() => alice.client.setStatus("offline", "The Jackdaw server could not process the request. Try again later.", since));
+    };
+    let error = await alice.account.reconnect().catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("offline");
+    expect(error.message).toMatch(/since .+ Server response: The Jackdaw server could not process/);
+    expect(msg.deliveryStatus).toBe(DeliveryStatus.Failed);
+  });
+
+  test("«Переподключить» ждёт не дольше заданного и называет состояние", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.client.setStatus("offline");
+    alice.client.onRestart = () => alice.client.setStatus("connecting");
+    let error = await alice.account.reconnect(20).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(error.kind).toBe("connecting");
+  });
+
+  test("без Pro на устройстве — своя причина, а не «нет связи»", async () => {
+    let alice = await makeAccount(server, "alice@example.com");
+    alice.client.setStatus("disabled");
+    let error = await alice.account.devicesFor(["bob@example.com"], true).catch(ex => ex);
+    expect(error).toBeInstanceOf(JackdawChatConnectionError);
+    expect(["no-pro", "checking-pro"]).toContain(error.kind);
+    expect(error.message).not.toMatch(/No connection/);
+  });
+
   test("без связи и без подтверждённого адреса — разные ошибки", async () => {
     let alice = await makeAccount(server, "alice@example.com");
     alice.client.isOnline = false;
@@ -824,5 +1066,125 @@ describe("управление группой", () => {
     let room = { type: "group", id: "group-0001", name: "x", admin: "a@x.com", members: ["b@x.com"] };
     expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: true })).toMatchObject({ leave: true });
     expect(parseChatPayload({ v: 1, kind: "group", id: "msg-00000001", room, leave: "yes" })).not.toHaveProperty("leave");
+  });
+});
+
+describe("ответы, правки, удаление, реакции и «печатает…»", () => {
+  let server: FakeServer;
+  beforeAll(async () => {
+    await setupChatTestEnv();
+  });
+  beforeEach(() => {
+    server = new FakeServer();
+    memoryStorage.clear();
+  });
+
+  async function pair() {
+    let alice = await makeAccount(server, "alice@example.com");
+    let bob = await makeAccount(server, "bob@example.com");
+    let aliceRoom = await alice.account.getDirectRoom("bob@example.com");
+    let msg = aliceRoom.newMessage();
+    msg.text = "Первый вариант";
+    await aliceRoom.sendMessage(msg);
+    await settle();
+    let bobRoom = bob.account.findRoomByID("direct:alice@example.com")!;
+    return { alice, bob, aliceRoom, bobRoom, msg: msg as any, received: bobRoom.messages.first as any };
+  }
+
+  test("новые виды содержимого проверяются, будущие — распознаются", () => {
+    const room = { type: "direct" };
+    expect(parseChatPayload({ v: 1, kind: "edit", id: "msg-00000002", room, target: "msg-00000001", text: "новый" }))
+      .toMatchObject({ kind: "edit", target: "msg-00000001", text: "новый", html: null });
+    expect(parseChatPayload({ v: 1, kind: "edit", id: "msg-00000002", room, target: "msg-00000001", text: "" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "delete", id: "msg-00000002", room, target: "bad id" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: "👍" }))
+      .toMatchObject({ emoji: "👍" });
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: null }))
+      .toMatchObject({ emoji: null });
+    expect(parseChatPayload({ v: 1, kind: "reaction", id: "msg-00000002", room, target: "msg-00000001", emoji: "<b>текст</b>" })).toBeNull();
+    expect(parseChatPayload({ v: 1, kind: "typing", id: "msg-00000002", room })).toMatchObject({ kind: "typing" });
+    expect(isFutureChatPayload({ v: 1, kind: "poll", id: "msg-00000002", room })).toBe(true);
+    expect(isFutureChatPayload({ v: 1, kind: "message", id: "msg-00000002", room })).toBe(false);
+  });
+
+  test("правка своего сообщения доходит собеседнику с пометкой", async () => {
+    let { aliceRoom, msg, received } = await pair();
+    let edit = await msg.createEdit();
+    edit.text = "Исправленный вариант";
+    await aliceRoom.sendMessage(edit);
+    await settle();
+    expect(msg.text).toBe("Исправленный вариант");
+    expect(msg.edited).toBe(true);
+    expect(aliceRoom.messages.length).toBe(1);
+    expect(received.text).toBe("Исправленный вариант");
+    expect(received.edited).toBe(true);
+  });
+
+  test("чужое сообщение править и удалять нельзя", async () => {
+    let { bob, bobRoom, received, msg } = await pair();
+    expect(received.canEdit).toBe(false);
+    // Подделка: Боб шлёт правку сообщения Алисы
+    await bob.account.sendPayload(["alice@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "edit", id: crypto.randomUUID(), room: bobRoom.roomRef(), target: msg.id, text: "взлом", html: null,
+    } as any);
+    await bob.account.sendPayload(["alice@example.com"], {
+      v: CHAT_PAYLOAD_VERSION, kind: "delete", id: crypto.randomUUID(), room: bobRoom.roomRef(), target: msg.id,
+    } as any);
+    await settle();
+    expect(msg.text).toBe("Первый вариант");
+    expect(msg.deletedForAll).toBe(false);
+  });
+
+  test("удаление у всех убирает текст у собеседника", async () => {
+    let { msg, received } = await pair();
+    await msg.deleteForOthers();
+    await settle();
+    expect(msg.deletedForAll).toBe(true);
+    expect(msg.text).not.toContain("Первый вариант");
+    expect(received.deletedForAll).toBe(true);
+    expect(received.text).not.toContain("Первый вариант");
+    expect(received.canReply).toBe(false);
+  });
+
+  test("реакция ставится и снимается у собеседника", async () => {
+    let { msg, received } = await pair();
+    await received.setMyReaction("👍");
+    await settle();
+    expect([...msg.reactions.values()]).toEqual(["👍"]);
+    await received.setMyReaction(null);
+    await settle();
+    expect(msg.reactions.length).toBe(0);
+  });
+
+  test("ответ ссылается на исходное сообщение", async () => {
+    let { bobRoom, aliceRoom, received } = await pair();
+    let reply = bobRoom.newMessage();
+    reply.text = "Ответ";
+    reply.inReplyTo = received.id;
+    await bobRoom.sendMessage(reply);
+    await settle();
+    let arrived = aliceRoom.messages.find(m => m.text == "Ответ")!;
+    expect(arrived.inReplyTo).toBe(received.id);
+  });
+
+  test("«печатает…» показывается, гаснет по сроку и снимается новым сообщением", async () => {
+    let { aliceRoom, bobRoom } = await pair();
+    aliceRoom.sendTyping();
+    await settle();
+    expect(bobRoom.typing).toEqual(["alice@example.com"]);
+    // Повтор в течение нескольких секунд не отправляется
+    let sentBefore = server.sent.length;
+    aliceRoom.sendTyping();
+    expect(server.sent.length).toBe(sentBefore);
+    let message = aliceRoom.newMessage();
+    message.text = "Готово";
+    await aliceRoom.sendMessage(message);
+    await settle();
+    expect(bobRoom.typing).toEqual([]);
+    // Срок подсказки вышел
+    bobRoom.applyTyping("alice@example.com", false);
+    (bobRoom as any).typingUntil.set("alice@example.com", Date.now() - 1);
+    (bobRoom as any).refreshTyping();
+    expect(bobRoom.typing).toEqual([]);
   });
 });

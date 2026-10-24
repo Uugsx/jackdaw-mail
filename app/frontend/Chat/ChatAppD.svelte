@@ -1,7 +1,7 @@
 <Splitter name="persons-list" initialRightRatio={4}>
   <vbox class="left-pane" slot="left">
     <Header bind:selectedAccount={$selectedAccount} {accounts} />
-    <RoomList {rooms} bind:selectedRoom={$selectedRoom} bind:selectedContact />
+    <RoomList {rooms} account={$selectedAccount} bind:selectedRoom={$selectedRoom} bind:selectedContact />
   </vbox>
   <vbox class="right-pane  background-pattern" slot="right">
     {#if selectedContact && !$selectedRoom}
@@ -35,6 +35,13 @@
       {/key}
     {:else if messages && $selectedRoom }
       <vbox flex class="messages">
+        {#if $messages.isEmpty && !$globalSearchTerm}
+          <!-- Новый чат: вместо пустого поля — что здесь будет и что делать -->
+          <vbox class="empty empty-room" role="status">
+            <h2>{$t`No messages yet`}</h2>
+            <p>{$t`Write the first message below. Messages are end-to-end encrypted.`}</p>
+          </vbox>
+        {/if}
         <MessageList {messages}>
           <svelte:fragment slot="message" let:message let:previousMessage>
             {#if message instanceof ChatMessage }

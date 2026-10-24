@@ -5,7 +5,7 @@
         {#if app.id !== "settings"}
           <AppButton selected={selectedApp == app} classes={app.id} iconOnly={collapsed}
             ariaLabel={app.barLabel ?? app.name}
-            badgeCount={app.id === "mail" && appbarBadgeEnabled ? mailUnreadTotal : 0}
+            badgeCount={app.id === "mail" && appbarBadgeEnabled ? mailUnreadTotal : app.id === "chat" ? $chatUnreadTotal : 0}
             on:click={() => catchErrors(() => onSelectApp(app))} >
             <AppIcon slot="icon" icon={app.icon} size="22px" strokeWidth={1.75} />
             <hbox slot="label" class="label">
@@ -52,6 +52,7 @@
   import SubAppsList from "./SubAppsList.svelte";
   import { catchErrors } from "../Util/error";
   import { mailUnreadEpoch, totalMailUnreadCount } from "../Mail/mailUnreadCounts";
+  import { chatUnreadTotal } from "../Chat/chatUnread";
   import type { Collection } from "svelte-collections";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { getOSName } from "../Util/util";

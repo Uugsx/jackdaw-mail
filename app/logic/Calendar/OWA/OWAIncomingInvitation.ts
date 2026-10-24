@@ -6,6 +6,7 @@ import type { OWAEMail } from "../../Mail/OWA/OWAEMail";
 import { OWACreateItemRequest } from "../../Mail/OWA/Request/OWACreateItemRequest";
 import { ArrayColl } from "svelte-collections";
 import { assert } from "../../util/util";
+import { addEWSTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "../Invitation/TimeProposal";
 
 const ResponseTypes: Record<InvitationResponseInMessage, string> = {
   [InvitationResponse.Accept]: "AcceptItem",
@@ -24,13 +25,16 @@ export class OWAIncomingInvitation extends IncomingInvitation {
     this.itemID = event?.itemID;
   }
 
-  async respondToInvitationFromMail(response: InvitationResponseInMessage) {
+  async respondToInvitationFromMail(response: InvitationResponseInMessage, proposal?: TimeProposal) {
     assert(this.invitationMessage == InvitationMessage.Invitation, "Only invitations can be responded to");
     let request = new OWACreateItemRequest({MessageDisposition: "SendAndSaveCopy"});
     request.addField(ResponseTypes[response], "ReferenceItemId", {
       __type: "ItemId:#Exchange",
       Id: this.message.itemID,
     });
+    if (proposal) {
+      addEWSTimeProposal(request, ResponseTypes[response], proposal);
+    }
     let result = await this.calendar.account.callOWA(request);
     await this.message.deleteMessageLocally(); // Exchange deletes the message from the inbox
     // Exchange will have created a calendar item if there wasn't one already
@@ -38,6 +42,11 @@ export class OWAIncomingInvitation extends IncomingInvitation {
     if (itemID) {
       await this.calendar.createOrUpdateEventFromServerByID(itemID);
     }
+  }
+
+  async proposeNewTimeFromMail(response: ProposalResponse, proposal: TimeProposal) {
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    await this.respondToInvitationFromMail(response, proposal);
   }
 
   async updateCancelled() {
