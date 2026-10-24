@@ -27,7 +27,7 @@ node scripts/ui-test/jd.mjs stop 9301
 
 ## Две копии: чат и звонки
 
-1. Запустите сервисы лицензий и звонков на этом компьютере. Нужен venv с `call_server/requirements.txt` и `license_server/requirements.txt`:
+1. Запустите сервисы лицензий и звонков на этом компьютере. Их код — в закрытом репозитории `Uugsx/jackdaw-servers`: клон рядом с клиентом (`…/jackdaw-servers`) находится сам, иначе путь задаёт `JACKDAW_SERVERS_DIR`. Нужен venv с `call_server/requirements.txt` и `license_server/requirements.txt` из этого клона:
 
    ```bash
    python scripts/ui-test/local_servers.py /tmp/jd-ui/servers
