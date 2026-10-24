@@ -32,6 +32,11 @@
     label={$t`Clear folder`}
     classes="danger"
     icon={TrashIcon} />
+  <MenuItem
+    onClick={() => cleanUpFolder(folder)}
+    label={$t`Clean up folder`}
+    tooltip={$t`Delete messages whose whole text is quoted in a later reply`}
+    icon={CleanupIcon} />
 {/if}
 {#if !folder.disableSubfolders()}
   <MenuDivider />
@@ -114,6 +119,8 @@
   import CircleDotIcon from "lucide-svelte/icons/circle-dot";
   import DeleteIcon from "lucide-svelte/icons/trash-2";
   import TrashIcon from "lucide-svelte/icons/trash";
+import CleanupIcon from "lucide-svelte/icons/brush-cleaning";
+import { cleanUpFolder } from "../Cleanup/cleanup";
   import NewFolderIcon from "lucide-svelte/icons/folder-plus";
   import RenameIcon from "lucide-svelte/icons/pencil";
   import FolderSettingsIcon from "lucide-svelte/icons/folder-cog";

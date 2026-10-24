@@ -17,11 +17,13 @@
       <p id={messageId}>{message}</p>
       <slot />
       <div class="actions">
-        <Button
-          label={resolvedCancelLabel}
-          plain
-          bind:buttonEl={cancelButton}
-          onClick={cancel} />
+        {#if showCancel}
+          <Button
+            label={resolvedCancelLabel}
+            plain
+            bind:buttonEl={cancelButton}
+            onClick={cancel} />
+        {/if}
         {#if extraLabel}
           <Button
             label={extraLabel}
@@ -51,6 +53,8 @@
   export let cancelLabel: string = null;
   /** Третий вариант между отменой и подтверждением; null — кнопки нет */
   export let extraLabel: string = null;
+  /** false — только сообщение с одной кнопкой «OK» */
+  export let showCancel = true;
 
   const dispatch = createEventDispatcher<{ confirm: void; cancel: void; extra: void }>();
   const dialogNumber = ++nextDialogId;

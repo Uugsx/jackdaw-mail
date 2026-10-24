@@ -147,6 +147,20 @@ export function applyTemplateToCompose(mail: EMail, editor: Editor, template: Ma
   void markMailTemplateUsed(template.id).catch(backgroundError);
 }
 
+/** Как `applyTemplateToCompose()`, но без редактора: текст шаблона — перед телом письма
+ * (например, перед цитатой ответа). Для «Быстрых действий». */
+export function applyTemplateToMail(mail: EMail, template: MailTemplate) {
+  mail.subject = subjectAfterTemplate(mail.subject, template.subject);
+  if (template.html) {
+    mail.html = template.html + (mail.html ?? "");
+    addInlineImages(mail, template.html);
+  }
+  for (let item of newTemplateAttachments(template.attachments, mail.attachments.contents)) {
+    addComposeAttachment(mail, item);
+  }
+  void markMailTemplateUsed(template.id).catch(backgroundError);
+}
+
 export async function loadTemplateForInsert(id: number): Promise<MailTemplate> {
   let template = await getMailTemplate(id);
   if (!template) {

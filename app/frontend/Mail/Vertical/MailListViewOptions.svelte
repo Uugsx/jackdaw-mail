@@ -21,6 +21,16 @@
     {/if}
   </svelte:fragment>
 </MenuItem>
+<MenuItem label={$t`Focused and Other tabs in the Inbox`} closeOnClick={false}
+  onClick={() => focusedEnabled.value = !focusedEnabled.value}>
+  <svelte:fragment slot="icon">
+    {#if $focusedEnabled.value}
+      <CheckIcon size="16px" aria-hidden="true" />
+    {:else}
+      <span class="icon-space" />
+    {/if}
+  </svelte:fragment>
+</MenuItem>
 <MenuDivider />
 <hbox class="menu-heading">{$t`Columns`}</hbox>
 {#each prefs.order as id (id)}
@@ -60,7 +70,10 @@
     type MailListColumnId,
     type MailListLayout,
   } from "../mailListColumns";
+  import { focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
   import { gt, t } from "../../../l10n/l10n";
+
+  const focusedEnabled = focusedInboxEnabled();
 
   const layouts: { id: MailListLayout, label: () => string }[] = [
     { id: "auto", label: () => gt`Automatic` },

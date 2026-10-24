@@ -24,6 +24,7 @@
         secondMinPx={horizontal ? 30 : 480}>
         <vbox flex class="message-list-pane" slot="first">
           <FolderHeader folder={selectedFolder} {searchMessages} />
+          <FocusedTabs folder={searchMessages ? null : selectedFolder} />
           <MailUndoToast />
           {#key selectedFolder?.id ?? ""}
             <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages}
@@ -59,6 +60,11 @@
   import MailUndoToast from "../MailUndoToast.svelte";
   import OutOfOfficeBar from "../OutOfOfficeBar.svelte";
   import { ArrayColl, type Collection } from 'svelte-collections';
+  import FocusedTabs from "../Focused/FocusedTabs.svelte";
+  import { focusedMessages, focusedTab } from "../Focused/focusedView";
+  import { focusedClassificationChanged, focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
+  const focusedEnabled = focusedInboxEnabled();
+
   import { onMount } from "svelte";
   import { ensureAccountExpanded } from "../mailSidebarState";
   import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
@@ -75,7 +81,7 @@
   export let selectedMessages: ArrayColl<EMail>; /** in/out */
   let selectedFolders: ArrayColl<Folder>;
 
-  $: folderMessages = selectedFolder?.messages;
+  $: folderMessages = focusedMessages(selectedFolder, $focusedTab, $focusedEnabled.value, $focusedClassificationChanged);
   // Выбор папки или письма (в том числе из списка задач) возвращает к почте
   let lastFolder: Folder | null = null;
   $: if (selectedFolder !== lastFolder) {
