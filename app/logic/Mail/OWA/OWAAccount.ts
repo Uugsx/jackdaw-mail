@@ -1,4 +1,5 @@
 import { ExchangeMailAccount } from "../EWS/ExchangeMailAccount";
+import { owaVotingProperties } from "../Voting/VotingExchange";
 import { MailIdentity } from "../MailIdentity";
 import { AuthMethod, type Account } from "../../Abstract/Account";
 import { Provider } from "../../Auth/OAuth2URLs";
@@ -1803,15 +1804,18 @@ export class OWAAccount extends ExchangeMailAccount {
           Content: await attachment.contentAsBase64(),
         }))), "item:Attachments");
       }
-      if (email.headers.hasItems) {
-        request.addField("Message", "ExtendedProperty", [...email.headers.entries()].map(([header, value]) => ({
-          ExtendedFieldURI: {
-            PropertyName: header,
-            DistinguishedPropertySetId: "InternetHeaders",
-            PropertyType: "String",
-          },
-          Value: value,
-        })), null);
+      let extendedProperties = [...email.headers.entries()].map(([header, value]) => ({
+        ExtendedFieldURI: {
+          PropertyName: header,
+          DistinguishedPropertySetId: "InternetHeaders",
+          PropertyType: "String",
+        },
+        Value: value,
+      }) as any);
+      // Кнопки голосования и ответ на них — свойства Exchange, чтобы их видел Outlook
+      extendedProperties.push(...owaVotingProperties(email));
+      if (extendedProperties.length) {
+        request.addField("Message", "ExtendedProperty", extendedProperties, null);
       }
       if (email.inReplyTo) {
         request.addField("Message", "InReplyTo", email.inReplyTo, "item:InReplyTo");

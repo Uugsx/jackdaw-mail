@@ -56,7 +56,11 @@ export function ewsDeferredSendProperties(deferred: EWSDeferredSend): any[] {
  * но до получателей — их добавляют позже.
  */
 export function addEWSDeferredSend(message: Record<string, any>, deferred: EWSDeferredSend): void {
-  let properties = ewsDeferredSendProperties(deferred);
+  addEWSExtendedProperties(message, ewsDeferredSendProperties(deferred));
+}
+
+/** Дописывает свойства в `t$ExtendedProperty` письма CreateItem, соблюдая порядок элементов схемы */
+export function addEWSExtendedProperties(message: Record<string, any>, properties: any[]): void {
   if (message.t$ExtendedProperty != null) {
     message.t$ExtendedProperty = [...ensureArray(message.t$ExtendedProperty), ...properties];
     return;

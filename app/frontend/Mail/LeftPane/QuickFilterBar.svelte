@@ -120,6 +120,7 @@
     $quickSearch.hasAttachment === true,
     $quickSearch.isOutgoing === true || $quickSearch.isOutgoing === false,
     $quickSearch.isReplied === true,
+    $quickSearch.mentionsMe === true,
   ].filter(Boolean).length;
   $: anyActive = activeFilterCount > 0;
   $: filterTooltip = anyActive
@@ -148,6 +149,7 @@
       case "fromMe": return search.isOutgoing === true;
       case "toMe": return search.isOutgoing === false;
       case "replied": return search.isReplied === true;
+      case "mentionsMe": return search.mentionsMe === true;
     }
     return false;
   }
@@ -174,6 +176,9 @@
         break;
       case "replied":
         quickSearch.isReplied = quickSearch.isReplied ? null : true;
+        break;
+      case "mentionsMe":
+        quickSearch.mentionsMe = quickSearch.mentionsMe ? null : true;
         break;
     }
     hideTooltips();
@@ -232,6 +237,7 @@
     quickSearch.hasAttachment = null;
     quickSearch.isOutgoing = null;
     quickSearch.isReplied = null;
+    quickSearch.mentionsMe = null;
     filterMenuOpen = false;
     hideTooltips();
   }

@@ -10,6 +10,7 @@ import { ArrayColl, MapColl } from "svelte-collections";
 import sql, { type Query } from "../../../../lib/rs-sqlite";
 import { gt } from "../../../l10n/l10n";
 import { ServerMailSearch, serverItemKey } from "../Search/ServerMailSearch";
+import { htmlMentionsAccount } from "../Mentions/Mentions";
 
 export class SQLSearchEMail extends SearchEMail {
   /** Start a database search based on the critera set on this object */
@@ -27,6 +28,7 @@ export class SQLSearchEMail extends SearchEMail {
     let query = sql`
       SELECT
         email.id as id, folderID
+        $${this.mentionsMe === true ? sql`, email.html as html, email.outgoing as outgoing ` : sql``}
       FROM email
       $${this.account?.dbID ? sql` LEFT JOIN folder ON (email.folderID = folder.id) ` : sql``}
       $${this.includesPerson ? sql` LEFT JOIN emailPersonRel ON (email.id = emailPersonRel.emailID) LEFT JOIN emailPerson ON (emailPersonRel.emailPersonID = emailPerson.id) ` : sql``}
@@ -38,6 +40,7 @@ export class SQLSearchEMail extends SearchEMail {
         $${typeof (this.isOutgoing) == "boolean" ? sql` AND outgoing = ${this.isOutgoing ? 1 : 0} ` : sql``}
         $${typeof (this.isRead) == "boolean" ? sql` AND isRead = ${this.isRead ? 1 : 0} ` : sql``}
         $${typeof (this.isStarred) == "boolean" ? sql` AND isStarred = ${this.isStarred ? 1 : 0} ` : sql``}
+        $${this.mentionsMe === true ? sql` AND email.html LIKE ${"%mailto:%"} ` : sql``}
         $${typeof (this.isReplied) == "boolean" ? sql` AND isReplied = ${this.isReplied ? 1 : 0} ` : sql``}
         $${typeof (this.isImportant) == "boolean" ? sql` AND isImportant = ${this.isImportant ? 1 : 0} ` : sql``}
         $${typeof (this.threadID) == "string" ? sql` AND threadID = ${this.threadID} ` : sql``}
@@ -111,6 +114,10 @@ export class SQLSearchEMail extends SearchEMail {
     };
     for (let row of rows) {
       let folder = findFolder(row.folderID);
+      // Упоминания: ссылку на свой адрес проверяем по HTML из базы — тело письма в памяти может быть не загружено
+      if (this.mentionsMe === true && (row.outgoing || !htmlMentionsAccount(row.html, (folder ?? randomFolder)?.account))) {
+        continue;
+      }
       let existing = findExisting(folder, row.id);
       if (existing) {
         emails.add(existing);

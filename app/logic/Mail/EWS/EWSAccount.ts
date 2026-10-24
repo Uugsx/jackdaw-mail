@@ -38,7 +38,8 @@ import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray, NotReached, NotSupported, type Json } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, type Collection } from "svelte-collections";
-import { addEWSDeferredSend, type EWSDeferredSend } from "../SendLater/EWSDeferredSend";
+import { addEWSDeferredSend, addEWSExtendedProperties, type EWSDeferredSend } from "../SendLater/EWSDeferredSend";
+import { ewsVotingProperties } from "../Voting/VotingExchange";
 
 /** Distinguished root of the optional Exchange Online Archive mailbox. */
 const kArchiveMailboxRoot = "archivemsgfolderroot";
@@ -241,6 +242,11 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     if (deferred) {
       // До получателей сырого MIME: порядок элементов важен для старых Exchange
       addEWSDeferredSend(request.m$CreateItem.m$Items.t$Message, deferred);
+    }
+    let votingProperties = ewsVotingProperties(email);
+    if (votingProperties.length) {
+      // Кнопки голосования и ответ на них — свойства Exchange, чтобы их видел Outlook
+      addEWSExtendedProperties(request.m$CreateItem.m$Items.t$Message, votingProperties);
     }
     addRecipients(request, "BccRecipients", email.bcc.contents);
     addRecipients(request, "From", [email.from]);
