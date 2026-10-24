@@ -11,7 +11,7 @@ import { OWACreateItemRequest } from "./Request/OWACreateItemRequest";
 import { OWADeleteItemRequest } from "./Request/OWADeleteItemRequest";
 import { OWAUpdateItemRequest } from "./Request/OWAUpdateItemRequest";
 import {
-  owaCreateNewSubFolderRequest, owaDeleteFolderRequest,
+  owaCreateNewSubFolderRequest, owaDeleteFolderRequest, owaEmptyFolderRequest,
   owaDownloadMsgsRequest, owaFindMsgsInFolderRequest, owaFindMsgsByQueryRequest,
   owaSyncFolderItemsRequest,
   owaFolderCountsRequest, owaFolderMarkAllMsgsReadRequest,
@@ -2322,7 +2322,8 @@ export class OWAFolder extends ExchangeFolder {
         await this.listMessages(false, true);
       }
       if (this.countTotal > this.messages.length) {
-        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+        // Exchange отдал не все элементы: перенос части создал бы видимость очистки
+        throw new Error(gt`The folder could not be cleared completely. Please try again later.`);
       }
       messages = [...this.messages.contents];
       if (!messages.length) {
@@ -2394,8 +2395,12 @@ export class OWAFolder extends ExchangeFolder {
       if (this.countTotal != this.messages.length) {
         await this.listMessages(false, true);
       }
-      if (this.countTotal > this.messages.length) {
-        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+      // TotalCount Exchange учитывает встречи, контакты, задачи и заметки,
+      // которых нет в списке писем, а подпапки корзины в него не входят вовсе.
+      // Такую папку очищает сам сервер, как «Очистить папку» в Outlook.
+      if (this.countTotal > this.messages.length || this.emptyDeletesSubFolders) {
+        await this.emptyFolderOnServer();
+        return;
       }
       messages = [...this.messages.contents];
     } catch (ex) {
@@ -2445,24 +2450,7 @@ export class OWAFolder extends ExchangeFolder {
     try {
       for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
         let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
-        let result = await this.account.callOWA(new OWADeleteItemRequest(batchIDs, {
-          DeleteType: "HardDelete",
-          // Exchange требует этот параметр для элементов календаря. Очистка
-          // почтовой папки не должна отправлять участникам отмену встречи.
-          SendMeetingCancellations: "SendToNone",
-          SuppressReadReceipts: true,
-        }), mailbox);
-        let responseItems = result?.ResponseMessages?.Items
-          ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
-        let responses = responseItems ? ensureArray(responseItems) : [];
-        if (responses.length == 1 && batchIDs.length > 1 &&
-            responses[0]?.ResponseClass == "Success" && responses[0]?.ResponseCode == "NoError") {
-          // Некоторые серверы отвечают одним Success на весь пакет
-          responses = batchIDs.map(() => responses[0]);
-        }
-        if (responses.length != batchIDs.length) {
-          throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
-        }
+        let responses = await this.hardDeleteItemsOnServer(batchIDs, mailbox);
         let failedResponse: any = null;
         for (let index = 0; index < batchIDs.length; index++) {
           let response = responses[index];
@@ -2518,6 +2506,151 @@ export class OWAFolder extends ExchangeFolder {
         this.dirty = true;
       }
       this.clearProgress = null;
+    }
+  }
+
+  /** Окончательно удаляет элементы пакетом DeleteItem.
+   * @returns ответ сервера по каждому ItemId, в порядке `itemIDs` */
+  protected async hardDeleteItemsOnServer(itemIDs: string[], mailbox: string | undefined): Promise<any[]> {
+    let result = await this.account.callOWA(new OWADeleteItemRequest(itemIDs, {
+      DeleteType: "HardDelete",
+      // Exchange требует этот параметр для элементов календаря. Очистка
+      // почтовой папки не должна отправлять участникам отмену встречи.
+      SendMeetingCancellations: "SendToNone",
+      SuppressReadReceipts: true,
+    }), mailbox);
+    let responseItems = result?.ResponseMessages?.Items
+      ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
+    let responses = responseItems ? ensureArray(responseItems) : [];
+    if (responses.length == 1 && itemIDs.length > 1 &&
+        responses[0]?.ResponseClass == "Success" && responses[0]?.ResponseCode == "NoError") {
+      // Некоторые серверы отвечают одним Success на весь пакет
+      responses = itemIDs.map(() => responses[0]);
+    }
+    if (responses.length != itemIDs.length) {
+      throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
+    }
+    return responses;
+  }
+
+  /** Очистка корзины удаляет и её подпапки, как «Очистить папку» в Outlook.
+   * У спама подпапки пользователя не трогаем. */
+  protected get emptyDeletesSubFolders(): boolean {
+    return this.specialFolder == SpecialFolder.Trash && this.subFolders.hasItems;
+  }
+
+  /**
+   * Очищает корзину или спам на сервере целиком: письма, встречи, контакты,
+   * задачи, заметки и (в корзине) подпапки. Сначала одной операцией
+   * EmptyFolder, а если сервер её не выполнил — пачками до конца.
+   * Локальный список очищается, только когда сервер подтвердил очистку.
+   */
+  protected async emptyFolderOnServer(): Promise<void> {
+    // Общий ящик: запрос идёт в контексте этого ящика, как и DeleteItem
+    let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
+    let deleteSubFolders = this.emptyDeletesSubFolders;
+    let messages = [...this.messages.contents];
+    let itemIDs = [...new Set(messages
+      .map(message => message.itemID)
+      .filter((itemID): itemID is string => !!itemID))];
+    let total = Math.max(this.countTotal, messages.length);
+    this.clearProgress = { phase: "deleting", completed: 0, total };
+    for (let itemID of itemIDs) {
+      this.deletions.add(itemID);
+    }
+    let emptied = false;
+    try {
+      try {
+        await this.account.callOWA(owaEmptyFolderRequest(this.id, deleteSubFolders), mailbox);
+      } catch (ex) {
+        if (!(ex instanceof OWAError) || ex.isSessionLimit) {
+          throw ex;
+        }
+        // Не каждый OWA выполняет EmptyFolder. Настоящая ошибка (например,
+        // нет прав) повторится и в пакетном удалении и дойдёт до пользователя.
+        await this.emptyFolderInBatches(mailbox, deleteSubFolders, total);
+      }
+      emptied = true;
+      for (let itemID of itemIDs) {
+        this.releaseDeletionAfterGracePeriod(itemID);
+      }
+      // Иначе устаревший GetFolder вернул бы очищенной папке прежние счётчики
+      this.noteLocalDeleteMutation(this.countTotal, this.countUnread);
+      await this.deleteMessagesLocally(messages.filter(message => this.messages.contains(message)));
+      if (deleteSubFolders) {
+        for (let subFolder of [...this.subFolders.contents]) {
+          await subFolder.deleteItLocally();
+        }
+      }
+      // По фактическому списку: письма, пришедшие после очистки, остаются
+      this.countTotal = this.messages.length;
+      this.countUnread = this.localUnreadCount();
+      this.countNewArrived = 0;
+      this.countTotalDecreased = false;
+      this.dirty = false;
+      this.clearProgress = { phase: "deleting", completed: total, total };
+      if (this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+    } finally {
+      if (!emptied) {
+        for (let itemID of itemIDs) {
+          this.deletions.delete(itemID);
+        }
+        // Часть элементов могла уже исчезнуть: следующая синхронизация сверит список
+        this.dirty = true;
+      }
+      this.clearProgress = null;
+    }
+  }
+
+  /** Запасной путь очистки без EmptyFolder. FindItem возвращает элементы любых
+   * типов, поэтому удаляем первую страницу, пока папка не опустеет. */
+  protected async emptyFolderInBatches(mailbox: string | undefined, deleteSubFolders: boolean, total: number): Promise<void> {
+    let completed = 0;
+    let previousPage = "";
+    let emptied = false;
+    for (let pass = 0; pass < this.maxFindItemPages() && !emptied; pass++) {
+      let result = await this.account.callOWA(owaFindMsgsInFolderRequest(this.id, kDeleteItemBatchSize), mailbox);
+      let itemIDs = [...new Set(ensureArray(result?.RootFolder?.Items)
+        .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
+        .filter(Boolean))];
+      if (!itemIDs.length) {
+        emptied = true;
+        break;
+      }
+      let page = itemIDs.join("\u0000");
+      if (page == previousPage) {
+        // Сервер подтвердил удаление, но снова отдаёт те же элементы
+        break;
+      }
+      previousPage = page;
+      let responses: any[];
+      try {
+        responses = await this.hardDeleteItemsOnServer(itemIDs, mailbox);
+      } catch (ex) {
+        // Ответ на единственный элемент с ошибкой callOWA бросает сам.
+        // «Не найдено» значит, что элемента уже нет; если он всё же остался,
+        // следующая страница FindItem повторится и очистка остановится.
+        if (!(itemIDs.length == 1 && ex instanceof OWAError && ex.type == "ErrorItemNotFound")) {
+          throw ex;
+        }
+        responses = [{ ResponseClass: "Success", ResponseCode: "NoError" }];
+      }
+      let failedResponse = responses.find(response => isDeleteItemFailure(response));
+      if (failedResponse) {
+        throw new OWAError({ json: failedResponse });
+      }
+      completed += itemIDs.length;
+      this.clearProgress = { phase: "deleting", completed: Math.min(completed, total), total };
+    }
+    if (!emptied) {
+      throw new Error(gt`The folder could not be cleared completely. Please try again later.`);
+    }
+    if (deleteSubFolders) {
+      for (let subFolder of this.subFolders.contents) {
+        await (subFolder as OWAFolder).deleteItOnServer();
+      }
     }
   }
 
