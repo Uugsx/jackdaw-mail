@@ -74,9 +74,10 @@
   import type { MailAccount } from "../../logic/Mail/MailAccount";
   import type { Folder } from "../../logic/Mail/Folder";
   import type { EMail } from "../../logic/Mail/EMail";
+  import type { SearchEMail } from "../../logic/Mail/Store/SearchEMail";
   import { newSearchEMail } from "../../logic/Mail/Store/setStorage";
   import SearchField from "../Shared/SearchField.svelte";
-  import { mailSearchInProgress } from "./Search/searchProgress";
+  import { mailSearchInProgress, mailServerSearch } from "./Search/searchProgress";
   import CreateItemMenu from "./CreateItemMenu.svelte";
   import QuickFilterBar from "./LeftPane/QuickFilterBar.svelte";
   import ClassicRibbon from "./3pane/ClassicRibbon.svelte";
@@ -213,7 +214,10 @@
     let generation = ++searchGeneration;
     globalSearch = newCurrentMailboxSearch();
     globalSearch.bodyText = $globalSearchTerm;
+    // Локальные результаты — сразу, сервер догружает их следом
+    globalSearch.deferServerSearch = true;
     let activeSearch = globalSearch;
+    $mailServerSearch = null;
     try {
       let results = await activeSearch.startSearch(200);
       if (generation != searchGeneration || globalSearch !== activeSearch) {
@@ -223,6 +227,9 @@
       // Первый результат не открываем сами: через 0,2 с он помечался прочитанным,
       // и каждое уточнение запроса незаметно «читало» ещё одно письмо
       $selectedMessageStore = null;
+      if (activeSearch.hasMoreOnServer) {
+        loadServerResults(activeSearch, results, generation);
+      }
     } catch (ex) {
       showError(ex);
     } finally {
@@ -231,6 +238,36 @@
         $mailSearchInProgress = false;
       }
     }
+  }
+
+  /** Следующая страница поиска на сервере (первая — сразу после локального поиска) */
+  async function loadServerResults(activeSearch: SearchEMail, results: ArrayColl<EMail>, generation: number) {
+    let isCurrent = () => generation == searchGeneration && globalSearch === activeSearch;
+    let status = (loading: boolean) => ({
+      loading,
+      hasMore: activeSearch.hasMoreOnServer,
+      failed: activeSearch.serverSearchErrors.length > 0,
+      added: ($mailServerSearch?.added ?? 0),
+      loadMore: () => catchErrors(() => loadServerResults(activeSearch, results, generation)),
+    });
+    if (!isCurrent() || $mailServerSearch?.loading) {
+      return;
+    }
+    $mailServerSearch = status(true);
+    let added = 0;
+    try {
+      added = await activeSearch.loadMoreFromServer(results);
+    } finally {
+      if (isCurrent()) {
+        let next = status(false);
+        next.added += added;
+        $mailServerSearch = next;
+      }
+    }
+  }
+
+  $: if (!$globalSearchTerm || usingAdvancedSearch) {
+    $mailServerSearch = null;
   }
 
   async function refreshAdvancedSearch() {
@@ -298,6 +335,7 @@
   }
 
   onDestroy(() => {
+    $mailServerSearch = null;
     runGlobalSearchDebounced.cancel();
     refreshAdvancedSearchDebounced.cancel();
     $mailSearchInProgress = false;

@@ -81,6 +81,31 @@ export class SearchEMail extends Observable {
     throw new AbstractFunction();
   }
 
+  /**
+   * true — `startSearch()` только готовит поиск на сервере, не дожидаясь его:
+   * первую страницу вызывающий запрашивает сам через `loadMoreFromServer()`,
+   * а локальные результаты показываются сразу.
+   */
+  deferServerSearch = false;
+
+  /** Есть ещё результаты на сервере («Ещё результаты с сервера») */
+  get hasMoreOnServer(): boolean {
+    return false;
+  }
+
+  /** Ошибки папок при поиске на сервере: остальные папки они не останавливают */
+  get serverSearchErrors(): readonly unknown[] {
+    return [];
+  }
+
+  /**
+   * Следующая страница с сервера в тот же список результатов.
+   * @returns сколько новых писем добавилось
+   */
+  async loadMoreFromServer(emails: ArrayColl<EMail>): Promise<number> {
+    return 0;
+  }
+
   fromJSON(json: any) {
     function boolean(value: boolean | null): boolean | null {
       return typeof (value) == "boolean" ? value : null;
