@@ -1,7 +1,9 @@
 import hashlib
 import hmac
+import http.server
 import json
 import os
+import socket
 import sqlite3
 import tempfile
 import threading
@@ -37,7 +39,17 @@ PADDLE_ENV_NAMES = (
     "PADDLE_YEARLY_PRICE_ID",
     "PADDLE_PRODUCT_ID",
     "PADDLE_WEBHOOK_TOLERANCE_SECONDS",
+    "PADDLE_API_KEY",
+    "JACKDAW_LICENSE_SMTP_PASSWORD_FILE",
+    "JACKDAW_LICENSE_SMTP_HOST",
+    "JACKDAW_LICENSE_SMTP_PORT",
+    "JACKDAW_LICENSE_SMTP_USER",
+    "JACKDAW_LICENSE_MAIL_FROM",
 )
+CUSTOMER_ID = "ctm_01" + "c" * 24
+BUYER_EMAIL = "buyer@example.com"
+SANDBOX_API_KEY = "pdl_sdbx_apikey_" + "0" * 26 + "_" + "A" * 22 + "_" + "B1c"
+LIVE_API_KEY = SANDBOX_API_KEY.replace("pdl_sdbx_", "pdl_live_")
 
 
 def iso(value: datetime) -> str:
@@ -48,6 +60,13 @@ def sign(body: bytes, secret: str = PADDLE_SECRET, timestamp: int | None = None)
     ts = str(int(time.time()) if timestamp is None else timestamp)
     digest = hmac.new(secret.encode("utf-8"), ts.encode("ascii") + b":" + body, hashlib.sha256).hexdigest()
     return f"ts={ts};h1={digest}"
+
+
+def unused_port() -> int:
+    """Порт, на котором никто не слушает."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 class PaddleSignatureTests(unittest.TestCase):
@@ -141,6 +160,37 @@ class PaddleConfigurationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             app.Configuration()
 
+    def test_key_email_needs_api_key_and_smtp_password_file(self) -> None:
+        self._set_complete_sandbox()
+        config = app.Configuration()
+        self.assertFalse(config.key_email_configured)
+        self.assertEqual((config.smtp_host, config.smtp_port, config.smtp_user), ("smtp.resend.com", 2587, "resend"))
+        self.assertEqual(config.mail_from, "Jackdaw Mail <noreply@jackdaw-mail.pro>")
+        os.environ["PADDLE_API_KEY"] = SANDBOX_API_KEY
+        self.assertFalse(app.Configuration().key_email_configured)
+        os.environ["JACKDAW_LICENSE_SMTP_PASSWORD_FILE"] = "/etc/jackdaw-calls/smtp.secret"
+        config = app.Configuration()
+        self.assertTrue(config.key_email_configured)
+        self.assertEqual(config.smtp_password_file, Path("/etc/jackdaw-calls/smtp.secret"))
+
+    def test_bad_key_email_values_fail_fast_without_echoing_secrets(self) -> None:
+        self._set_complete_sandbox()
+        os.environ["PADDLE_API_KEY"] = LIVE_API_KEY
+        with self.assertRaises(RuntimeError) as error:
+            app.Configuration()
+        self.assertNotIn(LIVE_API_KEY, str(error.exception))
+        os.environ["PADDLE_API_KEY"] = "not-a-key"
+        with self.assertRaises(RuntimeError):
+            app.Configuration()
+        os.environ["PADDLE_API_KEY"] = SANDBOX_API_KEY
+        os.environ["JACKDAW_LICENSE_SMTP_PORT"] = "smtp"
+        with self.assertRaises(RuntimeError):
+            app.Configuration()
+        os.environ["JACKDAW_LICENSE_SMTP_PORT"] = "2587"
+        os.environ["JACKDAW_LICENSE_MAIL_FROM"] = "noreply@jackdaw-mail.pro\r\nBcc: x@example.com"
+        with self.assertRaises(RuntimeError):
+            app.Configuration()
+
 
 class PaddleWebhookTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -179,6 +229,7 @@ class PaddleWebhookTests(unittest.TestCase):
         )
         server = app.ThreadingHTTPServer(("127.0.0.1", 0), app.LicenseRequestHandler)
         server.service = app.LicenseHTTPService(self.config, self.store, self.signer)  # type: ignore[attr-defined]
+        self.service = server.service  # type: ignore[attr-defined]
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
@@ -486,6 +537,266 @@ class PaddleWebhookTests(unittest.TestCase):
     def test_claim_rejects_malformed_input(self) -> None:
         self.assertEqual(self._claim(transaction_id="txn_bad")[0], 400)
         self.assertEqual(self._claim(claim_token="short")[0], 400)
+
+    def _attach_mailer(self, send_failures: int = 0, fetch_error: Exception | None = None, retry_delays: tuple[int, ...] = (60, 300)) -> SimpleNamespace:
+        state = SimpleNamespace(sent=[], fetched=[], send_attempts=0, sent_event=threading.Event())
+
+        def fetch(customer_id: str) -> str:
+            state.fetched.append(customer_id)
+            if fetch_error is not None:
+                raise fetch_error
+            return BUYER_EMAIL
+
+        def send(message: object) -> None:
+            state.send_attempts += 1
+            if state.send_attempts <= send_failures:
+                raise app.KeyEmailRetryableError("smtp_SMTPServerDisconnected")
+            state.sent.append(message)
+            state.sent_event.set()
+
+        mailer = app.PaddleKeyMailer(self.store, self.signer.derive_secret(app.PADDLE_KEY_EMAIL_INFO), fetch, send, app.DEFAULT_MAIL_FROM, retry_delays=retry_delays, poll_seconds=3600)
+        self.service.mailer = mailer
+        state.mailer = mailer
+        return state
+
+    def _key_emails(self) -> list[sqlite3.Row]:
+        with sqlite3.connect(self.database_path) as connection:
+            connection.row_factory = sqlite3.Row
+            return connection.execute("SELECT * FROM paddle_key_emails").fetchall()
+
+    def _dump(self) -> str:
+        with sqlite3.connect(self.database_path) as connection:
+            return "\n".join(connection.iterdump())
+
+    def test_key_emails_migration_file_matches_embedded_sql_and_rolls_back(self) -> None:
+        migration_dir = Path(app.__file__).with_name("migrations")
+        self.assertEqual((migration_dir / "004_paddle_key_emails.sql").read_text(encoding="utf-8"), app.PADDLE_KEY_EMAILS_MIGRATION_SQL)
+        with sqlite3.connect(self.database_path) as connection:
+            connection.executescript((migration_dir / "004_paddle_key_emails.rollback.sql").read_text(encoding="utf-8"))
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            self.assertNotIn("paddle_key_emails", tables)
+            self.assertIn("paddle_key_deliveries", tables)
+            self.assertNotIn(4, {row[0] for row in connection.execute("SELECT version FROM schema_migrations")})
+        app.LicenseStore(self.database_path)
+        with sqlite3.connect(self.database_path) as connection:
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertIn("paddle_key_emails", tables)
+
+    def test_first_payment_emails_the_key_once(self) -> None:
+        mail = self._attach_mailer()
+        event = self._event("transaction.completed", self._transaction())
+        self.assertEqual(self._post_event(event), (200, {"ok": True}))
+        # До отправки в базе нет ни ключа, ни адреса: только id покупателя и шифротекст.
+        status, payload = self._claim()
+        license_key = payload["licenseKey"]
+        self.assertNotIn(license_key, self._dump())
+        self.assertNotIn(BUYER_EMAIL, self._dump())
+
+        self.assertEqual(mail.mailer.run_once(), 1)
+        self.assertEqual(len(mail.sent), 1)
+        message = mail.sent[0]
+        self.assertEqual(message["To"], BUYER_EMAIL)
+        self.assertEqual(message["From"], app.DEFAULT_MAIL_FROM)
+        self.assertIn(license_key, message.get_content())
+        self.assertIn("месячная подписка", message.get_content())
+        self.assertEqual(mail.fetched, [CUSTOMER_ID])
+
+        # Повтор события, новая доставка той же транзакции и продление второго письма не создают.
+        self.assertEqual(self._post_event(event), (200, {"ok": True, "duplicate": True}))
+        self.assertEqual(self._post_event(self._event("transaction.completed", self._transaction())), (200, {"ok": True}))
+        renewal = self._transaction(transaction_id=RENEWAL_TRANSACTION_ID, ends_at=datetime.now(timezone.utc) + timedelta(days=60), origin="subscription_recurring")
+        self.assertEqual(self._post_event(self._event("transaction.completed", renewal))[0], 200)
+        self.assertEqual(mail.mailer.run_once(datetime.now(timezone.utc) + timedelta(days=10)), 0)
+        self.assertEqual(len(mail.sent), 1)
+
+        rows = self._key_emails()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["status"], rows[0]["customer_id"], rows[0]["sealed_key"]), ("sent", None, None))
+        self.assertIsNotNone(rows[0]["sent_at"])
+        self.assertEqual(status, 200)
+
+    def test_webhook_answers_before_the_background_email_is_sent(self) -> None:
+        mail = self._attach_mailer()
+        release = threading.Event()
+        original_fetch = mail.mailer._fetch_email
+
+        def slow_fetch(customer_id: str) -> str:
+            release.wait(5)
+            return original_fetch(customer_id)
+
+        mail.mailer._fetch_email = slow_fetch
+        worker = mail.mailer.start()
+        self.addCleanup(mail.mailer.stop)
+        started = time.monotonic()
+        self.assertEqual(self._post_event(self._event("transaction.completed", self._transaction())), (200, {"ok": True}))
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(mail.sent, [])
+        release.set()
+        self.assertTrue(mail.sent_event.wait(5))
+        mail.mailer.stop()
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(mail.sent), 1)
+        self.assertEqual(self._key_emails()[0]["status"], "sent")
+
+    def test_smtp_failure_is_retried_later(self) -> None:
+        mail = self._attach_mailer(send_failures=1)
+        self._post_event(self._event("transaction.completed", self._transaction()))
+        now = datetime.now(timezone.utc)
+        self.assertEqual(mail.mailer.run_once(now), 1)
+        self.assertEqual(mail.sent, [])
+        row = self._key_emails()[0]
+        self.assertEqual((row["status"], row["attempts"], row["last_error"]), ("pending", 1, "smtp_SMTPServerDisconnected"))
+        self.assertIsNotNone(row["sealed_key"])
+        # Раньше паузы повтора письмо не отправляется.
+        self.assertEqual(mail.mailer.run_once(now + timedelta(seconds=30)), 0)
+        self.assertEqual(mail.mailer.run_once(now + timedelta(seconds=61)), 1)
+        self.assertEqual(len(mail.sent), 1)
+        self.assertEqual(self._key_emails()[0]["status"], "sent")
+
+    def test_email_gives_up_after_retries_and_the_key_stays_on_the_page(self) -> None:
+        mail = self._attach_mailer(send_failures=100, retry_delays=(60,))
+        self._post_event(self._event("transaction.completed", self._transaction()))
+        now = datetime.now(timezone.utc)
+        mail.mailer.run_once(now)
+        mail.mailer.run_once(now + timedelta(seconds=61))
+        self.assertEqual(mail.send_attempts, 2)
+        row = self._key_emails()[0]
+        self.assertEqual((row["status"], row["sealed_key"], row["customer_id"]), ("failed", None, None))
+        self.assertEqual(mail.mailer.run_once(now + timedelta(days=30)), 0)
+        status, payload = self._claim()
+        self.assertEqual(status, 200)
+        self.assertRegex(payload["licenseKey"], app.LICENSE_KEY_RE)
+
+    def test_missing_email_does_not_break_the_purchase(self) -> None:
+        mail = self._attach_mailer(fetch_error=app.KeyEmailPermanentError("paddle_customer_without_email"))
+        self.assertEqual(self._post_event(self._event("transaction.completed", self._transaction())), (200, {"ok": True}))
+        self.assertEqual(mail.mailer.run_once(), 1)
+        self.assertEqual(mail.send_attempts, 0)
+        row = self._key_emails()[0]
+        self.assertEqual((row["status"], row["last_error"], row["sealed_key"]), ("failed", "paddle_customer_without_email", None))
+        self.assertEqual(self._claim()[0], 200)
+
+    def test_transaction_without_customer_is_not_queued(self) -> None:
+        mail = self._attach_mailer()
+        data = self._transaction()
+        data["customer_id"] = None
+        self.assertEqual(self._post_event(self._event("transaction.completed", data)), (200, {"ok": True}))
+        self.assertEqual(self._key_emails(), [])
+        self.assertEqual(mail.mailer.run_once(), 0)
+        self.assertEqual(self._claim()[0], 200)
+
+    def test_without_mailer_nothing_is_queued(self) -> None:
+        self.assertIsNone(self.service.mailer)
+        self.assertEqual(self._post_event(self._event("transaction.completed", self._transaction())), (200, {"ok": True}))
+        self.assertEqual(self._key_emails(), [])
+
+    def test_purchase_without_claim_token_gets_the_key_by_email(self) -> None:
+        mail = self._attach_mailer()
+        self._post_event(self._event("transaction.completed", self._transaction(claim_token=None)))
+        mail.mailer.run_once()
+        self.assertEqual(len(mail.sent), 1)
+        self.assertEqual(app.license_key_hash(mail.sent[0].get_content().split("Ваш ключ: ")[1].split("\n")[0]), self._license()["key_hash"])
+
+    def test_refund_before_sending_cancels_the_email(self) -> None:
+        mail = self._attach_mailer()
+        self._post_event(self._event("transaction.completed", self._transaction()))
+        full = {"id": "adj_01" + "a" * 24, "action": "refund", "type": "full", "status": "approved", "transaction_id": TRANSACTION_ID, "subscription_id": SUBSCRIPTION_ID}
+        self.assertEqual(self._post_event(self._event("adjustment.created", full)), (200, {"ok": True}))
+        self.assertEqual(mail.mailer.run_once(), 1)
+        self.assertEqual(mail.sent, [])
+        self.assertEqual(self._key_emails()[0]["status"], "canceled")
+
+
+class PaddleCustomerApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.requests: list[dict[str, str]] = []
+        tests = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                tests.requests.append({"path": self.path, "authorization": self.headers.get("Authorization", "")})
+                customer = self.path.rsplit("/", 1)[-1]
+                if customer.endswith("x" * 24):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                if customer.endswith("e" * 24):
+                    self.send_response(503)
+                    self.end_headers()
+                    return
+                if customer.endswith("r" * 24):
+                    self.send_response(302)
+                    self.send_header("Location", "http://127.0.0.1:9/steal")
+                    self.end_headers()
+                    return
+                email = None if customer.endswith("n" * 24) else BUYER_EMAIL
+                body = json.dumps({"data": {"id": customer, "email": email}}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                return None
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        previous = app.PADDLE_API_BASE_URLS["sandbox"]
+        app.PADDLE_API_BASE_URLS["sandbox"] = f"http://127.0.0.1:{server.server_address[1]}"
+        self.addCleanup(app.PADDLE_API_BASE_URLS.__setitem__, "sandbox", previous)
+        self.fetch = app.paddle_customer_email_fetcher("sandbox", SANDBOX_API_KEY)
+
+    def test_email_is_fetched_with_the_api_key(self) -> None:
+        self.assertEqual(self.fetch(CUSTOMER_ID), BUYER_EMAIL)
+        self.assertEqual(self.requests, [{"path": f"/customers/{CUSTOMER_ID}", "authorization": f"Bearer {SANDBOX_API_KEY}"}])
+
+    def test_unknown_customer_or_missing_email_is_permanent(self) -> None:
+        with self.assertRaises(app.KeyEmailPermanentError):
+            self.fetch("ctm_01" + "x" * 24)
+        with self.assertRaises(app.KeyEmailPermanentError):
+            self.fetch("ctm_01" + "n" * 24)
+        with self.assertRaises(app.KeyEmailPermanentError):
+            self.fetch("../admin")
+        self.assertEqual(len(self.requests), 2)
+
+    def test_api_errors_and_redirects_are_retried_without_following(self) -> None:
+        with self.assertRaises(app.KeyEmailRetryableError) as error:
+            self.fetch("ctm_01" + "e" * 24)
+        self.assertEqual(str(error.exception), "paddle_api_http_503")
+        with self.assertRaises(app.KeyEmailRetryableError):
+            self.fetch("ctm_01" + "r" * 24)
+        self.assertEqual(len(self.requests), 2)
+
+
+class SmtpSenderTests(unittest.TestCase):
+    def test_missing_password_file_or_unreachable_server_is_retryable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            message = app.build_paddle_key_email(app.DEFAULT_MAIL_FROM, BUYER_EMAIL, "JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR", "yearly")
+            send = app.smtp_message_sender("127.0.0.1", 9, "resend", Path(directory) / "missing.secret")
+            with self.assertRaises(app.KeyEmailRetryableError) as error:
+                send(message)
+            self.assertEqual(str(error.exception), "smtp_password_unavailable")
+            password_file = Path(directory) / "smtp.secret"
+            password_file.write_text("secret-value\n", encoding="utf-8")
+            send = app.smtp_message_sender("127.0.0.1", unused_port(), "resend", password_file)
+            with self.assertRaises(app.KeyEmailRetryableError) as error:
+                send(message)
+            self.assertTrue(str(error.exception).startswith("smtp_"))
+            self.assertNotIn("secret-value", str(error.exception))
+            self.assertNotIn(BUYER_EMAIL, str(error.exception))
+
+    def test_message_has_bilingual_key_and_no_header_injection(self) -> None:
+        message = app.build_paddle_key_email(app.DEFAULT_MAIL_FROM, BUYER_EMAIL, "JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR", "yearly")
+        content = message.get_content()
+        self.assertIn("Ваш ключ: JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR", content)
+        self.assertIn("Your key: JACKDAW-PRO-ABCD-EFGH-JKLM-NPQR", content)
+        self.assertIn("годовая подписка", content)
+        self.assertTrue(message["Message-ID"].endswith("@jackdaw-mail.pro>"))
+        self.assertEqual(message["Auto-Submitted"], "auto-generated")
+
 
 
 if __name__ == "__main__":
