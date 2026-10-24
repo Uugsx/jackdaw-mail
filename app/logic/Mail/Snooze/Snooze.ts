@@ -80,7 +80,7 @@ export function snoozePresetTime(preset: SnoozePreset, now = new Date()): Date {
 
 function folderIDs(): Record<string, string> {
   let value = getLocalStorage<Record<string, string>>(kSnoozeFolderKey, {}).value;
-  return value && typeof value == "object" ? value : {};
+  return value && typeof value == "object" ? { ...value } : {};
 }
 
 export function findSnoozeFolder(account: MailAccount): Folder | null {

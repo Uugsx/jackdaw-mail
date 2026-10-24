@@ -149,6 +149,47 @@
   label={isMessagePinned(message) ? $t`Unpin` : $t`Pin`}
   tooltip={isMessagePinned(message) ? $t`Remove this message from the top of the list` : $t`Keep this message at the top of the list`}
   icon={isMessagePinned(message) ? UnpinIcon : PinIcon} />
+{#if quickSteps.length}
+  <SubMenu label={$t`Quick steps`} icon={QuickStepIcon}>
+    {#each quickSteps as step (step.id)}
+      <MenuItem
+        label={step.name}
+        icon={QuickStepIcon}
+        onClick={() => runQuickStepInApp(step, actionTargets())} />
+    {/each}
+    <MenuDivider />
+    <MenuItem
+      label={$t`Manage quick steps…`}
+      icon={SettingsIcon}
+      onClick={() => openSettingsCategoryByID("mail-quick-steps")} />
+  </SubMenu>
+{:else}
+  <MenuItem
+    label={$t`Create a quick step…`}
+    tooltip={$t`Move, mark, forward or reply with a template in one click`}
+    icon={QuickStepIcon}
+    onClick={() => openSettingsCategoryByID("mail-quick-steps")} />
+{/if}
+<MenuItem
+  onClick={() => cleanUpConversation(message)}
+  label={$t`Clean up conversation`}
+  tooltip={$t`Delete messages of this conversation whose whole text is quoted in a later reply`}
+  icon={CleanupIcon} />
+{#if isFocusedFolder(message.folder, $focusedEnabled.value) && message.from?.emailAddress}
+  {#if focusedTabOfMessage == "focused"}
+    <MenuItem
+      onClick={() => setSenderOverride(message.from.emailAddress, "other")}
+      label={$t`Always move to Other`}
+      tooltip={$t`Show mail from this sender under Other`}
+      icon={OtherIcon} />
+  {:else}
+    <MenuItem
+      onClick={() => setSenderOverride(message.from.emailAddress, "focused")}
+      label={$t`Always move to Focused`}
+      tooltip={$t`Show mail from this sender under Focused`}
+      icon={FocusedIcon} />
+  {/if}
+{/if}
 <SubMenu label={$t`Follow up`} icon={MailFlagIcon}>
   <FlagMenuItems {message} messages={flagTargets} />
 </SubMenu>
@@ -239,6 +280,17 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import UnpinIcon from "lucide-svelte/icons/pin-off";
   import SnoozeMenuItems from "../Snooze/SnoozeMenuItems.svelte";
   import { isMessagePinned, toggleMessagePinned } from "../../../logic/Mail/Pin/PinnedMessages";
+  import QuickStepIcon from "lucide-svelte/icons/zap";
+  import SettingsIcon from "lucide-svelte/icons/settings";
+  import CleanupIcon from "lucide-svelte/icons/brush-cleaning";
+  import OtherIcon from "lucide-svelte/icons/inbox";
+  import FocusedIcon from "lucide-svelte/icons/target";
+  import { getQuickSteps, quickStepsChanged } from "../../../logic/Mail/QuickSteps/QuickSteps";
+  import { runQuickStepInApp } from "../QuickSteps/quickStepHost";
+  import { cleanUpConversation } from "../Cleanup/cleanup";
+  import { classifyMessage, focusedClassificationChanged, focusedInboxEnabled, setSenderOverride } from "../../../logic/Mail/Focused/FocusedInbox";
+  import { isFocusedFolder } from "../Focused/focusedView";
+  import { openSettingsCategoryByID } from "../../Settings/Window/CategoriesUtils";
   import BlockIcon from "lucide-svelte/icons/ban";
   import PhishingIcon from "lucide-svelte/icons/fish";
   import { blockSender, domainOf, reportPhishing, trustSender } from "../../../logic/Mail/Junk/SenderLists";
@@ -282,6 +334,9 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   export let onMove: (() => void) | null = null;
 
   $: followUp = findFollowUpForMessage($followUpSnapshot.reminders, message);
+  $: quickSteps = ($quickStepsChanged, getQuickSteps());
+  const focusedEnabled = focusedInboxEnabled();
+  $: focusedTabOfMessage = ($focusedClassificationChanged, classifyMessage(message));
 
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;

@@ -9,7 +9,7 @@ export type ConfirmChoice = "confirm" | "cancel" | "extra";
  * В Svelte 5 `new Component()` не работает, поэтому диалог создаётся через `mount()`.
  */
 export function showConfirmDialog(options: { title: string; message?: string; confirmLabel?: string;
-    cancelLabel?: string; extraLabel?: string | null }): Promise<ConfirmChoice> {
+    cancelLabel?: string; extraLabel?: string | null; showCancel?: boolean }): Promise<ConfirmChoice> {
   return new Promise(resolve => {
     let dialog: Record<string, any>;
     let finish = (choice: ConfirmChoice) => {
@@ -26,6 +26,7 @@ export function showConfirmDialog(options: { title: string; message?: string; co
         confirmLabel: options.confirmLabel ?? null,
         cancelLabel: options.cancelLabel ?? null,
         extraLabel: options.extraLabel ?? null,
+        showCancel: options.showCancel ?? true,
       },
       events: {
         confirm: () => finish("confirm"),

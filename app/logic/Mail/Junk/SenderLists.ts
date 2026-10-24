@@ -108,7 +108,7 @@ export function domainOf(address: string): string {
 
 function allLocalLists(): Record<string, SenderLists> {
   let value = getLocalStorage<Record<string, SenderLists>>(kSenderListsKey, {}).value;
-  return value && typeof value == "object" ? value : {};
+  return value && typeof value == "object" ? { ...value } : {};
 }
 
 export function getLocalSenderLists(account: MailAccount): SenderLists {
