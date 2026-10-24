@@ -23,8 +23,23 @@ import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+SERVERS_REPO = "jackdaw-servers"
 LICENSE_PORT = 18090
 CALLS_PORT = 18091
+
+
+def servers_dir() -> Path:
+    """Код серверов — в закрытом репозитории jackdaw-servers.
+
+    JACKDAW_SERVERS_DIR задаёт клон явно; иначе ищется клон jackdaw-servers рядом с этим
+    репозиторием или выше по дереву (подходит и для worktree внутри клона клиента).
+    """
+    configured = os.environ.get("JACKDAW_SERVERS_DIR")
+    candidates = [Path(configured).expanduser()] if configured else [parent / SERVERS_REPO for parent in ROOT.parents]
+    for candidate in candidates:
+        if (candidate / "call_server" / "calls.py").is_file() and (candidate / "license_server" / "app.py").is_file():
+            return candidate.resolve()
+    sys.exit(f"Не найден клон {SERVERS_REPO}: задайте JACKDAW_SERVERS_DIR или склонируйте его рядом с репозиторием клиента.")
 
 
 def prepare(data_dir: Path) -> str:
@@ -90,8 +105,9 @@ def install_fake_gifs() -> None:
 
 def main() -> None:
     data_dir = Path(sys.argv[1]).resolve()
+    servers = servers_dir()
     public_key = prepare(data_dir)
-    sys.path[:0] = [str(ROOT / "call_server"), str(ROOT / "license_server")]
+    sys.path[:0] = [str(servers / "call_server"), str(servers / "license_server")]
     import app as license_app
     import calls
 
