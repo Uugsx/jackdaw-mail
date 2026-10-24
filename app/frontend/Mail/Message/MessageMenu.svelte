@@ -139,6 +139,16 @@
     {/each}
   </SubMenu>
 {/if}
+{#if message.messageID}
+  <SubMenu label={$t`Snooze`} icon={SnoozeIcon}>
+    <SnoozeMenuItems {message} />
+  </SubMenu>
+{/if}
+<MenuItem
+  onClick={() => toggleMessagePinned(message)}
+  label={isMessagePinned(message) ? $t`Unpin` : $t`Pin`}
+  tooltip={isMessagePinned(message) ? $t`Remove this message from the top of the list` : $t`Keep this message at the top of the list`}
+  icon={isMessagePinned(message) ? UnpinIcon : PinIcon} />
 <SubMenu label={$t`Follow up`} icon={MailFlagIcon}>
   <FlagMenuItems {message} messages={flagTargets} />
 </SubMenu>
@@ -224,6 +234,11 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import SpamIcon from "lucide-svelte/icons/shield-x";
   import NotSpamIcon from "lucide-svelte/icons/shield-off";
   import JunkIcon from "lucide-svelte/icons/shield-alert";
+  import SnoozeIcon from "lucide-svelte/icons/alarm-clock";
+  import PinIcon from "lucide-svelte/icons/pin";
+  import UnpinIcon from "lucide-svelte/icons/pin-off";
+  import SnoozeMenuItems from "../Snooze/SnoozeMenuItems.svelte";
+  import { isMessagePinned, toggleMessagePinned } from "../../../logic/Mail/Pin/PinnedMessages";
   import BlockIcon from "lucide-svelte/icons/ban";
   import PhishingIcon from "lucide-svelte/icons/fish";
   import { blockSender, domainOf, reportPhishing, trustSender } from "../../../logic/Mail/Junk/SenderLists";

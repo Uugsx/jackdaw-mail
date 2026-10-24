@@ -6,6 +6,7 @@
   class:unread={!$message.isRead}
   class:show-account-color={$emailAccounts.length > 1}
   draggable="true" on:dragstart={(event) => catchErrors(() => onDragStartMail(event, message))}
+  on:pointerdown={() => message.mime || message.loadMIME().catch(() => undefined)}
   style="--account-color: {$message.folder.account.color};"
   on:contextmenu={contextMenu.onContextMenu}
   on:click
@@ -109,6 +110,11 @@
           />
       </hbox>
     {/if}
+    {#if pinned}
+      <hbox class="pinned" title={$t`Pinned`}>
+        <PinIcon size="14px" />
+      </hbox>
+    {/if}
     <hbox class="star button" class:starred={$message.isStarred}>
       <Button
         icon={StarIcon}
@@ -156,6 +162,8 @@
   import ForwardIcon from "lucide-svelte/icons/forward";
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import StarIcon from "lucide-svelte/icons/star";
+  import PinIcon from "lucide-svelte/icons/pin";
+  import { isMessagePinned, pinnedMessagesChanged } from "../../../logic/Mail/Pin/PinnedMessages";
   import CircleIcon from "lucide-svelte/icons/circle";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
   import FolderActionsIcon from "lucide-svelte/icons/folder-dot";
@@ -171,6 +179,7 @@
   import { mailSizeLabel, type MailListColumnId } from "../mailListColumns";
 
   export let message: EMail;
+  $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
   /** Столбцы табличного вида; null — двухстрочная карточка */
   export let columns: MailListColumnId[] | null = null;
 
@@ -347,6 +356,11 @@
   }
   .star {
     margin-inline-end: 1px; /* for alignment with unread button */
+  }
+  .pinned {
+    align-self: center;
+    color: var(--icon-primary, currentColor);
+    margin-inline-end: 4px;
   }
   .attachments :global(> *) {
     margin-inline-end: 3px; /* for alignment with unread button */

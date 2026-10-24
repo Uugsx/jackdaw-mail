@@ -9,12 +9,14 @@
     padding="6px"
     border={false}
     />
+  <PrintCalendarButton {dateInterval} />
 </hbox>
 <ViewSelector bind:dateInterval />
 
 <script lang="ts">
   import type { DateInterval } from "./selected";
   import ViewSelector from "./ViewSelector.svelte";
+  import PrintCalendarButton from "./Print/PrintCalendarButton.svelte";
   import RoundButton from "../Shared/RoundButton.svelte";
   import SyncIcon from "lucide-svelte/icons/refresh-cw";
   import { t } from "../../l10n/l10n";

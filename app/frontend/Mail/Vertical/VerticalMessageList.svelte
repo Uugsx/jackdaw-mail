@@ -46,7 +46,7 @@
     </svelte:fragment>
     <svelte:fragment slot="row" let:item>
       {#if item.kind == "day"}
-        <MailListTopicSeparator prefix={$t`Received`} label={item.label} count={item.count} collapsed={item.collapsed}
+        <MailListTopicSeparator prefix={item.id == kPinnedGroupID ? null : $t`Received`} label={item.label} count={item.count} collapsed={item.collapsed}
           on:toggle={() => toggleListGroup(item.id)} />
       {:else if item.kind == "topic"}
         <MailListTopicSeparator prefix={$t`Subject`} label={item.label} count={item.count} collapsed={item.collapsed}
@@ -102,7 +102,7 @@
   import { isMobile } from "../../../logic/build";
   import Button from "../../Shared/Button.svelte";
   import {
-    MailListRows, findMailListRowShowingMessage, findMailListRowsShowingMessages, mailListRowSelectable,
+    MailListRows, findMailListRowShowingMessage, findMailListRowsShowingMessages, kPinnedGroupID, mailListRowSelectable,
     mailListRowSelectionKey, mailListRowMessages,
     type MailListIncidentMode, type MailListIncidentRow, type MailListRow,
   } from "../mailListRows";
