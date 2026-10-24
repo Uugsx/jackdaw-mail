@@ -6,6 +6,7 @@ import { gt } from "../../l10n/l10n";
 import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
 import { writable } from "svelte/store";
 import { messagesRepresentSameMail } from "./mailReadActions";
+import { hasPinnedMessages, isMessagePinned, pinnedMessagesChanged } from "../../logic/Mail/Pin/PinnedMessages";
 import {
   buildAlertIncidents,
   isAlertIncidentActive,
@@ -235,6 +236,29 @@ export function buildMailListRows(
   return rows;
 }
 
+export const kPinnedGroupID = "day:pinned";
+
+/** Группа «Закреплённые» над списком; пустая — без заголовка */
+export function buildPinnedRows(pinned: readonly EMail[], collapsedGroupIds: ReadonlySet<string> = new Set()): MailListRow[] {
+  if (!pinned.length) {
+    return [];
+  }
+  let collapsed = collapsedGroupIds.has(kPinnedGroupID);
+  let rows: MailListRow[] = [{
+    kind: "day",
+    id: kPinnedGroupID,
+    label: gt`Pinned`,
+    count: pinned.length,
+    collapsed,
+  }];
+  if (!collapsed) {
+    for (let message of pinned) {
+      rows.push({ kind: "message", id: `msg:${messageRowID(message)}`, message });
+    }
+  }
+  return rows;
+}
+
 function incidentRowID(incident: AlertIncident): string {
   return `incident:${incident.key}`;
 }
@@ -449,8 +473,19 @@ export class MailListRows {
   protected incidentTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly observer: CollectionObserver<EMail>;
 
+  protected unsubscribePinned: () => void;
+
   constructor() {
     let rebuild = () => this.rebuild();
+    let first = true;
+    this.unsubscribePinned = pinnedMessagesChanged.subscribe(() => {
+      // subscribe() вызывает сразу — источника ещё нет
+      if (first) {
+        first = false;
+        return;
+      }
+      rebuild();
+    });
     this.observer = new class extends CollectionObserver<EMail> {
       added() {
         rebuild();
@@ -501,6 +536,7 @@ export class MailListRows {
   }
 
   dispose() {
+    this.unsubscribePinned();
     this.source?.unregisterObserver(this.observer);
     this.source = null;
     this.clearIncidentTimer();
@@ -558,7 +594,16 @@ export class MailListRows {
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
     let byTopic = this.sort == "subject" || this.sort == "subject-desc";
     let bySender = this.sort == "sender" || this.sort == "sender-desc";
-    let nextRows = buildMailListRows(messages, byDate, byTopic, this.collapsedGroupIds, bySender);
+    // Закреплённые — отдельной группой вверху, в том же порядке сортировки
+    let pinned = hasPinnedMessages() ? messages.filter(isMessagePinned) : [];
+    if (pinned.length) {
+      let pinnedSet = new Set(pinned);
+      messages = messages.filter(message => !pinnedSet.has(message));
+    }
+    let nextRows = [
+      ...buildPinnedRows(pinned, this.collapsedGroupIds),
+      ...buildMailListRows(messages, byDate, byTopic, this.collapsedGroupIds, bySender),
+    ];
     // При полной пересборке строки всегда создаются заново. `ArrayColl.replaceAll`
     // в таком случае сравнивает каждый новый объект со всеми старыми (O(n²)),
     // что заметно на папках с десятками тысяч писем. Сохраняем идентичность
