@@ -1265,6 +1265,7 @@
   .subject-row input {
     width: 100%;
     border: none;
+    box-shadow: none;
     background: transparent;
     color: inherit;
     padding: 4px 0;

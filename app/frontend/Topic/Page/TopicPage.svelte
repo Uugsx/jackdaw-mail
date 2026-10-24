@@ -228,6 +228,11 @@
     margin-block-start: 12px;
   }
   .title input {
+    padding: 0;
+    border: none;
+    border-bottom: 1px solid var(--input-line);
+    border-radius: 0;
+    box-shadow: none;
     margin-block-start: 0px;
     margin-block-end: 24px;
     margin-inline-end: 16px;

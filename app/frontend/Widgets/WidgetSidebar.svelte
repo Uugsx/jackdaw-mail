@@ -580,6 +580,7 @@
     padding: 2px 4px;
     border: 1px solid transparent;
     border-radius: var(--border-radius);
+    box-shadow: none;
     background: transparent;
     color: inherit;
     font-weight: 600;

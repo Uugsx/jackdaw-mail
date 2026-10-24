@@ -126,6 +126,7 @@
   }
   .identity-selector select {
     border: none;
+    box-shadow: none;
     color: inherit;
     background-color: transparent;
     font-size: 12px;
@@ -134,7 +135,13 @@
   label {
     margin-inline-end: 12px;
   }
+  /* Поле внутри строки адреса: линия снизу, без рамки общего поля */
   input[type=email] {
+    padding: 1px 2px;
+    border: none;
+    border-bottom: 1px solid var(--input-line);
+    border-radius: 0;
+    box-shadow: none;
     min-width: 20vw;
     width: 20%;
   }
