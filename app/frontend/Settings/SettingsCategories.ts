@@ -19,6 +19,7 @@ import MailSend from "./Mail/Send.svelte";
 import MailTags from "./Mail/Tags.svelte";
 import MailRules from "./Mail/Rules.svelte";
 import MailTemplates from "./Mail/Templates.svelte";
+import MailJunk from "./Mail/Junk.svelte";
 import MailSharing from "./Mail/Sharing.svelte";
 import AccountGeneral from "./AccountGeneral.svelte";
 import AccountURLServer from "./AccountURLServer.svelte";
@@ -91,6 +92,7 @@ mailSettings.subCategories.addAll([
   new SettingsCategory("mail-tags", gt`Categories`, MailTags),
   new SettingsCategory("mail-alert-incidents", gt`Alert incidents`, MailAlertIncidents),
   new SettingsCategory("mail-templates", gt`Templates *=> Email templates`, MailTemplates),
+  new SettingsCategory("mail-junk", gt`Junk mail`, MailJunk),
 ]);
 mailSettings.accounts = appGlobal.emailAccounts;
 // #if [!WEBMAIL]
