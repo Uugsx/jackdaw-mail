@@ -98,7 +98,7 @@
         <slot name="inner-top" />
           <div class="text value font-normal">
             {#if renderHTML}
-              {@html $message.html || ""}
+              {@html restrictHTMLForAppDOM($message.html || "")}
             {/if}
             <!-- TODO Security: Jail HTML into untrusted <iframe> for additional protection.
             <WebView title={$t`Text`} html={$message.html || ""} {headHTML} autoSize />
@@ -139,6 +139,7 @@
 </hbox>
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import type { Message } from "../../../logic/Abstract/Message";
   import { assert } from "../../../logic/util/util";
   import { ChatMessage, DeliveryStatus } from "../../../logic/Chat/ChatMessage";

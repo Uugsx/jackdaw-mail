@@ -52,6 +52,8 @@ const kQuotedCompanyPattern = new RegExp(
 const kPlainCompanyPattern = /(?<![\p{L}\p{N}])(ООО|ОАО|ЗАО|ПАО|НАО|АО|ТОО)[ \t]+(\p{Lu}[\p{L}\p{N}&-]*(?:[ \t]+\p{Lu}[\p{L}\p{N}&-]*)?)/gu;
 const kSoleTraderPattern = /(?<![\p{L}\p{N}])ИП[ \t]+(\p{Lu}\p{Ll}{2,})/gu;
 const kEmailAddressPattern = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu;
+/** Строка заголовка длиннее — не заголовок; без ограничения поиск адреса квадратичен (зависание на письме) */
+const kMaxHeaderScanLength = 1000;
 /** Строки заголовков в цитатах и пересылках: «From: …», «От: …». */
 const kQuotedHeaderPattern = /^[\s>*]*(?:from|reply-to|sender|от|отправитель)\**\s*:\**\s*(.+)$/gimu;
 /** Начало чужого текста в цитате: заголовок «From:» или «…, Иван <ivan@x.ru> пишет:». */
@@ -487,7 +489,7 @@ function externalAuthorText(text: RelatedMailText, own: RelatedOwnContext): stri
     }
     if (authorLine) {
       const header = authorLine[1] ?? authorLine[2];
-      const address = header.match(kEmailAddressPattern)?.[0];
+      const address = header.slice(0, kMaxHeaderScanLength).match(kEmailAddressPattern)?.[0];
       const lowerHeader = header.toLocaleLowerCase();
       internal = address
         ? isInternalAuthor(address)
@@ -504,7 +506,7 @@ function externalAuthorText(text: RelatedMailText, own: RelatedOwnContext): stri
 function quotedHeaderAddresses(body: string | null | undefined): string[] {
   const addresses: string[] = [];
   for (const line of (body ?? "").matchAll(kQuotedHeaderPattern)) {
-    addresses.push(...(line[1].match(kEmailAddressPattern) ?? []));
+    addresses.push(...(line[1].slice(0, kMaxHeaderScanLength).match(kEmailAddressPattern) ?? []));
   }
   return addresses;
 }

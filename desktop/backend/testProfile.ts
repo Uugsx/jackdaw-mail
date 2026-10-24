@@ -17,9 +17,31 @@ import path from "node:path";
 
 const kTestProfileEnv = "JACKDAW_TEST_PROFILE";
 
-export const testProfileDir: string | null = process.env[kTestProfileEnv]
+declare const __JACKDAW_RELEASE_BUILD__: boolean | undefined;
+
+/** Выпуск, собранный в CI. В нём профиль автопроверок и порт отладки не работают:
+ * иначе любой процесс пользователя запустил бы копию с протоколом отладки
+ * и через неё расшифровал бы пароли почты (ключ в Keychain выдаётся приложению). */
+export const isReleaseBuild: boolean =
+  typeof __JACKDAW_RELEASE_BUILD__ != "undefined" && !!__JACKDAW_RELEASE_BUILD__;
+
+export const testProfileDir: string | null = !isReleaseBuild && process.env[kTestProfileEnv]
   ? path.resolve(process.env[kTestProfileEnv])
   : null;
+
+const kDebugSwitches = ["remote-debugging-port", "remote-debugging-pipe", "inspect", "inspect-brk", "inspect-port"];
+
+/** В выпуске не запускаемся с ключами удалённой отладки */
+export function refuseDebugSwitchesInRelease(): void {
+  if (!isReleaseBuild) {
+    return;
+  }
+  let found = kDebugSwitches.filter(name => app.commandLine.hasSwitch(name));
+  if (found.length) {
+    console.error("Debug switches are not allowed in release builds:", found.join(", "));
+    app.exit(1);
+  }
+}
 
 export function isTestProfile(): boolean {
   return !!testProfileDir;
@@ -35,6 +57,7 @@ if (testProfileDir) {
 
 /** До готовности приложения: пути профиля и поддельные устройства */
 export function applyTestProfile(): void {
+  refuseDebugSwitchesInRelease();
   if (!testProfileDir) {
     return;
   }

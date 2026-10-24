@@ -20,3 +20,25 @@ export function pickMacDmgAsset<T extends ReleaseAssetName>(assets: T[], version
   // Имя без версии: подходит, только если DMG в релизе один
   return dmgs.length == 1 && !/\d+\.\d+\.\d+/.test(dmgs[0].name) ? dmgs[0] : null;
 }
+
+export type UpdateFileInfo = { url: string; sha512?: string };
+
+/**
+ * sha512 (base64) файла обновления из `latest-mac.yml`.
+ * Сборка Mac без подписи Apple, поэтому DMG сверяется с манифестом,
+ * прежде чем скрипт установки заменит приложение.
+ *
+ * @returns sha512 или `null`, если файла в манифесте нет
+ */
+export function expectedSha512ForAsset(files: UpdateFileInfo[] | null | undefined, assetName: string): string | null {
+  let file = (files ?? []).find(each => {
+    let name = each.url.split(/[\\/]/).pop() ?? "";
+    return name.toLowerCase() == assetName.toLowerCase();
+  });
+  return file?.sha512 || null;
+}
+
+/** Совпадает ли sha512 (base64) содержимого с ожидаемым */
+export function isSha512Match(actualBase64: string, expectedBase64: string | null): boolean {
+  return !!expectedBase64 && actualBase64 == expectedBase64;
+}

@@ -6,11 +6,13 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/icon/logo.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
-  <!--
-    <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self' ws://localhost:5455; script-src 'self'; style-src 'self' 'unsafe-inline'" />
-  -->
+  <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+    Окно имеет полный доступ к backend (файлы, запуск программ), поэтому чужой скрипт
+    здесь — это запуск кода на компьютере. Разрешены только скрипты приложения;
+    хеш — встроенный скрипт ниже (при его изменении пересчитать:
+    printf '%s' "<содержимое тега>" | openssl dgst -sha256 -binary | base64). -->
+  <meta http-equiv="Content-Security-Policy"
+    content="script-src 'self' 'wasm-unsafe-eval' 'sha256-lifBjA3KIQ1o9qpHUKkGiK4A2UiqTxaIpi1/6r4Wuzg='; object-src 'none'; base-uri 'none'" />
 </head>
 
 <body>

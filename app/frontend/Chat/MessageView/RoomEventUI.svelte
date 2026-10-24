@@ -1,7 +1,7 @@
 <!-- Событие комнаты (звонок, изменение состава) — по центру ленты, как служебная строка, а не сообщение -->
 <hbox flex class="chatroomevent" role="note">
   <hbox class="text selectable font-smallest">
-    <span>{@html message.html }</span>
+    <span>{@html restrictHTMLForAppDOM(message.html)}</span>
     {#if message.sent}
       <span class="time">{getTimeString(message.sent)}</span>
     {/if}
@@ -9,6 +9,7 @@
 </hbox>
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import type { ChatRoomEvent } from "../../../logic/Chat/RoomEvent";
   import { getTimeString } from "../../Util/date";
 

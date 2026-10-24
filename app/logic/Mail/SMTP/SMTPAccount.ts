@@ -7,6 +7,7 @@ import { CreateMIME } from "./CreateMIME";
 import { appGlobal } from "../../app";
 import { logError } from "../../../frontend/Util/error";
 import { assert } from "../../util/util";
+import { production } from "../../build";
 
 export class SMTPAccount extends MailAccount {
   readonly protocol: string = "smtp";
@@ -71,7 +72,8 @@ export class SMTPAccount extends MailAccount {
       dnsTimeout: 5000,
       connectionTimeout: 5000,
       greetingTimeout: 20000,
-      logger: true,
+      // Журнал nodemailer пишет хост, логин и ход SMTP-сессии: только при разработке
+      logger: !production,
       disableFileAccess: true,
       disableUrlAccess: true,
     };
