@@ -309,7 +309,7 @@ value,
 }
 
 /* Базовые поля — в :where(), без веса: стили компонента всегда сильнее
- * общих, а общий вид полей на компьютере задан ниже, у .main-window. */
+ * общих, а общий вид полей на компьютере задан ниже, у .main-window и .standalone-window. */
 :where(
   input[type="number"],
   input[type="password"],
@@ -477,8 +477,10 @@ a:hover {
   background: var(--main-bg);
 }
 
-/* Jackdaw desktop: warm surfaces + liquid glass (all apps) */
-.main-window:not(.mobile) {
+/* Jackdaw desktop: warm surfaces + liquid glass (all apps).
+ * Палитра — и у отдельных окон письма и черновика (.standalone-window): у них нет .main-window. */
+.main-window:not(.mobile),
+.standalone-window {
   --bg: #F6F5F2;
   --fg: #1B1C1D;
   --inverted-bg: #17191A;
@@ -543,7 +545,8 @@ a:hover {
 }
 
 @media (prefers-color-scheme: dark) {
-  .main-window:not(.mobile) {
+  .main-window:not(.mobile),
+  .standalone-window {
     --bg: #111314;
     --fg: #EEEAE3;
     --inverted-bg: #EEEAE3;
@@ -607,7 +610,7 @@ a:hover {
  * как у кнопок ленты. Всё в :where(), без веса, поэтому поля со своим видом
  * (поиск, тема письма, чипы, мелкие списки) остаются как задумано в компоненте.
  * Ошибка — aria-invalid="true" или класс .invalid. */
-:where(.main-window:not(.mobile))
+:where(.main-window:not(.mobile), .standalone-window)
   :where(
     input[type="number"],
     input[type="password"],
@@ -634,42 +637,43 @@ a:hover {
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
-:where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:hover:not(:disabled):not(:focus)) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:hover:not(:disabled):not(:focus)) {
   border-color: var(--input-border-hover);
 }
-:where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:focus) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:focus) {
   border-color: var(--input-focus-border);
   box-shadow: 0 0 0 3px var(--input-focus-ring);
 }
-:where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid) {
   border-color: var(--danger-fg);
 }
-:where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid):where(:focus) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where([aria-invalid="true"], .invalid):where(:focus) {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-fg) 25%, transparent);
 }
-:where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:disabled) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea):where(:disabled) {
   background-color: var(--input-disabled-bg);
   opacity: 0.6;
   cursor: not-allowed;
 }
-:where(.main-window:not(.mobile)) :where(input[type="date"], input[type="time"]) {
+:where(.main-window:not(.mobile), .standalone-window) :where(input[type="date"], input[type="time"]) {
   background-position: right 8px center;
   padding-inline-end: 28px;
 }
-:where(.main-window:not(.mobile)) :where(textarea) {
+:where(.main-window:not(.mobile), .standalone-window) :where(textarea) {
   padding-block: 6px;
   resize: vertical;
 }
-.main-window:not(.mobile) select option {
+.main-window:not(.mobile) select option,
+.standalone-window select option {
   background-color: var(--main-bg);
   color: var(--main-fg);
 }
 /* Обводку фокуса у многострочного поля заменяет кольцо выше */
-:where(.main-window:not(.mobile)) textarea:focus {
+:where(.main-window:not(.mobile), .standalone-window) textarea:focus {
   outline: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  :where(.main-window:not(.mobile)) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea) {
+  :where(.main-window:not(.mobile), .standalone-window) :where(input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]), select, textarea) {
     transition: none;
   }
 }

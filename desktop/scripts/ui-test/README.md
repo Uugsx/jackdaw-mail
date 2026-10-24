@@ -23,6 +23,8 @@ node scripts/ui-test/jd.mjs stop 9301
 
 Команды: `launch`, `shot`, `text`, `eval`, `click`, `clickxy`, `type`, `key`, `wait`, `size`, `stop`. Описание — в начале `jd.mjs`.
 
+Отдельные окна письма и черновика: команды с `JD_PAGE=message` или `JD_PAGE=compose` работают с этим окном, а не с главным. Порт backend копии передаётся и им.
+
 ## Две копии: чат и звонки
 
 1. Запустите сервисы лицензий и звонков на этом компьютере. Нужен venv с `call_server/requirements.txt` и `license_server/requirements.txt`:

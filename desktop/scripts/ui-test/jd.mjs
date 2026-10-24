@@ -40,11 +40,15 @@ async function json(port, route) {
   return await response.json();
 }
 
-/** Главное окно приложения: страница index.html */
+/** Главное окно приложения: страница index.html без `composeWindow=` и `messageWindow=` в адресе.
+ * Отдельное окно письма или черновика выбирается переменной JD_PAGE: `compose`, `message` или регулярное выражение по адресу. */
 async function mainPage(port) {
   let targets = await json(port, "/json/list");
   let pages = targets.filter(t => t.type == "page" && !t.url.startsWith("devtools:"));
-  let page = pages.find(t => /index\.html/.test(t.url)) ?? pages[0];
+  let wanted = { compose: "composeWindow=", message: "messageWindow=" }[process.env.JD_PAGE] ?? process.env.JD_PAGE;
+  let page = wanted
+    ? pages.find(t => new RegExp(wanted).test(t.url))
+    : pages.find(t => /index\.html/.test(t.url) && !/composeWindow=|messageWindow=/.test(t.url)) ?? pages[0];
   if (!page) {
     throw new Error(`Нет окна приложения на порту ${port}`);
   }
