@@ -268,6 +268,10 @@ function closeMessageWindows(): void {
 }
 
 function loadRendererWindow(window: BrowserWindow, hash: string): Promise<void> {
+  // Копии для автопроверок: порт backend нужен и отдельным окнам письма и черновика
+  if (testJPCPort()) {
+    hash += '&jpcPort=' + testJPCPort();
+  }
   if (is.dev) {
     return window.loadURL('http://localhost:5454/#' + hash);
   }
@@ -752,9 +756,6 @@ async function createWindow(): Promise<void> {
     let rendererHash = 'jpcSecret=' + jpcSecret;
     if (isDemoModeRequested()) {
       rendererHash += '&demo=1';
-    }
-    if (testJPCPort()) {
-      rendererHash += '&jpcPort=' + testJPCPort();
     }
     void loadRendererWindow(mainWindow, rendererHash).catch(console.error);
   } catch (ex) {

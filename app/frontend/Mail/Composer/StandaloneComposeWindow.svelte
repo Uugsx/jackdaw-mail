@@ -1,6 +1,6 @@
 <svelte:window on:click|capture={onClickTopLevel} />
 
-<vbox flex class="standalone-compose">
+<vbox flex class="standalone-compose standalone-window">
   <NotificationBar notifications={$notifications} />
   {#if loading}
     <vbox flex class="compose-state" aria-live="polite">
