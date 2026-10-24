@@ -306,6 +306,39 @@ class EmailProofTests(HubTestCase):
         # Перевод системного времени не продлевает коды и не сбрасывает лимиты
         self.assertIs(calls.EmailVerification(self.signer)._clock, time.monotonic)
 
+    def test_code_guessing_from_many_licenses_is_limited_per_address(self):
+        # Подбор кода с нескольких пробных лицензий: неверные коды считаются на адрес за сутки
+        verification = calls.EmailVerification(self.signer, clock=self.clock)
+        failures = 0
+        subject = 0
+        while failures < calls.VERIFY_EMAIL_FAILURES_PER_DAY:
+            subject += 1
+            self.clock.value += 3600
+            verification.start("victim@example.com", f"trial:{subject}")
+            for _ in range(calls.VERIFICATION_MAX_ATTEMPTS - 1):
+                if failures >= calls.VERIFY_EMAIL_FAILURES_PER_DAY:
+                    break
+                with self.assertRaises(calls.CallError):
+                    verification.finish("victim@example.com", "000000x", f"trial:{subject}")
+                failures += 1
+        code = verification.start("victim@example.com", "trial:last")
+        with self.assertRaises(calls.CallError) as error:
+            verification.finish("victim@example.com", code, "trial:last")
+        self.assertEqual(error.exception.code, "rate_limited")
+        # Через сутки адрес снова можно подтвердить
+        self.clock.value += calls.VERIFY_FAILURE_WINDOW_SECONDS
+        code = verification.start("victim@example.com", "trial:next")
+        self.assertTrue(verification.finish("victim@example.com", code, "trial:next"))
+
+    def test_codes_have_global_hourly_ceiling(self):
+        verification = calls.EmailVerification(self.signer, clock=self.clock)
+        with mock.patch.object(calls, "VERIFY_GLOBAL_PER_HOUR", 3):
+            for index in range(3):
+                verification.start(f"u{index}@example.com", f"trial:{index}")
+            with self.assertRaises(calls.CallError) as error:
+                verification.start("other@example.com", "trial:other")
+        self.assertEqual(error.exception.code, "rate_limited")
+
     def test_verification_without_smtp_is_reported(self):
         self.hub.mailer = calls.Mailer("", 587, "", "", "")
         peer = self.connect()
@@ -481,6 +514,13 @@ class LookupTests(HubTestCase):
         alice = self.connect(emails=["alice@example.com"])
         self.hub.handle(alice, {"type": "lookup", "emails": [f"u{i}@example.com" for i in range(calls.MAX_LOOKUP_EMAILS + 1)]})
         self.assertEqual(self.last(alice)["code"], "invalid_lookup")
+
+    def test_lookup_without_verified_address_reveals_nothing(self):
+        # Соединение без подтверждённого адреса (например, свежая пробная лицензия) не узнаёт, кто в сети
+        self.connect(device="device-bob-0001", emails=["bob@example.com"])
+        stranger = self.connect()
+        self.hub.handle(stranger, {"type": "lookup", "emails": ["bob@example.com"]})
+        self.assertEqual(self.last(stranger, "lookup-result")["reachable"], {"bob@example.com": False})
 
     def test_presence_disappears_on_disconnect(self):
         bob = self.connect(device="device-bob-0001", emails=["bob@example.com"])
@@ -729,6 +769,49 @@ class ConnectionHandlerTests(unittest.IsolatedAsyncioTestCase):
         websocket = FakeWebSocket(['{"type": "ping"}'], block_send=True)
         await self.run_handler(hub, websocket)
         self.assertEqual(websocket.closes, [(1008, "slow consumer")])
+
+    async def test_large_unread_replies_are_limited_by_bytes(self):
+        # Несколько больших ответов (blob-get) клиенту, который не читает сокет: память ограничена байтами
+        class BigHub(StubHub):
+            def handle(self, peer, message):
+                self.handled.append(message)
+                for _ in range(200):
+                    peer.send({"type": "blob", "data": "x" * 100_000})
+        websocket = FakeWebSocket(['{"type": "ping"}'], block_send=True)
+        await self.run_handler(BigHub(), websocket)
+        self.assertEqual(websocket.closes, [(1008, "slow consumer")])
+
+    async def test_connections_per_ip_are_limited(self):
+        handler = calls.make_connection_handler(StubHub())
+
+        class HeldWebSocket(FakeWebSocket):
+            def __aiter__(self):
+                async def forever():
+                    await asyncio.Event().wait()
+                    yield ""
+                return forever()
+
+        held = []
+        for _ in range(calls.MAX_CONNECTIONS_PER_IP):
+            websocket = HeldWebSocket([])
+            websocket.remote_address = ("127.0.0.1", 1)
+            websocket.request.headers = {"X-Forwarded-For": "198.51.100.1, 203.0.113.7"}
+            held.append(asyncio.create_task(handler(websocket)))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        extra = FakeWebSocket([])
+        extra.remote_address = ("127.0.0.1", 1)
+        extra.request.headers = {"X-Forwarded-For": "203.0.113.7"}
+        await handler(extra)
+        self.assertEqual(extra.closes, [(1013, "too many connections")])
+        other = FakeWebSocket([])
+        other.remote_address = ("127.0.0.1", 1)
+        other.request.headers = {"X-Forwarded-For": "203.0.113.8"}
+        await handler(other)
+        self.assertNotIn((1013, "too many connections"), other.closes)
+        for task in held:
+            task.cancel()
+        await asyncio.gather(*held, return_exceptions=True)
 
 
 class ConfigurationTests(unittest.TestCase):

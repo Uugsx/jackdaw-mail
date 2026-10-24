@@ -292,7 +292,7 @@ def authenticate_sender(
     token: str | None = None,
     token_domain: str = "",
 ) -> str | None:
-    """Возвращает 'dkim' или 'spf', если домен отправителя подтверждён, иначе None.
+    """Возвращает 'dkim', если домен отправителя подтверждён подписью, иначе None.
 
     С `token` письмо должно быть привязано к токену: подпись DKIM засчитывается, только если
     её h= покрывает заголовок с токеном; путь SPF — только если такой заголовок есть в письме.
@@ -309,15 +309,9 @@ def authenticate_sender(
                     return "dkim"
             except Exception:  # noqa: BLE001 — сломанная подпись = не подтверждено
                 continue
-    envelope_domain = mail_from.rpartition("@")[2]
-    if token is not None and not bound:
-        return None
-    if envelope_domain and aligned(from_domain, envelope_domain):
-        try:
-            if spf_check(peer_ip, mail_from, helo) == "pass":
-                return "spf"
-        except Exception:  # noqa: BLE001
-            return None
+    # Путь SPF (IP отправителя разрешён записью домена) не засчитываем: SPF доказывает только сервер,
+    # а не ящик. Общие почтовые сервисы и корпоративные relay в SPF-записи позволяют поставить
+    # в From любой адрес домена — и подтвердить чужой ящик. Остаётся только выровненный DKIM.
     return None
 
 

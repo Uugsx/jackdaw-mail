@@ -308,5 +308,16 @@ class HTTPTests(unittest.TestCase):
                                       headers={"X-Forwarded-For": "8.8.8.8"})[0], 202)
 
 
+
+class ClientNetworkTests(unittest.TestCase):
+    def test_ipv6_addresses_of_one_subscriber_share_a_limit(self):
+        self.assertEqual(fb.client_network("2001:db8:1:2::1"), fb.client_network("2001:db8:1:2:ffff::9"))
+        self.assertNotEqual(fb.client_network("2001:db8:1:2::1"), fb.client_network("2001:db8:1:3::1"))
+        self.assertEqual(fb.client_network("203.0.113.9"), "203.0.113.9")
+        self.assertEqual(fb.client_network("garbage"), "garbage")
+
+    def test_slow_clients_time_out(self):
+        self.assertEqual(fb.make_handler(None).timeout, 15)
+
 if __name__ == "__main__":
     unittest.main()

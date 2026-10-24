@@ -20,6 +20,9 @@ ProtectSystem=strict
 ProtectHome=true
 # WAL-режим SQLite требует записи в файл -shm даже для чтения.
 ReadWritePaths=/var/lib/jackdaw-license /var/lib/jackdaw-calls
+# Сервис работает от пользователя лицензий, но ключ подписи лицензий ему не нужен:
+# при взломе сервиса звонков (WebSocket, SMTP :25) ключ не утечёт.
+InaccessiblePaths=/etc/jackdaw-license
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 MemoryDenyWriteExecute=true
@@ -41,6 +44,8 @@ RestrictSUIDSGID=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 TasksMax=256
+# Предел памяти: перегруженный сервис звонков не должен остановить лицензии и сайт на том же VPS
+MemoryMax=512M
 
 [Install]
 WantedBy=multi-user.target

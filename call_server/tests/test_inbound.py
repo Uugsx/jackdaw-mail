@@ -131,10 +131,11 @@ class AuthenticationTests(unittest.TestCase):
                                              dkim_verify=lambda r, i: True, spf_check=lambda *a: "pass")
         self.assertIsNone(method)
 
-    def test_spf_requires_aligned_envelope(self):
+    def test_spf_alone_does_not_confirm_mailbox(self):
+        # SPF подтверждает сервер, а не ящик: через общий сервис из SPF можно подделать From чужого адреса
         raw = make_message()
-        self.assertEqual(inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
-                                                     dkim_verify=lambda r, i: False, spf_check=lambda *a: "pass"), "spf")
+        self.assertIsNone(inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
+                                                      dkim_verify=lambda r, i: False, spf_check=lambda *a: "pass"))
         self.assertIsNone(inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
                                                       dkim_verify=lambda r, i: False, spf_check=lambda *a: "softfail"))
 
@@ -177,12 +178,12 @@ class TokenBindingTests(unittest.TestCase):
         self.assertIsNone(auth(with_dkim(raw, "from:date")))
         self.assertEqual(inbound.dkim_signed_headers(with_dkim(raw, "From:Subject")), [{"from", "subject"}])
 
-    def test_spf_requires_header_with_token(self):
+    def test_spf_with_token_header_is_not_enough(self):
         def auth(raw):
             return inbound.authenticate_sender(raw, "alice@corp.example", "1.2.3.4", "alice@corp.example", "mx",
                                                dkim_verify=lambda r, i: False, spf_check=lambda *a: "pass",
                                                token=self.token, token_domain=DOMAIN)
-        self.assertEqual(auth(client_message(self.ready)), "spf")
+        self.assertIsNone(auth(client_message(self.ready)))
         self.assertIsNone(auth(client_message(self.ready, subject="test", to="verify@other.test")))
 
     def test_message_date_freshness(self):

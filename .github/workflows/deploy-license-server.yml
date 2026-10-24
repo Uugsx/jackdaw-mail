@@ -47,7 +47,6 @@ jobs:
       DEPLOY_HOST: ${{ vars.LICENSE_DEPLOY_HOST }}
       DEPLOY_USER: ${{ vars.LICENSE_DEPLOY_USER }}
       TARGET_PATH: ${{ vars.LICENSE_DEPLOY_PATH || '/opt/jackdaw-license/app.py' }}
-      SERVICE_USER: ${{ vars.LICENSE_SERVICE_USER || 'jackdaw-license' }}
     steps:
       - name: Check deploy configuration
         id: config
@@ -86,7 +85,7 @@ jobs:
         run: |
           ssh -i "$HOME/.ssh/license_deploy" -o StrictHostKeyChecking=yes -o BatchMode=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -e; sudo -n /usr/bin/install -o $SERVICE_USER -g $SERVICE_USER -m 0644 \"\$HOME/license-incoming/app.py\" $TARGET_PATH; sudo -n /usr/bin/systemctl restart jackdaw-license; sleep 2; systemctl is-active jackdaw-license"
+            "set -e; sudo -n /usr/bin/install -o root -g root -m 0644 \"\$HOME/license-incoming/app.py\" $TARGET_PATH; sudo -n /usr/bin/systemctl restart jackdaw-license; sleep 2; systemctl is-active jackdaw-license"
       - name: Verify live admin page
         if: steps.config.outputs.ready == 'true'
         run: |

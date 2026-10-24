@@ -38,6 +38,9 @@ denied-peer-ip=192.168.0.0-192.168.255.255
 denied-peer-ip=198.18.0.0-198.19.255.255
 denied-peer-ip=240.0.0.0-255.255.255.255
 denied-peer-ip=::1
+# IPv4 внутри IPv6 (::ffff:127.0.0.1 и т. п.) и NAT64 — обход списков выше
+denied-peer-ip=::ffff:0.0.0.0-::ffff:255.255.255.255
+denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
 denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 
@@ -47,3 +50,5 @@ no-dtls
 no-cli
 syslog
 simple-log
+# Голос идёт только по UDP; TCP-ретрансляция (RFC 6062) браузерам не нужна и открывала бы TCP-соединения к чужим хостам
+no-tcp-relay
