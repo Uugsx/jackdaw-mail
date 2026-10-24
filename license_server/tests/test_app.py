@@ -422,6 +422,35 @@ class LicenseServerTests(unittest.TestCase):
         self.assertEqual(client_ip("127.0.0.1", "not-an-ip", True), "127.0.0.1")
         self.assertEqual(client_ip("192.0.2.5", "203.0.113.9", True), "192.0.2.5")
 
+    def test_new_trials_are_limited_per_network_per_day(self) -> None:
+        # Каждый пробный период — новая учётка с квотами на сервере звонков: их нельзя заводить без счёта
+        service = SimpleNamespace(config=SimpleNamespace(trust_forwarded_for=True),
+                                  new_trial_limiter=app.RateLimiter(app.NEW_TRIAL_WINDOW_SECONDS))
+
+        def check(forwarded: str, peer: str = "127.0.0.1") -> bool:
+            handler = app.LicenseRequestHandler.__new__(app.LicenseRequestHandler)
+            handler.client_address = (peer, 50000)
+            handler.headers = {"X-Forwarded-For": forwarded}
+            handler.server = SimpleNamespace(service=service)
+            try:
+                handler._check_new_trial_quota()
+                return True
+            except app.ServiceError as error:
+                self.assertEqual(error.status, 429)
+                return False
+
+        for _ in range(app.NEW_TRIALS_PER_NETWORK_PER_DAY):
+            self.assertTrue(check("203.0.113.9"))
+        self.assertFalse(check("203.0.113.9"))
+        self.assertTrue(check("203.0.113.10"))
+        # Адреса из одной IPv6-сети /64 считаются одним клиентом
+        for index in range(app.NEW_TRIALS_PER_NETWORK_PER_DAY):
+            self.assertTrue(check(f"2001:db8:1:2::{index + 1}"))
+        self.assertFalse(check("2001:db8:1:2:ffff::1"))
+        # Без адреса клиента (прокси не передал X-Forwarded-For) лимит не становится общим на всех
+        for _ in range(app.NEW_TRIALS_PER_NETWORK_PER_DAY + 1):
+            self.assertTrue(check("not-an-ip"))
+
 
 if __name__ == "__main__":
     unittest.main()

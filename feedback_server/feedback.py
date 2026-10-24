@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import queue
@@ -497,10 +498,23 @@ class FeedbackService:
             self.queue.task_done()
 
 
+def client_network(address: str) -> str:
+    """Ключ лимита: IPv4-адрес или сеть IPv6 /64 (провайдер выдаёт её одному клиенту целиком)."""
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if parsed.version == 6:
+        return str(ipaddress.ip_network(f"{parsed}/64", strict=False))
+    return str(parsed)
+
+
 def make_handler(service: FeedbackService) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "jackdaw-feedback"
         sys_version = ""
+        # Медленный клиент (тело по байту) не держит поток бесконечно
+        timeout = 15
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             # Не пишем в журнал ни тело, ни адреса клиентов.
@@ -512,8 +526,8 @@ def make_handler(service: FeedbackService) -> type[BaseHTTPRequestHandler]:
             peer = self.client_address[0]
             forwarded = self.headers.get("X-Forwarded-For", "")
             if peer in ("127.0.0.1", "::1") and forwarded:
-                return forwarded.split(",")[-1].strip()[:64] or peer
-            return peer
+                return client_network(forwarded.split(",")[-1].strip()[:64] or peer)
+            return client_network(peer)
 
         def _send(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode()

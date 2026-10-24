@@ -53,6 +53,10 @@ DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 EMAIL_RE = re.compile(r"^[^@\s]{1,128}@[^@\s]{1,190}$")
 PUBLIC_RATE_LIMIT = 60
 TRIAL_RATE_LIMIT = 12
+# Новых пробных периодов с одной сети (IPv4-адрес или IPv6 /64) за сутки. Каждый пробный период —
+# отдельная учётка на сервере звонков со своими квотами, поэтому их число ограничено.
+NEW_TRIALS_PER_NETWORK_PER_DAY = 5
+NEW_TRIAL_WINDOW_SECONDS = 24 * 3600
 ADMIN_RATE_LIMIT = 120
 RATE_WINDOW_SECONDS = 60
 MAX_BODY_BYTES = 32 * 1024
@@ -1144,21 +1148,22 @@ class LicenseStore:
 
 
 class RateLimiter:
-    def __init__(self) -> None:
+    def __init__(self, window_seconds: float = RATE_WINDOW_SECONDS) -> None:
         self._buckets: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
+        self._window = window_seconds
 
     def allow(self, key: str, limit: int) -> bool:
         current = time.monotonic()
         with self._lock:
             bucket = self._buckets.setdefault(key, deque())
-            while bucket and current - bucket[0] >= RATE_WINDOW_SECONDS:
+            while bucket and current - bucket[0] >= self._window:
                 bucket.popleft()
             if len(bucket) >= limit:
                 return False
             bucket.append(current)
             if len(self._buckets) > 4096:
-                stale_keys = [name for name, values in self._buckets.items() if not values or current - values[-1] >= RATE_WINDOW_SECONDS]
+                stale_keys = [name for name, values in self._buckets.items() if not values or current - values[-1] >= self._window]
                 for stale_key in stale_keys[:2048]:
                     self._buckets.pop(stale_key, None)
             return True
@@ -1568,6 +1573,26 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         if not self.service.rate_limiter.allow(f"{bucket}:{self._client_ip()}", limit):
             raise ServiceError(429, "rate_limited", "Слишком много запросов. Повторите позже.")
 
+    def _client_network(self) -> str | None:
+        """Сеть клиента для суточных лимитов; None — адрес неизвестен (запрос от прокси без X-Forwarded-For)."""
+        client = self._client_ip()
+        if client in TRUSTED_PROXY_PEERS:
+            return None
+        try:
+            address = ipaddress.ip_address(client)
+        except ValueError:
+            return None
+        if address.version == 6:
+            return str(ipaddress.ip_network(f"{address}/64", strict=False))
+        return str(address)
+
+    def _check_new_trial_quota(self) -> None:
+        network = self._client_network()
+        # Без адреса клиента лимит стал бы общим на весь мир: не применяем его, а не блокируем всех
+        if network is not None and not self.service.new_trial_limiter.allow(
+                f"new-trial:{network}", NEW_TRIALS_PER_NETWORK_PER_DAY):
+            raise ServiceError(429, "trial_rate_limited", "С этой сети сегодня уже запускали несколько пробных периодов.")
+
     def _require_admin(self) -> None:
         self._check_rate("admin", ADMIN_RATE_LIMIT)
         expected_hash = self.service.config.admin_token_sha256
@@ -1807,6 +1832,7 @@ class LicenseRequestHandler(BaseHTTPRequestHandler):
         if trial is None:
             if refresh_only:
                 raise ServiceError(404, "trial_not_started", "На этом устройстве пробный период ещё не запускался.")
+            self._check_new_trial_quota()
             trial, created = self.service.store.claim_trial(device_id, device_name, self.service.config.trial_days)
         else:
             trial, _ = self.service.store.claim_trial(device_id, device_name, self.service.config.trial_days)
@@ -2192,6 +2218,7 @@ class LicenseHTTPService:
         self.store = store
         self.signer = signer
         self.rate_limiter = RateLimiter()
+        self.new_trial_limiter = RateLimiter(NEW_TRIAL_WINDOW_SECONDS)
 
     def serve_forever(self) -> None:
         server = BoundedThreadingHTTPServer((self.config.host, self.config.port), LicenseRequestHandler)

@@ -23,6 +23,7 @@ import contextlib
 import functools
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -127,6 +128,11 @@ VERIFY_EMAIL_PER_HOUR = 3
 VERIFY_EMAIL_TOTAL_PER_HOUR = 10
 # И на одну лицензию: иначе её владелец мог бы рассылать письма с кодом на произвольные адреса.
 VERIFY_SUBJECT_PER_HOUR = 10
+# Общий потолок писем с кодом в час: пробных лицензий можно завести много, а письма уходят от нашего домена.
+VERIFY_GLOBAL_PER_HOUR = 300
+# Неверные коды для одного адреса от всех лицензий за сутки: иначе код подбирается с нескольких пробных лицензий.
+VERIFY_EMAIL_FAILURES_PER_DAY = 20
+VERIFY_FAILURE_WINDOW_SECONDS = 24 * 3600
 
 
 class CallError(Exception):
@@ -506,12 +512,14 @@ class EmailVerification:
         by_email = self._recent(f"email:{email}|{subject}", current)
         by_email_total = self._recent(f"email-total:{email}", current)
         by_subject = self._recent(f"subject:{subject}", current)
+        by_everyone = self._recent("global", current)
         if len(by_email) >= VERIFY_EMAIL_PER_HOUR or len(by_subject) >= VERIFY_SUBJECT_PER_HOUR \
-                or len(by_email_total) >= VERIFY_EMAIL_TOTAL_PER_HOUR:
+                or len(by_email_total) >= VERIFY_EMAIL_TOTAL_PER_HOUR or len(by_everyone) >= VERIFY_GLOBAL_PER_HOUR:
             raise CallError("rate_limited", "Слишком много запросов кода. Попробуйте через час.")
         by_email.append(current)
         by_email_total.append(current)
         by_subject.append(current)
+        by_everyone.append(current)
         code = f"{secrets.randbelow(1_000_000):06d}"
         self._pending[(email, subject)] = PendingVerification(
             code_hash=sha256_hex(f"{email}:{code}"),
@@ -521,9 +529,9 @@ class EmailVerification:
         self._cleanup(current)
         return code
 
-    def _recent(self, key: str, current: float) -> deque[float]:
+    def _recent(self, key: str, current: float, window: float = 3600) -> deque[float]:
         sent = self._sent.setdefault(key, deque())
-        while sent and current - sent[0] >= 3600:
+        while sent and current - sent[0] >= window:
             sent.popleft()
         return sent
 
@@ -533,8 +541,13 @@ class EmailVerification:
         current = self._clock()
         if pending is None or pending.subject != subject or pending.expires_at <= current:
             raise CallError("code_expired", "Код устарел. Запросите новый.")
+        failures = self._recent(f"failed:{email}", current, VERIFY_FAILURE_WINDOW_SECONDS)
+        if len(failures) >= VERIFY_EMAIL_FAILURES_PER_DAY:
+            self._pending.pop(key, None)
+            raise CallError("rate_limited", "Слишком много неверных кодов для этого адреса. Попробуйте завтра.")
         pending.attempts += 1
         if not isinstance(code, str) or not hmac.compare_digest(pending.code_hash, sha256_hex(f"{email}:{code.strip()}")):
+            failures.append(current)
             if pending.attempts >= VERIFICATION_MAX_ATTEMPTS:
                 self._pending.pop(key, None)
                 raise CallError("code_expired", "Слишком много неверных попыток. Запросите новый код.")
@@ -547,7 +560,8 @@ class EmailVerification:
             for pending_key in [key for key, value in self._pending.items() if value.expires_at <= current]:
                 self._pending.pop(pending_key, None)
         if len(self._sent) >= 4096:
-            for key in [key for key, value in self._sent.items() if not value or current - value[-1] >= 3600]:
+            for key in [key for key, value in self._sent.items()
+                        if not value or current - value[-1] >= (VERIFY_FAILURE_WINDOW_SECONDS if key.startswith("failed:") else 3600)]:
                 self._sent.pop(key, None)
 
 
@@ -1174,7 +1188,8 @@ class CallHub:
                 email = normalize_email(value)
             except CallError:
                 continue
-            reachable[email] = self._online(email) and email not in peer.emails
+            # Без подтверждённого адреса звонить нельзя, и «кто в сети» таким соединениям не раскрываем
+            reachable[email] = bool(peer.emails) and self._online(email) and email not in peer.emails
         reply: dict[str, Any] = {"type": "lookup-result", "reachable": reachable}
         statuses = {email: self._status(email) for email, online in reachable.items() if online}
         statuses = {email: status for email, status in statuses.items() if status != "available"}
@@ -1501,22 +1516,75 @@ def build_turn_from_environment() -> TurnCredentialIssuer | None:
     return TurnCredentialIssuer(urls, secret)
 
 
+# Неотправленные данные одного соединения: клиент, который не читает сокет, не должен занять память сервера
+MAX_QUEUED_SEND_BYTES = 8 * 1024 * 1024
+# Соединений с одного адреса (за Caddy — из X-Forwarded-For) и всего
+MAX_CONNECTIONS_PER_IP = 20
+MAX_CONNECTIONS_TOTAL = 5000
+
+
+def connection_client_ip(websocket: Any) -> str:
+    """Адрес клиента. Caddy дописывает его последним в X-Forwarded-For; напрямую — адрес сокета."""
+    remote = websocket.remote_address[0] if getattr(websocket, "remote_address", None) else ""
+    if remote in ("127.0.0.1", "::1"):
+        headers = getattr(getattr(websocket, "request", None), "headers", None) or {}
+        forwarded = headers.get("X-Forwarded-For", "")
+        candidate = forwarded.split(",")[-1].strip()
+        if candidate:
+            remote = candidate
+    try:
+        address = ipaddress.ip_address(remote)
+    except ValueError:
+        return remote[:64]
+    # IPv6 у провайдера выдаётся сетью /64: считаем её одним клиентом
+    if address.version == 6:
+        return str(ipaddress.ip_network(f"{address}/64", strict=False))
+    return str(address)
+
+
 def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
     """Обработчик одного WebSocket-соединения. Отдельно от `serve`, чтобы тестировать без сети."""
     from websockets.exceptions import ConnectionClosed
+
+    connections_by_ip: dict[str, int] = {}
 
     async def connection_handler(websocket: Any) -> None:
         if websocket.request.path.split("?")[0] != "/v1/calls":
             await websocket.close(code=1008, reason="not found")
             return
-        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=1024)
+        client_ip = connection_client_ip(websocket)
+        if connections_by_ip.get(client_ip, 0) >= MAX_CONNECTIONS_PER_IP \
+                or sum(connections_by_ip.values()) >= MAX_CONNECTIONS_TOTAL:
+            await websocket.close(code=1013, reason="too many connections")
+            return
+        connections_by_ip[client_ip] = connections_by_ip.get(client_ip, 0) + 1
+        try:
+            await handle_connection(websocket)
+        finally:
+            remaining = connections_by_ip.get(client_ip, 1) - 1
+            if remaining > 0:
+                connections_by_ip[client_ip] = remaining
+            else:
+                connections_by_ip.pop(client_ip, None)
+
+    async def handle_connection(websocket: Any) -> None:
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=1024)
         closing = False
+        queued_bytes = 0
 
         def send(message: dict[str, Any]) -> None:
+            nonlocal queued_bytes
             if closing:
                 return
+            data = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+            if queued_bytes + len(data) > MAX_QUEUED_SEND_BYTES:
+                # Отправка стоит (клиент не читает): ждать очереди бессмысленно, закрываем сразу
+                close()
+                asyncio.get_running_loop().create_task(websocket.close(code=1008, reason="slow consumer"))
+                return
             try:
-                queue.put_nowait(message)
+                queue.put_nowait(data)
+                queued_bytes += len(data)
             except asyncio.QueueFull:
                 # Клиент не читает сообщения: закрываем, а не копим память.
                 close()
@@ -1535,13 +1603,15 @@ def make_connection_handler(hub: CallHub) -> Callable[[Any], Any]:
         peer = Peer(send, close)
 
         async def writer() -> None:
+            nonlocal queued_bytes
             try:
                 while True:
                     message = await queue.get()
                     if message is None:
                         await websocket.close(code=1008, reason="closed by server")
                         return
-                    await websocket.send(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
+                    queued_bytes -= len(message)
+                    await websocket.send(message)
             except ConnectionClosed:
                 return
 
