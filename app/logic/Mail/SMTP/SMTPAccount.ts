@@ -1,6 +1,7 @@
 import { MailAccount } from "../MailAccount";
 import { AuthMethod } from "../../Abstract/Account";
 import { TLSSocketType } from "../../Abstract/TCPAccount";
+import { rethrowSendAsDenied } from "../SendAs/SendAsError";
 import type { EMail } from "../EMail";
 import { CreateMIME } from "./CreateMIME";
 import { appGlobal } from "../../app";
@@ -89,7 +90,7 @@ export class SMTPAccount extends MailAccount {
         ex.message = "Check your login, username, and password.\n" + ex.message;
         ex.authFail = true;
       }
-      throw ex;
+      rethrowSendAsDenied(ex, email.from?.emailAddress);
     }
   }
 

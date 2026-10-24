@@ -13,7 +13,7 @@ import { OWAUpdateItemRequest } from "./Request/OWAUpdateItemRequest";
 import { owaDownloadMsgsRequest } from "./Request/OWAFolderRequests";
 import { owaGetEventsRequest } from "../../Calendar/OWA/Request/OWAEventRequests";
 import { PersonUID, findOrCreatePersonUID, kDummyPerson } from "../../Abstract/PersonUID";
-import { computeEMailContact } from "../EMail";
+import { computeEMailContact, differentSender } from "../EMail";
 import { InvitationMessage } from "../../Calendar/Invitation/InvitationStatus";
 import { base64ToUint8Array, assert, ensureArray } from "../../util/util";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
@@ -124,6 +124,11 @@ export class OWAEMail extends ExchangeEMail {
     } else {
       this.from = kDummyPerson;
     }
+    // «Отправить от имени»: From — руководитель, Sender — помощник
+    let senderMailbox = owaMailbox(json.From) ? owaMailbox(json.Sender) : null;
+    this.sender = differentSender(this.from, senderMailbox
+      ? { address: senderMailbox.EmailAddress, name: senderMailbox.Name }
+      : null);
     this.outgoing = this.folder?.account.isMyEMailAddress(this.from?.emailAddress);
     setPersons(this.to, json.ToRecipients);
     setPersons(this.cc, json.CcRecipients);

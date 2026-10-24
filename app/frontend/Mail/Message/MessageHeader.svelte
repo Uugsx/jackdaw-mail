@@ -25,6 +25,7 @@
   <ShowReplyBanner {message} />
   {#if !readOnly}
     <CollisionBadge {message} />
+    <ReadReceiptBanner {message} />
   {/if}
   <hbox class="message-meta">
     {#if $message.contact instanceof Person && $message.contact.picture}
@@ -40,6 +41,13 @@
                 <span class="sender-email">&lt;{$message.from.emailAddress}&gt;</span>
               {/if}
             </value>
+          {:else if $message.sender}
+            <!-- «Отправить от имени»: как Outlook, «Помощник от имени Руководителя» -->
+            <hbox class="on-behalf">
+              <Recipient recipient={$message.sender} showFullEmail={false} />
+              <span class="on-behalf-label font-small">{$t`on behalf of *=> Sender on behalf of mailbox owner`}</span>
+              <Recipient recipient={$message.from} showFullEmail={true} />
+            </hbox>
           {:else}
             <Recipient recipient={$message.from} showFullEmail={true} />
           {/if}
@@ -133,6 +141,7 @@
   import EncryptionDetails from "./EncryptionDetails.svelte";
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
   import ShowReplyBanner from "./ShowReplyBanner.svelte";
+  import ReadReceiptBanner from "./ReadReceiptBanner.svelte";
   import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { beginCollisionActivity } from "../Collision/collisionPresence";
   import RoundButton from "../../Shared/RoundButton.svelte";
@@ -261,6 +270,15 @@
   .sender,
   .message-actions {
     min-width: 0;
+  }
+  .on-behalf {
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 0.375em;
+    min-width: 0;
+  }
+  .on-behalf-label {
+    opacity: 0.7;
   }
   .message-actions {
     flex: 0 1 auto;

@@ -1,5 +1,5 @@
 import type { EMail } from "../EMail";
-import { computeEMailContact } from "../EMail";
+import { computeEMailContact, differentSender } from "../EMail";
 import { PersonUID, findOrCreatePersonUID, kDummyPerson } from "../../Abstract/PersonUID";
 import { SpecialFolder, type Folder } from "../Folder";
 import { Attachment, ContentDisposition } from "../../Abstract/Attachment";
@@ -386,7 +386,7 @@ export class SQLEMail {
     ];
   }
 
-  /** Отправитель и получатели в порядке сохранения: тип 1 = from, 2 = to, 3 = cc, 4 = bcc, 5 = reply-to */
+  /** Отправитель и получатели в порядке сохранения: тип 1 = from, 2 = to, 3 = cc, 4 = bcc, 5 = reply-to, 6 = sender (от имени), 7 = Disposition-Notification-To */
   protected static recipientsOf(email: EMail): [PersonUID, number][] {
     let recipients: [PersonUID, number][] = [[email.from, 1]];
     for (let recipient of email.to) {
@@ -400,6 +400,12 @@ export class SQLEMail {
     }
     if (email.replyTo?.emailAddress) {
       recipients.push([email.replyTo, 5]);
+    }
+    if (email.sender?.emailAddress) {
+      recipients.push([email.sender, 6]);
+    }
+    if (email.readReceiptTo?.emailAddress) {
+      recipients.push([email.readReceiptTo, 7]);
     }
     return recipients;
   }
@@ -856,6 +862,8 @@ export class SQLEMail {
     email.cc.clear();
     email.bcc.clear();
     email.replyTo = null;
+    email.sender = null;
+    email.readReceiptTo = null;
     let sender: PersonUID | null = null;
     for (let row of recipientRows) {
       try {
@@ -867,6 +875,9 @@ export class SQLEMail {
           continue;
         } else if (row.recipientType == 5) {
           email.replyTo = uid;
+          continue;
+        } else if (row.recipientType == 7) {
+          email.readReceiptTo = uid;
           continue;
         } else if (row.recipientType == 6) {
           // Совместимость со старыми хранилищами, где Sender
@@ -887,6 +898,10 @@ export class SQLEMail {
     }
     if (email.from.emailAddress == kDummyPerson.emailAddress && sender) {
       email.from = sender;
+    } else {
+      email.sender = differentSender(email.from, sender
+        ? { address: sender.emailAddress, name: sender.name }
+        : null);
     }
   }
 

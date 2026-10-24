@@ -26,6 +26,7 @@ import { notifyChangedProperty } from "../util/Observable";
 import { gt } from "../../l10n/l10n";
 import { Collection, ArrayColl, MapColl, SetColl } from "svelte-collections";
 import PostalMIME, { type Email as MIME } from "postal-mime";
+import { parseNotificationAddresses } from "./ReadReceipt/notificationAddress";
 
 export type MailImportanceLevel = "high" | "normal" | "low";
 
@@ -34,6 +35,10 @@ export class EMail extends Message {
   from = new PersonUID();
   @notifyChangedProperty
   replyTo: PersonUID | null = null;
+  /** Кто фактически отправил (`Sender:` / Exchange PR_SENDER), если это не `from`:
+   * «Помощник от имени Руководителя». null — отправил сам `from`. */
+  @notifyChangedProperty
+  sender: PersonUID | null = null;
   readonly to = new ArrayColl<PersonUID>();
   readonly cc = new ArrayColl<PersonUID>();
   readonly bcc = new ArrayColl<PersonUID>();
@@ -88,6 +93,12 @@ export class EMail extends Message {
   /** Request a delivery receipt when sending (OWA/EWS + Return-Receipt-To header). */
   @notifyChangedProperty
   requestDeliveryReceipt = false;
+  /** Отправитель просит уведомление о прочтении сюда (`Disposition-Notification-To`) */
+  @notifyChangedProperty
+  readReceiptTo: PersonUID | null = null;
+  /** На запрос о прочтении уже ответили или отказались (IMAP `$MDNSent`) */
+  @notifyChangedProperty
+  readReceiptHandled = false;
   /** The user started writing this message, but didn't send it yet */
   @notifyChangedProperty
   isDraft = false;
@@ -521,6 +532,9 @@ export class EMail extends Message {
             sanitize.nonemptylabel(parsedSender?.name, null))
         : kDummyPerson;
     }
+    this.sender ??= differentSender(this.from, mail.from?.address ? mail.sender : null);
+    let notificationHeader = mail.headers.find(h => h.key.toLowerCase() == "disposition-notification-to");
+    this.readReceiptTo ??= parseNotificationAddresses(notificationHeader?.value)[0] ?? null;
     setPersons(this.to, mail.to);
     setPersons(this.cc, mail.cc);
     setPersons(this.bcc, mail.bcc);
@@ -836,6 +850,7 @@ export class EMail extends Message {
     other.identity = this.identity;
     other.from = this.from;
     other.replyTo = this.replyTo;
+    other.sender = this.sender;
     other.to.replaceAll(this.to);
     other.cc.replaceAll(this.cc);
     // </copied>
@@ -995,6 +1010,15 @@ export function computeEMailContact(email: EMail): PersonUID {
     return findOrCreatePersonUID(account.emailAddress, account.name);
   }
   return email.outgoing ? email.to.first : email.from;
+}
+
+/** `Sender:` только если он не совпадает с `From:`, иначе null */
+export function differentSender(from: PersonUID | null | undefined, sender: { address?: string, name?: string } | null | undefined): PersonUID | null {
+  let address = sanitize.emailAddress(sender?.address, null);
+  if (!address || !from?.emailAddress || address.toLowerCase() == from.emailAddress.toLowerCase()) {
+    return null;
+  }
+  return findOrCreatePersonUID(address, sanitize.nonemptylabel(sender?.name, null));
 }
 
 export function setPersons(targetList: ArrayColl<PersonUID>, personList: { address: string, name: string }[]): void {

@@ -3,6 +3,7 @@ import { MailIdentity } from "../MailIdentity";
 import { AuthMethod, type Account } from "../../Abstract/Account";
 import { Provider } from "../../Auth/OAuth2URLs";
 import type { EMail } from "../EMail";
+import { rethrowSendAsDenied } from "../SendAs/SendAsError";
 import { SpecialFolder, type Folder, type MailShareCombinedPermissions, type MailShareIndividualPermissions } from "../Folder";
 import { OWAFolder } from "./OWAFolder";
 import type { OWAEMail } from "./OWAEMail";
@@ -1844,8 +1845,45 @@ export class OWAAccount extends ExchangeMailAccount {
         CompleteDate: null,
       }, "item:Flag");
     }
-    let result = await this.callOWA(request);
+    let result: any;
+    try {
+      result = await this.callOWA(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, email.from?.emailAddress);
+    }
     await this.refreshAfterSend(email, folder, result);
+  }
+
+  get canSendReadReceipt(): boolean {
+    return true;
+  }
+
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    assert(mdn.sendRawMIME, "Need MDN MIME");
+    // Без копии в «Отправленных», как Outlook
+    let request = new OWACreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("Message", "MimeContent", { CharacterSet: "UTF-8", Value: btoa(mdn.sendRawMIME) });
+    try {
+      await this.callOWA(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, mdn.from?.emailAddress);
+    }
+    // Уведомление уже ушло: сбой отметки не должен вызывать повторную отправку
+    await this.suppressReadReceipt(original).catch(this.errorCallback);
+  }
+
+  /** Exchange `SuppressReadReceipt`: снимает запрос на сервере, чтобы не спросили другие программы */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+    let itemID = (original as OWAEMail).itemID;
+    if (!itemID) {
+      return;
+    }
+    let request = new OWACreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("SuppressReadReceipt", "ReferenceItemId", {
+      __type: "ItemId:#Exchange",
+      Id: itemID,
+    });
+    await this.callOWA(request);
   }
 
   /** Push Sent (and Inbox for send-to-self) without waiting for RowNotification. */

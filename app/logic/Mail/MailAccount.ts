@@ -157,6 +157,21 @@ export class MailAccount extends TCPAccount {
     return false;
   }
 
+  /** Умеет ответить на запрос о прочтении (RFC 8098 MDN) */
+  get canSendReadReceipt(): boolean {
+    return false;
+  }
+
+  /** Отправить готовое уведомление `mdn` (`sendRawMIME`) об отметке `original` прочитанным.
+   * Копию в «Отправленные» не сохраняем, как Outlook. */
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    throw new AbstractFunction();
+  }
+
+  /** Отметить запрос о прочтении обработанным на сервере, без отправки */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+  }
+
   /** Create a folder on the top level, sibling of Inbox.
    * @see Folder.createSubFolder() */
   async createToplevelFolder(name: string): Promise<Folder> {
@@ -214,7 +229,7 @@ export class MailAccount extends TCPAccount {
     }
     let normalizedAddress = emailAddress.toLowerCase();
     return this.emailAddress?.toLowerCase() == normalizedAddress ||
-      this.identities.some(id => id.isEMailAddress(emailAddress));
+      this.identities.some(id => !id.isDelegate && id.isEMailAddress(emailAddress));
   }
 
   /**
@@ -222,7 +237,7 @@ export class MailAccount extends TCPAccount {
    * @see also global function `findIdentityForEMailAddress()`, which searches all accounts. */
   findIdentityForEMailAddress(emailAddress: string): MailIdentity | null {
     for (let identity of this.identities) {
-      if (identity.isEMailAddress(emailAddress)) {
+      if (!identity.isDelegate && identity.isEMailAddress(emailAddress)) {
         return identity;
       }
     }
