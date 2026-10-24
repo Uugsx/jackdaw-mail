@@ -15,7 +15,7 @@
   on:dragleave={onDragLeave}
   on:contextmenu={contextMenu.onContextMenu}
   on:click
-  on:click={() => tasksViewOpen.set(false)}
+  on:click={() => { tasksViewOpen.set(false); notesViewOpen.set(false); }}
   on:keydown={onKeyDown}
   title={tooltip}
   >
@@ -105,6 +105,7 @@
   import { appGlobal } from '../../../logic/app';
   // Щелчок и по уже выбранной папке возвращает от страницы задач к письмам
   import { tasksViewOpen } from '../Tasks/tasksStore';
+  import { notesViewOpen } from '../Notes/notesStore';
   import { getContext } from 'svelte';
   import {
     clearFolderDrag, getDraggedFolder, kFolderDragMIME, startFolderDrag
