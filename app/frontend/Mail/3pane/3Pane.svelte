@@ -8,6 +8,8 @@
   <vbox flex class="mail-main" slot="right">
     {#if $tasksViewOpen}
       <TasksPage />
+    {:else if $notesViewOpen}
+      <NotesPage />
     {:else}
     <MailToolbar
       {selectedAccount}
@@ -70,6 +72,8 @@
   import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
   import TasksPage from "../Tasks/TasksPage.svelte";
   import { tasksViewOpen } from "../Tasks/tasksStore";
+  import { notesViewOpen } from "../Notes/notesStore";
+  import NotesPage from "../Notes/NotesPage.svelte";
 
   export let horizontal: boolean = true;
   export let accounts: Collection<MailAccount>; /** in */
@@ -87,6 +91,7 @@
   $: if (selectedFolder !== lastFolder) {
     if (lastFolder) {
       $tasksViewOpen = false;
+      $notesViewOpen = false;
     }
     lastFolder = selectedFolder;
   }

@@ -91,6 +91,17 @@
             <span class="count" class:overdue={overdueTaskCount > 0}>{dueTaskCount}</span>
           {/if}
         </button>
+      {:else if view.id == "notes"}
+        <!-- Страница заметок Exchange (IPM.StickyNote) всех ящиков -->
+        <button type="button" class="smart-view"
+          class:active={$notesViewOpen}
+          title={view.label()}
+          aria-pressed={$notesViewOpen}
+          on:contextmenu={(event) => openViewMenu(event, view.id)}
+          on:click={() => $notesViewOpen = !$notesViewOpen}>
+          <svelte:component this={view.icon} size="14px" />
+          <span>{view.label()}</span>
+        </button>
       {:else}
         <button type="button" class="smart-view"
           class:active={isActive(view.id, $quickSearch)}
@@ -147,6 +158,8 @@
   import { followUpSnapshot } from "../FollowUp/followUpReminders";
   import { tasksState, tasksViewOpen, groupOpenItems } from "../Tasks/tasksStore";
   import ListChecksIcon from "lucide-svelte/icons/list-checks";
+  import { notesViewOpen } from "../Notes/notesStore";
+  import StickyNoteIcon from "lucide-svelte/icons/sticky-note";
   import ClockSendIcon from "lucide-svelte/icons/clock-arrow-up";
   import ScheduledSendList from "../SendLater/ScheduledSendList.svelte";
   import { scheduledSends } from "../SendLater/sendQueue";
@@ -195,6 +208,7 @@
     { id: "attachments", label: () => $t`Attachments`, icon: AttachmentIcon },
     { id: "awaiting-reply", label: () => $t`Waiting for a reply`, icon: HourglassIcon },
     { id: "tasks", label: () => $t`Tasks`, icon: ListChecksIcon },
+    { id: "notes", label: () => $t`Notes *=> Exchange sticky notes`, icon: StickyNoteIcon },
     { id: "scheduled", label: () => $t`Scheduled`, icon: ClockSendIcon },
   ];
 
@@ -303,6 +317,7 @@
       return;
     }
     $tasksViewOpen = false;
+    $notesViewOpen = false;
     let generation = ++searchGeneration;
     let currentFolder = folder;
     if (isActive(id, $quickSearch)) {
