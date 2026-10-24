@@ -2,6 +2,8 @@ import { ExchangeMailAccount } from "./ExchangeMailAccount";
 import { MailIdentity } from "../MailIdentity";
 import { AuthMethod, type Account } from "../../Abstract/Account";
 import type { EMail } from "../EMail";
+import type { EWSEMail } from "./EWSEMail";
+import { rethrowSendAsDenied } from "../SendAs/SendAsError";
 import { SpecialFolder, type Folder, type MailShareCombinedPermissions, type MailShareIndividualPermissions } from "../Folder";
 import { EWSFolder, getEWSItem } from "./EWSFolder";
 import { deleteExchangePermissions, setExchangePermissions } from "./ExchangePermission";
@@ -265,6 +267,39 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         t$CompleteDate: null,
       });
     }
+    try {
+      await this.callEWS(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, email.from?.emailAddress);
+    }
+  }
+
+  get canSendReadReceipt(): boolean {
+    return true;
+  }
+
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    assert(mdn.sendRawMIME, "Need MDN MIME");
+    // Без копии в «Отправленных», как Outlook
+    let request = new EWSCreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("Message", "MimeContent", btoa(mdn.sendRawMIME), "item:MimeContent");
+    try {
+      await this.callEWS(request);
+    } catch (ex) {
+      rethrowSendAsDenied(ex, mdn.from?.emailAddress);
+    }
+    // Уведомление уже ушло: сбой отметки не должен вызывать повторную отправку
+    await this.suppressReadReceipt(original).catch(this.errorCallback);
+  }
+
+  /** EWS `SuppressReadReceipt`: снимает запрос на сервере, чтобы не спросили другие программы */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+    let itemID = (original as EWSEMail).itemID;
+    if (!itemID) {
+      return;
+    }
+    let request = new EWSCreateItemRequest({ MessageDisposition: "SendOnly" });
+    request.addField("SuppressReadReceipt", "ReferenceItemId", { Id: itemID });
     await this.callEWS(request);
   }
 

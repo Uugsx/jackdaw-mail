@@ -119,6 +119,8 @@ export class IMAPEMail extends EMail {
     this.isImportant ||= flags.has("$Important"); // RFC 8457
     this.isDraft = flags.has("\\Draft");
     this.isSpam = flags.has("$Junk");
+    // RFC 3503: на запрос о прочтении уже ответили (здесь или в другой программе)
+    this.readReceiptHandled ||= flags.has("$MDNSent");
 
     for (let customTag of flags) {
       if (customTag.startsWith("\\") || customTag.startsWith("$") ||
@@ -152,6 +154,9 @@ export class IMAPEMail extends EMail {
     }
     if (message.isSpam) {
       flags.push("$Junk");
+    }
+    if (message.readReceiptHandled) {
+      flags.push("$MDNSent");
     }
     for (let tag of message.tags) {
       flags.push(tag.name);

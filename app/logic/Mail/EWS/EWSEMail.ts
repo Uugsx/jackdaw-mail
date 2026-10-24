@@ -10,7 +10,7 @@ import { ContentDisposition } from "../../Abstract/Attachment";
 import { EWSDeleteItemRequest } from "./Request/EWSDeleteItemRequest";
 import { EWSUpdateItemRequest } from "./Request/EWSUpdateItemRequest";
 import { PersonUID, findOrCreatePersonUID, kDummyPerson } from "../../Abstract/PersonUID";
-import { computeEMailContact } from "../EMail";
+import { computeEMailContact, differentSender } from "../EMail";
 import { InvitationMessage } from "../../Calendar/Invitation/InvitationStatus";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { base64ToUint8Array, assert, ensureArray } from "../../util/util";
@@ -83,6 +83,13 @@ export class EWSEMail extends ExchangeEMail {
     } else {
       this.from = kDummyPerson;
     }
+    // «Отправить от имени»: From — руководитель, Sender — помощник
+    this.sender = "From" in xmljs && "Sender" in xmljs
+      ? differentSender(this.from, {
+        address: getEmailAddressOrX400(xmljs.Sender.Mailbox.EmailAddress),
+        name: xmljs.Sender.Mailbox.Name,
+      })
+      : null;
     this.outgoing = this.folder?.account.isMyEMailAddress(this.from?.emailAddress);
     setPersons(this.to, xmljs.ToRecipients?.Mailbox);
     setPersons(this.cc, xmljs.CcRecipients?.Mailbox);

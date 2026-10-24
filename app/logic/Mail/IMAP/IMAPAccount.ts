@@ -4,6 +4,7 @@ import { TLSSocketType } from "../../Abstract/TCPAccount";
 import { IMAPFolder } from "./IMAPFolder";
 import { appGlobal } from "../../app";
 import type { EMail } from "../EMail";
+import type { IMAPEMail } from "./IMAPEMail";
 import { ConnectError, LoginError } from "../../Abstract/Account";
 import { SpecialFolder, MailShareCombinedPermissions, MailShareIndividualPermissions } from "../Folder";
 import { assert, NotReached, SpecificError, sleep } from "../../util/util";
@@ -545,6 +546,28 @@ export class IMAPAccount extends MailAccount {
       this.errorCallback(ex);
     }
   };
+
+  get canSendReadReceipt(): boolean {
+    return !!this.outgoing;
+  }
+
+  async sendReadReceipt(original: EMail, mdn: EMail): Promise<void> {
+    assert(this.outgoing, "SMTP server is not set up for IMAP account " + this.name);
+    if (!this.isLoggedIn) {
+      await this.login(true);
+    }
+    await this.outgoing.send(mdn);
+    // Уведомление уже ушло: сбой флага не должен вызывать повторную отправку
+    await this.suppressReadReceipt(original).catch(this.errorCallback);
+  }
+
+  /** RFC 3503: `$MDNSent` ставится и после отправки, и после отказа */
+  async suppressReadReceipt(original: EMail): Promise<void> {
+    let imapMail = original as IMAPEMail;
+    if (imapMail.uid && typeof imapMail.setFlagServer == "function") {
+      await imapMail.setFlagServer("$MDNSent", true);
+    }
+  }
 
   protected async saveSent(email: EMail): Promise<void> {
     let sentFolder = email.folder ?? this.getSpecialFolder(SpecialFolder.Sent);

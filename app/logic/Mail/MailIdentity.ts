@@ -33,6 +33,10 @@ export class MailIdentity extends Observable {
   /** email addresses that should be CCed on every outgoing email */
   @notifyChangedProperty
   sendBCC = new ArrayColl<string>();
+  /** Чужой ящик, от которого пишем по правам «Отправить как» / «Отправить от имени»
+   * (Outlook «От → Другой адрес»). Это не мой адрес: письма с него — не исходящие. */
+  @notifyChangedProperty
+  isDelegate = false;
   smlAccount: SMLHTTPAccount;
   readonly encryptionPrivateKeys = new ArrayColl<PublicKey & PrivateKey>();
 
@@ -87,6 +91,7 @@ export class MailIdentity extends Observable {
     thiss.replyTo = sanitize.emailAddress(config.replyTo, null);
     thiss.organisation = sanitize.label(config.organisation, null);
     thiss.signatureHTML = sanitize.string(config.signatureHTML, null);
+    thiss.isDelegate = sanitize.boolean(config.isDelegate, false);
     thiss.sendCC.clear();
     thiss.sendBCC.clear();
     thiss.sendCC.addAll(sanitize.array(config.sendCC).filter(e =>
@@ -113,6 +118,7 @@ export class MailIdentity extends Observable {
       replyTo: this.replyTo,
       organisation: this.organisation,
       signatureHTML: this.signatureHTML,
+      isDelegate: this.isDelegate || undefined,
       sendCC: this.sendCC.contents,
       sendBCC: this.sendBCC.contents,
       smlAccount: this.smlAccount?.toJSON(),
@@ -131,7 +137,8 @@ export class MailIdentity extends Observable {
     for (let candidate of addresses) {
       for (let identity of identities) {
         // console.log(`Checking whether ${candidate} matches identity ${identity.emailAddress} of account ${identity.account.name}`);
-        if (identity.isEMailAddress(candidate.emailAddress)) {
+        // Чужой ящик выбирают вручную: ответ на письмо, где он в получателях, — от своего имени
+        if (!identity.isDelegate && identity.isEMailAddress(candidate.emailAddress)) {
           // console.log(`MATCH: ${candidate} matches identity ${identity.emailAddress} of account ${identity.account.name}`);
           let personUID = new PersonUID(candidate.emailAddress, identity.realname);
           return { identity, personUID };
@@ -150,7 +157,7 @@ export function findIdentityForEMailAddress(emailAddress: string): MailIdentity 
   }
   for (let account of appGlobal.emailAccounts) {
     for (let identity of account.identities) {
-      if (identity.isEMailAddress(emailAddress)) {
+      if (!identity.isDelegate && identity.isEMailAddress(emailAddress)) {
         return identity;
       }
     }

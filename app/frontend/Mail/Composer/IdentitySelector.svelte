@@ -14,8 +14,8 @@
       </hbox>
     {/if}
   {/if}
-  {#if $visibleIdentities.length > 1}
-    <select bind:value={selectedIdentity} class:catch-all={selectedIdentity.isCatchAll}>
+  {#if $visibleIdentities.length > 1 || showOtherAddress}
+    <select value={selectedIdentity} on:change={event => catchErrors(() => onSelectChange(event))} class:catch-all={selectedIdentity.isCatchAll}>
       {#each $visibleIdentities.each as identity }
         <option value={identity}>
           {identity.isCatchAll && identity.isEMailAddress(fromAddress) && identity.emailAddress != fromAddress
@@ -25,6 +25,9 @@
           {identity.account?.name}
         </option>
       {/each}
+      {#if showOtherAddress}
+        <option value={kOtherAddress}>{$t`Other address…`}</option>
+      {/if}
     </select>
   {/if}
 </hbox>
@@ -33,7 +36,9 @@
   import { findAllIdentities, type MailIdentity } from "../../../logic/Mail/MailIdentity";
   import type { Workspace } from "../../../logic/Abstract/Workspace";
   import { catchErrors } from "../../Util/error";
-  import type { Collection } from "svelte-collections";
+  import { askOtherFromAddress } from "../SendAs/sendAs";
+  import { addDelegateIdentity, canSendFromOtherAddress } from "../../../logic/Mail/SendAs/SendAs";
+  import { ArrayColl, type Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
 
   export let selectedIdentity: MailIdentity; /* in/out */
@@ -49,6 +54,11 @@
   export let compact = false;
   /** Если задано, показывать только адреса аккаунтов этого пространства. */
   export let workspace: Workspace | null | undefined = undefined;
+  /** Пункт «Другой адрес…» для ящиков с правами «Отправить как / от имени» (Exchange) */
+  export let allowOtherAddress = false;
+
+  const kOtherAddress = "other-address";
+  $: showOtherAddress = allowOtherAddress && canSendFromOtherAddress(selectedIdentity?.account);
 
   let beforeCustom: string;
   let afterCustom: string;
@@ -80,6 +90,29 @@
     beforeCustom = parts[0];
     afterCustom = parts[1];
     editableCustom = fromAddress.substring(beforeCustom.length, fromAddress.length - afterCustom.length);
+  }
+
+  async function onSelectChange(event: Event) {
+    let select = event.target as HTMLSelectElement;
+    let index = select.selectedIndex;
+    let chosen = $visibleIdentities.contents[index];
+    if (chosen) {
+      selectedIdentity = chosen;
+      return;
+    }
+    // «Другой адрес…»: пока вводят адрес, в списке остаётся прежний отправитель
+    select.selectedIndex = $visibleIdentities.contents.indexOf(selectedIdentity);
+    let account = selectedIdentity.account;
+    let address = await askOtherFromAddress(account);
+    if (!address) {
+      return;
+    }
+    let identity = await addDelegateIdentity(account, address);
+    // `findAllIdentities()` — снимок: без этого выбор сбросился бы на первый адрес
+    if (!identities.includes(identity) && identities instanceof ArrayColl) {
+      identities.add(identity);
+    }
+    selectedIdentity = identity;
   }
 
   function onCustomEdited() {

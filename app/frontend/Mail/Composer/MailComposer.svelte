@@ -9,6 +9,7 @@
           bind:fromAddress={mail.from.emailAddress}
           bind:fromName={mail.from.name}
           workspace={composeWorkspace}
+          allowOtherAddress
           compact />
         <EncryptionButtons {mail} identity={fromIdentity} />
         <hbox flex class="spacer" />
