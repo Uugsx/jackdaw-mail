@@ -182,11 +182,17 @@
   .value {
     min-height: 1.2em;
   }
+  /* Правка прямо в карточке: только линия снизу, без рамки общего поля */
   .value.edit :global(input) {
-    border-bottom-width: 2px;
+    padding: 1px 2px;
+    border: none;
+    border-bottom: 2px solid var(--input-line);
+    border-radius: 0;
+    box-shadow: none;
     /* background-color: rgba(32, 174, 158, 20%); /* #20AE9E */
   }
   .value.edit :global(input:focus) {
     outline: none;
+    border-bottom-color: var(--input-focus);
   }
 </style>

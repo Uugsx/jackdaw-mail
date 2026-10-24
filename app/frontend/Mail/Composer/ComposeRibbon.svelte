@@ -1324,6 +1324,7 @@
     padding: 2px 6px;
     border: 1px solid var(--toolbar-control-border);
     border-radius: 6px;
+    box-shadow: none;
     background: var(--toolbar-control-bg);
     color: var(--headerbar-fg);
     font: inherit;

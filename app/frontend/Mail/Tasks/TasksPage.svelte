@@ -280,7 +280,9 @@
     flex: 1 1 auto;
     min-width: 6em;
     min-height: 30px;
+    padding: 1px 2px;
     border: none;
+    box-shadow: none;
     outline: none;
     background: transparent;
     color: var(--main-fg);

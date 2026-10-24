@@ -52,6 +52,9 @@
     margin: 2px;
   }
   input[type="text"] {
+    border: none;
+    box-shadow: none;
+    line-height: inherit;
     background-color: var(--color);
     color: white;
     border-radius: 8px;

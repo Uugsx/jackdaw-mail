@@ -87,7 +87,7 @@ export function senderVerdict(lists: SenderLists, address: string | null | undef
 export function addSenderEntry(lists: SenderLists, list: keyof SenderLists, entry: string): SenderLists {
   let value = normalizeSenderEntry(entry);
   if (!value) {
-    throw new UserError(gt`${entry} is not an email address or domain`);
+    throw new UserError(gt`Enter an email address (name@example.com) or a domain (example.com)`);
   }
   let other: keyof SenderLists = list == "trusted" ? "blocked" : "trusted";
   return sanitizeSenderLists({

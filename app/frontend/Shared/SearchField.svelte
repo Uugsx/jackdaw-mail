@@ -124,7 +124,9 @@
   input[type="search"] {
     width: 100%;
     height: 24px;
+    padding: 1px 2px;
     border: none;
+    box-shadow: none;
     margin-inline-start: 4px;
     border-radius: var(--border-radius);
     background-color: inherit;

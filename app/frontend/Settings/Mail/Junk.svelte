@@ -39,7 +39,8 @@
                     placeholder={$t`Address or domain`}
                     bind:value={newEntries[list.id]}
                     on:keydown={event => event.key == "Enter" && add(list.id)} />
-                  <Button plain iconOnly icon={AddIcon} iconSize="16px"
+                  <Button iconOnly icon={AddIcon} iconSize="16px"
+                    classes="add-button"
                     label={$t`Add`}
                     disabled={!newEntries[list.id]?.trim()}
                     onClick={() => add(list.id)} />
@@ -72,9 +73,11 @@
       </hbox>
       <input type="email" class="phishing-address"
         placeholder="security@example.com"
+        aria-invalid={phishingInvalid}
+        aria-describedby={phishingInvalid ? "phishing-error" : undefined}
         bind:value={$phishingAddress.value} />
-      {#if $phishingAddress.value?.trim() && !getPhishingReportAddress()}
-        <hbox class="error font-small">{$t`This is not an email address`}</hbox>
+      {#if phishingInvalid}
+        <hbox class="error font-small" id="phishing-error">{$t`This is not an email address`}</hbox>
       {/if}
     </vbox>
   </HeaderGroupBox>
@@ -104,6 +107,7 @@
   let loading = false;
   let errorText: string | null = null;
 
+  $: phishingInvalid = !!$phishingAddress.value?.trim() && !getPhishingReportAddress();
   $: account = accounts.find(candidate => candidate.id == accountID) as MailAccount;
   $: load(account);
 
@@ -173,7 +177,7 @@
     opacity: 0.7;
   }
   .error {
-    color: var(--error-fg, #c62828);
+    color: var(--danger-fg);
   }
   .lists {
     gap: 24px;
@@ -189,7 +193,15 @@
   }
   .add-row {
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+  }
+  /* Квадрат в высоту поля (32px), чтобы «+» стоял вровень с ним */
+  .add-row :global(.add-button) {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 32px;
+    height: 32px;
+    padding: 0;
   }
   .add-row input {
     flex: 1 1 auto;

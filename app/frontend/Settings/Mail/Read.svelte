@@ -104,6 +104,8 @@
     opacity: 0.75;
   }
   input[type="number"] {
+    /* Ширина — под цифры, без отступов: общие поля считают ширину с отступами (border-box) */
+    box-sizing: content-box;
     width: 2.5em;
     text-align: end;
   }
