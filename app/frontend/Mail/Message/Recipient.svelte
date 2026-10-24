@@ -26,6 +26,7 @@
 </Clickable>
 
 <Menu bind:isMenuOpen={isPopupOpen} {anchor} placement="bottom-start">
+  <RecipientDirectory person={recipient} inMenu />
   {#if existingPersons?.hasItems}
     <MenuLabel label={$t`Add ${recipient.emailAddress} to existing contact`} />
     {#each existingPersons.each as otherPerson}
@@ -59,6 +60,7 @@
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import MenuLabel from "../../Shared/Menu/MenuLabel.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
+  import RecipientDirectory from "../../Contacts/Directory/RecipientDirectory.svelte";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
 

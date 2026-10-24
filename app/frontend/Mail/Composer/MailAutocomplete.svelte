@@ -2,11 +2,14 @@
   searchFunction={searchFunction}
   {collapseAfter} bind:this={personsEl}>
   <slot name="end" slot="end" />
-  <hbox class="addressbooks" slot="person-popup-bottom" let:person class:top-border={person?.person?.emailAddresses.length > 1}>
-    {#if person?.person}
-      <AddressbookChanger person={person.person} />
-    {/if}
-  </hbox>
+  <vbox slot="person-popup-bottom" let:person>
+    <RecipientDirectory {person} recipients={addresses} {otherRecipients} />
+    <hbox class="addressbooks" class:top-border={person?.person?.emailAddresses.length > 1}>
+      {#if person?.person}
+        <AddressbookChanger person={person.person} />
+      {/if}
+    </hbox>
+  </vbox>
  <slot name="person-popup-buttons" slot="person-popup-buttons" let:person {person} />
 </PersonsAutocomplete>
 
@@ -14,6 +17,7 @@
   import type { PersonUID } from "../../../logic/Abstract/PersonUID";
   import PersonsAutocomplete from "../../Contacts/PersonAutocomplete/PersonsAutocomplete.svelte";
   import AddressbookChanger from "../../Contacts/AddressbookChanger.svelte";
+  import RecipientDirectory from "../../Contacts/Directory/RecipientDirectory.svelte";
   import type { ArrayColl } from "svelte-collections";
 
   /** E.g. to, cc or bcc list
@@ -23,6 +27,8 @@
   export let tabindex = null;
   export let autofocus = false;
   export let collapseAfter: number | null = null;
+  /** Остальные поля получателей: при раскрытии рассылки их адреса не дублируются */
+  export let otherRecipients: ArrayColl<PersonUID>[] = [];
   export let searchFunction: (
     (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
   ) | null = null;

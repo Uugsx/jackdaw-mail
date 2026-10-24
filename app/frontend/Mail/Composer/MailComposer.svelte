@@ -35,7 +35,7 @@
           <span class="label">{$t`To`}</span>
         </hbox>
         <hbox flex class="to-row">
-          <MailAutocomplete bind:this={toAutocomplete} addresses={mail.to} collapseAfter={3}
+          <MailAutocomplete bind:this={toAutocomplete} addresses={mail.to} otherRecipients={[mail.cc, mail.bcc]} collapseAfter={3}
             placeholder={$t`Add recipient`} tabindex={1} autofocus={mail.to.isEmpty && !floating}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
@@ -66,7 +66,7 @@
         </hbox>
         {#if showCC}
           <hbox class="label-cell"><span class="label">{$t`Cc`}</span></hbox>
-          <MailAutocomplete bind:this={ccAutocomplete} addresses={mail.cc} collapseAfter={3}
+          <MailAutocomplete bind:this={ccAutocomplete} addresses={mail.cc} otherRecipients={[mail.to, mail.bcc]} collapseAfter={3}
             placeholder={$t`Add CC recipient`} tabindex={1}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person={person}>
@@ -77,7 +77,7 @@
         {/if}
         {#if showBCC}
           <hbox class="label-cell"><span class="label">{$t`Bcc`}</span></hbox>
-          <MailAutocomplete bind:this={bccAutocomplete} addresses={mail.bcc} collapseAfter={3}
+          <MailAutocomplete bind:this={bccAutocomplete} addresses={mail.bcc} otherRecipients={[mail.to, mail.cc]} collapseAfter={3}
             placeholder={$t`Add BCC recipient`} tabindex={1}
             searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
