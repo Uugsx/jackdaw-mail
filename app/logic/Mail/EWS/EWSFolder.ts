@@ -497,6 +497,10 @@ export class EWSFolder extends ExchangeFolder {
     if (this.messages.isEmpty && this.countTotal > 0) {
       await this.listMessages();
     }
+    // TotalCount учитывает встречи, контакты, задачи и заметки, которых нет
+    // в списке писем, а подпапки корзины в него не входят вовсе
+    let hasUnlistedItems = this.countTotal > this.messages.length;
+    let deleteSubFolders = this.specialFolder == SpecialFolder.Trash && this.subFolders.hasItems;
     let messages = [...this.messages.contents] as EWSEMail[];
     let firstError: Error | null = null;
     for (let i = 0; i < messages.length; i += kMaxCount) {
@@ -557,9 +561,33 @@ export class EWSFolder extends ExchangeFolder {
     if (firstError) {
       throw firstError;
     }
+    if (hasUnlistedItems || deleteSubFolders) {
+      await this.emptyFolderOnServer(deleteSubFolders);
+    }
     this.countTotal = this.messages.length;
     this.countUnread = this.messages.contents.filter(message => !message.isRead).length;
     this.countNewArrived = 0;
+  }
+
+  /** Удаляет на сервере всё, что осталось в папке, как «Очистить папку» в
+   * Outlook: элементы любых типов и, если нужно, подпапки. */
+  protected async emptyFolderOnServer(deleteSubFolders: boolean): Promise<void> {
+    await this.account.callEWS({
+      m$EmptyFolder: {
+        m$FolderIds: {
+          t$FolderId: {
+            Id: this.id,
+          },
+        },
+        DeleteType: "HardDelete",
+        DeleteSubFolders: deleteSubFolders,
+      },
+    });
+    if (deleteSubFolders) {
+      for (let subFolder of [...this.subFolders.contents]) {
+        await subFolder.deleteItLocally();
+      }
+    }
   }
 
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<EWSEMail>) {
