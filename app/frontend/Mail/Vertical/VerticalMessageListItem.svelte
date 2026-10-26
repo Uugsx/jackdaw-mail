@@ -14,6 +14,7 @@
   on:swiperight={() => catchErrors(deleteMessage)}
   on:swipeleft={() => catchErrors(markAsSpam)}
   bind:this={popupAnchor}
+  use:hoverMessageRow={message}
   >
   {#if columns}
   {#each columns as column (column)}
@@ -177,6 +178,7 @@
   import { t } from "../../../l10n/l10n";
   import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { mailSizeLabel, type MailListColumnId } from "../mailListColumns";
+  import { hoverMessageRow } from "../hoveredMessage";
 
   export let message: EMail;
   $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
