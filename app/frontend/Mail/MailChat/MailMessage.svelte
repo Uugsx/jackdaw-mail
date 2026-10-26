@@ -1,5 +1,6 @@
 <div
   class="mail-message-row"
+  use:hoverMessageRow={message}
   class:incoming={!displayOutgoing}
   class:outgoing={displayOutgoing}
   aria-label={displayOutgoing ? $t`Outgoing message` : $t`Incoming message`}
@@ -56,6 +57,7 @@
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import { EMail } from "../../../logic/Mail/EMail";
   import { isOutgoingMail } from "./MailChatRoom";
+  import { hoverMessageRow } from "../hoveredMessage";
   import { stripMailChatQuote } from "../Message/mailChatBody";
   import MessageTranslateBar from "../Message/MessageTranslateBar.svelte";
   import { getMessageTranslation, getTranslationEngineSetting, isMailTranslationAvailable } from "../Message/messageTranslation";
