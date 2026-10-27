@@ -29,6 +29,7 @@ export async function getDatabase(): Promise<Database> {
 export async function makeTestDatabase(): Promise<Database> {
   topicDatabase = await getSQLiteDatabase("test-topic.db");
   await deleteDatabase();
+  topicDatabase = await getSQLiteDatabase("test-topic.db");
   await topicDatabase.migrate(topicDatabaseSchema);
   await topicDatabase.pragma('foreign_keys = true');
   return topicDatabase;

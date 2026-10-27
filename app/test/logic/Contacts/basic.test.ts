@@ -1,3 +1,5 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import '../../../logic/app';
 import { kAddressbooks } from './logins';
 import { newAddressbookForProtocol } from '../../../logic/Contacts/AccountsList/Addressbooks';
 import { AuthMethod } from '../../../logic/Abstract/Account';

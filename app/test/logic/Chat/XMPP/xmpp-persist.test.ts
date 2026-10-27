@@ -13,7 +13,7 @@ import { ChatMessage } from "../../../../logic/Chat/ChatMessage";
 import { JoinLeave, RoomEventKind } from "../../../../logic/Chat/RoomEvent";
 import { SQLChatStorage } from "../../../../logic/Chat/SQL/SQLChatStorage";
 import { makeTestDatabase as makeChatTestDatabase, getDatabase as getChatDatabase } from "../../../../logic/Chat/SQL/SQLDatabase";
-import { makeTestDatabase as makeContactsTestDatabase, getDatabase as getContactsDatabase } from "../../../../logic/Contacts/SQL/SQLDatabase";
+import { makeTestDatabase as makeContactsTestDatabase } from "../../../../logic/Contacts/SQL/SQLDatabase";
 import { SQLAddressbook } from "../../../../logic/Contacts/SQL/SQLAddressbook";
 import { SQLAddressbookStorage } from "../../../../logic/Contacts/SQL/SQLAddressbookStorage";
 import { SQLAccount } from "../../../../logic/Mail/SQL/Account/SQLAccount";
@@ -89,11 +89,12 @@ async function countMessages(): Promise<number> {
   return row.count;
 }
 async function countChats(): Promise<number> {
-  let row = await (await getChatDatabase()).get(sql`SELECT COUNT(*) AS count FROM chat`) as any;
+  let row = await (await getChatDatabase()).get(sql`SELECT COUNT(*) AS count FROM chatRoom`) as any;
   return row.count;
 }
+/** Контакты чата хранятся в БД чата (chatContact), а не в адресной книге */
 async function countPersons(): Promise<number> {
-  let row = await (await getContactsDatabase()).get(sql`SELECT COUNT(*) AS count FROM person`) as any;
+  let row = await (await getChatDatabase()).get(sql`SELECT COUNT(*) AS count FROM chatContact`) as any;
   return row.count;
 }
 

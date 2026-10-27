@@ -1,3 +1,5 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import '../../app';
 import { EMail } from '../EMail';
 import { Folder, SpecialFolder } from '../Folder';
 import { SQLMailAccount } from './SQLMailAccount';
@@ -23,6 +25,7 @@ test("Save and read mails from SQL database", { timeout: 10000 }, async () => {
   let originalAccount = new FakeMailAccount(addressbook.persons, appGlobal.me, 30);
   appGlobal.emailAccounts.add(originalAccount);
   expect(originalAccount).toBeDefined();
+  await originalAccount.listFolders(); // папки и письма создаются здесь, а не в конструкторе
   let originalFolders = originalAccount.getAllFolders();
   expect(originalFolders.length).toBeGreaterThan(2);
   let originalMessages = new ArrayColl<EMail>();
@@ -76,7 +79,7 @@ test("Save and read mails from SQL database", { timeout: 10000 }, async () => {
   let readFolders = readAccount.getAllFolders();
   for (let originalFolder of originalFolders) {
     let readFolder = readFolders.find(f =>
-      f.path == originalFolder.path &&
+      f.id == originalFolder.id && // путь папки на сервере хранится в id
       f.account.id == originalFolder.account.id);
     expect(readFolder).toBeDefined();
     expect(readFolder.name).toEqual(originalFolder.name);
@@ -91,6 +94,7 @@ test("Save and read mails from SQL database", { timeout: 10000 }, async () => {
       let readMessage = readFolder.messages.find(msg =>
         msg.id == originalMessage.id);
       expect(readMessage).toBeDefined();
+      await SQLEMail.readBody(readMessage); // readAll() читает тело лениво
       expect(readMessage.subject).toEqual(originalMessage.subject);
       expect(readMessage.text).toEqual(originalMessage.text);
       expect(readMessage.html).toEqual(originalMessage.html);

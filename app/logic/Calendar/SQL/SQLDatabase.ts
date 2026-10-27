@@ -31,6 +31,7 @@ export async function getDatabase(): Promise<Database> {
 export async function makeTestDatabase(): Promise<Database> {
   calendarDatabase = await getSQLiteDatabase("test-calendar.db");
   await deleteDatabase();
+  calendarDatabase = await getSQLiteDatabase("test-calendar.db");
   await calendarDatabase.migrate(calendarDatabaseSchema, addEventAttachmentTable);
   await calendarDatabase.pragma('foreign_keys = true');
   return calendarDatabase;

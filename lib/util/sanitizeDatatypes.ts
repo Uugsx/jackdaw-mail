@@ -115,6 +115,9 @@ class Sanitize {
    */
   hostname(unchecked: string | null | undefined, fallback: string | null | Symbol = throwErrors): string {
     let str = this.nonemptystring(unchecked, fallback);
+    if (str == null) { // fallback null: иначе regexp проверит строку "null" и вернётся undefined
+      return str;
+    }
     try {
       if (!this.regexpHostname.test(str)) {
         return haveError("Hostname syntax", unchecked, fallback);

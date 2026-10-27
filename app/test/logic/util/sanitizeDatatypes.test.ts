@@ -89,3 +89,12 @@ test("Check EAI email addresses", () => {
     sanitize.emailAddress("d@d.xn-");
   }).toThrow();
 });
+
+test("hostname: пустое значение возвращает запасное, а не undefined", () => {
+  expect(sanitize.hostname(null, null)).toBeNull();
+  expect(sanitize.hostname(undefined, null)).toBeNull();
+  expect(sanitize.hostname("", "localhost")).toBe("localhost");
+  expect(sanitize.hostname("Mail.Example.COM", null)).toBe("mail.example.com");
+  expect(sanitize.hostname("bad host", null)).toBeNull();
+  expect(() => sanitize.hostname(null)).toThrow();
+});

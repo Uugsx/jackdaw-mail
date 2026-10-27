@@ -1,3 +1,5 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import "../../../../logic/app";
 import { MailAccount } from "../../../../logic/Mail/MailAccount";
 import { MailZIP } from "../../../../logic/Mail/Store/MailZIP";
 import { appGlobal } from "../../../../logic/app";
