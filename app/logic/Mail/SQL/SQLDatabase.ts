@@ -67,6 +67,7 @@ export async function getDatabase(): Promise<Database> {
 export async function makeTestDatabase(): Promise<Database> {
   mailDatabase = await getSQLiteDatabase("test-mail.db");
   await deleteDatabase();
+  mailDatabase = await getSQLiteDatabase("test-mail.db");
   await mailDatabase.migrate(
     mailDatabaseSchema,
     createReportReplyIndexes,

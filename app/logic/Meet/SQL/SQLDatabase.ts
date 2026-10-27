@@ -30,6 +30,7 @@ export async function getDatabase(): Promise<Database> {
 export async function makeTestDatabase(): Promise<Database> {
   meetDatabase = await getSQLiteDatabase("test-meet.db");
   await deleteDatabase();
+  meetDatabase = await getSQLiteDatabase("test-meet.db");
   await meetDatabase.migrate(meetDatabaseSchema);
   await meetDatabase.pragma('foreign_keys = true');
   return meetDatabase;

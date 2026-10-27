@@ -22,8 +22,10 @@ test("Save and read calendars from SQL database", { timeout: 10000 }, async () =
     if (Math.random() < 0.3) {
       let participantCount = Math.ceil(Math.random() * 8);
       for (let i = 0; i < participantCount; i++) {
-        let person = addressbook.persons.getIndex(Math.floor(Math.random() * addressbook.persons.length));
-        event.participants.add(person);
+        let participant = originalCalendar.randomParticipants.getIndex(Math.floor(Math.random() * originalCalendar.randomParticipants.length));
+        if (!event.participants.contents.includes(participant)) {
+          event.participants.add(participant);
+        }
       }
     }
   }
@@ -75,10 +77,11 @@ test("Save and read calendars from SQL database", { timeout: 10000 }, async () =
     expect(readEvent.descriptionHTML).toEqual(originalEvent.descriptionHTML);
     expect(readEvent.participants.length).toEqual(originalEvent.participants.length);
     for (let originalParticipant of originalEvent.participants) {
-      let readParticipant = readEvent.participants.find(p => p.dbID == originalParticipant.dbID);
+      // У участника нет своего dbID, он сохраняется по адресу в событии
+      let readParticipant = readEvent.participants.find(p => p.emailAddress == originalParticipant.emailAddress);
       expect(readParticipant).toBeDefined();
       expect(readParticipant.name).toEqual(originalParticipant.name);
-      expect(readParticipant.picture).toEqual(originalParticipant.picture);
+      expect(readParticipant.response).toEqual(originalParticipant.response);
     }
   }
 });

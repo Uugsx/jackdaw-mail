@@ -1,3 +1,5 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import '../../../logic/app';
 import { kCalendars } from './logins';
 import { newCalendarForProtocol } from '../../../logic/Calendar/AccountsList/Calendars';
 import { AuthMethod } from '../../../logic/Abstract/Account';

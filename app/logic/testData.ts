@@ -587,7 +587,10 @@ async function readAvatarList() {
 function avatar(male: boolean): string {
   let listName = male ? "man" : "woman";
   let list = avatarFiles[listName];
-  assert(list, "Call readAvatarList() first");
+  if (!list) {
+    // Список аватаров ещё не загружен (тесты без testDataOn)
+    return kFallbackAvatar;
+  }
   assert(list?.hasItems, "No avatars found");
   let i = Math.floor(faker.number.float() * list.length);
   console.log(listName, list.get(i));

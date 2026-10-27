@@ -162,7 +162,7 @@ test.skipIf(!Database)("Group chat: join, members, history, send, live, restart"
   await account1.logout();
   expect(await countMessages()).toBe(5);
   expect(await countGroups()).toBe(0); // the room's Group is not in the contacts DB
-  expect(await countPersons()).toBe(1); // only alice, from the roster - no room members
+  expect(await countPersons()).toBe(0); // roster contacts live in the chat DB, room members are not in the contacts
 
   // Session 2: Restart, like getStartObjects(): fresh objects,
   // address book without contacts loaded yet
@@ -206,7 +206,7 @@ test.skipIf(!Database)("Group chat: join, members, history, send, live, restart"
   expect(room2.messages.length).toBe(5);
   expect(server.queries.filter(q => q.withJID == kRoom && !q.after).length).toBe(0); // no full re-fetch
   expect(await countMessages()).toBe(5); // no duplicates
-  expect(await countPersons()).toBe(1); // still no room members in the contacts
+  expect(await countPersons()).toBe(0); // still no room members in the contacts
   expect(await countGroups()).toBe(0); // still no group in the contacts
   let fromAnon = room2.messages.find(msg => msg.id == "msg-g2") as ChatMessage;
   expect(fromAnon.from?.name).toBe("anon");

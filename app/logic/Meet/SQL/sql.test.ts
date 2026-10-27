@@ -1,6 +1,7 @@
 import { makeTestDatabase } from './SQLDatabase';
 import { SQLMeetAccount } from './SQLMeetAccount';
-import { fakeMeetAccount, fakeChatPerson } from '../../testData';
+import { FakeChatPerson } from '../../testData';
+import { LiveKitAccount } from '../LiveKit/LiveKitAccount';
 import { appGlobal } from '../../app';
 import { connectToBackend } from '../../../test/logic/util/backend.test';
 import { expect, test } from 'vitest';
@@ -10,8 +11,13 @@ test("Save and read meet accounts from SQL database", { timeout: 10000 }, async 
   await makeTestDatabase(); // Let SQLFoo classes use the test database
 
   // Fake data
-  appGlobal.me = fakeChatPerson();
-  let originalAccount = fakeMeetAccount();
+  appGlobal.me = new FakeChatPerson();
+  // Протокол, который newMeetAccountForProtocol() умеет создавать при чтении
+  let originalAccount = new LiveKitAccount();
+  originalAccount.name = "Тестовые встречи";
+  originalAccount.url = "https://meet.example.com";
+  originalAccount.username = "tester";
+  originalAccount.realname = "Тест Тестов";
   appGlobal.meetAccounts.add(originalAccount);
   expect(originalAccount).toBeDefined();
 

@@ -154,7 +154,8 @@ test("Import WhatsApp backup, then import again without duplicates", { timeout: 
   let groupRoom2 = account.rooms.contents.find(r => r.id == kGroupJID)!;
   expect(groupRoom2.contact).toBe(group);
   await groupRoom2.listMessages();
-  expect(groupRoom2.messages.contents.find(m => m.text == "Group hello")!.contact).toBe(bob);
+  // Отправитель — контакт чата, связанный с человеком из адресной книги
+  expect((groupRoom2.messages.contents.find(m => m.text == "Group hello")!.contact as ChatPersonUID).person).toBe(bob);
 });
 
 test("Phone number matching", () => {

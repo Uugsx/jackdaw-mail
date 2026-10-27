@@ -1,3 +1,5 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import '../../../logic/app';
 import { newChatAccountForProtocol } from '../../../logic/Chat/AccountsList/ChatAccounts';
 import { kChatAccounts } from './logins';
 import { connectToBackend, stopBackend } from '../util/backend.test';
