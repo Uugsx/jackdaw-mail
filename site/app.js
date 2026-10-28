@@ -198,6 +198,7 @@
     "footer.license": "License",
     "footer.terms": "Terms of Use",
     "footer.privacy": "Privacy Policy",
+    "footer.refund": "Refund Policy",
     "footer.author": "Author: @Uugsx",
     "footer.credit": "Based on open-source work by Ben Bucksch, Beonex GmbH and other contributors."
   };
