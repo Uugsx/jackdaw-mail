@@ -69,7 +69,19 @@
         <hbox class="message font-small">{$t`Loading…`}</hbox>
       {:else if !blobURL}
         <vbox class="message font-small">
-          <hbox>{$t`This file cannot be shown here.`}</hbox>
+          {#if !attachment.content}
+            <hbox>{$t`Attachment file is missing`}</hbox>
+          {:else if !kind}
+            <hbox>{$t`This file cannot be shown here.`}</hbox>
+            <Button plain icon={OpenIcon} iconSize="16px" label={$t`Open in external app`} onClick={openExternal} />
+          {:else}
+            <hbox>{$t`This file cannot be shown here.`}</hbox>
+          {/if}
+        </vbox>
+      {:else if tooLarge}
+        <vbox class="message font-small">
+          <hbox>{$t`This file is too large to preview.`}</hbox>
+          <Button plain icon={OpenIcon} iconSize="16px" label={$t`Open in external app`} onClick={openExternal} />
         </vbox>
       {:else if kind == "pdf"}
         <!-- Отдельная страница: поиск ищет только в PDF, печать печатает PDF, а не окно приложения -->
@@ -108,7 +120,7 @@
 
 <script lang="ts">
   import type { Attachment } from "../../../logic/Abstract/Attachment";
-  import { copyImageToClipboard, documentZoomHTML, loadAttachmentContent, previewHTML, previewKind, type PreviewKind } from "./attachmentPreview";
+  import { kMaxHTMLPreviewBytes, copyImageToClipboard, documentZoomHTML, loadAttachmentContent, previewHTML, previewKind, type PreviewKind } from "./attachmentPreview";
   import {
     clampZoom, fitZoom, isSideways, kMaxZoom, kMinZoom, normalizeRotation, previewShortcut,
     scrollToKeepPoint, wheelZoom as wheelZoomStep, zoomIn, zoomOut, zoomPercent,
@@ -138,7 +150,7 @@
   import { onDestroy, onMount, tick } from "svelte";
 
   export let attachment: Attachment;
-  export let kind: PreviewKind;
+  export let kind: PreviewKind | null;
   /** Вложения, между которыми листаем; `attachment` среди них */
   export let gallery: Attachment[] = [attachment];
   export let onClose: () => void;
@@ -152,6 +164,7 @@
   let index = Math.max(0, gallery.indexOf(attachment));
   let loading = false;
   let blobURL: string | null = null;
+  $: tooLarge = (kind == "document" || kind == "text") && attachment?.content?.size > kMaxHTMLPreviewBytes;
   $: setBlobURL(attachment, kind);
 
   const modKey = isMacPlatform() ? "⌘" : "Ctrl+";
@@ -163,11 +176,11 @@
     : translateString({ id: "twQNl4", defaultMessage: "Ctrl + scroll down" }, {});
 
   // Свой адрес: у PDF указываем тип, иначе Chromium предложит скачать файл
-  function setBlobURL(current: Attachment, currentKind: PreviewKind) {
+  function setBlobURL(current: Attachment, currentKind: PreviewKind | null) {
     if (blobURL) {
       URL.revokeObjectURL(blobURL);
     }
-    blobURL = !current?.content ? null : URL.createObjectURL(currentKind == "pdf" && current.content.type != "application/pdf"
+    blobURL = !current?.content || !currentKind ? null : URL.createObjectURL(currentKind == "pdf" && current.content.type != "application/pdf"
       ? new Blob([current.content], { type: "application/pdf" })
       : current.content);
     resetView();
@@ -187,7 +200,7 @@
         return; // уже листнули дальше
       }
       gallery[wanted] = loaded;
-      kind = previewKind(loaded.filename, loaded.mimeType) ?? "image";
+      kind = previewKind(loaded.filename, loaded.mimeType);
       attachment = loaded;
     } catch (ex) {
       backgroundError(ex);
