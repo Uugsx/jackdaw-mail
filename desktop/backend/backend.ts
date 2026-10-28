@@ -7,6 +7,7 @@ import * as OWA from './owa';
 import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
 import { expectedSha512ForAsset, isSha512Match, pickMacDmgAsset } from './updateAssets';
+import { applyMirrorToProvider, kMirrorStallTimeoutMs, mirrorUrlFor, resolveUpdateMirrorBase } from './updateMirror';
 import { isPublicFetchHost } from './netGuard';
 import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort } from './testProfile';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
@@ -45,7 +46,7 @@ import {
   translateMailTexts,
   translateMailTextsWithDeepL,
 } from "./translation";
-const { autoUpdater } = electronUpdater;
+const { autoUpdater, CancellationToken } = electronUpdater;
 
 const kMaxMailImageBytes = 25 * 1024 * 1024;
 
@@ -1082,6 +1083,7 @@ function downloadGithubAsset(
   destPath: string,
   onProgress: (pct: number) => void,
   useAuthorization = true,
+  idleTimeoutMs = kUpdateDownloadIdleTimeoutMs,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let headers = {
@@ -1091,12 +1093,12 @@ function downloadGithubAsset(
     let request = https.get(asset.url, { headers }, response => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
-        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress, false).then(resolve, reject);
+        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress, false, idleTimeoutMs).then(resolve, reject);
         return;
       }
       if (response.statusCode === 401 && useAuthorization) {
         response.resume();
-        downloadGithubAsset(asset, destPath, onProgress, false).then(resolve, reject);
+        downloadGithubAsset(asset, destPath, onProgress, false, idleTimeoutMs).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -1140,7 +1142,7 @@ function downloadGithubAsset(
       response.on("aborted", () => fail(new Error("Download aborted")));
     });
     // Без таймаута обрыв сети оставлял «Загрузка N%» навсегда
-    request.setTimeout(kUpdateDownloadIdleTimeoutMs, () => {
+    request.setTimeout(idleTimeoutMs, () => {
       request.destroy(new Error("Download timed out"));
     });
     request.on("error", reject);
@@ -1262,10 +1264,35 @@ async function downloadMacDmgUpdate(version: string | null | undefined) {
     updateState.phase = "downloading";
     updateState.progress = 0;
     updateState.error = null;
-    await downloadGithubAsset(dmgAsset, dmgPath, pct => {
-      updateState.progress = pct;
-    });
-    await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
+    let fromMirror = false;
+    let mirrorBase = resolveUpdateMirrorBase();
+    if (mirrorBase) {
+      // Зеркало быстрее GitHub CDN. Любая ошибка (недоступно, обрыв, не та сумма)
+      // тихо переводит на GitHub; сумма берётся из latest-mac.yml с GitHub.
+      try {
+        await downloadGithubAsset(
+          { ...dmgAsset, url: mirrorUrlFor(dmgAsset.name, mirrorBase) },
+          dmgPath,
+          pct => {
+            updateState.progress = pct;
+          },
+          false,
+          kMirrorStallTimeoutMs,
+        );
+        await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
+        fromMirror = true;
+      } catch (ex) {
+        console.warn("Update mirror failed, falling back to GitHub:", (ex as Error)?.message ?? ex);
+        await fsPromises.rm(dmgPath, { force: true }).catch(() => {});
+        updateState.progress = 0;
+      }
+    }
+    if (!fromMirror) {
+      await downloadGithubAsset(dmgAsset, dmgPath, pct => {
+        updateState.progress = pct;
+      });
+      await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
+    }
     macDmgPendingPath = dmgPath;
     updateState.phase = "downloaded";
     updateState.progress = 100;
@@ -1450,6 +1477,46 @@ export async function prepareUpdaterAuth(): Promise<boolean> {
   return ensureGhUpdateAuth();
 }
 
+/**
+ * Windows: сначала зеркало (адреса файлов подменяются в провайдере electron-updater),
+ * при ошибке или зависании без прогресса — обычная загрузка с GitHub.
+ * Контрольные суммы electron-updater берёт из latest.yml на GitHub.
+ */
+async function downloadWindowsUpdate(): Promise<void> {
+  let mirrorBase = resolveUpdateMirrorBase();
+  let provider = (autoUpdater as any).updateInfoAndProvider?.provider;
+  if (mirrorBase && provider?.resolveFiles) {
+    let restore = applyMirrorToProvider(provider, mirrorBase);
+    let token = new CancellationToken();
+    let lastProgressAt = Date.now();
+    let onProgress = () => {
+      lastProgressAt = Date.now();
+    };
+    autoUpdater.on("download-progress", onProgress);
+    let watchdog = setInterval(() => {
+      if (Date.now() - lastProgressAt > kMirrorStallTimeoutMs) {
+        token.cancel();
+      }
+    }, 2_000);
+    try {
+      await withTimeout(autoUpdater.downloadUpdate(token), kUpdateDownloadTimeoutMs, "Update download timed out");
+      return;
+    } catch (ex) {
+      console.warn("Update mirror failed, falling back to GitHub:", (ex as Error)?.message ?? ex);
+      updateState.progress = 0;
+    } finally {
+      clearInterval(watchdog);
+      autoUpdater.off("download-progress", onProgress);
+      restore();
+    }
+  }
+  await withTimeout(
+    autoUpdater.downloadUpdate(),
+    kUpdateDownloadTimeoutMs,
+    "Update download timed out",
+  );
+}
+
 export async function downloadUpdate(): Promise<boolean> {
   if (process.platform === "darwin") {
     if (!macDmgPendingPath) {
@@ -1468,11 +1535,7 @@ export async function downloadUpdate(): Promise<boolean> {
     updateState.progress = 0;
     updateState.error = null;
     try {
-      await withTimeout(
-        autoUpdater.downloadUpdate(),
-        kUpdateDownloadTimeoutMs,
-        "Update download timed out",
-      );
+      await downloadWindowsUpdate();
       updateState.phase = "downloaded";
       updateState.progress = 100;
       updateState.error = null;

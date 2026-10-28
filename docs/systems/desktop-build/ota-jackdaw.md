@@ -107,6 +107,19 @@ to a release are not changed.
 
 ---
 
+## Зеркало обновлений (jackdaw-mail.pro/updates)
+
+GitHub CDN у части пользователей отдаёт 0,4–0,55 МБ/с, поэтому установщики дублируются на нашем VPS.
+
+- **CI:** job `mirror` (после `finalize`, `continue-on-error`) → `app/build/ota-mirror-sync.sh`: выкладывает DMG, `setup.exe`, `latest*.yml`, blockmap через rsync на пользователя `jackdaw-updates` (ключ с `command="rrsync /opt/jackdaw-mail/updates",restrict`), оставляет 3 последние версии. Секреты `UPDATES_MIRROR_SSH_KEY`, `UPDATES_MIRROR_KNOWN_HOSTS`, переменные `UPDATES_MIRROR_HOST`, `UPDATES_MIRROR_USER`; не заданы — шаг пропускается.
+- **VPS:** Caddy `handle_path /updates/*` → `file_server` из `/opt/jackdaw-mail/updates` (без сжатия, Range). Конфигурация VPS хранится в приватном `jackdaw-servers`.
+- **Клиент:** `desktop/backend/updateMirror.ts`. macOS (`downloadMacDmgUpdate`) — DMG с зеркала, любая ошибка/обрыв 20 с без данных/неверная сумма → GitHub. Windows (`downloadWindowsUpdate`) — адреса файлов в провайдере electron-updater подменяются на зеркало, при ошибке или остановке прогресса 20 с — обычная загрузка с GitHub.
+- **Доверие:** манифесты и sha512 клиент берёт только у GitHub; зеркало отдаёт байты, которые сверяются с этой суммой (`verifyMacDmgChecksum`, проверка electron-updater). Подмена файла на зеркале ведёт к откату на GitHub, а не к установке.
+- `JACKDAW_UPDATE_MIRROR=off` отключает зеркало, другой https-адрес (или localhost) подменяет его для проверок.
+- Параллельная публикация по-прежнему только после `prepare`; `mirror` не часть критического пути.
+
+---
+
 ## GitHub secrets
 
 | Secret | Used for |
