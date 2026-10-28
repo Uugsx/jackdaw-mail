@@ -295,6 +295,90 @@ jobs:
   # Не часть критического пути: упавшее зеркало не ломает выпуск, клиент тогда
   # качает с GitHub. Нужны секреты UPDATES_MIRROR_SSH_KEY, UPDATES_MIRROR_KNOWN_HOSTS
   # и переменные UPDATES_MIRROR_HOST, UPDATES_MIRROR_USER; пока не заданы — шаг пропускается.
+  # Зеркало платформы сразу после её сборки (см. ota-mirror-sync.sh): манифест на GitHub
+  # появляется раньше конца всего выпуска. Итоговый job mirror — страховка и очистка.
+  mirror-mac:
+    needs: [prepare, mac]
+    if: |
+      always() &&
+      needs.mac.result == 'success' &&
+      (github.event_name == 'push' || inputs.release_type == 'prerelease')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    concurrency:
+      group: updates-mirror-mac
+      cancel-in-progress: false
+    env:
+      MIRROR_SSH_KEY: ${{ secrets.UPDATES_MIRROR_SSH_KEY }}
+      MIRROR_KNOWN_HOSTS: ${{ secrets.UPDATES_MIRROR_KNOWN_HOSTS }}
+      MIRROR_HOST: ${{ vars.UPDATES_MIRROR_HOST }}
+      MIRROR_USER: ${{ vars.UPDATES_MIRROR_USER }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sync release assets to the update mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
+        run: |
+          if [ -z "$MIRROR_SSH_KEY" ] || [ -z "$MIRROR_KNOWN_HOSTS" ] || [ -z "$MIRROR_HOST" ] || [ -z "$MIRROR_USER" ]; then
+            echo "::warning::Update mirror is not configured, skipping."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
+          chmod 600 ~/.ssh/updates_mirror
+          printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
+          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail mac
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/updates_mirror ~/.ssh/updates_mirror_known_hosts
+
+  mirror-win:
+    needs: [prepare, windows]
+    if: |
+      always() &&
+      needs.windows.result == 'success' &&
+      (github.event_name == 'push' || inputs.release_type == 'prerelease')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    concurrency:
+      group: updates-mirror-win
+      cancel-in-progress: false
+    env:
+      MIRROR_SSH_KEY: ${{ secrets.UPDATES_MIRROR_SSH_KEY }}
+      MIRROR_KNOWN_HOSTS: ${{ secrets.UPDATES_MIRROR_KNOWN_HOSTS }}
+      MIRROR_HOST: ${{ vars.UPDATES_MIRROR_HOST }}
+      MIRROR_USER: ${{ vars.UPDATES_MIRROR_USER }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sync release assets to the update mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
+        run: |
+          if [ -z "$MIRROR_SSH_KEY" ] || [ -z "$MIRROR_KNOWN_HOSTS" ] || [ -z "$MIRROR_HOST" ] || [ -z "$MIRROR_USER" ]; then
+            echo "::warning::Update mirror is not configured, skipping."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
+          chmod 600 ~/.ssh/updates_mirror
+          printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
+          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail win
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/updates_mirror ~/.ssh/updates_mirror_known_hosts
+
   mirror:
     needs: [prepare, mac, windows, carry-forward, finalize]
     if: |
