@@ -8,6 +8,9 @@ set -euo pipefail
 
 TAG="${1:?tag}"
 REPO="${2:?owner/repo}"
+# mac | win | all: зеркало платформы выкладывается сразу после её сборки, чтобы клиент
+# не попадал в окно, когда манифест на GitHub уже есть, а файла на зеркале ещё нет
+PLATFORM="${3:-all}"
 KEEP="${MIRROR_KEEP_VERSIONS:-3}"
 
 STAGE="$(mktemp -d)"
@@ -17,7 +20,12 @@ trap 'rm -rf "$STAGE" "$EMPTY"' EXIT
 SSH="ssh -i $MIRROR_SSH_KEY_FILE -o UserKnownHostsFile=$MIRROR_KNOWN_HOSTS_FILE -o StrictHostKeyChecking=yes -o BatchMode=yes"
 REMOTE="$MIRROR_USER@$MIRROR_HOST:"
 
-for pattern in '*.dmg' '*.dmg.blockmap' '*-setup.exe' '*-setup.exe.blockmap' 'latest.yml' 'latest-mac.yml'; do
+case "$PLATFORM" in
+  mac) PATTERNS=('*.dmg' '*.dmg.blockmap' 'latest-mac.yml') ;;
+  win) PATTERNS=('*-setup.exe' '*-setup.exe.blockmap' 'latest.yml') ;;
+  *) PATTERNS=('*.dmg' '*.dmg.blockmap' '*-setup.exe' '*-setup.exe.blockmap' 'latest.yml' 'latest-mac.yml') ;;
+esac
+for pattern in "${PATTERNS[@]}"; do
   gh release download "$TAG" --repo "$REPO" --dir "$STAGE" --pattern "$pattern" || true
 done
 
@@ -45,5 +53,7 @@ prune() {
         done
       done
 }
-prune '\\.dmg'
-prune '-setup\\.exe'
+if [ "$PLATFORM" = all ]; then
+  prune '\\.dmg'
+  prune '-setup\\.exe'
+fi
