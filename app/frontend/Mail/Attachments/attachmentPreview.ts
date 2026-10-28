@@ -13,6 +13,8 @@ import { mount, unmount } from "svelte";
 export type PreviewKind = "pdf" | "image" | "document" | "text";
 
 const kImageExt = ["png", "gif", "jpg", "jpeg", "jpe", "webp", "bmp"];
+/** Для файлов без расширения, например картинки из буфера обмена в чате */
+const kImageMIMETypes = ["image/png", "image/gif", "image/jpeg", "image/webp", "image/bmp"];
 const kDocumentExt = ["docx", "odt", "xlsx"];
 const kTextExt = ["txt", "md", "csv", "log"];
 
@@ -21,7 +23,7 @@ export function previewKind(filename: string | null | undefined, mimeType?: stri
   if (ext == "pdf" || mimeType == "application/pdf") {
     return "pdf";
   }
-  if (kImageExt.includes(ext)) {
+  if (kImageExt.includes(ext) || kImageMIMETypes.includes(mimeType?.toLowerCase())) {
     return "image";
   }
   if (kDocumentExt.includes(ext)) {
@@ -61,20 +63,44 @@ export async function previewHTML(kind: PreviewKind, filename: string, content: 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${kDocumentStyle}</head><body>${body}</body></html>`;
 }
 
-/** Открывает окно предпросмотра над приложением */
-export async function previewAttachment(attachment: Attachment): Promise<void> {
+/** Байты вложения: из письма, с диска или уже в памяти. Без байтов — `content` пуст. */
+export async function loadAttachmentContent(attachment: Attachment): Promise<Attachment> {
   let loaded = await attachment.load();
+  if (!loaded.content && loaded.storage) {
+    await loaded.read(); // файл чата уже на диске
+  }
+  return loaded;
+}
+
+/** Картинки того же письма или сообщения чата, между которыми листает просмотр.
+ * Скрытые (cid-картинки текста письма, подписи) не входят, открытая входит всегда. */
+export function imageGallery(attachment: Attachment): Attachment[] {
+  if (previewKind(attachment.filename, attachment.mimeType) != "image") {
+    return [attachment];
+  }
+  let all = attachment.message?.attachments?.contents ?? [];
+  let images = all.filter(other => other == attachment ||
+    (!other.hidden && previewKind(other.filename, other.mimeType) == "image"));
+  return images.includes(attachment) ? images : [attachment];
+}
+
+/** Открывает окно предпросмотра над приложением.
+ * @param gallery Вложения, между которыми можно листать; по умолчанию — картинки того же сообщения */
+export async function previewAttachment(attachment: Attachment, gallery?: Attachment[]): Promise<void> {
+  let loaded = await loadAttachmentContent(attachment);
   let kind = previewKind(loaded.filename, loaded.mimeType);
   if (!kind || !loaded.content) {
     await loaded.openOSApp();
     return;
   }
+  gallery = (gallery ?? imageGallery(attachment)).map(item => item == attachment ? loaded : item);
   let dialog: Record<string, any>;
   dialog = mount(AttachmentPreview, {
     target: document.body,
     props: {
       attachment: loaded,
       kind,
+      gallery,
       onClose: () => queueMicrotask(() => unmount(dialog)),
     },
   });
