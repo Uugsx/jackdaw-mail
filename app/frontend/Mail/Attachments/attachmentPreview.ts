@@ -1,10 +1,11 @@
-import type { Attachment } from "../../../logic/Abstract/Attachment";
+import { Attachment } from "../../../logic/Abstract/Attachment";
 import { docxToHTML } from "../../../logic/Files/FileType/MSWord";
 import { odtToHTML } from "../../../logic/Files/FileType/ODT";
 import { xlsxToHTML } from "../../../logic/Files/FileType/MSExcel";
 import { escapeHTML } from "../../../logic/Files/FileType/htmlHelper";
 import AttachmentPreview from "./AttachmentPreview.svelte";
 import { mount, unmount } from "svelte";
+import { ArrayColl } from "svelte-collections";
 
 /**
  * Предпросмотр вложения в приложении, как в Outlook: PDF, Word, Excel, OpenDocument,
@@ -63,6 +64,15 @@ export async function previewHTML(kind: PreviewKind, filename: string, content: 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${kDocumentStyle}</head><body>${body}</body></html>`;
 }
 
+/** Масштаб документа или текста. CSS zoom на самом iframe Chromium не отрисовывает,
+ * поэтому масштаб — стилем внутри документа: текст остаётся чётким и переносится по ширине окна. */
+export function documentZoomHTML(html: string, zoom: number): string {
+  if (zoom == 1) {
+    return html;
+  }
+  return html.replace("</head>", `<style>html { zoom: ${zoom}; }</style></head>`);
+}
+
 /** Байты вложения: из письма, с диска или уже в памяти. Без байтов — `content` пуст. */
 export async function loadAttachmentContent(attachment: Attachment): Promise<Attachment> {
   let loaded = await attachment.load();
@@ -82,6 +92,24 @@ export function imageGallery(attachment: Attachment): Attachment[] {
   let images = all.filter(other => other == attachment ||
     (!other.hidden && previewKind(other.filename, other.mimeType) == "image"));
   return images.includes(attachment) ? images : [attachment];
+}
+
+/** Кладёт картинку в буфер обмена. Буфер принимает только PNG, поэтому JPEG, GIF и прочие перерисовываются.
+ * У GIF копируется первый кадр. */
+export async function copyImageToClipboard(content: Blob): Promise<void> {
+  let png = content.type == "image/png" ? content : await convertToPNG(content);
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+}
+
+async function convertToPNG(content: Blob): Promise<Blob> {
+  let bitmap = await createImageBitmap(content);
+  try {
+    let canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0);
+    return await canvas.convertToBlob({ type: "image/png" });
+  } finally {
+    bitmap.close();
+  }
 }
 
 /** Открывает окно предпросмотра над приложением.
@@ -104,4 +132,18 @@ export async function previewAttachment(attachment: Attachment, gallery?: Attach
       onClose: () => queueMicrotask(() => unmount(dialog)),
     },
   });
+}
+
+if (import.meta.env.VITE_JACKDAW_UI_TEST == "1") {
+  // Автопроверка интерфейса (desktop/scripts/ui-test): открыть просмотр для файлов, как вложения одного письма
+  (globalThis as any).jdPreviewFiles = async (files: File[], index = 0) => {
+    let message: any = { attachments: new ArrayColl<Attachment>() };
+    for (let file of files) {
+      let attachment = new Attachment();
+      attachment.fromFile(file);
+      attachment.message = message;
+      message.attachments.add(attachment);
+    }
+    await previewAttachment(message.attachments.get(index));
+  };
 }
