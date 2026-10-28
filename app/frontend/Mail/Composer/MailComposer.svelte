@@ -166,6 +166,7 @@
               <HTMLEditor bind:html={editableHtml} bind:editor tabindex={1}
                 fixedImageSize={true}
                 onImagePaste={onImagePaste}
+                onFilesPaste={files => addAttachmentsOrCloudLinks(mail, files, editor)}
                 extraExtensions={composeEditorExtensions}
                 on:change={onEditorChange} />
               <MentionSuggest {editor} {mail} searchFunction={searchContactsInOwner} />
