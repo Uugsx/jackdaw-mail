@@ -79,7 +79,7 @@
     "features.sending.title": "Sending",
     "features.sending.text": "Undo send for a few seconds and “Send later”, message templates, @mentions, voting buttons, replies to read-receipt requests. A large file can go as a link from Nextcloud or openCloud.",
     "features.inbox.title": "Inbox triage",
-    "features.inbox.text": "Snooze a message until a set time, pin it to the top of the list, Focused and Other tabs, clean-up of messages fully quoted in later replies, multi-step Quick Steps, safe and blocked sender lists, “Report phishing”. PDF, Word and Excel attachments open for preview inside the app.",
+    "features.inbox.text": "Snooze a message until a set time, pin it to the top of the list, Focused and Other tabs, clean-up of messages fully quoted in later replies, multi-step Quick Steps, safe and blocked sender lists, “Report phishing”. PDF, Word and Excel attachments open for preview inside the app: zoom, rotate and copy images, search and print PDFs.",
     "features.calendar.title": "Calendar and contacts",
     "features.calendar.text": "Events, invitations and reminders; “Propose new time”, working hours, Exchange room booking and printing a day, week or month. Personal address books, groups and the organization's global address list.",
     "features.calls.title": "Calls and chat · Pro",
