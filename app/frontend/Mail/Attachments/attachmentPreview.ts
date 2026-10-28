@@ -40,6 +40,9 @@ export function canPreviewAttachment(attachment: Attachment): boolean {
   return !!previewKind(attachment.filename, attachment.mimeType);
 }
 
+/** Word, Excel и текст разбираются целиком в памяти; больше этого — только во внешнем приложении */
+export const kMaxHTMLPreviewBytes = 25 * 1024 * 1024;
+
 const kDocumentStyle = `<style>
   body { font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; margin: 24px; color: #111; background: #fff; }
   table { border-collapse: collapse; margin-bottom: 16px; }
@@ -113,11 +116,12 @@ async function convertToPNG(content: Blob): Promise<Blob> {
 }
 
 /** Открывает окно предпросмотра над приложением.
- * @param gallery Вложения, между которыми можно листать; по умолчанию — картинки того же сообщения */
-export async function previewAttachment(attachment: Attachment, gallery?: Attachment[]): Promise<void> {
+ * @param gallery Вложения, между которыми можно листать; по умолчанию — картинки того же сообщения
+ * @param showUnsupported Для неподдерживаемого или недоступного файла показать окно с пояснением, а не открывать внешнее приложение */
+export async function previewAttachment(attachment: Attachment, gallery?: Attachment[], showUnsupported = false): Promise<void> {
   let loaded = await loadAttachmentContent(attachment);
   let kind = previewKind(loaded.filename, loaded.mimeType);
-  if (!kind || !loaded.content) {
+  if (!showUnsupported && (!kind || !loaded.content)) {
     await loaded.openOSApp();
     return;
   }
