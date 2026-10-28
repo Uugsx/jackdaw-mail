@@ -95,6 +95,7 @@
   import { selectedDraft, selectedEditor } from "./selected";
   import HTMLEditorToolbar from "../Shared/Editor/HTMLEditorToolbar.svelte";
   import HTMLEditor from "../Shared/Editor/HTMLEditor.svelte";
+  import { classifyPastedFiles, filesFromClipboard } from "../Shared/Editor/clipboardFiles";
   import FileDropTarget from "../Mail/Composer/Attachments/FileDropTarget.svelte";
   import AttachmentsPane from "../Mail/Composer/Attachments/AttachmentsPane.svelte";
   import GraphicSelector from "./Emoji/GraphicSelector.svelte";
@@ -211,10 +212,9 @@
   /** Ctrl+V с файлом или снимком экрана: вложение, как при перетаскивании.
    * Иначе редактор вставлял картинку в текст (base64), а она не доходила до собеседника. */
   function onPaste(event: ClipboardEvent) {
-    let files = Array.from(event.clipboardData?.items ?? [])
-      .filter(item => item.kind == "file")
-      .map(item => item.getAsFile())
-      .filter((file): file is File => !!file)
+    // Файл из Finder приходит вместе с картинкой-иконкой: иконку не прикрепляем
+    let pasted = classifyPastedFiles(filesFromClipboard(event.clipboardData));
+    let files = [...pasted.attach, ...pasted.inline]
       .map(file => file.name && file.name != "image.png" ? file : renamePastedImage(file));
     if (!files.length) {
       return;
