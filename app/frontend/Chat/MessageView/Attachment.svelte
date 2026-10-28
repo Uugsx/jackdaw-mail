@@ -2,10 +2,6 @@
   shows as a file chip you can open or drag out. The bytes arrive via a background
   download (WhatsApp/XMPP) or are already present (our own outgoing message), and
   `Attachment` is observable, so this updates when `content`/`size` fill in. -->
-{#if viewing && $attachment.blobURL}
-  <ImageViewer url={$attachment.blobURL} filename={$attachment.filename}
-    onSave={() => attachment.saveFile()} close={() => viewing = false} />
-{/if}
 {#if isImage}
   <vbox class="image-wrap">
     {#if $attachment.content}
@@ -76,7 +72,8 @@
 <script lang="ts">
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { fileSize } from "../../Files/file";
-  import { openFileInternallyFromFile, canOpenFileInternally } from "../../Files/open";
+  import { openFileInternally, canOpenFileInternally } from "../../Files/open";
+  import { canPreviewAttachment, previewAttachment } from "../../Mail/Attachments/attachmentPreview";
   import AttachmentMenu from "../../Mail/Message/AttachmentMenu.svelte";
   import FileIcon from "../../Files/Thumbnail/FileIcon.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
@@ -84,11 +81,9 @@
   import Button from "../../Shared/Button.svelte";
   import RetryIcon from "lucide-svelte/icons/rotate-cw";
   import { JackdawChatAttachment } from "../../../logic/Chat/Jackdaw/JackdawChatMessage";
-  import ImageViewer from "./ImageViewer.svelte";
   import { t } from "../../../l10n/l10n";
 
   export let attachment: Attachment;
-  let viewing = false;
 
   $: isImage = $attachment.mimeType?.startsWith("image/");
   /** Файл чата Jackdaw не скачался: показываем ошибку с повтором вместо вечного «Downloading…» */
@@ -110,14 +105,14 @@
     if (!attachment.content) {
       return; // not downloaded yet
     }
-    if (isImage) {
-      viewing = true; // картинку смотрим здесь же, а не через сохранение файла
-      return;
-    }
-    if (canOpenFileInternally(attachment.mimeType)) {
-      await openFileInternallyFromFile(attachment.content);
+    // Как у вложений письма: .eml — в просмотре писем, картинки (и GIF), PDF, Office и текст —
+    // во встроенном просмотре, остальное — внешней программой
+    if (canOpenFileInternally(attachment.mimeType) || attachment.filename?.toLowerCase().endsWith(".eml")) {
+      await openFileInternally(new Uint8Array(await attachment.content.arrayBuffer()), "message/rfc822");
+    } else if (canPreviewAttachment(attachment)) {
+      await previewAttachment(attachment);
     } else {
-      await attachment.saveFile(); // offer to save the blob to disk
+      await attachment.openOSApp();
     }
   }
 
