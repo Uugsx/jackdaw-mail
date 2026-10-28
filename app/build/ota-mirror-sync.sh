@@ -28,8 +28,8 @@ done
 ls -la "$STAGE"
 
 # Сначала установщики и blockmap, манифесты последними: клиент не увидит версию без файла
-rsync -rlpt --partial --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
-rsync -rlpt -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
+rsync -rlt --no-perms --chmod=D755,F644 --partial --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
+rsync -rlt --no-perms --chmod=D755,F644 -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
 
 # Храним последние $KEEP версий каждого установщика
 prune() {
