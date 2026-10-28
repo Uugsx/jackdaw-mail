@@ -589,16 +589,23 @@
 
   function resolvePaddleConfig(serverConfig) {
     if (!paddleSiteConfig || !serverConfig || serverConfig.configured !== true) return null;
-    const environment = paddleSiteConfig.environment;
+    // Окружение и цены задаёт сервер (license.env), переход Sandbox → Live не требует правки сайта.
+    // Если в billing-config.js они всё же закреплены, они должны совпасть с серверными.
+    const environment = serverConfig.environment;
     const expectedPrefix = PADDLE_TOKEN_PREFIXES[environment];
     const token = serverConfig.clientToken;
-    const prices = paddleSiteConfig.prices || {};
     const serverPrices = serverConfig.prices || {};
-    if (!expectedPrefix || serverConfig.environment !== environment) return null;
+    const pinnedPrices = paddleSiteConfig.prices || null;
+    if (!expectedPrefix) return null;
+    if (paddleSiteConfig.environment && paddleSiteConfig.environment !== environment) return null;
     if (typeof token !== 'string' || !PADDLE_TOKEN_RE.test(token) || !token.startsWith(expectedPrefix)) return null;
-    const pricesMatch = ['monthly', 'yearly'].every((plan) => PADDLE_PRICE_RE.test(prices[plan] || '')
-      && serverPrices[plan] === prices[plan]);
-    if (!pricesMatch) return null;
+    const prices = {};
+    const pricesMatch = ['monthly', 'yearly'].every((plan) => {
+      prices[plan] = serverPrices[plan];
+      return PADDLE_PRICE_RE.test(prices[plan] || '')
+        && (!pinnedPrices || !pinnedPrices[plan] || pinnedPrices[plan] === prices[plan]);
+    });
+    if (!pricesMatch || prices.monthly === prices.yearly) return null;
     let scriptUrl;
     try {
       scriptUrl = new URL(paddleSiteConfig.scriptUrl);

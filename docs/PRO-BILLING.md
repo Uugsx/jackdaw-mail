@@ -52,7 +52,7 @@
 4. На сервере лицензий задать `PADDLE_ENVIRONMENT=sandbox`, `PADDLE_MONTHLY_PRICE_ID`, `PADDLE_YEARLY_PRICE_ID`, `PADDLE_PRODUCT_ID` и перезапустить сервис. `GET /healthz` вернёт `paddleConfigured: true`.
 5. Проверить покупку тестовой картой Paddle Sandbox и повтор события через **Notifications → Replay**.
 
-Переход на Live: отдельный аккаунт Paddle Live с собственными продуктом, ценами, токеном `live_...` и секретом; на сервере `PADDLE_ENVIRONMENT=production` и новые значения, на сайте `environment: 'production'` и новые ID цен в `site/billing-config.js`. Сайт открывает checkout только при совпадении окружения и цен с сервером.
+Переход на Live: отдельный аккаунт Paddle Live с собственными продуктом, ценами, токеном `live_...` и секретом; на сервере `PADDLE_ENVIRONMENT=production` и новые значения (скрипт `license_server/tools/paddle_switch.py` в закрытом репозитории `jackdaw-servers`, пошаговая инструкция — `docs/PADDLE-LIVE.md` там же). Окружение и ID цен сайт берёт с сервера из `/v1/public-config`, правка сайта и выкладка клиента не нужны.
 
 Поток покупки через Paddle:
 
@@ -147,7 +147,7 @@ VITE_BILLING_LICENSE_API_URL=https://license.jackdaw-mail.pro
 VITE_BILLING_ENTITLEMENT_PUBLIC_KEY=<публичный Ed25519-ключ>
 ```
 
-Сайт берёт клиентский токен Paddle только из `/v1/public-config`; в `site/billing-config.js` хранятся окружение и публичные ID цен. Если Paddle не настроен, кнопки покупки работают по-старому.
+Сайт берёт клиентский токен Paddle только из `/v1/public-config`; в `site/billing-config.js` хранятся только адрес скрипта Paddle.js и ссылки; окружение и ID цен приходят с сервера (при желании их можно закрепить в `billing-config.js`: тогда они должны совпасть с серверными). Если Paddle не настроен, кнопки покупки работают по-старому.
 
 Для статического сайта checkout-кнопки уже ведут только на собственный allowlist-адрес `https://license.jackdaw-mail.pro/buy/monthly` или `/buy/yearly`. Сервер перенаправит их в Lemon Squeezy только после заполнения своих переменных окружения; до этого он показывает честную страницу «магазин не подключён».
 
@@ -281,7 +281,7 @@ Paddle:
 - пройти в Paddle Dashboard оставшиеся шаги проверки аккаунта и создать каталог в Live;
 - прогнать в Sandbox: успешную оплату месячной и годовой подписки, отказ карты, повтор webhook, продление (Sandbox позволяет ускорить биллинг), отмену в конце периода, `past_due`, полный возврат;
 - отозвать в `/admin` ключи с заметкой «Paddle Sandbox»;
-- переключить переменные сервера и `site/billing-config.js` на Live одновременно.
+- переключить переменные сервера на Live (сайт подхватит окружение и цены сам).
 
 Lemon Squeezy (если вернуться к нему):
 
