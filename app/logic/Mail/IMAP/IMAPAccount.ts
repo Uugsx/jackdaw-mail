@@ -153,7 +153,7 @@ export class IMAPAccount extends MailAccount {
         connectionTimeout: 5 * 1000, // 5 s connection timeout
         greetingTimeout: 5 * 1000, // 5 s greeting timeout
         socketTimeout: purpose == ConnectionPurpose.Main
-          ? (2 * kIDLERenewalSeconds) * 1000 + 1 * 60 * 1000 // 2 * 5 min IDLE + 1 min leeway
+          ? kIDLERenewalSeconds * 1000 + 2 * 60 * 1000 // 1 IDLE renewal (5 min) + 2 min leeway: после сна сокет молчит, не закрываясь
           : 10 * 60 * 1000, // 10 min - Fetch/Display connections time one when unused, and we re-create them on demand
         logger: false, // true, // Run backend using: `yarn run dev | npx pino-pretty -i time,msg`
         emitLogs: this.logLibrary,
@@ -294,9 +294,51 @@ export class IMAPAccount extends MailAccount {
       let newConn = await this.connection(false, purpose);
       if (purpose == ConnectionPurpose.Main) {
         await this.startIDLE(newConn);
+        // Пока соединения не было, IDLE не присылал EXISTS: письма, пришедшие за это время,
+        // иначе ждали бы очередного опроса.
+        this.catchUpInbox();
       }
       return newConn;
     });
+  }
+
+  /** Забрать письма и счётчики, пропущенные без связи */
+  protected catchUpInbox(): void {
+    (this.inbox as IMAPFolder)?.fetchNewMailQuick()
+      .catch(this.errorCallback);
+  }
+
+  /** Закрыть запасное соединение (Fetch), которое могло зависнуть: команды на таком сокете
+   * не возвращаются до таймаута, а следующий запрос создаст новое. */
+  resetFetchConnection(): void {
+    let conn = this.connections.get(ConnectionPurpose.Fetch);
+    if (conn) {
+      this.dropConnection(conn);
+    }
+  }
+
+  /** После сна компьютера или смены сети сокеты часто остаются «живыми» только на вид:
+   * `close` не приходит, IDLE молчит, команды висят до таймаута. Пересоздаём соединения
+   * и забираем пропущенную почту. */
+  async recoverAfterWake(): Promise<void> {
+    for (let purpose of [ConnectionPurpose.Fetch, ConnectionPurpose.Display]) {
+      let conn = this.connections.get(purpose);
+      if (conn) {
+        this.dropConnection(conn);
+      }
+    }
+    let main = this.connections.get(ConnectionPurpose.Main);
+    if (!main) {
+      return; // Не вошли: повторный вход делает checkAccounts()
+    }
+    try {
+      await retryOnTransientError(() => this.reconnect(main, ConnectionPurpose.Main), 3, 4);
+    } catch (ex) {
+      if (!ex?.authFail) {
+        this.reconnectMainInBackground(main);
+      }
+      throw ex;
+    }
   }
 
   /** Растёт при logout(): фоновое переподключение после выхода не должно входить снова */

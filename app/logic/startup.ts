@@ -18,6 +18,7 @@ import { production, webMail } from './build';
 import { retryOnTransientError } from './util/netUtil';
 import { catchErrors, logError, showError } from '../frontend/Util/error';
 import { OWAAccount } from './Mail/OWA/OWAAccount';
+import { IMAPAccount } from './Mail/IMAP/IMAPAccount';
 import { assert, sleep } from './util/util';
 import { refreshProEntitlement } from './Billing/ProEntitlement';
 import { retryWhileDatabaseBusy, type DatabaseBusyCallback } from './util/retryWhileDatabaseBusy';
@@ -202,6 +203,10 @@ function checkAccounts(): void {
     if (account.isLoggedIn && !account.isDependentAccount) {
       if (account instanceof OWAAccount) {
         account.recoverAfterNetworkRestored().catch(account.errorCallback);
+      } else if (account instanceof IMAPAccount) {
+        // Соединения после сна «мёртвые»: пересоздаём, а не пишем в них
+        account.recoverAfterWake()
+          .catch(account.errorCallback);
       } else {
         account.inbox?.getNewMessages()
           .catch(account.errorCallback);

@@ -23,6 +23,12 @@ import { trackMailSync } from "../mailSyncStatus";
  */
 const kDeletionGracePeriodMs = 180_000;
 
+/** Опрос не должен висеть дольше: после сна сокет молчит до таймаута в 10 минут,
+ * а пока опрос «в работе», следующие тики пропускаются. */
+const kPollTimeoutMs = 90_000;
+/** Опрос не реже: при живом IDLE это страховка, при мёртвом — единственный источник почты */
+const kMaxPollIntervalMinutes = 5;
+
 export class IMAPFolder extends Folder {
   declare account: IMAPAccount;
   declare readonly messages: EMailCollection<IMAPEMail>;
@@ -35,6 +41,7 @@ export class IMAPFolder extends Folder {
   /** Таймеры снятия защиты `deletions` по UID, @see releaseDeletion() */
   protected deletionReleaseTimers = new Map<number, ReturnType<typeof setTimeout>>();
   protected returnToInboxDebounce = new Debounce(2);
+  protected statusRecheckDebounce = new Debounce(3);
 
   constructor(account: IMAPAccount) {
     super(account);
@@ -455,6 +462,12 @@ export class IMAPFolder extends Folder {
   private async getNewMessagesUntracked(_recentOnly = false, refreshStatus = true): Promise<Collection<IMAPEMail>> {
     let newMsgs = await this.listNewMessages(refreshStatus);
     await this.downloadMessages(newMsgs);
+    if (newMsgs.hasItems) {
+      if (this.raiseCountsToLocal() && this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+      this.scheduleStatusRecheck();
+    }
     await this.checkDeletedMessages(this.getRecentMsg()?.uid);
     return newMsgs;
   }
@@ -598,7 +611,7 @@ export class IMAPFolder extends Folder {
 
     this.poller = setInterval(() => {
       this.pollRun().catch(this.account.errorCallback);
-    }, intervalMinutes * 1000 * 60);
+    }, Math.min(intervalMinutes, kMaxPollIntervalMinutes) * 1000 * 60);
     // Do not wait for the first interval after login or reconnection.
     this.pollRun().catch(this.account.errorCallback);
   }
@@ -616,11 +629,47 @@ export class IMAPFolder extends Folder {
       return;
     }
     this.pollInFlight = true;
+    let timer: ReturnType<typeof setTimeout>;
     try {
-      await this.fetchNewMailQuick();
+      let run = this.fetchNewMailQuick();
+      run.catch(() => {}); // Ошибку при таймауте покажет race ниже
+      await Promise.race([
+        run,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            this.account.resetFetchConnection();
+            reject(Object.assign(new Error(`IMAP poll timed out: ${this.account.hostname}`), { code: "ETIMEDOUT" }));
+          }, kPollTimeoutMs);
+        }),
+      ]);
     } finally {
+      clearTimeout(timer);
       this.pollInFlight = false;
     }
+  }
+
+  /** Нижняя граница по локальным письмам. STATUS у Gmail сразу после EXISTS бывает
+   * устаревшим: письмо уже в списке, а счётчик ещё без него. */
+  protected raiseCountsToLocal(): boolean {
+    let local = this.messages.contents;
+    let localUnread = local.filter(msg => !msg.isRead).length;
+    let changed = false;
+    if (local.length > this.countTotal) {
+      this.countTotal = local.length;
+      changed = true;
+    }
+    if (localUnread > this.countUnread) {
+      this.countUnread = localUnread;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /** Повторно спросить сервер о счётчиках чуть позже: сразу после события они бывают устаревшими */
+  protected scheduleStatusRecheck(): void {
+    this.statusRecheckDebounce.debounce(async () => {
+      await this.refreshStatus();
+    }).catch(this.account.errorCallback);
   }
 
   /**
@@ -667,8 +716,19 @@ export class IMAPFolder extends Folder {
       ? { uid: uid }
       : { seq: seq }; // needs to happen on the same IMAP connection where we got the seq number from
     this.account.log(this, connection, "notify: message flags changed", "uid", uid, "seq", seq, "found email UID", uid);
+    let known = uid ? this.getEMailByUID(uid) : null;
+    let wasRead = known?.isRead;
     let { updatedMessages } = await this.fetchFlags(query, {}, connection);
     await this.saveMsgUpdates(updatedMessages);
+    // Письмо прочитали или вернули в непрочитанные в другом клиенте: счётчик
+    // меняется сразу, а не при следующем опросе.
+    if (known && wasRead !== undefined && known.isRead != wasRead) {
+      this.countUnread = Math.max(0, this.countUnread + (known.isRead ? -1 : 1));
+      if (this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+    }
+    this.scheduleStatusRecheck();
   }
 
   /** We received an event from the server that a
