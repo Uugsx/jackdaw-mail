@@ -98,6 +98,7 @@
   } from "./ReportSession";
   import { openEMailMessage } from "../Mail/open";
   import ReportPanelControls from "./ReportPanelControls.svelte";
+  import ReportMessagePanel from "./ReportMessagePanel.svelte";
   import ReportSortButton from "./ReportSortButton.svelte";
   import { openLiveSlaWidget } from "../Widgets/widgetState";
   import { createReportHTML, downloadTextFile } from "./ReportsExport";
@@ -195,6 +196,22 @@
   let exporting: "html" | null = null;
   let responseOpenError: Error | null = null;
   let openingResponseEmailId: number | null = null;
+  type ResponseRow = ReportData["mail"]["responseTimes"][number];
+  /** Письмо, открытое в боковой панели отчёта, и таблица, из которой оно выбрано. */
+  let messagePanel: {
+    response: ResponseRow;
+    source: "details" | "outside";
+  } | null = null;
+  let messagePanelComponent: ReportMessagePanel | undefined;
+  $: messagePanelRows =
+    messagePanel?.source == "outside"
+      ? renderedOutsideWorkingHoursResponseTimes
+      : renderedResponseTimes;
+  $: messagePanelIndex = messagePanel
+    ? messagePanelRows.findIndex(
+        (row) => row.emailId == messagePanel?.response.emailId,
+      )
+    : -1;
   let selectedRhythmCategoryName = "";
   let reportRequestId = 0;
   let categoryFilter: string[] | null = null;
@@ -729,6 +746,7 @@
   }
 
   function closeReportViewer(): void {
+    messagePanel = null;
     reportViewerOpen = false;
     dashboardLayoutMode = false;
     draggedPanelId = null;
@@ -763,6 +781,10 @@
       reportViewerOpen
     ) {
       event.preventDefault();
+      if (messagePanel) {
+        closeReportMessagePanel();
+        return;
+      }
       closeReportViewer();
     }
   }
@@ -1413,6 +1435,36 @@
     return employeeNames.length
       ? employeeNames.join(", ")
       : response.responderAccountName || response.accountName;
+  }
+
+  function openReportMessagePanel(
+    response: ResponseRow,
+    source: "details" | "outside",
+  ): void {
+    responseOpenError = null;
+    messagePanel = { response, source };
+    void messagePanelComponent?.focusPanel();
+  }
+
+  function closeReportMessagePanel(): void {
+    messagePanel = null;
+  }
+
+  function stepReportMessagePanel(step: -1 | 1): void {
+    const next = messagePanelRows[messagePanelIndex + step];
+    if (!messagePanel || !next) return;
+    messagePanel = { ...messagePanel, response: next };
+    void tick().then(() =>
+      document
+        .querySelector(".email-link.active-message")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+  }
+
+  function openReportMessagePanelInMail(): void {
+    if (messagePanel) {
+      void openReportEmail(messagePanel.response);
+    }
   }
 
   async function openReportEmail(
@@ -3254,10 +3306,13 @@
                                 <button
                                   type="button"
                                   class="email-link"
-                                  disabled={openingResponseEmailId ==
-                                    response.emailId}
+                                  class:active-message={messagePanel?.source ==
+                                    "details" &&
+                                    messagePanel.response.emailId ==
+                                      response.emailId}
                                   aria-label={`${$t`Open email`}: ${response.subject}`}
-                                  on:click={() => openReportEmail(response)}
+                                  on:click={() =>
+                                    openReportMessagePanel(response, "details")}
                                 >
                                   <MailIcon size="13px" />
                                   <span>{response.subject}</span>
@@ -3464,11 +3519,14 @@
                               <button
                                 type="button"
                                 class="email-link"
-                                disabled={openingResponseEmailId ==
-                                  response.emailId}
+                                class:active-message={messagePanel?.source ==
+                                  "outside" &&
+                                  messagePanel.response.emailId ==
+                                    response.emailId}
                                 aria-label={`${$t`Open email`}: ${response.subject}`}
                                 title={`${$t`Open email`}: ${response.subject || $t`(no subject)`}`}
-                                on:click={() => openReportEmail(response)}
+                                on:click={() =>
+                                  openReportMessagePanel(response, "outside")}
                               >
                                 <MailIcon size="13px" />
                                 <span>{response.subject}</span>
@@ -5284,6 +5342,24 @@
           {$t`The mail archive stores the current category, not when it was assigned, so the report cannot reconstruct the exact moment a request was taken into work.`}
         </p>
       </div>
+      {#if messagePanel}
+        <ReportMessagePanel
+          bind:this={messagePanelComponent}
+          target={{
+            accountId: messagePanel.response.accountId,
+            folderId: messagePanel.response.folderId,
+            emailId: messagePanel.response.emailId,
+          }}
+          subject={messagePanel.response.subject}
+          hasPrevious={messagePanelIndex > 0}
+          hasNext={messagePanelIndex >= 0 &&
+            messagePanelIndex < messagePanelRows.length - 1}
+          on:close={closeReportMessagePanel}
+          on:previous={() => stepReportMessagePanel(-1)}
+          on:next={() => stepReportMessagePanel(1)}
+          on:openInMail={openReportMessagePanelInMail}
+        />
+      {/if}
     </div>
   {:else}
     <section class="report-ready-panel" aria-labelledby="report-ready-title">
@@ -7406,6 +7482,11 @@
   .response-day-table th:not(:first-child),
   .response-day-table td:not(:first-child) {
     width: 18.5%;
+  }
+
+  .email-link.active-message {
+    color: var(--reports-accent);
+    font-weight: 700;
   }
 
   .email-link:hover:not(:disabled) {
