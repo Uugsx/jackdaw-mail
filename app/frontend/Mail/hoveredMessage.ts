@@ -1,6 +1,13 @@
 import { get } from "svelte/store";
 import type { EMail } from "../../logic/Mail/EMail";
 import { selectedMessage, selectedMessages } from "./Selected";
+import { getLocalStorage } from "../Util/LocalStorage";
+
+/**
+ * Горячие клавиши действуют на письмо под курсором (по умолчанию включено).
+ * Выключено: только на выделенное письмо или выделение.
+ */
+export const hotkeysOnHoveredMessageSetting = getLocalStorage<boolean>("mail.hotkeys.hovered", true);
 
 /**
  * Письмо под курсором мыши для горячих клавиш действий, как в Outlook:
@@ -11,6 +18,15 @@ import { selectedMessage, selectedMessages } from "./Selected";
  * в момент нажатия: FastList переиспользует DOM-элементы при прокрутке,
  * поэтому pointerenter/pointerleave отдельной строки ненадёжны.
  */
+
+function isHotkeysOnHoveredMessageEnabled(): boolean {
+  try {
+    return hotkeysOnHoveredMessageSetting.value !== false;
+  } catch {
+    // Хранилище недоступно — остаётся поведение по умолчанию
+    return true;
+  }
+}
 
 const kRowAttribute = "data-hover-message-row";
 const rowMessages = new WeakMap<Element, EMail>();
@@ -62,6 +78,9 @@ export function hoverMessageRow(node: HTMLElement, message: EMail) {
 
 /** Письмо строки, над которой сейчас курсор, или null. */
 export function getHoveredMessage(): EMail | null {
+  if (!isHotkeysOnHoveredMessageEnabled()) {
+    return null;
+  }
   if (!pointerMovedSinceKeyboardNavigation || typeof document == "undefined") {
     return null;
   }

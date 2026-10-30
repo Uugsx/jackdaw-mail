@@ -73,7 +73,7 @@
     "features.related.title": "Related messages",
     "features.related.text": "A button in the message header finds messages with the same case number, from the same conversation or with a similar subject. The search runs only when you click it, so opening a message stays fast.",
     "features.mail.title": "Mail",
-    "features.mail.text": "Folders, search and saved searches, rules, quick filters, categories and tags, flags, archive, undo for delete, notifications set per folder, keyboard shortcuts that act on the message under the mouse pointer without changing the selection, a customisable toolbar. Emptying Exchange Deleted Items also removes meetings, contacts, tasks, notes and subfolders. PGP and S/MIME encryption if you have keys.",
+    "features.mail.text": "Folders, search and saved searches, rules, quick filters, categories and tags, flags, archive, undo for delete, notifications set per folder, keyboard shortcuts that act on the message under the mouse pointer (can be turned off in settings) without changing the selection, a customisable toolbar. Emptying Exchange Deleted Items also removes meetings, contacts, tasks, notes and subfolders. PGP and S/MIME encryption if you have keys.",
     "features.exchange.title": "Exchange features",
     "features.exchange.text": "Out-of-office replies with a schedule and a separate text for external senders, server-side inbox rules, tasks and flags with due dates, notes, server search across the mailbox, distribution list members, manager and direct reports from the directory, sending on behalf of a shared mailbox or a manager. All of this is stored on the Exchange server, so Outlook shows it too.",
     "features.sending.title": "Sending",

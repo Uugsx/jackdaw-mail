@@ -14,6 +14,7 @@ vi.mock("../../../frontend/Mail/LeftPane/SearchSwitcher.svelte", () => ({
 
 import {
   getHoveredMessage,
+  hotkeysOnHoveredMessageSetting,
   getMailActionTargets,
   resolveMailActionTargets,
 } from "../../../frontend/Mail/hoveredMessage";
@@ -43,12 +44,25 @@ describe("письмо под курсором для горячих клави�
   });
 });
 
+function memoryStorage(): Storage {
+  let data = new Map<string, string>();
+  return {
+    getItem: key => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, String(value)),
+    removeItem: key => void data.delete(key),
+    clear: () => data.clear(),
+    key: index => [...data.keys()][index] ?? null,
+    get length() { return data.size; },
+  } as Storage;
+}
+
 describe("отслеживание строки под курсором", () => {
   let previousMessage: EMail | undefined;
   let previousMessages: ArrayColl<EMail>;
   let hover: ReturnType<typeof hoverRow> | null = null;
 
   beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
     previousMessage = get(selectedMessage);
     previousMessages = get(selectedMessages);
     selectedMessage.set(a);
@@ -56,6 +70,7 @@ describe("отслеживание строки под курсором", () => 
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     hover?.leave();
     hover = null;
     document.body.classList.remove("mail-webview-pointer-active");
@@ -105,5 +120,23 @@ describe("отслеживание строки под курсором", () => 
     hover = hoverRow(b);
     document.body.classList.add("mail-webview-pointer-active");
     expect(getHoveredMessage()).toBeNull();
+  });
+
+  test("настройка выключена — горячие клавиши только на выделенное", () => {
+    hover = hoverRow(b);
+    expect(getMailActionTargets()).toEqual({ messages: [b], hoverOnly: true });
+    hotkeysOnHoveredMessageSetting.value = false;
+    try {
+      expect(getHoveredMessage()).toBeNull();
+      expect(getMailActionTargets()).toEqual({ messages: [a], hoverOnly: false });
+    } finally {
+      hotkeysOnHoveredMessageSetting.value = true;
+    }
+    expect(getHoveredMessage()).toBe(b);
+  });
+
+  test("по умолчанию настройка включена", () => {
+    localStorage.removeItem("mail.hotkeys.hovered");
+    expect(hotkeysOnHoveredMessageSetting.value).toBe(true);
   });
 });
