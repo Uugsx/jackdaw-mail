@@ -39,3 +39,43 @@ export async function openPendingResponseMessage(
   }
   await openEMailMessage(email);
 }
+
+/** Находит письмо по идентификаторам из отчёта и читает его из базы, не открывая вкладку «Почта». */
+export async function loadReportMessage(
+  candidate: Pick<PendingResponseRequest, "accountId" | "folderId" | "emailId">,
+): Promise<EMail> {
+  const account = appGlobal.emailAccounts.find(
+    (item) =>
+      item instanceof MailAccount &&
+      String(item.dbID) == String(candidate.accountId),
+  );
+  if (!(account instanceof MailAccount)) {
+    throw new Error(gt`The mailbox for this message is not available.`);
+  }
+  await account.readFromDB();
+  // Письмо могли переместить в другую папку: читаем его по идентификатору,
+  // а папка нужна только как владелец объекта.
+  const folder =
+    account.findFolder(
+      (item) => String(item.dbID) == String(candidate.folderId),
+    ) ?? account.inbox;
+  if (!folder) {
+    throw new Error(gt`The folder for this message is not available.`);
+  }
+  let email = folder.messages.find(
+    (item) => String(item.dbID) == String(candidate.emailId),
+  );
+  if (!email) {
+    email = folder.newEMail();
+    email.dbID = candidate.emailId;
+    try {
+      await email.storage.readMessage(email);
+    } catch (ex) {
+      throw new Error(
+        gt`This message was deleted or moved and can no longer be opened.`,
+        { cause: ex },
+      );
+    }
+  }
+  return email;
+}
