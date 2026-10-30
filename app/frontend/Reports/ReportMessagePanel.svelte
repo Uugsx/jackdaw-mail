@@ -3,16 +3,22 @@
   почты, не покидая вкладку отчёта. Закрытие — Esc или кнопка, соседние строки
   таблицы — кнопки и Alt+↑/↓.
 -->
-<aside
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="panel-backdrop" on:click|self={() => dispatch("close")}>
+<div
   class="report-message-panel"
-  role="complementary"
+  class:fullscreen
+  role="dialog"
+  aria-modal="true"
   aria-label={$t`Message`}
   bind:this={panelElement}
   tabindex="-1"
+  style:transform={`translate(${offsetX}px, ${offsetY}px)`}
   on:keydown={onKeydown}
 >
-  <header class="panel-bar">
-    <h3 class="panel-title" title={subject}>{subject || $t`(no subject)`}</h3>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <header class="panel-bar" on:pointerdown={startDrag}>
+    <h3 class="panel-title" title={shownSubject}>{shownSubject || $t`(no subject)`}</h3>
     <button
       type="button"
       class="panel-button"
@@ -45,6 +51,15 @@
     <button
       type="button"
       class="panel-button"
+      title={fullscreen ? $t`Exit full screen` : $t`Full screen`}
+      aria-label={fullscreen ? $t`Exit full screen` : $t`Full screen`}
+      on:click={toggleFullscreen}
+    >
+      {#if fullscreen}<MinimizeIcon size="16px" />{:else}<MaximizeIcon size="16px" />{/if}
+    </button>
+    <button
+      type="button"
+      class="panel-button"
       title={$t`Close`}
       aria-label={$t`Close`}
       on:click={() => dispatch("close")}
@@ -72,10 +87,11 @@
       {/key}
     {/if}
   </div>
-</aside>
+</div>
+</div>
 
 <script lang="ts">
-  import { createEventDispatcher, onMount, tick } from "svelte";
+  import { createEventDispatcher, onMount, setContext, tick } from "svelte";
   import type { EMail } from "../../logic/Mail/EMail";
   import { loadReportMessage } from "../Mail/openPendingResponse";
   import { mailApp } from "../Mail/MailJackdawApp";
@@ -87,6 +103,9 @@
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import ExternalLinkIcon from "lucide-svelte/icons/external-link";
   import CloseIcon from "lucide-svelte/icons/x";
+  import MaximizeIcon from "lucide-svelte/icons/maximize-2";
+  import MinimizeIcon from "lucide-svelte/icons/minimize-2";
+  import { kOpenMessageContext } from "../Mail/openMessageContext";
 
   /** Идентификаторы письма из строки отчёта. */
   export let target: { accountId: number; folderId: number; emailId: number };
@@ -107,6 +126,16 @@
   let loadError: unknown = null;
   let loadedKey = "";
   let loadToken = 0;
+  let fullscreen = false;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  $: shownSubject = message?.subject || subject;
+
+  // «Показать ответ» и связанные письма открываются в этой же панели, а не в почте.
+  setContext(kOpenMessageContext, (next: EMail) => {
+    message = next;
+  });
 
   $: targetKey = `${target.accountId}/${target.folderId}/${target.emailId}`;
   $: if (targetKey != loadedKey) {
@@ -153,10 +182,35 @@
     }
   }
 
+  function toggleFullscreen(): void {
+    fullscreen = !fullscreen;
+    offsetX = 0;
+    offsetY = 0;
+  }
+
+  /** Окно можно сдвинуть, потянув за шапку (кнопки и заголовок остаются кликабельными). */
+  function startDrag(event: PointerEvent): void {
+    if (fullscreen || event.button != 0 || (event.target as HTMLElement).closest("button")) {
+      return;
+    }
+    const startX = event.clientX - offsetX;
+    const startY = event.clientY - offsetY;
+    const move = (e: PointerEvent) => {
+      offsetX = e.clientX - startX;
+      offsetY = e.clientY - startY;
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  }
+
   /** Передаёт фокус панели, чтобы Esc и Alt+↑/↓ работали сразу после клика по теме. */
   export async function focusPanel(): Promise<void> {
     await tick();
-    panelElement?.focus();
+    panelElement?.focus({ preventScroll: true });
   }
 
   /** Сообщение для кнопки «Открыть в почте»: нужен загруженный объект письма. */
@@ -170,22 +224,35 @@
 </script>
 
 <style>
-  .report-message-panel {
+  .panel-backdrop {
     position: absolute;
     z-index: 30;
-    top: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .report-message-panel {
     display: flex;
     flex-direction: column;
-    width: clamp(420px, 56%, 820px);
-    max-width: 100%;
+    width: min(1100px, calc(100% - 64px));
+    height: calc(100% - 64px);
     min-width: 0;
     box-sizing: border-box;
-    border-left: 1px solid var(--border);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     background: var(--main-bg, var(--bg));
     color: var(--main-fg);
-    box-shadow: -12px 0 32px color-mix(in srgb, #000 24%, transparent);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .report-message-panel.fullscreen {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
   }
 
   .report-message-panel:focus {
@@ -193,6 +260,7 @@
   }
 
   .panel-bar {
+    cursor: move;
     display: flex;
     flex: 0 0 auto;
     align-items: center;
@@ -277,7 +345,8 @@
   @media (max-width: 720px) {
     .report-message-panel {
       width: 100%;
-      min-width: 0;
+      height: 100%;
+      border-radius: 0;
     }
   }
 </style>

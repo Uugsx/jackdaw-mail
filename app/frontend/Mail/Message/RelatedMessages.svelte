@@ -26,9 +26,11 @@
     type RelatedMailReason,
   } from "../../../logic/Mail/RelatedEMail";
   import { openEMailMessage } from "../open";
+  import { getOpenMessageHandler } from "../openMessageContext";
   import { t } from "../../../l10n/l10n";
 
   export let message: EMail;
+  const openHere = getOpenMessageHandler();
 
   type RelatedState = "idle" | "loading" | "ready" | "error";
   let status: RelatedState = "idle";
@@ -134,6 +136,10 @@
 
   function openMatch(match: RelatedMailMatch) {
     popupOpen = false;
+    if (openHere) {
+      openHere(match.email);
+      return;
+    }
     void catchErrors(() => openEMailMessage(match.email));
   }
 
