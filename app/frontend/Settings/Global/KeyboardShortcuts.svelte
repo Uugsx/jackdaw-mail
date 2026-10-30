@@ -7,6 +7,12 @@
       {$t`Assign your own key combinations to mail actions. Custom shortcuts work while Mail is active and are ignored while typing.`}
     </hbox>
 
+    <label class="checkbox hover-target">
+      <input type="checkbox" checked={hotkeysOnHovered} on:change={toggleHotkeysOnHovered} />
+      <span>{$t`Shortcuts act on the message under the pointer`}</span>
+    </label>
+    <hbox class="hint font-small">{$t`On: a shortcut applies to the message under the mouse pointer. Off: only to the selected message or messages.`}</hbox>
+
     {#if captureActionId}
       <hbox class="capture-status" role="status" aria-live="polite">
         <span>{$t`Waiting for a key for`} <strong>{actionLabel(captureActionId)}</strong></span>
@@ -83,11 +89,18 @@
     getConfigurableKeyboardAction,
     type ConfigurableKeyboardActionId,
   } from "../../Keyboard/KeyboardActions";
+  import { hotkeysOnHoveredMessageSetting } from "../../Mail/hoveredMessage";
   import { findCategoryShortcut } from "../../Mail/CategoryShortcuts";
 
   let captureActionId: ConfigurableKeyboardActionId | null = null;
   let pendingModifier: { code: string; key: string } | null = null;
   let notice = "";
+
+  $: hotkeysOnHovered = $hotkeysOnHoveredMessageSetting.value !== false;
+
+  function toggleHotkeysOnHovered(): void {
+    $hotkeysOnHoveredMessageSetting.value = !hotkeysOnHovered;
+  }
 
   $: shortcutRevision = $keyboardShortcutsChanged;
 
@@ -181,6 +194,14 @@
 <style>
   .keyboard-shortcuts-settings {
     max-width: 56em;
+  }
+  .hover-target {
+    align-items: center;
+    gap: 8px;
+  }
+  .hint {
+    margin-block: 4px 12px;
+    opacity: 0.75;
   }
   .subtitle {
     margin-block-end: 12px;
