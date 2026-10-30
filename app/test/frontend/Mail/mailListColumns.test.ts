@@ -15,6 +15,7 @@ const {
   defaultMailListColumnPrefs,
   kMailListTableMinWidth,
   mailListColumnsSetting,
+  mailListColumnDefs,
   mailListGridTemplate,
   mailListTableFits,
   mailListSortColumn,
@@ -119,8 +120,28 @@ describe("настройки столбцов", () => {
     expect(template.match(/minmax\(/g)?.length).toBe(4);
     expect(template.match(/(?:^| )\d+px(?= |$)/g)?.length).toBe(visibleMailListColumns(prefs).length - 4);
     expect(template).toContain("minmax(60px, 250px)");
-    expect(template).toContain("minmax(max(120px, 30%), 1fr)");
+    expect(template).toContain("minmax(max(60px, 30%), 1fr)");
     expect(template).not.toContain("180px");
+  });
+
+  test("у темы есть ширина: она сужается до минимума, остаток пустой, сброс возвращает растяжение", () => {
+    let prefs = setMailListColumnWidth(defaultMailListColumnPrefs(), "subject", 10);
+    expect(prefs.widths.subject).toBe(mailListColumnDefs.subject.minWidth);
+    prefs = setMailListColumnWidth(prefs, "subject", 150);
+    expect(prefs.widths.subject).toBe(150);
+    expect(normalizeMailListColumnPrefs(prefs).widths.subject).toBe(150);
+    for (let width of [0, 1600]) {
+      let template = mailListGridTemplate(prefs, width);
+      expect(template).toContain(width ? "150px" : "minmax(60px, 150px)");
+      expect(template.endsWith(" minmax(0, 1fr)")).toBe(true);
+      expect(template).not.toContain("30%");
+    }
+    // Узкий список: тема с заданной шириной помещается, а не уходит в карточки
+    expect(mailListTableFits(prefs, 640)).toBe(true);
+    prefs = setMailListColumnWidth(prefs, "subject", null);
+    expect(prefs.widths.subject).toBeUndefined();
+    expect(mailListGridTemplate(prefs, 1600)).toContain("minmax(0, 1fr)");
+    expect(mailListGridTemplate(prefs, 1600).split("minmax(0, 1fr)").length).toBe(2);
   });
 
   test("по ширине списка: заданные ширины соблюдаются, а при нехватке места сжимаются", () => {
