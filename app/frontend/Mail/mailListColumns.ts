@@ -27,7 +27,7 @@ export interface MailListColumnDef {
   icon: boolean;
   defaultWidth: number;
   minWidth: number;
-  /** Занимает оставшееся место (тема) */
+  /** Занимает оставшееся место, пока ширина не задана (тема) */
   flexible: boolean;
   /** Нельзя скрыть: иначе строке нечего показать */
   required: boolean;
@@ -71,7 +71,7 @@ export const mailListColumnDefs: Readonly<Record<MailListColumnId, MailListColum
   attachment: iconColumn("attachment", () => gt`Attachment`),
   from: textColumn("from", () => gt`From`, 200, 60),
   subject: {
-    ...textColumn("subject", () => gt`Subject`, 320, 120),
+    ...textColumn("subject", () => gt`Subject`, 320, 60),
     flexible: true,
     required: true,
   },
@@ -156,6 +156,11 @@ export function mailListColumnWidth(prefs: MailListColumnPrefs, id: MailListColu
   return prefs.widths[id] ?? mailListColumnDefs[id].defaultWidth;
 }
 
+/** Тема с заданной шириной перестаёт растягиваться: остаток строки остаётся пустым, как в Outlook */
+function subjectHasFixedWidth(prefs: MailListColumnPrefs, columns: MailListColumnId[]): boolean {
+  return columns.includes("subject") && prefs.widths.subject != null;
+}
+
 /** Место строки, которое не делится между столбцами: отступы, промежутки, полоса прокрутки */
 function reservedRowWidth(columnCount: number): number {
   return kRowPaddingInline + kScrollbarWidth + kColumnGap * Math.max(columnCount - 1, 0);
@@ -171,26 +176,29 @@ function reservedRowWidth(columnCount: number): number {
  */
 export function mailListGridTemplate(prefs: MailListColumnPrefs, listWidth = 0): string {
   let columns = visibleMailListColumns(prefs);
+  let fixedSubject = subjectHasFixedWidth(prefs, columns);
+  // Пустая дорожка справа забирает остаток, когда тема не растягивается
+  let filler = fixedSubject ? " minmax(0, 1fr)" : "";
   if (!(listWidth > 0)) {
     return columns.map(id => {
       let def = mailListColumnDefs[id];
       if (def.icon) {
         return `${def.defaultWidth}px`;
       }
-      if (def.flexible) {
+      if (def.flexible && !fixedSubject) {
         return `minmax(max(${def.minWidth}px, ${kSubjectMinShare * 100}%), 1fr)`;
       }
       return `minmax(${def.minWidth}px, ${mailListColumnWidth(prefs, id)}px)`;
-    }).join(" ");
+    }).join(" ") + filler;
   }
-  let reserved = reservedRowWidth(columns.length);
+  let reserved = reservedRowWidth(columns.length + (fixedSubject ? 1 : 0));
   let subjectFloor = 0;
   let textColumns: MailListColumnId[] = [];
   for (let id of columns) {
     let def = mailListColumnDefs[id];
     if (def.icon) {
       reserved += def.defaultWidth;
-    } else if (def.flexible) {
+    } else if (def.flexible && !fixedSubject) {
       subjectFloor = Math.max(def.minWidth, kSubjectMinShare * listWidth);
     } else {
       textColumns.push(id);
@@ -215,11 +223,11 @@ export function mailListGridTemplate(prefs: MailListColumnPrefs, listWidth = 0):
     if (def.icon) {
       return `${def.defaultWidth}px`;
     }
-    if (def.flexible) {
+    if (def.flexible && !fixedSubject) {
       return "minmax(0, 1fr)";
     }
     return `${widths.get(id)}px`;
-  }).join(" ");
+  }).join(" ") + filler;
 }
 
 export function setMailListColumnVisible(prefs: MailListColumnPrefs, id: MailListColumnId,
@@ -262,7 +270,7 @@ export function moveMailListColumn(prefs: MailListColumnPrefs, id: MailListColum
 export function setMailListColumnWidth(prefs: MailListColumnPrefs, id: MailListColumnId,
   width: number | null): MailListColumnPrefs {
   let def = mailListColumnDefs[id];
-  if (def.icon || def.flexible) {
+  if (def.icon) {
     return prefs;
   }
   let widths = { ...prefs.widths };
@@ -287,16 +295,17 @@ export function mailListTableFits(prefs: MailListColumnPrefs, listWidth: number)
   let columns = visibleMailListColumns(prefs);
   let fixed = reservedRowWidth(columns.length);
   let subjectMin = 0;
+  let fixedSubject = subjectHasFixedWidth(prefs, columns);
   for (let id of columns) {
     let def = mailListColumnDefs[id];
-    if (def.flexible) {
+    if (def.flexible && !fixedSubject) {
       subjectMin = def.minWidth;
     } else {
       fixed += def.minWidth;
     }
   }
   let available = listWidth - fixed;
-  return available >= Math.max(subjectMin, kSubjectMinShare * listWidth);
+  return available >= (fixedSubject ? 0 : Math.max(subjectMin, kSubjectMinShare * listWidth));
 }
 
 /**

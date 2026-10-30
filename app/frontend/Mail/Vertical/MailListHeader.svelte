@@ -35,11 +35,15 @@
             class="sort-arrow" size={def.icon ? "9px" : "12px"} strokeWidth={2.5} aria-hidden="true" />
         {/if}
       </button>
-      {#if !def.icon && !def.flexible}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+      {#if !def.icon}
         <span class="resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={$t`Drag to change the column width. Double-click to reset.`}
+          tabindex="0"
           title={$t`Drag to change the column width. Double-click to reset.`}
           on:pointerdown={event => onResizeStart(event, id)}
+          on:keydown={event => onResizeKey(event, id)}
           on:dblclick|stopPropagation={() => resetWidth(id)}
           on:click|stopPropagation />
       {/if}
@@ -234,6 +238,31 @@
     handle.addEventListener("pointercancel", onEnd);
   }
 
+  const kKeyStep = 10;
+  const kKeyStepLarge = 40;
+
+  function onResizeKey(event: KeyboardEvent, id: MailListColumnId) {
+    if (event.key == "Enter") {
+      event.preventDefault();
+      resetWidth(id);
+      return;
+    }
+    if (event.key != "ArrowLeft" && event.key != "ArrowRight") {
+      return;
+    }
+    let cell = (event.currentTarget as HTMLElement).parentElement;
+    if (!cell) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    let rtl = getComputedStyle(cell).direction == "rtl";
+    let step = event.shiftKey ? kKeyStepLarge : kKeyStep;
+    let direction = (event.key == "ArrowRight") != rtl ? 1 : -1;
+    let width = cell.getBoundingClientRect().width + direction * step;
+    updateMailListColumns(prefs => setMailListColumnWidth(prefs, id, width));
+  }
+
   function resetWidth(id: MailListColumnId) {
     updateMailListColumns(prefs => setMailListColumnWidth(prefs, id, null));
   }
@@ -327,8 +356,10 @@
     z-index: 1;
     touch-action: none;
   }
-  .resize-handle:hover {
+  .resize-handle:hover,
+  .resize-handle:focus-visible {
     background: linear-gradient(to right, transparent 3px, var(--selected-bg) 3px, var(--selected-bg) 5px, transparent 5px);
+    outline: none;
   }
   .drop-before {
     box-shadow: inset 2px 0 0 var(--selected-bg);
