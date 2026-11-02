@@ -84,7 +84,7 @@
   let themeSetting = getLocalStorage("appearance.theme", "system");
   // Автотема меняет системную схему без смены настройки: подписываемся на неё
   const systemDark = darkColorScheme;
-  $: darkTheme = $themeSetting.value == "dark" || ($themeSetting.value == "system" && $systemDark);
+  $: darkTheme = $themeSetting.value == "dark" || $themeSetting.value == "gray" || ($themeSetting.value == "system" && $systemDark);
   function displayHtml(html: string, dark: boolean): string {
     return dark ? adaptEmailHtmlForDarkMode(html) : html;
   }
