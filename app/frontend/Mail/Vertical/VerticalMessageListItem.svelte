@@ -47,6 +47,11 @@
       <hbox class="cell t-subject-cell">
         <span class="text-cell t-subject" title={$message.subject}>{$message.subject}</span>
         <CollisionBadge {message} compact />
+        {#if noted}
+          <hbox class="noted t-noted" title={notedTooltip}>
+            <NoteIcon size="13px" />
+          </hbox>
+        {/if}
       </hbox>
     {:else if column == "received"}
       <hbox class="cell text-cell t-date" title={fullDate}>{getDateTimeString(listDate)}</hbox>
