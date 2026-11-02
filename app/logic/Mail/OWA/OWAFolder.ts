@@ -36,6 +36,10 @@ import { trackMailSync } from "../mailSyncStatus";
 const kMaxSyncPages = 200;
 /** Запас страниц сверх размера папки для полного FindItem. */
 const kMaxFindItemPagesMargin = 4;
+/** Как часто сверять список с сервером при равных счётчиках (мс). */
+const kPeriodicReconcileMs = 30 * 60 * 1000;
+/** Периодическая сверка — только для папок, обход которых умещается в разумное число страниц. */
+const kPeriodicReconcileMaxMessages = 6000;
 /** Верхний предел страниц полного FindItem (50 писем на страницу): 50 000 писем. */
 const kMaxFindItemPagesLimit = 1000;
 
@@ -2914,12 +2918,25 @@ export class OWAFolder extends ExchangeFolder {
     return false;
   }
 
+  /** Время последней попытки полного обхода папки (при создании папки — момент создания). */
+  protected lastFullListAttemptAt = Date.now();
+
   /** Surplus local messages prove a server-side delete or move. */
   protected needsFullReconcile(): boolean {
     if (this.countTotalDecreased && this.messages.length <= this.countTotal) {
       this.countTotalDecreased = false;
     }
-    return this.countTotalDecreased || this.messages.length > this.countTotal;
+    return this.countTotalDecreased || this.messages.length > this.countTotal
+      || this.periodicReconcileDue();
+  }
+
+  /** Удаление на сервере при неизменном TotalCount (одно удалено, одно пришло)
+   * счётчики не выдают, а дельта могла его не получить — «призрак» жил бы вечно.
+   * Поэтому раз в полчаса папка сверяется целиком, пока обход недорогой. */
+  protected periodicReconcileDue(): boolean {
+    return this.countTotal > 0
+      && this.messages.length <= kPeriodicReconcileMaxMessages
+      && Date.now() - this.lastFullListAttemptAt > kPeriodicReconcileMs;
   }
 
   /**
@@ -2977,6 +2994,9 @@ export class OWAFolder extends ExchangeFolder {
       let pagesRead = 0;
       let paginationComplete = false;
       let validStopBefore = stopBefore && !Number.isNaN(stopBefore.getTime()) ? stopBefore : null;
+      if (!recentOnly && !validStopBefore) {
+        this.lastFullListAttemptAt = Date.now();
+      }
       let validQueryString = validStopBefore && queryString?.trim() ? queryString.trim() : null;
       let request = validQueryString
         ? owaFindMsgsByQueryRequest(this.id, validQueryString, kMaxFetchCount)
