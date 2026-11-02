@@ -44,10 +44,11 @@ afterEach(async () => {
 });
 
 describe("миграция", () => {
-  test("тринадцатая — в конце, выпущенные не сдвинуты", () => {
+  test("тринадцатая — на своём месте, выпущенные не сдвинуты", () => {
     expect(mailDatabaseMigrations.indexOf(createScheduledSendTable)).toBe(11);
     expect(mailDatabaseMigrations.indexOf(createMailTemplateTable)).toBe(12);
-    expect(mailDatabaseMigrations.at(-1)).toBe(createMailTemplateTable);
+    expect(mailDatabaseMigrations.indexOf(createMailTemplateTable)).toBe(12);
+    expect(mailDatabaseMigrations.length).toBeGreaterThanOrEqual(13);
   });
 
   test("база на user_version 12 получает шаблоны; откат удаляет их; повтор безопасен", async () => {
@@ -60,7 +61,7 @@ describe("миграция", () => {
     `);
     expect(await legacy.pragma("user_version", { simple: true })).toBe(12);
     await legacy.migrate(...mailDatabaseMigrations);
-    expect(await legacy.pragma("user_version", { simple: true })).toBe(13);
+    expect(await legacy.pragma("user_version", { simple: true })).toBe(mailDatabaseMigrations.length);
     expect(await legacy.all(sql`SELECT id, subject FROM email`)).toEqual([{ id: 1, subject: "Hi" }]);
     await insertMailTemplate(content("Старый ящик"), legacy);
     expect((await listMailTemplates(legacy)).map(template => template.name)).toEqual(["Старый ящик"]);

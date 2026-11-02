@@ -23,7 +23,8 @@ export type ConfigurableKeyboardActionId =
   | "mail.editAsNew"
   | "mail.newToAll"
   | "mail.selectAll"
-  | "mail.openSelected";
+  | "mail.openSelected"
+  | "mail.note";
 
 export type ConfigurableKeyboardAction = {
   id: ConfigurableKeyboardActionId;
@@ -68,6 +69,7 @@ export const configurableKeyboardActions: readonly ConfigurableKeyboardAction[] 
   { id: "mail.replyAll", group: mailGroup, label: gt`Reply all`, defaultShortcut: shortcut("KeyR", "R", { ctrl: true, shift: true }) },
   { id: "mail.forward", group: mailGroup, label: gt`Forward *=> Send this message to somebody else`, defaultShortcut: shortcut("KeyL", "l", { ctrl: true }) },
   { id: "mail.forwardAsAttachment", group: mailGroup, label: gt`Forward as attachment`, defaultShortcut: shortcut("KeyL", "L", { ctrl: true, shift: true }) },
+  { id: "mail.note", group: mailGroup, label: gt`Note on message`, defaultShortcut: shortcut("KeyO", "o") },
   { id: "mail.newEmail", group: mailGroup, label: gt`New email`, defaultShortcut: shortcut("KeyN", "n", { ctrl: true }) },
   { id: "mail.editAsNew", group: mailGroup, label: gt`Edit as new`, defaultShortcut: shortcut("KeyE", "e", { ctrl: true }) },
   { id: "mail.newToAll", group: mailGroup, label: gt`New message to all`, defaultShortcut: shortcut("KeyN", "N", { ctrl: true, shift: true }) },

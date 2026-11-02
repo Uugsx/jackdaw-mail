@@ -238,7 +238,9 @@ function textSearchClause(term: string): Query {
       ifnull(plaintext, '') LIKE ${pattern} OR
       ifnull(html, '') LIKE ${pattern} OR
       ifnull(contactName, '') LIKE ${pattern} OR
-      ifnull(contactEmail, '') LIKE ${pattern}
+      ifnull(contactEmail, '') LIKE ${pattern} OR
+      (messageID IN (SELECT messageKey FROM messageNote WHERE text LIKE ${pattern}) OR
+        ('pid:' || pID) IN (SELECT messageKey FROM messageNote WHERE text LIKE ${pattern}))
     )`;
     combined = combined ? sql`$${combined} OR $${part}` : part;
   }

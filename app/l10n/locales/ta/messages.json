@@ -3353,5 +3353,12 @@
   "OwIqiD": "முழுத்திரை",
   "I3gdTq": "இந்தக் கோப்பு முன்னோட்டத்திற்கு மிகவும் பெரியது.",
   "wxiQkQ": "அஞ்சலில் திற",
-  "mDUieE": "இந்தச் செய்தி நீக்கப்பட்டது அல்லது நகர்த்தப்பட்டது; இனி திறக்க முடியாது."
+  "mDUieE": "இந்தச் செய்தி நீக்கப்பட்டது அல்லது நகர்த்தப்பட்டது; இனி திறக்க முடியாது.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

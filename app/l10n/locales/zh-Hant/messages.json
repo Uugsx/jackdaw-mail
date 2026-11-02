@@ -3353,5 +3353,12 @@
   "OwIqiD": "全螢幕",
   "I3gdTq": "此檔案太大，無法預覽。",
   "wxiQkQ": "在郵件中開啟",
-  "mDUieE": "此郵件已被刪除或移動，無法再開啟。"
+  "mDUieE": "此郵件已被刪除或移動，無法再開啟。",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

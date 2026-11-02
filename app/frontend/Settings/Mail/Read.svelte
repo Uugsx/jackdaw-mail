@@ -35,6 +35,19 @@
 
   <HeaderGroupBox>
     <hbox slot="header">
+      {$t`Notes on messages`}
+    </hbox>
+    <vbox class="read">
+      <hbox class="description font-small">{$t`Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}`}</hbox>
+      <input type="url" bind:value={trackerURL} placeholder="https://jira.example.com/browse/{'{key}'}" on:change={onTrackerChanged} aria-invalid={trackerInvalid} />
+      {#if trackerInvalid}
+        <hbox class="description font-small">{$t`The address must start with http:// or https:// and contain {key}`}</hbox>
+      {/if}
+    </vbox>
+  </HeaderGroupBox>
+
+  <HeaderGroupBox>
+    <hbox slot="header">
       {$t`Read receipts`}
     </hbox>
     <vbox class="read">
@@ -64,9 +77,19 @@
   import T from '../../../l10n/T.svelte';
   import { readReceiptPolicySetting } from "../../../logic/Mail/ReadReceipt/ReadReceipt";
   import { t } from "../../../l10n/l10n";
+  import { isValidTrackerTemplate } from "../../../logic/Mail/MessageNotes/MessageNote";
 
   let readAfter = getLocalStorage("mail.read.after", 0);
   const readReceiptPolicy = readReceiptPolicySetting();
+  const trackerSetting = getLocalStorage<string>("mail.notes.trackerURL", "");
+  let trackerURL = trackerSetting.value ?? "";
+  $: trackerInvalid = trackerURL.trim() != "" && !isValidTrackerTemplate(trackerURL);
+  function onTrackerChanged() {
+    // Некорректный адрес не сохраняем, чтобы не ломать ссылки
+    if (trackerURL.trim() == "" || isValidTrackerTemplate(trackerURL)) {
+      trackerSetting.value = trackerURL.trim();
+    }
+  }
   let readSeconds = readAfter.value > 0 ? readAfter.value : 5;
 
   const kMinReadSeconds = 1;

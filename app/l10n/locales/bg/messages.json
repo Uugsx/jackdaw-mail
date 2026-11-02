@@ -3353,5 +3353,12 @@
   "OwIqiD": "Цял екран",
   "I3gdTq": "Този файл е твърде голям за преглед.",
   "wxiQkQ": "Отваряне в пощата",
-  "mDUieE": "Това писмо е изтрито или преместено и вече не може да бъде отворено."
+  "mDUieE": "Това писмо е изтрито или преместено и вече не може да бъде отворено.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

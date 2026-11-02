@@ -6,6 +6,7 @@ import { getTagByName, type Tag } from "../../Abstract/Tag";
 import { findPerson } from "../../Abstract/PersonUID";
 import { mentionsMe } from "../Mentions/Mentions";
 import { appGlobal } from "../../app";
+import { messageNoteMatches } from "../MessageNotes/MessageNotes";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { notifyChangedProperty, Observable } from "../../util/Observable";
 import { AbstractFunction } from "../../util/util";
@@ -227,7 +228,7 @@ export class SearchEMail extends Observable {
       let haySubject = email.subject?.toLowerCase() ?? "";
       // Prefer `.text` so HTML-only bodies (converted on read) are searchable
       let hayBody = (email.text || email.rawText || "").toLowerCase();
-      if (!haySubject.includes(needle) && !hayBody.includes(needle)) {
+      if (!haySubject.includes(needle) && !hayBody.includes(needle) && !messageNoteMatches(email, this.bodyText)) {
         return false;
       }
     }

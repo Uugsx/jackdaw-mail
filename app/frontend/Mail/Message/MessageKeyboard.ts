@@ -13,6 +13,7 @@ import {
 import { openComposer, openEMailMessage } from "../open";
 import { markMessagesRead } from "../mailReadActions";
 import { get } from "svelte/store";
+import { requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
 import { isMailPaneFocused } from "../../MainWindow/paneFocus";
 import {
   getHoveredMessage,
@@ -222,6 +223,12 @@ export async function executeConfigurableMailAction(
       return true;
     case "mail.selectAll":
       return selectAllVisibleMessagesFromCommand();
+    case "mail.note": {
+      let target = message ?? messages[0];
+      if (!target) return false;
+      requestNoteEdit(target);
+      return true;
+    }
     case "mail.openSelected": {
       // Enter открывает именно выделенное письмо, как и подписано в настройках
       let selected = getSelectedMailMessage();

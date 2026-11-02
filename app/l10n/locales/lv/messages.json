@@ -3353,5 +3353,12 @@
   "OwIqiD": "Pilnekrāna režīms",
   "I3gdTq": "Šis fails ir pārāk liels priekšskatījumam.",
   "wxiQkQ": "Atvērt Pastā",
-  "mDUieE": "Šī vēstule ir dzēsta vai pārvietota, un to vairs nevar atvērt."
+  "mDUieE": "Šī vēstule ir dzēsta vai pārvietota, un to vairs nevar atvērt.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }
