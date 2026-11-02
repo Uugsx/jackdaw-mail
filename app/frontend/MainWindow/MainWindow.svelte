@@ -128,6 +128,7 @@
   import { meetApp } from "../Meet/MeetJackdawApp";
   import { categoriesLoaded } from "../Settings/SettingsCategories";
   import { applyColors } from "../Settings/Global/AppThemeColors";
+  import { applyThemeAttribute } from "../Settings/Global/themeAttribute";
   import AppBar from "../AppsBar/AppBar.svelte";
   import AppContentRoutes from "../AppsBar/AppContentRoutes.svelte";
   import NotificationBar from "./NotificationBar.svelte";
@@ -337,8 +338,10 @@
     if (!appGlobal?.remoteApp) {
       return;
     }
-    assert(["system", "light", "dark"].includes(theme), $t`Bad theme name ` + theme);
-    appGlobal.remoteApp.setTheme(theme);
+    assert(["system", "light", "dark", "gray"].includes(theme), $t`Bad theme name ` + theme);
+    applyThemeAttribute(theme);
+    // Серая тема — тёмная схема ОС с переопределённой палитрой (data-theme="gray")
+    appGlobal.remoteApp.setTheme(theme == "gray" ? "dark" : theme);
   }
   let colorsSetting = getLocalStorage("appearance.colors", {});
   // Читаем актуальное значение при каждом уведомлении. Реактивная запись

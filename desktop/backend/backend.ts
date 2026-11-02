@@ -1573,11 +1573,11 @@ export async function openPendingReleaseDownload() {
   await shell.openExternal(`https://github.com/${kGhOwner}/${kGhRepo}/releases`);
 }
 
-function setTheme(theme: "system" | "light" | "dark") {
-  if (!["system", "light", "dark"].includes(theme)) {
+function setTheme(theme: "system" | "light" | "dark" | "gray") {
+  if (!["system", "light", "dark", "gray"].includes(theme)) {
     throw new Error("Bad theme name " + theme);
   }
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme == "gray" ? "dark" : theme;
 }
 
 async function openExternalURL(url: string) {

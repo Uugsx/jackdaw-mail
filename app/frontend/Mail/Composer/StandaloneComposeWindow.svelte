@@ -24,6 +24,8 @@
 <script lang="ts">
   import Notice from "../../Shared/Notice.svelte";
   import { onMount } from "svelte";
+  import { applyThemeAttribute } from "../../Settings/Global/themeAttribute";
+  import { getLocalStorage } from "../../Util/LocalStorage";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
   import { appGlobal } from "../../../logic/app";
@@ -123,6 +125,7 @@
   }
 
   onMount(() => {
+    applyThemeAttribute(getLocalStorage("appearance.theme", "system").value);
     void load();
   });
 </script>

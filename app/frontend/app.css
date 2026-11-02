@@ -606,6 +606,83 @@ a:hover {
   }
 }
 
+/* Нейтральная серая тема (data-theme="gray", по образцу «Тёмно-серой» в Outlook):
+ * схема ОС — тёмная, палитра без синего и тёплого оттенка. Блок стоит после тёмных,
+ * чтобы переопределить их; остальные темы он не затрагивает. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="gray"],
+  :root[data-theme="gray"] .main-window:not(.mobile),
+  :root[data-theme="gray"] .standalone-window {
+    --bg: #262626;
+    --fg: #EDEDED;
+    --inverted-bg: #EDEDED;
+    --inverted-fg: #262626;
+    --selected-bg: #5C5C5C;
+    --selected-fg: #FFFFFF;
+    --icon-primary: #D0D0D0;
+    --hover-bg: #444444;
+    --hover-fg: #FFFFFF;
+    --selected-hover-bg: #6A6A6A;
+    --selected-hover-fg: #FFFFFF;
+    --main-bg: #333333;
+    --main-fg: #EDEDED;
+    --offset-bg: #3D3D3D;
+    --offset-fg: #EDEDED;
+    --leftbar-bg: #2B2B2B;
+    --leftbar-fg: #DADADA;
+    --headerbar-bg: #262626;
+    --headerbar-fg: #EDEDED;
+    --windowheader-bg: #1F1F1F;
+    --windowheader-fg: #EDEDED;
+    --appbar-bg: #1F1F1F;
+    --appbar-fg: #EDEDED;
+    --border: #4A4A4A;
+    --outstanding-bg: #707070;
+    --outstanding-fg: #FFFFFF;
+    --input-bg: #2B2B2B;
+    --input-fg: #EDEDED;
+    --input-line: #555555;
+    --input-placeholder: #A3A3A3;
+    --input-focus: #D0D0D0;
+    --input-border: #6B6B6B;
+    --input-border-hover: #8A8A8A;
+    --input-focus-border: #D0D0D0;
+    --input-focus-ring: rgba(208, 208, 208, 0.30);
+    --input-disabled-bg: #2B2B2B;
+    --link-fg: #D9B26A;
+    --link-hover-fg: #E8C687;
+    --button-bg: #2B2B2B;
+    --button-fg: #EDEDED;
+    --button-border: #5A5A5A;
+    --button-secondary-line: #8A8A8A;
+    --toolbar-control-bg: #2B2B2B;
+    --toolbar-control-border: #555555;
+    --toolbar-control-fg: #EDEDED;
+    --chat-bubble-incoming-bg: #3D3D3D;
+    --chat-bubble-incoming-fg: #EDEDED;
+    --chat-bubble-outgoing-bg: #555555;
+    --chat-bubble-outgoing-fg: #FFFFFF;
+    --glass-bg: #2B2B2B;
+    --glass-bg-elevated: #353535;
+    --glass-bg-subtle: #242424;
+    --glass-border: #4A4A4A;
+    --glass-border-subtle: #3C3C3C;
+    --glass-hover-bg: rgba(255, 255, 255, 0.08);
+    --glass-selected-bg: rgba(255, 255, 255, 0.14);
+    --glass-selected-border: #D0D0D0;
+    --tooltip-bg: #3A3A3A;
+    --tooltip-fg: #F3F3F3;
+    --tooltip-border: #5A5A5A;
+    --danger-fg: #E5836F;
+    --warning-fg: #E2B055;
+    --success-fg: #86C795;
+    --info-fg: #9DBBD2;
+    background: var(--bg);
+    color: var(--fg);
+    color-scheme: dark;
+  }
+}
+
 /* Поля ввода и выпадающие списки на компьютере: рамка со скруглением, высота 32px,
  * как у кнопок ленты. Всё в :where(), без веса, поэтому поля со своим видом
  * (поиск, тема письма, чипы, мелкие списки) остаются как задумано в компоненте.

@@ -65,7 +65,7 @@
   });
 
   function resolveDarkTheme(theme: string, isSystemDark: boolean): boolean {
-    if (theme == "dark") {
+    if (theme == "dark" || theme == "gray") {
       return true;
     }
     if (theme == "light") {

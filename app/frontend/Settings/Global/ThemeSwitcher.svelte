@@ -24,6 +24,14 @@
     onClick={() => switchTo('dark')}
     selected={theme == "dark"}
     />
+  <Button
+    label={$t`Gray`}
+    icon={GrayIcon}
+    iconSize="16px"
+    plain
+    onClick={() => switchTo('gray')}
+    selected={theme == "gray"}
+    />
 </hbox>
 
 <script lang="ts">
@@ -31,13 +39,14 @@
   import Button from "../../Shared/Button.svelte";
   import DarkIcon from "lucide-svelte/icons/moon";
   import LightIcon from "lucide-svelte/icons/sun";
+  import GrayIcon from "lucide-svelte/icons/cloud-moon";
   import SystemIcon from "lucide-svelte/icons/app-window";
   import { t } from "../../../l10n/l10n";
 
   let themeSetting = getLocalStorage("appearance.theme", "system");
   $: theme = $themeSetting.value;
 
-  function switchTo(newTheme: "system" | "light" | "dark") {
+  function switchTo(newTheme: "system" | "light" | "dark" | "gray") {
     themeSetting.value = newTheme;
   }
 </script>
