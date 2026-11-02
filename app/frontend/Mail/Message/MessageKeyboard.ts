@@ -285,6 +285,10 @@ export async function onKeyOnList(event: KeyboardEvent) {
       let isRead = majority(messages, msg => msg.isRead);
       await markMessagesRead(messages, !isRead);
       return;
+    } else if (event.key == "o") { // Jackdaw: заметка к письму
+      consume(event);
+      requestNoteEdit(message);
+      return;
     } else if (event.key == "s" || event.key == "Insert") { // s: Thunderbird, Insert: Outlook
       consume(event);
       let isStarred = majority(messages, msg => msg.isStarred);

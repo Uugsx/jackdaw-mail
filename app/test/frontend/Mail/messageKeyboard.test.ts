@@ -31,6 +31,7 @@ import { deleteMessagesFromUI, deleteMessagesPermanent } from "../../../frontend
 import { focusMailPane } from "../../../frontend/MainWindow/paneFocus";
 import { openComposer } from "../../../frontend/Mail/open";
 import { hoverRow } from "./hoverRow";
+import { noteEditRequest } from "../../../logic/Mail/MessageNotes/MessageNotes";
 
 describe("mail keyboard shortcuts", () => {
   let previousMessage: EMail | undefined;
@@ -189,6 +190,25 @@ describe("mail keyboard shortcuts", () => {
 
     expect(first.markStarred).toHaveBeenCalledWith(true);
     expect(second.markStarred).toHaveBeenCalledWith(true);
+  });
+
+  test("клавиша O открывает заметку выбранного письма", async () => {
+    let first = mail("first");
+    select(first);
+    noteEditRequest.set(null);
+
+    await onKeyOnList(new KeyboardEvent("keydown", { key: "o", code: "KeyO", cancelable: true }));
+
+    expect(get(noteEditRequest)?.message).toBe(first);
+  });
+
+  test("O с Ctrl не открывает заметку", async () => {
+    select(mail("first"));
+    noteEditRequest.set(null);
+
+    await onKeyOnList(new KeyboardEvent("keydown", { key: "o", code: "KeyO", ctrlKey: true, cancelable: true }));
+
+    expect(get(noteEditRequest)).toBeNull();
   });
 
   test("ввод в поле поиска не запускает действие даже с курсором над письмом", async () => {
