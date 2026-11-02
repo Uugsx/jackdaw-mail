@@ -149,6 +149,11 @@
   label={isMessagePinned(message) ? $t`Unpin` : $t`Pin`}
   tooltip={isMessagePinned(message) ? $t`Remove this message from the top of the list` : $t`Keep this message at the top of the list`}
   icon={isMessagePinned(message) ? UnpinIcon : PinIcon} />
+<MenuItem
+  onClick={() => requestNoteEdit(message)}
+  label={$messageNotesChanged >= 0 && hasMessageNote(message) ? $t`Edit note` : $t`Add note`}
+  tooltip={$t`Write a personal note on this message, for example a ticket number`}
+  icon={NoteIcon} />
 {#if quickSteps.length}
   <SubMenu label={$t`Quick steps`} icon={QuickStepIcon}>
     {#each quickSteps as step (step.id)}
@@ -277,6 +282,8 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import JunkIcon from "lucide-svelte/icons/shield-alert";
   import SnoozeIcon from "lucide-svelte/icons/alarm-clock";
   import PinIcon from "lucide-svelte/icons/pin";
+  import NoteIcon from "lucide-svelte/icons/notebook-pen";
+  import { hasMessageNote, messageNotesChanged, requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import UnpinIcon from "lucide-svelte/icons/pin-off";
   import SnoozeMenuItems from "../Snooze/SnoozeMenuItems.svelte";
   import { isMessagePinned, toggleMessagePinned } from "../../../logic/Mail/Pin/PinnedMessages";

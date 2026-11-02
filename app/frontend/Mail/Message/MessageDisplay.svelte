@@ -8,6 +8,7 @@
   tabindex={0}
   >
   <MessageHeader bind:message {readOnly} {onReply} {onReplyAll} />
+  <MessageNoteBar {message} />
   <MessageAttachments attachments={message.attachments} />
   <SMLDisplayKinds {message} sml={message.sml} />
   {#if translationAvailable}
@@ -27,7 +28,8 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { onKeyOnMessage } from "./MessageKeyboard";
   import { appGlobal } from "../../../logic/app";
-  import MessageHeader from "./MessageHeader.svelte";
+  import MessageNoteBar from "./MessageNoteBar.svelte";
+import MessageHeader from "./MessageHeader.svelte";
   import MessageAttachments from "./AttachmentsUI.svelte";
   import MessageBody from "./MessageBody.svelte";
   import SMLDisplayKinds from "../SML/SMLDisplayKinds.svelte";

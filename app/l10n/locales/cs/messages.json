@@ -3353,5 +3353,12 @@
   "OwIqiD": "Celá obrazovka",
   "I3gdTq": "Tento soubor je příliš velký pro náhled.",
   "wxiQkQ": "Otevřít v Poště",
-  "mDUieE": "Tato zpráva byla smazána nebo přesunuta a už ji nelze otevřít."
+  "mDUieE": "Tato zpráva byla smazána nebo přesunuta a už ji nelze otevřít.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

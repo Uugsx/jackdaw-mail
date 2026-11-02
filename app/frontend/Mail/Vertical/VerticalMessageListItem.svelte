@@ -111,6 +111,11 @@
           />
       </hbox>
     {/if}
+    {#if noted}
+      <hbox class="noted" title={notedTooltip}>
+        <NoteIcon size="14px" />
+      </hbox>
+    {/if}
     {#if pinned}
       <hbox class="pinned" title={$t`Pinned`}>
         <PinIcon size="14px" />
@@ -164,6 +169,9 @@
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import StarIcon from "lucide-svelte/icons/star";
   import PinIcon from "lucide-svelte/icons/pin";
+  import NoteIcon from "lucide-svelte/icons/notebook-pen";
+  import { getMessageNoteText, messageNotesChanged } from "../../../logic/Mail/MessageNotes/MessageNotes";
+  import { noteTooltip } from "../../../logic/Mail/MessageNotes/MessageNote";
   import { isMessagePinned, pinnedMessagesChanged } from "../../../logic/Mail/Pin/PinnedMessages";
   import CircleIcon from "lucide-svelte/icons/circle";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
@@ -181,6 +189,9 @@
   import { hoverMessageRow } from "../hoveredMessage";
 
   export let message: EMail;
+  $: noteText = $messageNotesChanged >= 0 ? getMessageNoteText(message) : null;
+  $: noted = !!noteText;
+  $: notedTooltip = noteText ? noteTooltip(noteText) : "";
   $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
   /** Столбцы табличного вида; null — двухстрочная карточка */
   export let columns: MailListColumnId[] | null = null;
@@ -358,6 +369,11 @@
   }
   .star {
     margin-inline-end: 1px; /* for alignment with unread button */
+  }
+  .noted {
+    align-self: center;
+    color: var(--icon-primary, currentColor);
+    margin-inline-end: 4px;
   }
   .pinned {
     align-self: center;

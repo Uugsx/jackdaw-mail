@@ -3353,5 +3353,12 @@
   "OwIqiD": "Teljes képernyő",
   "I3gdTq": "Ez a fájl túl nagy az előnézethez.",
   "wxiQkQ": "Megnyitás a Levelezőben",
-  "mDUieE": "Ezt az üzenetet törölték vagy áthelyezték, ezért már nem nyitható meg."
+  "mDUieE": "Ezt az üzenetet törölték vagy áthelyezték, ezért már nem nyitható meg.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

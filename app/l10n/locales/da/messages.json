@@ -3353,5 +3353,12 @@
   "OwIqiD": "Fuld skærm",
   "I3gdTq": "Filen er for stor til forhåndsvisning.",
   "wxiQkQ": "Åbn i Mail",
-  "mDUieE": "Denne besked er slettet eller flyttet og kan ikke længere åbnes."
+  "mDUieE": "Denne besked er slettet eller flyttet og kan ikke længere åbnes.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

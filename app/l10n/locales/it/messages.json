@@ -3353,5 +3353,12 @@
   "OwIqiD": "Schermo intero",
   "I3gdTq": "Questo file è troppo grande per l'anteprima.",
   "wxiQkQ": "Apri in Posta",
-  "mDUieE": "Questo messaggio è stato eliminato o spostato e non può più essere aperto."
+  "mDUieE": "Questo messaggio è stato eliminato o spostato e non può più essere aperto.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

@@ -3353,5 +3353,12 @@
   "OwIqiD": "Celozaslonski način",
   "I3gdTq": "Ta datoteka je prevelika za predogled.",
   "wxiQkQ": "Odpri v Pošti",
-  "mDUieE": "To sporočilo je bilo izbrisano ali premaknjeno in ga ni več mogoče odpreti."
+  "mDUieE": "To sporočilo je bilo izbrisano ali premaknjeno in ga ni več mogoče odpreti.",
+  "NeOuRn": "Add note",
+  "CtNZY1": "Write a personal note on this message, for example a ticket number",
+  "oEVIeo": "Note on message",
+  "NNLgBD": "Notes on messages",
+  "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
+  "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
+  "ZpwGdU": "Note on this message, for example a ticket number"
 }

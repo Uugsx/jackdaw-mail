@@ -321,3 +321,25 @@ export const createMailTemplateTable = sql`
 export const rollbackMailTemplateTable = sql`
   DROP TABLE IF EXISTS "mailTemplate";
 `;
+
+/**
+ * Личные заметки к письмам. Только локально, на сервер не уходят.
+ * Привязка по ящику и стабильному ключу письма (Message-ID, иначе `pid:<ID на сервере>`),
+ * а не по строке `email`, поэтому заметка переживает пересинхронизацию и удаление строки.
+ * Время — unixtime в миллисекундах.
+ */
+export const createMessageNoteTable = sql`
+  CREATE TABLE IF NOT EXISTS "messageNote" (
+    "accountID" TEXT not null,
+    "messageKey" TEXT not null,
+    "text" TEXT not null,
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    PRIMARY KEY ("accountID", "messageKey")
+  );
+`;
+
+/** Откат createMessageNoteTable для инструментов обслуживания базы. */
+export const rollbackMessageNoteTable = sql`
+  DROP TABLE IF EXISTS "messageNote";
+`;

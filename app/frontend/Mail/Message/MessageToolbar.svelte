@@ -43,6 +43,17 @@
       plain
       />
   </hbox>
+  <hbox class="note">
+    <Button
+      icon={NoteIcon}
+      iconSize="18px"
+      iconOnly
+      label={$t`Note on message`}
+      onClick={() => requestNoteEdit(message)}
+      disabled={!message}
+      plain
+      />
+  </hbox>
   {#if translationAvailable}
     <hbox class="translate" class:translated={translatedShown}>
       <Button
@@ -159,6 +170,8 @@
   import Popup from "../../Shared/Popup.svelte";
   import Button from "../../Shared/Button.svelte";
   import StarIcon from "lucide-svelte/icons/star";
+import NoteIcon from "lucide-svelte/icons/notebook-pen";
+import { requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import CircleIcon from "lucide-svelte/icons/circle";
   import ReplyIcon from "lucide-svelte/icons/reply";
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
