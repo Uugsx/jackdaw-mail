@@ -2279,6 +2279,11 @@
       <p class="filter-help">
         {$t`The schedule is saved separately for each selected mailbox and is applied after you build the report. The device time zone is used.`}
       </p>
+      {#if selectedMailAccountId == null}
+        <p class="validation-message" role="alert">
+          {$t`Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.`}
+        </p>
+      {/if}
       {#if workingHoursError == "no-working-days"}
         <p class="validation-message" role="alert">
           {$t`Select at least one working day.`}
