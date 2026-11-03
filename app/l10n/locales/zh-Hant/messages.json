@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "休息日會整天跳過。縮短工作日在指定時間結束工作。這些日期適用於此信箱的 SLA 計時、醒目提示與報表。",
+  "eySIhf": "例外日期",
+  "XYoBEy": "例外類型",
+  "QlSRBm": "假日與縮短工作日",
+  "31/meG": "尚無例外。",
+  "q4lXaH": "縮短工作日"
 }

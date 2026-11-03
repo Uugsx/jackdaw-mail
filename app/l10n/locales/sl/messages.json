@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Prost dan se v celoti preskoči. Na skrajšan dan se delo konča ob navedeni uri. Ti datumi veljajo za časovnike SLA, označevanje in poročila tega predala.",
+  "eySIhf": "Datum izjeme",
+  "XYoBEy": "Vrsta izjeme",
+  "QlSRBm": "Prazniki in skrajšani dnevi",
+  "31/meG": "Še ni izjem.",
+  "q4lXaH": "Skrajšan dan"
 }

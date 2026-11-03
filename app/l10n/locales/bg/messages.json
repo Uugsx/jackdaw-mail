@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Почивният ден се пропуска изцяло. В съкратен ден работата приключва в зададеното време. Тези дати се отчитат в таймерите за SLA, подчертаването и отчетите на тази пощенска кутия.",
+  "eySIhf": "Дата на изключението",
+  "XYoBEy": "Вид на изключението",
+  "QlSRBm": "Празници и съкратени дни",
+  "31/meG": "Все още няма изключения.",
+  "q4lXaH": "Съкратен ден"
 }

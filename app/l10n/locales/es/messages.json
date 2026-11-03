@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Un día libre se omite por completo. En un día reducido el trabajo termina a la hora indicada. Estas fechas se aplican a los temporizadores SLA, al resaltado y a los informes de este buzón.",
+  "eySIhf": "Fecha de la excepción",
+  "XYoBEy": "Tipo de excepción",
+  "QlSRBm": "Festivos y días reducidos",
+  "31/meG": "Aún no hay excepciones.",
+  "q4lXaH": "Día reducido"
 }

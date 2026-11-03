@@ -43,6 +43,9 @@
   import {
     DEFAULT_WORKING_HOURS_SCHEDULE,
     cloneWorkingHoursSchedule,
+    isValidExceptionDate,
+    normalizeWorkingDayExceptions,
+    type WorkingDayException,
     formatWorkingTime,
     isWithinWorkingHours,
     normalizeWorkingHoursSchedule,
@@ -188,6 +191,9 @@
     DEFAULT_WORKING_HOURS_SCHEDULE,
   );
   let workingHoursError: WorkingHoursValidationError | null = null;
+  let newExceptionDate = "";
+  let newExceptionKind: "off" | "short" = "off";
+  let newExceptionEnd = "14:00";
   let error: Error | null = null;
   let loading = false;
   let exportError: Error | null = null;
@@ -1158,6 +1164,7 @@
   function onWorkingDayEnabledChange(index: number, event: Event): void {
     const enabled = (event.currentTarget as HTMLInputElement).checked;
     workingHours = {
+      ...workingHours,
       days: workingHours.days.map((day, dayIndex) =>
         dayIndex == index ? { ...day, enabled } : day,
       ),
@@ -1177,6 +1184,7 @@
       return;
     }
     workingHours = {
+      ...workingHours,
       days: workingHours.days.map((day, dayIndex) =>
         dayIndex == index ? { ...day, [field]: minutes } : day,
       ),
@@ -1185,8 +1193,59 @@
   }
 
   function resetWorkingHoursSchedule(): void {
-    workingHours = cloneWorkingHoursSchedule(DEFAULT_WORKING_HOURS_SCHEDULE);
+    workingHours = {
+      ...cloneWorkingHoursSchedule(DEFAULT_WORKING_HOURS_SCHEDULE),
+      ...(workingHours.exceptions?.length
+        ? { exceptions: workingHours.exceptions }
+        : {}),
+    };
     persistWorkingHoursSchedule();
+  }
+
+  function setWorkingExceptions(exceptions: WorkingDayException[]): void {
+    const { exceptions: _previous, ...rest } = workingHours;
+    workingHours = {
+      ...rest,
+      ...(exceptions.length ? { exceptions } : {}),
+    };
+    persistWorkingHoursSchedule();
+  }
+
+  function addWorkingException(): void {
+    if (!isValidExceptionDate(newExceptionDate)) {
+      return;
+    }
+    const endMinutes = parseWorkingTime(newExceptionEnd);
+    if (newExceptionKind == "short" && endMinutes == null) {
+      return;
+    }
+    const item: WorkingDayException =
+      newExceptionKind == "short"
+        ? { date: newExceptionDate, kind: "short", endMinutes: endMinutes ?? 0 }
+        : { date: newExceptionDate, kind: "off" };
+    setWorkingExceptions(
+      normalizeWorkingDayExceptions([
+        ...(workingHours.exceptions ?? []),
+        item,
+      ]),
+    );
+    newExceptionDate = "";
+  }
+
+  function removeWorkingException(date: string): void {
+    setWorkingExceptions(
+      (workingHours.exceptions ?? []).filter((item) => item.date != date),
+    );
+  }
+
+  function formatExceptionDate(date: string): string {
+    const [year, month, day] = date.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
   }
 
   function onResponderModeChange(event: Event): void {
@@ -2133,6 +2192,75 @@
             {/if}
           </div>
         {/each}
+      </div>
+      <div class="working-exceptions">
+        <h4 class="working-exceptions-title">{$t`Holidays and short days`}</h4>
+        <p class="filter-help">
+          {$t`A day off is skipped entirely. On a short day work ends at the given time. These dates apply to SLA timers, highlighting and reports for this mailbox.`}
+        </p>
+        <div class="working-exception-form">
+          <label class="working-time-control">
+            <span>{$t`Date`}</span>
+            <input
+              type="date"
+              bind:value={newExceptionDate}
+              disabled={loading || mailFoldersLoading}
+              aria-label={$t`Exception date`}
+            />
+          </label>
+          <select
+            bind:value={newExceptionKind}
+            disabled={loading || mailFoldersLoading}
+            aria-label={$t`Exception type`}
+          >
+            <option value="off">{$t`Day off`}</option>
+            <option value="short">{$t`Short day`}</option>
+          </select>
+          {#if newExceptionKind == "short"}
+            <label class="working-time-control">
+              <span>{$t`End`}</span>
+              <input
+                type="time"
+                bind:value={newExceptionEnd}
+                disabled={loading || mailFoldersLoading}
+                aria-label={$t`End of workday`}
+              />
+            </label>
+          {/if}
+          <button
+            type="button"
+            class="inline-action"
+            disabled={loading ||
+              mailFoldersLoading ||
+              !isValidExceptionDate(newExceptionDate)}
+            on:click={addWorkingException}>{$t`Add`}</button
+          >
+        </div>
+        {#if workingHours.exceptions?.length}
+          <ul class="working-exception-list">
+            {#each workingHours.exceptions as item (item.date)}
+              <li class="working-exception-row">
+                <span class="working-exception-date"
+                  >{formatExceptionDate(item.date)}</span
+                >
+                <span class="working-day-off">
+                  {item.kind == "short"
+                    ? `${$t`Short day`} · ${$t`End`} ${formatWorkingTime(item.endMinutes ?? 0)}`
+                    : $t`Day off`}
+                </span>
+                <button
+                  type="button"
+                  class="inline-action"
+                  disabled={loading || mailFoldersLoading}
+                  on:click={() => removeWorkingException(item.date)}
+                  >{$t`Remove`}</button
+                >
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="filter-help">{$t`No exceptions yet.`}</p>
+        {/if}
       </div>
       <p class="filter-help">
         {$t`The schedule is saved separately for each selected mailbox and is applied after you build the report. The device time zone is used.`}
@@ -6010,6 +6138,48 @@
     flex: 0 0 auto;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 13px;
+  }
+
+  .working-exceptions {
+    margin-top: 12px;
+  }
+
+  .working-exceptions-title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .working-exception-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .working-exception-list {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .working-exception-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
+    font-size: 12px;
+  }
+
+  .working-exception-date {
+    flex: 1 1 auto;
   }
 
   .working-day-off {

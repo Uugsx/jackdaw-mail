@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Brīvdiena tiek izlaista pilnībā. Saīsinātā dienā darbs beidzas norādītajā laikā. Šie datumi attiecas uz šīs pastkastes SLA taimeriem, izcelšanu un pārskatiem.",
+  "eySIhf": "Izņēmuma datums",
+  "XYoBEy": "Izņēmuma veids",
+  "QlSRBm": "Svētku un saīsinātās dienas",
+  "31/meG": "Izņēmumu vēl nav.",
+  "q4lXaH": "Saīsināta diena"
 }

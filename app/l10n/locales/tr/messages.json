@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Tatil günü tamamen atlanır. Kısaltılmış günde çalışma belirtilen saatte biter. Bu tarihler bu posta kutusunun SLA zamanlayıcıları, vurgulaması ve raporları için geçerlidir.",
+  "eySIhf": "İstisna tarihi",
+  "XYoBEy": "İstisna türü",
+  "QlSRBm": "Tatiller ve kısa günler",
+  "31/meG": "Henüz istisna yok.",
+  "q4lXaH": "Kısa gün"
 }

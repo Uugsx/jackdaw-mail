@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "விடுமுறை நாள் முழுமையாகத் தவிர்க்கப்படும். குறுகிய நாளில் வேலை குறிப்பிட்ட நேரத்தில் முடியும். இந்தத் தேதிகள் இந்த அஞ்சல்பெட்டியின் SLA டைமர்கள், முன்னிலைப்படுத்தல் மற்றும் அறிக்கைகளுக்குப் பொருந்தும்.",
+  "eySIhf": "விதிவிலக்கின் தேதி",
+  "XYoBEy": "விதிவிலக்கின் வகை",
+  "QlSRBm": "விடுமுறைகள் மற்றும் குறுகிய நாட்கள்",
+  "31/meG": "இன்னும் விதிவிலக்குகள் இல்லை.",
+  "q4lXaH": "குறுகிய நாள்"
 }

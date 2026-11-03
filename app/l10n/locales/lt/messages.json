@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Laisva diena praleidžiama visiškai. Sutrumpintą dieną darbas baigiasi nurodytu laiku. Šios datos taikomos šios pašto dėžutės SLA laikmačiams, paryškinimui ir ataskaitoms.",
+  "eySIhf": "Išimties data",
+  "XYoBEy": "Išimties tipas",
+  "QlSRBm": "Šventės ir sutrumpintos dienos",
+  "31/meG": "Išimčių dar nėra.",
+  "q4lXaH": "Sutrumpinta diena"
 }

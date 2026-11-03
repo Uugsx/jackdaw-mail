@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Вихідний день пропускається повністю. У скорочений день робота закінчується у вказаний час. Ці дати враховуються в таймерах SLA, підсвічуванні та звітах цієї скриньки.",
+  "eySIhf": "Дата винятку",
+  "XYoBEy": "Тип винятку",
+  "QlSRBm": "Свята й скорочені дні",
+  "31/meG": "Винятків поки немає.",
+  "q4lXaH": "Скорочений день"
 }

@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "O zi liberă este omisă complet. Într-o zi scurtată munca se încheie la ora indicată. Aceste date se aplică temporizatoarelor SLA, evidențierii și rapoartelor acestei căsuțe.",
+  "eySIhf": "Data excepției",
+  "XYoBEy": "Tipul excepției",
+  "QlSRBm": "Sărbători și zile scurtate",
+  "31/meG": "Nicio excepție încă.",
+  "q4lXaH": "Zi scurtată"
 }

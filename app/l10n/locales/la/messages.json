@@ -290,7 +290,7 @@
   "kBp8+y": "cotidie",
   "pvnfJD": "Fuscus",
   "yB1YpA": "Modus obscurus",
-  "mYGY3B": "Datum",
+  "mYGY3B": "Dies",
   "wkLbbU": "Forma diei et horae",
   "H7OUPr": "Dies",
   "yRdqWH": "Dies/Mensis",
@@ -1630,5 +1630,11 @@
   "eUhuIV": "Textus notae",
   "dYZ0J1": "Notae",
   "Ha8HBl": "Notae in Exchange servantur. Rationem Exchange vel Outlook in rete adde ut eis utaris.",
-  "Z0uUAi": "Capsa omnino purgari non potuit. Quaeso, postea iterum conare."
+  "Z0uUAi": "Capsa omnino purgari non potuit. Quaeso, postea iterum conare.",
+  "C4GXkH": "Dies feriatus omnino omittitur. In die brevi opus hora data finitur. Hae dies ad horologia SLA, illustrationem et relationes huius arcae valent.",
+  "eySIhf": "Dies exceptionis",
+  "XYoBEy": "Genus exceptionis",
+  "QlSRBm": "Feriae et dies breves",
+  "31/meG": "Nullae exceptiones adhuc.",
+  "q4lXaH": "Dies brevis"
 }

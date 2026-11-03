@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "วันหยุดจะถูกข้ามทั้งวัน ในวันทำงานครึ่งวันงานจะสิ้นสุดตามเวลาที่กำหนด วันที่เหล่านี้ใช้กับตัวจับเวลา SLA การไฮไลต์ และรายงานของกล่องจดหมายนี้",
+  "eySIhf": "วันที่ของข้อยกเว้น",
+  "XYoBEy": "ประเภทข้อยกเว้น",
+  "QlSRBm": "วันหยุดและวันทำงานสั้น",
+  "31/meG": "ยังไม่มีข้อยกเว้น",
+  "q4lXaH": "วันทำงานสั้น"
 }

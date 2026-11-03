@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "A szabadnap teljesen kimarad. Rövidített napon a munka a megadott időpontban ér véget. Ezek a dátumok érvényesek az SLA-időzítőkre, a kiemelésre és a postaláda jelentéseire.",
+  "eySIhf": "A kivétel dátuma",
+  "XYoBEy": "A kivétel típusa",
+  "QlSRBm": "Ünnepnapok és rövidített napok",
+  "31/meG": "Még nincs kivétel.",
+  "q4lXaH": "Rövidített nap"
 }

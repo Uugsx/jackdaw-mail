@@ -110,7 +110,7 @@
   "W/kPjn": "Ctrl-Z",
   "kBp8+y": "दैनिक",
   "pvnfJD": "अंधेरा",
-  "mYGY3B": "तारीख",
+  "mYGY3B": "तिथि",
   "H7OUPr": "दिवस",
   "yRdqWH": "दिन",
   "fufFVs": "कॉल अस्वीकार करें",
@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "छुट्टी का दिन पूरी तरह छोड़ दिया जाता है। छोटे दिन पर काम दिए गए समय पर समाप्त होता है। ये तिथियाँ इस मेलबॉक्स के SLA टाइमर, हाइलाइट और रिपोर्ट पर लागू होती हैं।",
+  "eySIhf": "अपवाद की तिथि",
+  "XYoBEy": "अपवाद का प्रकार",
+  "QlSRBm": "छुट्टियाँ और छोटे दिन",
+  "31/meG": "अभी कोई अपवाद नहीं।",
+  "q4lXaH": "छोटा दिन"
 }

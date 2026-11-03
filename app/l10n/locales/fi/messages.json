@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Vapaapäivä ohitetaan kokonaan. Lyhennetyllä päivällä työ päättyy annettuun aikaan. Nämä päivämäärät huomioidaan tämän postilaatikon SLA-ajastimissa, korostuksessa ja raporteissa.",
+  "eySIhf": "Poikkeuksen päivämäärä",
+  "XYoBEy": "Poikkeuksen tyyppi",
+  "QlSRBm": "Juhlapyhät ja lyhennetyt päivät",
+  "31/meG": "Ei vielä poikkeuksia.",
+  "q4lXaH": "Lyhennetty päivä"
 }
