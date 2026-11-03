@@ -248,6 +248,7 @@
   let draggedPanelId: ReportDashboardSectionId | null = null;
   let fromDateInput: HTMLInputElement;
   let toDateInput: HTMLInputElement;
+  let exceptionDateInput: HTMLInputElement;
   const dashboardLayoutSetting = getLocalStorage<unknown>(
     "reports.dashboard.layout.v1",
     REPORT_DASHBOARD_DEFAULT_LAYOUT,
@@ -2201,12 +2202,25 @@
         <div class="working-exception-form">
           <label class="working-time-control">
             <span>{$t`Date`}</span>
-            <input
-              type="date"
-              bind:value={newExceptionDate}
-              disabled={loading || mailFoldersLoading}
-              aria-label={$t`Exception date`}
-            />
+            <div class="date-input-wrap">
+              <input
+                bind:this={exceptionDateInput}
+                type="date"
+                bind:value={newExceptionDate}
+                disabled={loading || mailFoldersLoading}
+                aria-label={$t`Exception date`}
+              />
+              <button
+                type="button"
+                class="date-picker-button"
+                title={$t`Open calendar`}
+                aria-label={$t`Open calendar`}
+                disabled={loading || mailFoldersLoading}
+                on:click={() => openDatePicker(exceptionDateInput)}
+              >
+                <CalendarIcon size="15px" />
+              </button>
+            </div>
           </label>
           <select
             bind:value={newExceptionKind}
