@@ -3362,5 +3362,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Un jour chômé est entièrement ignoré. Un jour raccourci, le travail se termine à l'heure indiquée. Ces dates s'appliquent aux minuteurs SLA, à la mise en évidence et aux rapports de cette boîte.",
+  "eySIhf": "Date de l'exception",
+  "XYoBEy": "Type d'exception",
+  "QlSRBm": "Jours fériés et jours raccourcis",
+  "31/meG": "Aucune exception pour le moment.",
+  "q4lXaH": "Jour raccourci"
 }

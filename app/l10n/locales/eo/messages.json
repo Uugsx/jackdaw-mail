@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Libertago tute preterlasiĝas. En mallongigita tago laboro finiĝas je la donita horo. Tiuj datoj validas por SLA-tempiloj, emfazo kaj raportoj de ĉi tiu poŝtkesto.",
+  "eySIhf": "Dato de escepto",
+  "XYoBEy": "Speco de escepto",
+  "QlSRBm": "Festotagoj kaj mallongigitaj tagoj",
+  "31/meG": "Ankoraŭ neniu escepto.",
+  "q4lXaH": "Mallongigita tago"
 }

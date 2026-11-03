@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Ngày nghỉ được bỏ qua hoàn toàn. Vào ngày rút ngắn, giờ làm kết thúc vào thời điểm đã đặt. Các ngày này áp dụng cho bộ đếm SLA, đánh dấu và báo cáo của hộp thư này.",
+  "eySIhf": "Ngày ngoại lệ",
+  "XYoBEy": "Loại ngoại lệ",
+  "QlSRBm": "Ngày lễ và ngày rút ngắn",
+  "31/meG": "Chưa có ngoại lệ.",
+  "q4lXaH": "Ngày rút ngắn"
 }

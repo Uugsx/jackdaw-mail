@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "A day off is skipped entirely. On a short day work ends at the given time. These dates apply to SLA timers, highlighting and reports for this mailbox.",
+  "eySIhf": "Exception date",
+  "XYoBEy": "Exception type",
+  "QlSRBm": "Holidays and short days",
+  "31/meG": "No exceptions yet.",
+  "q4lXaH": "Short day"
 }

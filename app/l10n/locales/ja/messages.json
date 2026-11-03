@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "休日は丸ごとスキップされます。短縮日は指定した時刻に勤務が終わります。これらの日付は、このメールボックスの SLA タイマー、強調表示、レポートに反映されます。",
+  "eySIhf": "例外の日付",
+  "XYoBEy": "例外の種類",
+  "QlSRBm": "祝日と短縮日",
+  "31/meG": "例外はまだありません。",
+  "q4lXaH": "短縮日"
 }

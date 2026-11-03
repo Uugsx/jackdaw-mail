@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Ein freier Tag wird komplett übersprungen. An einem verkürzten Tag endet die Arbeit zur angegebenen Uhrzeit. Diese Daten gelten für SLA-Timer, Hervorhebungen und Berichte dieses Postfachs.",
+  "eySIhf": "Datum der Ausnahme",
+  "XYoBEy": "Art der Ausnahme",
+  "QlSRBm": "Feiertage und verkürzte Tage",
+  "31/meG": "Noch keine Ausnahmen.",
+  "q4lXaH": "Verkürzter Tag"
 }

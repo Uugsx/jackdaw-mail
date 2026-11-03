@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "En ledig dag hoppas över helt. På en förkortad dag slutar arbetet vid angiven tid. Dessa datum gäller SLA-timers, markering och rapporter för den här brevlådan.",
+  "eySIhf": "Undantagsdatum",
+  "XYoBEy": "Typ av undantag",
+  "QlSRBm": "Helgdagar och förkortade dagar",
+  "31/meG": "Inga undantag ännu.",
+  "q4lXaH": "Förkortad dag"
 }

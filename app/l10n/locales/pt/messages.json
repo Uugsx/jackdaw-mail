@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Um dia de folga é ignorado por completo. Num dia reduzido o trabalho termina à hora indicada. Estas datas aplicam-se aos temporizadores de SLA, ao destaque e aos relatórios desta caixa.",
+  "eySIhf": "Data da exceção",
+  "XYoBEy": "Tipo de exceção",
+  "QlSRBm": "Feriados e dias reduzidos",
+  "31/meG": "Ainda não há exceções.",
+  "q4lXaH": "Dia reduzido"
 }

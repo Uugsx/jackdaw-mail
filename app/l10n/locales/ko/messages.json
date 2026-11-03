@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "휴일은 통째로 건너뜁니다. 단축 근무일에는 지정한 시각에 근무가 끝납니다. 이 날짜는 이 사서함의 SLA 타이머, 강조 표시, 보고서에 적용됩니다.",
+  "eySIhf": "예외 날짜",
+  "XYoBEy": "예외 유형",
+  "QlSRBm": "공휴일과 단축 근무일",
+  "31/meG": "아직 예외가 없습니다.",
+  "q4lXaH": "단축 근무일"
 }

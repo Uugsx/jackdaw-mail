@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "چھٹی کا دن مکمل طور پر چھوڑ دیا جاتا ہے۔ مختصر دن میں کام مقررہ وقت پر ختم ہوتا ہے۔ یہ تاریخیں اس میل باکس کے SLA ٹائمرز، نمایاں کرنے اور رپورٹس پر لاگو ہوتی ہیں۔",
+  "eySIhf": "استثنا کی تاریخ",
+  "XYoBEy": "استثنا کی قسم",
+  "QlSRBm": "تعطیلات اور مختصر دن",
+  "31/meG": "ابھی کوئی استثنا نہیں۔",
+  "q4lXaH": "مختصر دن"
 }

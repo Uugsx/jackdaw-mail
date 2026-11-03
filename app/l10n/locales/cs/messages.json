@@ -108,7 +108,7 @@
   "W/kPjn": "Ctrl-Z",
   "kBp8+y": "denně",
   "pvnfJD": "Tmavý",
-  "mYGY3B": "Datum:",
+  "mYGY3B": "Datum",
   "H7OUPr": "Den",
   "yRdqWH": "Den / měsíc",
   "fufFVs": "Odmítnout hovor",
@@ -3360,5 +3360,11 @@
   "NNLgBD": "Notes on messages",
   "uNSP9M": "Ticket keys like ABC-123 in a note become links. Enter the tracker address with {key} in place of the key, for example https://jira.example.com/browse/{key}",
   "IiG9Sm": "The address must start with http:// or https:// and contain {key}",
-  "ZpwGdU": "Note on this message, for example a ticket number"
+  "ZpwGdU": "Note on this message, for example a ticket number",
+  "C4GXkH": "Volný den se přeskočí celý. V zkrácený den práce končí v uvedený čas. Tato data platí pro časovače SLA, zvýraznění a přehledy této schránky.",
+  "eySIhf": "Datum výjimky",
+  "XYoBEy": "Typ výjimky",
+  "QlSRBm": "Svátky a zkrácené dny",
+  "31/meG": "Zatím žádné výjimky.",
+  "q4lXaH": "Zkrácený den"
 }
