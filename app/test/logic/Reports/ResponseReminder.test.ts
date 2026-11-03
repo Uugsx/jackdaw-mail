@@ -500,4 +500,31 @@ describe("ResponseReminder", () => {
       );
     }
   });
+  test("учитывает сокращённый день и выходной из календаря исключений", () => {
+    const schedule: WorkingHoursSchedule = {
+      ...weekdaySchedule,
+      exceptions: [
+        { date: "2026-11-03", kind: "short", endMinutes: 14 * 60 },
+        { date: "2026-11-04", kind: "off" },
+      ],
+    };
+    const late = getResponseSlaProgress(
+      { ...request, receivedAt: new Date(2026, 10, 3, 14, 3) },
+      60,
+      new Date(2026, 10, 3, 14, 33),
+      schedule,
+    );
+    expect(late.status).toBe("waiting-for-working-hours");
+    expect(late.overdueSeconds).toBe(0);
+    expect(late.deadlineAt).toEqual(new Date(2026, 10, 5, 10, 30));
+
+    const beforeEnd = getResponseSlaProgress(
+      { ...request, receivedAt: new Date(2026, 10, 3, 13, 30) },
+      60,
+      new Date(2026, 10, 3, 14, 33),
+      schedule,
+    );
+    expect(beforeEnd.elapsedSeconds).toBe(30 * 60);
+    expect(beforeEnd.deadlineAt).toEqual(new Date(2026, 10, 5, 10, 0));
+  });
 });

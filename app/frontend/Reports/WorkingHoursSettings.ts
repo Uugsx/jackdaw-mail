@@ -41,7 +41,22 @@ export function setWorkingHoursSchedule(
 export function subscribeWorkingHoursSettings(
   listener: () => void,
 ): () => void {
-  return workingHoursSetting.subscribe(listener);
+  const unsubscribe = workingHoursSetting.subscribe(listener);
+  // Расписание правится в окне «Отчётов», а считается в других окнах.
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key == null || event.key == WORKING_HOURS_STORAGE_KEY) {
+      listener();
+    }
+  };
+  if (typeof window != "undefined") {
+    window.addEventListener("storage", onStorage);
+  }
+  return () => {
+    unsubscribe();
+    if (typeof window != "undefined") {
+      window.removeEventListener("storage", onStorage);
+    }
+  };
 }
 
 function readConfigMap(): Record<string, unknown> {

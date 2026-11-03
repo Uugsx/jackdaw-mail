@@ -41,7 +41,10 @@
     formatWorkingTime,
     type WorkingHoursSchedule,
   } from "../../logic/Reports/WorkingHours";
-  import { getWorkingHoursSchedule } from "./WorkingHoursSettings";
+  import {
+    getWorkingHoursSchedule,
+    subscribeWorkingHoursSettings,
+  } from "./WorkingHoursSettings";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { CollectionObserver } from "svelte-collections";
   import type { MailAccount } from "../../logic/Mail/MailAccount";
@@ -153,6 +156,7 @@
   const registerLiveSlaOnDestroy = onDestroy;
   registerLiveSlaOnDestroy(() => {
     mounted = false;
+    unsubscribeWorkingHours?.();
     appGlobal.emailAccounts.unregisterObserver(liveSlaMailAccountsObserver);
     if (mailAccountsReloadTimer != null) {
       clearTimeout(mailAccountsReloadTimer);
@@ -160,8 +164,18 @@
     }
   });
 
+  let unsubscribeWorkingHours: (() => void) | null = null;
+
+  /** Расписание (в т.ч. праздники и сокращённые дни) могло измениться в «Отчётах». */
+  function reloadWorkingHours(): void {
+    if (selectedMailAccountId != null) {
+      workingHours = getWorkingHoursSchedule(selectedMailAccountId);
+    }
+  }
+
   async function initializeLiveSla(): Promise<void> {
     mounted = true;
+    unsubscribeWorkingHours = subscribeWorkingHoursSettings(reloadWorkingHours);
     appGlobal.emailAccounts.registerObserver(liveSlaMailAccountsObserver);
     const session = getReportSession();
     responseTargetMinutes = normalizeResponseTargetMinutes(
