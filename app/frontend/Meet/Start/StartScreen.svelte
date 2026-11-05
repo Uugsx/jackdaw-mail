@@ -48,11 +48,13 @@
         <Button
           label={$t`Start a new meeting`}
           icon={PlusIcon}
-          onClick={startAdHocMeeting}
+          onClick={() => attempt(startAdHocMeeting)}
           errorCallback={showError}
           classes="primary filled" />
       {:else}
         <div class="no-account">
+          <VideoOffIcon size="24" aria-hidden="true" />
+          <h3 class="no-account-title">{$t`No meeting account`}</h3>
           <p>{$t`Group video meetings need a meeting account. Calls to colleagues work without it: open a chat or a contact and press the call button.`}</p>
           <Button label={$t`Connect a meeting account`} classes="secondary" onClick={() => openSettingsCategoryByID("meet")} />
         </div>
@@ -63,15 +65,20 @@
           placeholder={$t`Enter meeting link to join`}
           on:input={() => errorMsg = null}
           on:paste={() => catchErrors(joinURLPasted, showError)}
-          on:keydown={event => onKeyEnter(event, () => catchErrors(() => joinByURL(conferenceURL), showError))} />
+          on:keydown={event => onKeyEnter(event, () => catchErrors(() => attempt(() => joinByURL(conferenceURL)), showError))} />
         <Button label={$t`Join`} classes="secondary"
           disabled={!conferenceURL}
-          onClick={() => joinByURL(conferenceURL)}
+          onClick={() => attempt(() => joinByURL(conferenceURL))}
           errorCallback={showError} />
       </div>
       {#if errorMsg}
         <div class="error" role="alert">
           <ErrorMessage bind:errorMessage={errorMsg} errorGravity={ErrorGravity.Error} ex={errorEx} />
+          {#if lastAttempt}
+            <Button label={$t`Try again`} classes="secondary retry"
+              onClick={retryLast}
+              errorCallback={showError} />
+          {/if}
         </div>
       {/if}
     </div>
@@ -91,7 +98,10 @@
       <h3 class="title font-small">{$t`Today's next meetings`}</h3>
       <MeetingList meetings={upcomingMeetings}
         onClick={joinMeetingEvent}>
-        <div slot="emptyMsg" class="emptyMsg font-small">{$t`No meetings`}</div>
+        <div slot="emptyMsg" class="emptyMsg font-small">
+          <span>{$t`No more meetings today`}</span>
+          <Button label={$t`Plan a meeting`} plain classes="font-small" onClick={addToCalendar} errorCallback={showError} />
+        </div>
       </MeetingList>
     </section>
     {#if !appGlobal.isMobile}
@@ -99,7 +109,7 @@
         <h3 class="title font-small">{$t`Previous meetings`}</h3>
         <MeetingList meetings={previousMeetings}
           onClick={openEvent}>
-          <div slot="emptyMsg" class="emptyMsg font-small">{$t`No meetings`}</div>
+          <div slot="emptyMsg" class="emptyMsg font-small">{$t`No meetings in the last 14 days`}</div>
         </MeetingList>
       </section>
     {/if}
@@ -135,6 +145,7 @@
   import Button from "../../Shared/Button.svelte";
   import VideoIcon from 'lucide-svelte/icons/video';
   import PlusIcon from 'lucide-svelte/icons/plus';
+  import VideoOffIcon from "lucide-svelte/icons/video-off";
   import AddToCalendarIcon from "lucide-svelte/icons/calendar-plus";
   import PhoneCallIcon from "lucide-svelte/icons/phone";
   import VideoConfIcon from "lucide-svelte/icons/video";
@@ -182,6 +193,20 @@
 
   let errorMsg: string | null = null;
   let errorEx: Error | null = null;
+
+  /** Последнее действие, которое можно повторить после ошибки */
+  let lastAttempt: (() => Promise<unknown>) | null = null;
+
+  async function attempt(action: () => Promise<unknown>) {
+    lastAttempt = action;
+    await action();
+  }
+
+  async function retryLast() {
+    assert(lastAttempt, $t`Nothing to retry`);
+    errorMsg = null;
+    await lastAttempt();
+  }
 
   function showError(ex: Error) {
     errorMsg = friendlyErrorMessage(ex);
@@ -264,9 +289,20 @@
     border-radius: 8px;
     background-color: var(--main-bg);
   }
-  .no-account p {
+  .no-account-title {
     margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .no-account p {
+    margin: 0 0 4px;
     line-height: 1.45;
+  }
+  .error {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
   .join {
     display: flex;
@@ -275,6 +311,10 @@
   .meeting-link {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .meeting-link:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
   }
   .meetings {
     display: flex;
@@ -295,6 +335,11 @@
     padding: 0 4px;
   }
   .emptyMsg {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    padding: 4px 0;
     color: var(--main-fg);
     opacity: 0.7;
   }
