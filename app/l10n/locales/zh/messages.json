@@ -3368,5 +3368,8 @@
   "31/meG": "暂无例外。",
   "q4lXaH": "缩短工作日",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "取消订阅",
+  "6WZ99x": "订阅有效。下次扣款：{0}",
+  "sKIJT1": "订阅已取消。访问权限持续到 {0}"
 }

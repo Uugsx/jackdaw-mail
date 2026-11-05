@@ -3368,5 +3368,8 @@
   "31/meG": "아직 예외가 없습니다.",
   "q4lXaH": "단축 근무일",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "구독 취소",
+  "6WZ99x": "구독이 활성 상태입니다. 다음 결제: {0}",
+  "sKIJT1": "구독이 취소되었습니다. {0}까지 이용할 수 있습니다"
 }

@@ -3368,5 +3368,8 @@
   "31/meG": "Δεν υπάρχουν εξαιρέσεις ακόμη.",
   "q4lXaH": "Μειωμένη ημέρα",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Ακύρωση συνδρομής",
+  "6WZ99x": "Η συνδρομή είναι ενεργή. Επόμενη χρέωση: {0}",
+  "sKIJT1": "Η συνδρομή ακυρώθηκε. Η πρόσβαση ισχύει έως {0}"
 }

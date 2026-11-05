@@ -3368,5 +3368,8 @@
   "31/meG": "Ei vielä poikkeuksia.",
   "q4lXaH": "Lyhennetty päivä",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Peruuta tilaus",
+  "6WZ99x": "Tilaus on aktiivinen. Seuraava veloitus: {0}",
+  "sKIJT1": "Tilaus on peruttu. Käyttöoikeus jatkuu {0} asti"
 }

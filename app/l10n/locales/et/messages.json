@@ -3368,5 +3368,8 @@
   "31/meG": "Erandeid pole veel.",
   "q4lXaH": "Lühendatud päev",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Tühista tellimus",
+  "6WZ99x": "Tellimus on aktiivne. Järgmine tasu: {0}",
+  "sKIJT1": "Tellimus on tühistatud. Juurdepääs kehtib kuni {0}"
 }

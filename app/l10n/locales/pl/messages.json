@@ -3368,5 +3368,8 @@
   "31/meG": "Brak wyjątków.",
   "q4lXaH": "Dzień skrócony",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Anuluj subskrypcję",
+  "6WZ99x": "Subskrypcja jest aktywna. Następna opłata: {0}",
+  "sKIJT1": "Subskrypcja anulowana. Dostęp trwa do {0}"
 }

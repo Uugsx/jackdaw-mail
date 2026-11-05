@@ -3368,5 +3368,8 @@
   "31/meG": "例外はまだありません。",
   "q4lXaH": "短縮日",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "サブスクリプションを解約",
+  "6WZ99x": "サブスクリプションは有効です。次回の請求日：{0}",
+  "sKIJT1": "サブスクリプションは解約済みです。{0} までご利用いただけます"
 }

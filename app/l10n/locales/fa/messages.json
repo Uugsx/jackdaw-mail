@@ -3368,5 +3368,8 @@
   "31/meG": "هنوز استثنایی وجود ندارد.",
   "q4lXaH": "روز کوتاه",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "لغو اشتراک",
+  "6WZ99x": "اشتراک فعال است. پرداخت بعدی: {0}",
+  "sKIJT1": "اشتراک لغو شده است. دسترسی تا {0} ادامه دارد"
 }

@@ -157,7 +157,7 @@
     "plans.yearly.note": "$6.67 a month, a third less than paying monthly.",
     "plans.checkout": "Buy a key",
     "plans.trialNote": "You can try Pro free for 7 days. The trial starts inside the app and needs no card. While it runs, the app needs internet access because the trial is checked online.",
-    "plans.paymentNote": "Payment is handled by Paddle. The key appears on this page as soon as the payment is confirmed and is emailed to the address you used at checkout. The subscription renews automatically; you can cancel any time using the link in Paddle's email. Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
+    "plans.paymentNote": "Payment is handled by Paddle. The key appears on this page as soon as the payment is confirmed and is emailed to the address you used at checkout. The subscription renews automatically; you can cancel any time in the app: Settings → Jackdaw Pro → Cancel subscription (or via the link in Paddle's email). Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
     "billing.unavailable": "The purchase link is not configured yet.",
     "billing.storeUnavailable": "The payment store is not connected yet.",
     "billing.checking": "Checking the payment store…",

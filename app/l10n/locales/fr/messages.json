@@ -3370,5 +3370,8 @@
   "31/meG": "Aucune exception pour le moment.",
   "q4lXaH": "Jour raccourci",
   "qS5//Q": "Gris",
-  "6WYHX4": "Sélectionnez une boîte mail ci-dessus : sans elle, le planning et les exceptions ne sont pas enregistrés et n’affectent pas le SLA."
+  "6WYHX4": "Sélectionnez une boîte mail ci-dessus : sans elle, le planning et les exceptions ne sont pas enregistrés et n’affectent pas le SLA.",
+  "fHXMPy": "Annuler l’abonnement",
+  "6WZ99x": "Abonnement actif. Prochain prélèvement : {0}",
+  "sKIJT1": "Abonnement annulé. L’accès reste valable jusqu’au {0}"
 }
