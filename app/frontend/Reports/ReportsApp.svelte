@@ -6767,12 +6767,12 @@
 
   .after-hours-response-table th:nth-child(4),
   .after-hours-response-table td:nth-child(4) {
-    width: 36%;
+    width: 30%;
   }
 
   .after-hours-response-table th:nth-child(5),
   .after-hours-response-table td:nth-child(5) {
-    width: 16%;
+    width: 22%;
   }
 
   .category-rhythm-panel {
@@ -7137,9 +7137,15 @@
 
   .status-pill {
     display: inline-block;
+    box-sizing: border-box;
     min-width: 64px;
-    padding: 3px 6px;
-    border-radius: 999px;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 12px;
+    line-height: 1.25;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
     background: color-mix(in srgb, var(--danger-fg, #b84e3b) 12%, transparent);
     color: var(--danger-fg, #b84e3b);
     font-size: 12px;
@@ -7176,8 +7182,12 @@
   }
 
   .outside-hours-marker {
-    padding: 3px 6px;
-    border-radius: 999px;
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 12px;
+    overflow-wrap: normal;
+    word-break: normal;
     background: color-mix(in srgb, var(--reports-accent) 13%, transparent);
   }
 
@@ -7338,7 +7348,7 @@
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
   }
 
   .dashboard-item:not(.layout-full) .response-detail-block .status-pill {
@@ -7383,12 +7393,12 @@
 
   .response-detail-table th:nth-child(5),
   .response-detail-table td:nth-child(5) {
-    width: 31%;
+    width: 25%;
   }
 
   .response-detail-table th:nth-child(6),
   .response-detail-table td:nth-child(6) {
-    width: 12%;
+    width: 18%;
   }
 
   .response-day-table th:first-child,

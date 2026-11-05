@@ -396,3 +396,31 @@ export async function openMailImageFromContext(
     showUserError(ex);
   }
 }
+
+/** Копирует картинку из письма в буфер обмена (PNG). */
+export async function copyMailImageFromContext(
+  webview: WebviewGuest,
+  x: number,
+  y: number,
+  srcURL?: URLString,
+): Promise<void> {
+  try {
+    let blob: Blob | null = null;
+    let dataURL = webview?.executeJavaScript
+      ? await extractImageDataURLFromWebview(webview, x, y, srcURL)
+      : null;
+    if (dataURL) {
+      blob = await dataURLToBlob(dataURL);
+    } else {
+      let imageURL = srcURL || (webview?.executeJavaScript ? await extractImageSourceFromWebview(webview, x, y) : null);
+      blob = imageURL ? await fetchMailImageBlob(imageURL, webview) : null;
+    }
+    if (!blob) {
+      throw new UserError(gt`Could not read the image`);
+    }
+    let png = blob.type.split(";")[0].trim().toLowerCase() == "image/png" ? blob : await reencodeImageAsPNG(blob);
+    await appGlobal.remoteApp.writeImageToClipboard(new Uint8Array(await png.arrayBuffer()));
+  } catch (ex) {
+    showUserError(ex);
+  }
+}
