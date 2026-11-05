@@ -41,8 +41,19 @@
   radiogroup {
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    min-width: 0;
   }
   radiogroup.vertical {
     flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
   }
 </style>

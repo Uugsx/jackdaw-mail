@@ -7,7 +7,7 @@
           <hbox class="time-box" >
             <TimeBox {event} />
             <vbox flex />
-            {#if width > 600}
+            {#if width > 600 && !showParticipants}
               <EventInDayView {event} />
             {/if}
           </hbox>
