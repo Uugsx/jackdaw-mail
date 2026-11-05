@@ -724,7 +724,7 @@
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ transactionId: purchase.transactionId, claimToken: purchase.claimToken, email: purchase.email }),
+        body: JSON.stringify({ transactionId: purchase.transactionId, claimToken: purchase.claimToken, email: purchase.email, language: currentLanguage }),
       });
       status = response.status;
       payload = await response.json().catch(() => null);
