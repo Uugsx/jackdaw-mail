@@ -58,6 +58,9 @@
   export let showHours = 10;
   export let defaultFocusHour = 8;
   export let enlargeSelectedDay = false;
+  /** Для сегодняшнего дня прокручивать к текущему часу, а не к defaultFocusHour.
+   * Мини-шкала в форме события передаёт false, чтобы показать время самого события. */
+  export let focusNow = true;
 
   let startHour = 0;
   let endHour = 24;
@@ -67,7 +70,7 @@
   let visibleHeight = 0;
   $: pxPerHour =  visibleHeight / showHours;
   $: scrollHeight = pxPerHour * (endHour - startHour);
-  $: focusHour = start.toDateString() == new Date().toDateString()
+  $: focusHour = focusNow && start.toDateString() == new Date().toDateString()
     ? new Date().getHours()
     : defaultFocusHour;
   $: if (scrollE) scrollE.scrollTo((focusHour - 0.5) * pxPerHour);

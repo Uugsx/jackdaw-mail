@@ -9,6 +9,7 @@
     </select>
   </label>
   <p class="meeting-help">{$t`Select a video service and paste its meeting link. Teams can be created when you save.`}</p>
+  <hbox class="url-row">
   <input type="url" bind:value={event.onlineMeetingURL}
     placeholder={urlPlaceholder(selectedProvider)}
     on:input={onURLChanged} />
@@ -57,6 +58,7 @@
       disabled={!event.isOnline && !hasURL}
       onClick={onRemove}
       />
+  </hbox>
   </hbox>
   {#if pendingTeamsCreate}
     <hbox class="hint font-smallest">{$t`Teams link will be created when you save`}</hbox>
@@ -183,7 +185,14 @@
     opacity: 0.7;
     margin-block-start: 4px;
   }
+  /* Поле ссылки и действия с ней — в одну строку, кнопки по центру поля. */
+  .url-row {
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   .buttons {
+    align-items: center;
     gap: 4px;
     flex-wrap: wrap;
   }
