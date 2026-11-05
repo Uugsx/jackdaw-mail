@@ -66,8 +66,8 @@
 
   <main>
     <section class="hero container" aria-labelledby="hero-title">
-      <h1 id="hero-title" class="hero-title" data-i18n="hero.title">Почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах</h1>
-      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Коллегам с Jackdaw Mail можно позвонить или написать в зашифрованный чат прямо из письма. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
+      <h1 id="hero-title" class="hero-title" data-i18n="hero.title">Ни одно важное письмо не останется без ответа</h1>
+      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail — почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах. Он показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Коллегам с Jackdaw Mail можно позвонить или написать в зашифрованный чат прямо из письма. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
 
       <div class="hero-actions">
         <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary">
@@ -86,11 +86,23 @@
     <section id="showcase" class="showcase container" aria-labelledby="showcase-heading">
       <h2 id="showcase-heading" class="visually-hidden" data-i18n="showcase.heading">Экраны программы</h2>
       <div class="showcase-tabs" data-i18n="showcase.tablist" data-i18n-attr="aria-label" role="tablist" aria-label="Экраны программы">
-        <button id="showcase-tab-reports" class="showcase-tab active" type="button" role="tab" aria-selected="true" aria-controls="tab-reports" tabindex="0" data-target="tab-reports" data-i18n="showcase.reports.tab">Отчёт</button>
+        <button id="showcase-tab-mail" class="showcase-tab active" type="button" role="tab" aria-selected="true" aria-controls="tab-mail" tabindex="0" data-target="tab-mail" data-i18n="showcase.mail.tab">Почта</button>
+        <button id="showcase-tab-calendar" class="showcase-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-calendar" tabindex="-1" data-target="tab-calendar" data-i18n="showcase.calendar.tab">Календарь</button>
+        <button id="showcase-tab-reports" class="showcase-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-reports" tabindex="-1" data-target="tab-reports" data-i18n="showcase.reports.tab">Отчёт</button>
         <button id="showcase-tab-sla" class="showcase-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-sla" tabindex="-1" data-target="tab-sla" data-i18n="showcase.sla.tab">Очередь неотвеченных</button>
       </div>
 
-      <div id="tab-reports" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-reports" tabindex="0">
+      <div id="tab-mail" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-mail" tabindex="0">
+        <img src="assets/shot-mail-open.jpg" width="1800" height="1007" data-i18n="showcase.mail.imageAlt" data-i18n-attr="alt" alt="Jackdaw Mail: список писем и открытое письмо" class="showcase-img">
+        <p class="showcase-caption" data-i18n="showcase.mail.caption">Папки, список и открытое письмо в одном окне. Тёмная и светлая темы. Данные на экране вымышленные.</p>
+      </div>
+
+      <div id="tab-calendar" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-calendar" tabindex="0" hidden>
+        <img src="assets/shot-calendar.jpg" width="1800" height="1007" data-i18n="showcase.calendar.imageAlt" data-i18n-attr="alt" alt="Календарь Jackdaw Mail: неделя со встречами" class="showcase-img">
+        <p class="showcase-caption" data-i18n="showcase.calendar.caption">Календарь Exchange рядом с почтой: события, приглашения и ответы на них. Данные на экране вымышленные.</p>
+      </div>
+
+      <div id="tab-reports" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-reports" tabindex="0" hidden>
         <img src="assets/reports-demo.svg" width="1440" height="900" data-language-image data-image-ru="assets/reports-demo.svg" data-image-en="assets/reports-demo-en.svg" data-i18n="showcase.reports.imageAlt" data-i18n-attr="alt" alt="Отчёт Jackdaw Mail: число писем, доля ответов, среднее время ответа, график активности, тепловая карта по часам и таблица ответов" class="showcase-img">
         <p class="showcase-caption" data-i18n="showcase.reports.caption">Отчёт за период: сколько писем пришло, на сколько ответили и за какое время. Тепловая карта показывает, в какие часы писем больше всего. Данные на экране вымышленные.</p>
       </div>
@@ -99,6 +111,16 @@
         <img src="assets/sla-control-demo.svg" width="1440" height="900" data-language-image data-image-ru="assets/sla-control-demo.svg" data-image-en="assets/sla-control-demo-en.svg" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Очередь неотвеченных писем в правой панели Jackdaw Mail рядом с открытым письмом" class="showcase-img">
         <p class="showcase-caption" data-i18n="showcase.sla.caption">Очередь в правой панели, рядом с открытым письмом: у каждого письма видно, сколько прошло, когда срок и сколько осталось. Данные на экране вымышленные.</p>
       </div>
+    </section>
+
+    <section id="benefits" class="section container" aria-labelledby="benefits-title">
+      <h2 id="benefits-title" class="section-title" data-i18n="benefits.title">Зачем он нужен</h2>
+      <ul class="benefits">
+        <li><strong data-i18n="benefits.1.h">Видно, что горит</strong><span data-i18n="benefits.1.t">Очередь неотвеченных писем с рабочими минутами: сколько прошло, когда срок, сколько осталось.</span></li>
+        <li><strong data-i18n="benefits.2.h">Честная скорость ответов</strong><span data-i18n="benefits.2.t">Отчёт считает только рабочее время: ночь и выходные не портят статистику.</span></li>
+        <li><strong data-i18n="benefits.3.h">Всё в одном окне</strong><span data-i18n="benefits.3.t">Почта, календарь, встречи, звонки и зашифрованный чат с коллегами.</span></li>
+        <li><strong data-i18n="benefits.4.h">Данные остаются у вас</strong><span data-i18n="benefits.4.t">Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</span></li>
+      </ul>
     </section>
 
     <section id="sla" class="section container" aria-labelledby="sla-title">
@@ -456,7 +478,7 @@
             </table>
           </div>
           <ul class="plain-list note">
-            <li data-i18n="downloads.note.prerelease">Сейчас выходят только предварительные сборки, версии с пометкой -dev обновляются часто.</li>
+            <li data-i18n="downloads.note.prerelease">Программа обновляется сама: когда выходит новая версия, она предложит её установить.</li>
             <li data-i18n="downloads.note.macos">Сборка для macOS не заверена Apple. При первом запуске macOS её заблокирует — разрешите запуск в системных настройках, в разделе безопасности.</li>
             <li data-i18n="downloads.note.windows">Установщик для Windows не подписан, поэтому SmartScreen может показать предупреждение: нажмите «Подробнее», затем «Выполнить в любом случае».</li>
             <li data-i18n="downloads.note.linux">Готовых сборок для Linux пока нет. Версии для iOS и Android в этом репозитории ещё в работе.</li>
@@ -509,7 +531,7 @@
         <a href="legal/refund.html" data-i18n="footer.refund">Политика возврата</a>
         <a href="https://github.com/Uugsx" target="_blank" rel="noopener noreferrer" data-i18n="footer.author">Автор — @Uugsx</a>
       </nav>
-      <p class="footer-credit"><span data-i18n="footer.operator">Оператор — Nikita Galkin.</span> <span data-i18n="footer.support">Поддержка:</span> <a href="mailto:support@jackdaw-mail.pro">support@jackdaw-mail.pro</a></p>
+      <p class="footer-credit"><span data-i18n="footer.operator">Разработчик — Никита Галкин.</span> <span data-i18n="footer.support">Поддержка:</span> <a href="mailto:support@jackdaw-mail.pro">support@jackdaw-mail.pro</a></p>
       <p class="footer-credit" data-i18n="footer.credit">Основано на открытом коде Ben Bucksch, Beonex GmbH и других участников.</p>
     </div>
   </footer>
