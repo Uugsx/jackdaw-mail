@@ -19,7 +19,8 @@
     start={calendarStart}
     showHours={4}
     showDays={1}
-    defaultFocusHour={calendarStart.getHours() + calendarStart.getMinutes() / 60 - 1}
+    defaultFocusHour={Math.max(calendarStart.getHours() + calendarStart.getMinutes() / 60 - 1, 0.5)}
+    focusNow={false}
     >
     <hbox class="proposal" slot="event-overlay" let:start let:end let:event>
       <EventProposal {start} {end}>
@@ -61,11 +62,16 @@
   .calendar :global(.header) {
     background-color: var(--leftbar-bg);
   }
+  .calendar {
+    min-height: 180px;
+  }
+  /* Подпись часа целиком («08», «8 AM»): прежняя ширина 1.1em обрезала её до «0». */
   .calendar :global(.time.label) {
-    width: 1.1em;
+    min-width: 2ch;
     max-height: 1.3em;
-    overflow: hidden;
+    white-space: nowrap;
     font-size: 70%;
+    font-variant-numeric: tabular-nums;
     margin-inline-end: 6px;
   }
   .proposal {

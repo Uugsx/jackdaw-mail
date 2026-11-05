@@ -91,9 +91,9 @@
   export let participants: Collection<Participant>;
   export let event: Event;
 
-  /** Показываемый диапазон дня, часы */
-  const kFromHour = 7;
-  const kToHour = 21;
+  /** Показываемый диапазон дня, часы. Расширяется, чтобы встреча вне 07–21 была видна. */
+  const kDefaultFromHour = 7;
+  const kDefaultToHour = 21;
   const kSearchFromHour = 9;
   const kSearchToHour = 18;
   const kStepMinutes = 30;
@@ -187,31 +187,38 @@
 
   $: dayLabel = day.toLocaleDateString(getDateTimeLocale(), { weekday: "short", day: "numeric", month: "long" });
 
-  const kSpan = (kToHour - kFromHour) * 60;
+  function isOnDay(date: Date, shownDay: Date): boolean {
+    return date >= shownDay && date < addDays(shownDay, 1);
+  }
+  $: kFromHour = start && isOnDay(start, day) ? Math.min(kDefaultFromHour, start.getHours()) : kDefaultFromHour;
+  $: kToHour = end && isOnDay(new Date(end.getTime() - 1), day)
+    ? Math.max(kDefaultToHour, Math.ceil(end.getHours() + end.getMinutes() / 60))
+    : kDefaultToHour;
+  $: kSpan = (kToHour - kFromHour) * 60;
 
-  function minutesFromDayStart(date: Date): number {
-    return (date.getTime() - day.getTime()) / 60000 - kFromHour * 60;
+  function minutesFromDayStart(date: Date, fromHour: number): number {
+    return (date.getTime() - day.getTime()) / 60000 - fromHour * 60;
   }
 
-  function toPercent(minutes: number): number {
-    return Math.min(100, Math.max(0, minutes / kSpan * 100));
+  function toPercent(minutes: number, span: number): number {
+    return Math.min(100, Math.max(0, minutes / span * 100));
   }
 
-  function clipBlock(from: Date, to: Date): { left: number, width: number } | null {
-    let a = minutesFromDayStart(from);
-    let b = minutesFromDayStart(to);
-    if (b <= 0 || a >= kSpan) {
+  function clipBlock(from: Date, to: Date, fromHour: number, span: number): { left: number, width: number } | null {
+    let a = minutesFromDayStart(from, fromHour);
+    let b = minutesFromDayStart(to, fromHour);
+    if (b <= 0 || a >= span) {
       return null;
     }
-    let left = toPercent(a);
-    let right = toPercent(b);
+    let left = toPercent(a, span);
+    let right = toPercent(b, span);
     return { left, width: Math.max(right - left, 0.5) };
   }
 
   const kHourStep = 2;
   $: hourMarks = Array.from({ length: Math.floor((kToHour - kFromHour) / kHourStep) + 1 }, (_, i) => {
     let hour = kFromHour + i * kHourStep;
-    return { pos: toPercent((hour - kFromHour) * 60), label: String(hour).padStart(2, "0") };
+    return { pos: toPercent((hour - kFromHour) * 60, kSpan), label: String(hour).padStart(2, "0") };
   });
 
   function timeLabel(date: Date): string {
@@ -223,7 +230,7 @@
     let unknown = !item.availability;
     let busyIntervals = (item.availability ?? []).filter(i => !i.free);
     let blocks = busyIntervals
-      .map(i => clipBlock(i.from, i.to))
+      .map(i => clipBlock(i.from, i.to, kFromHour, kSpan))
       .filter(b => !!b);
     let todays = busyIntervals.filter(i => i.to > day && i.from < addDays(day, 1));
     let summary = unknown ? "" : todays.length
@@ -234,7 +241,7 @@
 
   $: hasKnownData = data.some(item => !!item.availability);
 
-  $: selection = clipBlock(start, end);
+  $: selection = clipBlock(start, end, kFromHour, kSpan);
 
   function isBusyAt(item: Availability, from: Date, to: Date): boolean {
     return (item.availability ?? []).some(i => !i.free && i.from < to && from < i.to);

@@ -151,7 +151,7 @@
     weekdayOptions = kAllWeekdays.map(weekday => ({
       value: weekday,
       disabled: weekday == localStartTime.getUTCDay(),
-      label: weekdayLabel(weekday, "narrow"),
+      label: weekdayLabel(weekday, "short"),
       tooltip: weekdayLabel(weekday, "long"),
     }));
 
@@ -246,9 +246,15 @@
   .weekdays .label {
     margin-inline-end: 12px;
   }
+  /* Подпись «пн», «Mon» в одну строку: кнопка растёт по тексту, минимум — круг 28px. */
   .weekdays :global(.weekday) {
-    width: 24px;
-    height: 24px;
+    min-width: 28px;
+    width: auto;
+    height: 28px;
+    padding-inline: 6px;
+    border-radius: 14px;
+    white-space: nowrap;
+    font-size: 12px;
     background-color: var(--headerbar-bg);
     color: var(--headerbar-fg);
     margin-inline-end: 4px;
