@@ -21,6 +21,8 @@
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
   import { goBack } from "../../AppsBar/selectedApp";
+  import { get } from "svelte/store";
+  import { selectionToRestore, selectedAccount, selectedFolder, selectedMessage } from "../Selected";
   import { mailApp } from "../MailJackdawApp";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import MessageDisplay from "./MessageDisplay.svelte";
@@ -31,6 +33,13 @@
 
   function goBackToList() {
     goBack();
+    let saved = get(selectionToRestore);
+    if (saved?.account) {
+      selectionToRestore.set(null);
+      selectedAccount.set(saved.account);
+      selectedFolder.set(saved.folder);
+      selectedMessage.set(saved.message);
+    }
   }
 
   async function replyInCurrentWindow(): Promise<void> {

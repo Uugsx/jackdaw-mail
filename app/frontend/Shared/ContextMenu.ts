@@ -5,7 +5,7 @@ import { catchErrors } from "../Util/error";
 import { blobToDataURL, NotImplemented, type URLString } from "../../logic/util/util";
 import { gt } from "../../l10n/l10n";
 import { ArrayColl } from "svelte-collections";
-import { openMailImageFromContext } from "../Mail/Message/openMailImage";
+import { openMailImageFromContext, copyMailImageFromContext } from "../Mail/Message/openMailImage";
 import { bringAppToFront, globalSearchTerm } from "../AppsBar/selectedApp";
 import { selectedSearchTab } from "../Mail/Selected";
 import { SearchView } from "../Mail/LeftPane/SearchSwitcher.svelte";
@@ -261,8 +261,7 @@ async function saveLinkAs(context: ContextInfo, win: any) {
 }
 
 async function copyImage(context: ContextInfo, win: any) {
-  win = await appGlobal.remoteApp.getWebContents(win.getWebContentsId());
-  win.copyImageAt(context.x, context.y);
+  await copyMailImageFromContext(win, context.x, context.y, context.srcURL);
 }
 
 async function copyImageURL(context: ContextInfo, win: any) {

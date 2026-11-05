@@ -11,6 +11,9 @@ export const selectedAccount = writable<MailAccount>();
 export const selectedFolder = writable<Folder>();
 export const selectedMessage = writable<EMail>();
 
+/** Selection to restore when leaving a message opened from a file/attachment (e.g. nested .eml). */
+export const selectionToRestore = writable<{ account: MailAccount, folder: Folder, message: EMail } | null>(null);
+
 /** Message whose correspondent should be opened when switching to Mail Chat. */
 export const mailChatEntryMessage = writable<EMail | null>(null);
 

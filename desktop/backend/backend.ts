@@ -184,6 +184,7 @@ async function createSharedAppObject() {
     containWebContentsNavigation,
     getWebContents,
     writeTextToClipboard,
+    writeImageToClipboard,
     openExternalURL,
     openWidgetSignIn,
     openWidgetPopout,
@@ -2023,6 +2024,15 @@ function getWebContents(webContentsID: number) {
  */
 function writeTextToClipboard(text: string) {
   clipboard.writeText(text);
+}
+
+/** Копирует картинку (PNG-байты) в системный буфер обмена. */
+function writeImageToClipboard(pngBytes: Uint8Array) {
+  let image = nativeImage.createFromBuffer(Buffer.from(pngBytes));
+  if (image.isEmpty()) {
+    throw new Error("Cannot decode image for clipboard");
+  }
+  clipboard.writeImage(image);
 }
 
 function setBadgeCount(count: number) {

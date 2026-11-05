@@ -1,3 +1,5 @@
+import { selectionToRestore, selectedAccount, selectedFolder, selectedMessage } from "../Mail/Selected";
+import { get } from "svelte/store";
 import type { File as FileEntry } from "../../logic/Files/File";
 import { filesApp } from "./FilesJackdawApp";
 import { selectedFile } from "./selected";
@@ -46,5 +48,10 @@ async function openEMail(mime: Uint8Array) {
   await email.parseMIME();
   // Отдельным экраном: письма из файла нет в списке папки, и обычный просмотр
   // показывал «Письмо не выбрано»
+  selectionToRestore.set({
+    account: get(selectedAccount),
+    folder: get(selectedFolder),
+    message: get(selectedMessage),
+  });
   await openEMailMessageFullscreen(email);
 }
