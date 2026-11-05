@@ -28,14 +28,7 @@
 </vbox>
 
 <vbox class="availability-grid">
-  <ExpandSection>
-    <hbox slot="header" class="header">{$t`Availability of participants`}</hbox>
-    <AvailabilityGrid
-      participants={event.participants}
-      start={$event.startTime}
-      calendar={$event.calendar}
-      />
-  </ExpandSection>
+  <SchedulingAssistant participants={event.participants} {event} />
 </vbox>
 
 <script lang="ts">
@@ -47,8 +40,7 @@
   import PersonAvailability from "./PersonAvailability.svelte";
   import ParticipantConfirmIcon from "./ParticipantConfirmIcon.svelte";
   import ParticipantConfirmText from "./ParticipantConfirmText.svelte";
-  import ExpandSection from "../../Shared/ExpandSection.svelte";
-  import AvailabilityGrid from "./AvailabilityGrid.svelte";
+  import SchedulingAssistant from "./SchedulingAssistant.svelte";
   import SectionTitle from "./SectionTitle.svelte";
   // import OptionalParticipantsIcon from "lucide-svelte/icons/circle-dashed";
   import { t } from "../../../l10n/l10n";
@@ -76,6 +68,9 @@
   }
   .availability-grid {
     margin-block-start: 18px;
+  }
+  .availability-grid {
+    container-type: inline-size;
   }
   .availability-grid .header {
     opacity: 50%;
