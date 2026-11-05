@@ -13,7 +13,7 @@ Related generic docs: [electron-builder.md](./electron-builder.md), [macos.md](.
 | Piece | Role |
 |-------|------|
 | **CI** | `.github/workflows/publish-desktop-jackdaw.yml` — builds Mac and/or Windows, one prerelease |
-| **Version** | `0.9.41-dev.<UTC timestamp>` — suffix from job `prepare` (`OTA_BUILD_SUFFIX`) |
+| **Version** | `0.10.<run_number>` (обычный semver, без `-dev`) — суффикс из job `prepare` (`OTA_BUILD_SUFFIX` = `github.run_number`). Старые `0.9.x-dev.<UTC>` остаются совместимы: `0.10.N` > `0.9.x-dev.*` |
 | **Updater backend** | `desktop/backend/backend.ts` — `electron-updater`, auth, platform-specific install |
 | **Updater UI** | `app/frontend/Settings/About/Update.svelte`, `About.svelte` |
 | **Main process** | `desktop/src/main/index.ts` — startup check, quit-for-update |
@@ -60,15 +60,15 @@ Carry-forward copies the **previous** prerelease’s `latest*.yml` and installer
 
 Example after a Windows-only fix:
 
-- `latest.yml` → `0.9.41-dev.NEW` (Windows users update)
-- `latest-mac.yml` → still `0.9.41-dev.OLD` (Mac users stay put)
+- `latest.yml` → `0.10.NEW` (Windows users update)
+- `latest-mac.yml` → still `0.10.OLD` (Mac users stay put)
 
 **Push to `main` always builds both** — use manual dispatch for single-OS releases.
 
 ### Job `prepare` (ubuntu)
 
 1. `OTA_BUILD_SUFFIX=$(date -u +%Y%m%d%H%M%S)`
-2. Tag: `v0.9.41-dev.${OTA_BUILD_SUFFIX}` on current commit
+2. Tag: `v0.10.${OTA_BUILD_SUFFIX}` on current commit
 3. **Delete** existing release with that tag (if any)
 4. **`gh release create`** empty prerelease
 
@@ -160,7 +160,7 @@ Auth: `autoUpdater.addAuthHeader('token …')` — **do not use `setFeedURL()`**
 
 ### macOS (no Apple Developer signing on prerelease builds)
 
-- **Check:** `electron-updater` (GitHub provider, `allowPrerelease` for `-dev` versions)
+- **Check:** `electron-updater` (GitHub provider, `allowPrerelease` только для старых `-dev` клиентов)
 - **Download:** Custom — **`.dmg`** from GitHub Releases API with progress (`downloadMacDmgUpdate`)
 - **Install:** **Not** Squirrel/ShipIt (ad-hoc builds fail code signature validation)
 
@@ -193,7 +193,7 @@ If Apple Developer ID + notarization are added later, Mac could switch back to z
 
 ## User-facing version string
 
-OTA-capable builds match: `/-dev\.\d{14}$/` (e.g. `0.9.38-dev.20260830220950`).
+OTA-capable builds match: `^\d+\.\d+\.\d+$` (CI, e.g. `0.10.7`) or legacy `/-dev\.\d{14}$/`. Local builds (`0.10.0-dev`) are not OTA.
 
 Dev/local builds without timestamp suffix show **“Automatic updates are not configured”** — expected.
 
@@ -247,7 +247,7 @@ Or push to `main` touching monitored paths.
 - **Manual fallback:** Settings → About always offers a link to the latest GitHub Releases page, with the platform-specific installer available there.
 - **Mac:** DMG download may run in background after check; install only after explicit **Install update**
 
-Do not poll every few minutes — wastes GitHub API and user bandwidth. 4 h is a reasonable default for `-dev` prereleases; increase to 12–24 h when releases become less frequent.
+Do not poll every few minutes — wastes GitHub API and user bandwidth. 4 h is a reasonable default for releases; increase to 12–24 h when releases become less frequent.
 
 ---
 
@@ -259,3 +259,8 @@ Do not poll every few minutes — wastes GitHub API and user bandwidth. 4 h is a
 4. Verify **one** release contains: `latest.yml`, `latest-mac.yml`, `setup.exe`, `*.dmg`, zips
 5. Test Mac: Settings → About → check update → progress → quit → reinstall → new version
 6. Test Windows: same; confirm OTA from previous CI `setup.exe` build
+
+## Релизы без `-dev` (с 0.10)
+
+- Версия CI: `0.10.<run_number>`; релиз в `prepare` создаётся prerelease (чтобы не стать latest до загрузки файлов), в `finalize` PATCH `prerelease=false, make_latest=true`.
+- Новые клиенты видят только latest; старые `-dev` клиенты (allowPrerelease) тоже видят `0.10.N` как более новую.

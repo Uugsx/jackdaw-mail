@@ -11,7 +11,7 @@
 
     {#if !otaCapable}
       <p class="ota-hint">
-        {$t`OTA updates require a GitHub release build. Download the installer from GitHub Releases — the version must include a date suffix, e.g. 0.9.38-dev.20260830204214.`}
+        {$t`OTA updates require a GitHub release build. Download the installer from GitHub Releases — local dev builds (version ending in -dev) do not update.`}
       </p>
     {/if}
 
@@ -30,8 +30,13 @@
   import appIcon from '../../asset/icon/general/app-icon.png';
   import { t } from '../../../l10n/l10n';
 
+  // Сборки CI: 0.10.<номер> (с 0.10) или 0.9.x-dev.<14 цифр> (старые). Локальные сборки (0.10.0-dev) — нет.
+  function isOtaVersion(v: string): boolean {
+    return /^\d+\.\d+\.\d+$/.test(v) || /-dev\.\d{14}$/.test(v);
+  }
+
   let displayVersion = appVersion;
-  let otaCapable = /-dev\.\d{14}$/.test(appVersion);
+  let otaCapable = isOtaVersion(appVersion);
 
   onMount(() => {
     let loadedRemoteApp: any;
@@ -46,12 +51,12 @@
         let status = await remoteApp.getUpdateStatus?.();
         if (status?.appVersion) {
           displayVersion = status.appVersion;
-          otaCapable = /-dev\.\d{14}$/.test(status.appVersion);
+          otaCapable = isOtaVersion(status.appVersion);
         } else {
           let runtimeVersion = await remoteApp.getAppVersion?.();
           if (runtimeVersion) {
             displayVersion = runtimeVersion;
-            otaCapable = /-dev\.\d{14}$/.test(runtimeVersion);
+            otaCapable = isOtaVersion(runtimeVersion);
           }
         }
       } catch {

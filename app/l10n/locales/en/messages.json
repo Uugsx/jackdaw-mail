@@ -1450,7 +1450,7 @@
   "pAcLyI": "Organizational Unit",
   "nV6twc": "Organize",
   "Q7Qbxi": "Organizer",
-  "ITclOy": "OTA updates require a GitHub release build. Download the installer from GitHub Releases — the version must include a date suffix, e.g. 0.9.38-dev.20260830204214.",
+  "ITclOy": "OTA updates require a GitHub release build. Download the installer from GitHub Releases — local dev builds (version ending in -dev) do not update.",
   "/IX/7x": "Other",
   "xoAIec": "Other",
   "zTwrGb": "Other actions",
