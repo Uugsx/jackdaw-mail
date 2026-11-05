@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-TARGET_TAG="${1:?target tag required, e.g. v0.9.38-dev.20260830231500}"
+TARGET_TAG="${1:?target tag required, e.g. v0.10.7}"
 BUILT_PLATFORM="${2:?built platform required: mac or windows}"
 REPO="${3:-Uugsx/jackdaw-mail}"
 
@@ -37,13 +37,13 @@ else
 fi
 
 SOURCE_TAG=$(TARGET_TAG="$TARGET_TAG" MARKER="$MARKER" gh api "repos/${REPO}/releases?per_page=100" --jq '
-  [.[] | select(.prerelease) | select(.tag_name != env.TARGET_TAG)
+  [.[] | select(.tag_name != env.TARGET_TAG)
    | select([.assets[].name] | index(env.MARKER) != null)
   ] | sort_by(.created_at) | reverse | .[0].tag_name // empty
 ')
 
 if [[ -z "$SOURCE_TAG" ]]; then
-  echo "WARN: No prior prerelease with ${MARKER} found — skipping carry-forward."
+  echo "WARN: No prior release with ${MARKER} found — skipping carry-forward."
   echo "      (First platform-only release, or no previous OTA assets.)"
   exit 0
 fi

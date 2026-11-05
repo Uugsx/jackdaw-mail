@@ -5,7 +5,7 @@ on:
     inputs:
       release_type:
         type: choice
-        description: GitHub Release type (use prerelease for -dev builds)
+        description: GitHub Release type (релиз создаётся как prerelease и в finalize переводится в latest)
         options:
           - prerelease
           - release
@@ -49,15 +49,15 @@ jobs:
       - name: OTA dev version suffix
         id: ota_suffix
         if: github.event_name == 'push' || inputs.release_type == 'prerelease'
-        run: echo "value=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+        run: echo "value=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - name: Create release tag and GitHub prerelease
         if: github.event_name == 'push' || inputs.release_type == 'prerelease'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OTA_BUILD_SUFFIX: ${{ steps.ota_suffix.outputs.value }}
         run: |
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           # Cancelled builds leave empty prereleases that break electron-updater (no latest.yml).
           gh api "repos/Uugsx/jackdaw-mail/releases?per_page=100" --jq '.[] | select((.assets | length) == 0) | .tag_name' | while read -r EMPTY; do
             [ -z "$EMPTY" ] && continue
@@ -70,8 +70,8 @@ jobs:
           git push origin "$TAG" --force
           gh release delete "$TAG" --repo Uugsx/jackdaw-mail -y 2>/dev/null || true
           gh release create "$TAG" --repo Uugsx/jackdaw-mail --prerelease \
-            --title "${BASE}-dev.${OTA_BUILD_SUFFIX}" \
-            --notes "Jackdaw Mail desktop prerelease."
+            --title "${BASE}.${OTA_BUILD_SUFFIX}" \
+            --notes "Jackdaw Mail desktop."
 
   mac:
     needs: prepare
@@ -218,8 +218,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
         run: |
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             BUILT="${{ inputs.platform }}"
           elif [ "${{ needs.mac.result }}" = "success" ] && [ "${{ needs.windows.result }}" != "success" ]; then
@@ -249,8 +249,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
         run: |
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           IDS=$(gh api "repos/Uugsx/jackdaw-mail/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .id")
           KEEP=$(gh api "repos/Uugsx/jackdaw-mail/releases?per_page=100" \
             --jq "[.[] | select(.tag_name==\"$TAG\")] | max_by(.assets | length) | .id // empty")
@@ -261,8 +261,9 @@ jobs:
           done
           if [ -n "$KEEP" ]; then
             gh api -X PATCH "repos/Uugsx/jackdaw-mail/releases/$KEEP" \
-              -f body="Jackdaw Mail desktop prerelease." \
-              -f name="${BASE}-dev.${OTA_BUILD_SUFFIX}"
+              -f body="Jackdaw Mail desktop." \
+              -f name="${BASE}.${OTA_BUILD_SUFFIX}" \
+              -F prerelease=false -f make_latest=true
           fi
       - name: Remove other-version assets of a rebuilt platform
         env:
@@ -273,8 +274,8 @@ jobs:
         # берут первый DMG и снова ставят себя же. Файлы прошлой версии удаляются,
         # только когда для этой платформы уже есть установщик текущей версии.
         run: |
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          VERSION="${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          VERSION="${BASE}.${OTA_BUILD_SUFFIX}"
           TAG="v${VERSION}"
           NAMES=$(gh release view "$TAG" --repo Uugsx/jackdaw-mail --json assets -q '.assets[].name' 2>/dev/null || true)
           remove_stale() {
@@ -330,8 +331,8 @@ jobs:
           printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
           chmod 600 ~/.ssh/updates_mirror
           printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail mac
       - name: Remove SSH key
@@ -371,8 +372,8 @@ jobs:
           printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
           chmod 600 ~/.ssh/updates_mirror
           printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail win
       - name: Remove SSH key
@@ -412,8 +413,8 @@ jobs:
           printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
           chmod 600 ~/.ssh/updates_mirror
           printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail
       - name: Remove SSH key
@@ -433,8 +434,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OTA_BUILD_SUFFIX: ${{ needs.prepare.outputs.ota_build_suffix }}
         run: |
-          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '')")
-          TAG="v${BASE}-dev.${OTA_BUILD_SUFFIX}"
+          BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
+          TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           ASSETS=$(gh release view "$TAG" --repo Uugsx/jackdaw-mail --json assets -q '.assets | length' 2>/dev/null || echo 0)
           if [ "$ASSETS" = "0" ]; then
             echo "Deleting empty release $TAG (no OTA assets — blocks updaters)"

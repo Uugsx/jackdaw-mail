@@ -1936,7 +1936,7 @@
   "0zpgxV": "Options",
   "MtxIuT": "or enter an email address",
   "nV6twc": "Organise",
-  "ITclOy": "OTA updates require a GitHub release build. Download the installer from GitHub Releases — the version must include a date suffix, e.g. 0.9.38-dev.20260830204214.",
+  "ITclOy": "OTA updates require a GitHub release build. Download the installer from GitHub Releases — local dev builds (version ending in -dev) do not update.",
   "coGl+k": "Other Jackdaw Mail users can call you and write to you in Jackdaw chat on a confirmed address. We send a code to the address to make sure it is yours.",
   "PPM9Z8": "Other notifications",
   "7xEV72": "Out",

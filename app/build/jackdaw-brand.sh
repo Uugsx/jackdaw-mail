@@ -2,8 +2,8 @@
 # Syncs version into build.ts and package metadata; branding is Jackdaw Mail.
 VERSION=`grep "\"version\"" ../../app/package.json | sed -e "s|^.*\"version\": \"||" -e "s|\",$||"`
 if [ -n "${OTA_BUILD_SUFFIX:-}" ]; then
-  BASE=$(echo "$VERSION" | sed 's/-dev.*//')
-  VERSION="${BASE}-dev.${OTA_BUILD_SUFFIX}"
+  BASE=$(echo "$VERSION" | sed -e 's/-dev.*//' -e 's/^\([0-9]*\.[0-9]*\).*/\1/')
+  VERSION="${BASE}.${OTA_BUILD_SUFFIX}"
   perl -p -i -e "s|\"version\": \".*\"|\"version\": \"$VERSION\"|;" ../package.json
 fi
 echo Building Jackdaw Mail version $VERSION
