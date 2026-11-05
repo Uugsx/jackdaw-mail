@@ -36,20 +36,30 @@ done
 ls -la "$STAGE"
 
 # Сначала установщики и blockmap, манифесты последними: клиент не увидит версию без файла
-rsync -rlt --no-perms --chmod=D755,F644 --partial --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
-rsync -rlt --no-perms --chmod=D755,F644 -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
+# rrsync на VPS держит эксклюзивную блокировку: параллельные mac/win ловят код 12 — повторяем с паузой.
+rsync_retry() {
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if rsync "$@"; then return 0; fi
+    echo "rsync: попытка $attempt не удалась, повтор через $((attempt * 10)) с" >&2
+    sleep $((attempt * 10))
+  done
+  return 1
+}
+rsync_retry -rlt --no-perms --chmod=D755,F644 --partial --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
+rsync_retry -rlt --no-perms --chmod=D755,F644 -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
 
 # Храним последние $KEEP версий каждого установщика
 prune() {
   local suffix="$1"
-  rsync -e "$SSH" --list-only "$REMOTE" \
+  rsync_retry -e "$SSH" --list-only "$REMOTE" \
     | awk -v s="$suffix" '$NF ~ s"$" && $NF !~ /blockmap$/ { print $(NF-2) "T" $(NF-1), $NF }' \
     | sort -r | awk -v k="$KEEP" 'NR>k { print $2 }' \
     | while read -r old; do
         [ -n "$old" ] || continue
         echo "Удаляю старую версию $old"
         for victim in "$old" "$old.blockmap"; do
-          rsync -r --delete -e "$SSH" --include="$victim" --exclude='*' "$EMPTY/" "$REMOTE"
+          rsync_retry -r --delete -e "$SSH" --include="$victim" --exclude='*' "$EMPTY/" "$REMOTE"
         done
       done
 }
