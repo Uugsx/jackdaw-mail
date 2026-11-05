@@ -471,6 +471,10 @@
     font-family: var(--font-monospace, monospace);
   }
 
+  .subscription-info + :global(.cancel-subscription) {
+    margin-block-start: 8px;
+  }
+
   .activation-panel {
     min-width: 0;
   }
