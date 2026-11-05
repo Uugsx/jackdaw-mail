@@ -15,6 +15,11 @@ export function showError(ex: Error) {
     void import("../Mail/passwordRejected").then(module => module.showPasswordRejected(account, ex));
     return;
   }
+  if ((ex as any)?.chatConnectionProblem && !(ex as any).doNotShow) {
+    // Чат Jackdaw не на связи: баннер с причиной и кнопкой «Переподключить» вместо голого текста.
+    void import("../Chat/chatConnectionNotice").then(module => module.showChatConnectionProblem(ex as any));
+    return;
+  }
   if (shouldShow(ex)) {
     notifications.add(new Notification(userMessage(ex), NotificationSeverity.Error, ex));
     logErrorToServer(ex);

@@ -1,5 +1,5 @@
 import type { EMail } from "../../logic/Mail/EMail";
-import { messagesRepresentSameMail } from "./mailReadActions";
+import { uniqueMessagesByIdentity } from "./mailReadActions";
 
 /** Запускает массовое действие для всех писем одновременно и ждёт каждый результат. */
 export async function runMailActions(
@@ -11,13 +11,7 @@ export async function runMailActions(
 }
 
 export function uniqueMailMessages(messages: readonly EMail[]): EMail[] {
-  let uniqueMessages: EMail[] = [];
-  for (let message of messages) {
-    if (!uniqueMessages.some(existing => messagesRepresentSameMail(existing, message))) {
-      uniqueMessages.push(message);
-    }
-  }
-  return uniqueMessages;
+  return uniqueMessagesByIdentity(messages);
 }
 
 export function throwFirstBulkActionError(results: readonly PromiseSettledResult<unknown>[]): void {

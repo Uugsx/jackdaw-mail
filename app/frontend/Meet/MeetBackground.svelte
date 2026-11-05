@@ -12,8 +12,11 @@
   import { appGlobal } from "../../logic/app";
   import { catchErrors, showUserError, backgroundError } from "../Util/error";
   import { startJackdawCalls } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import { startSharedMailboxPresence } from "../Mail/Collision/collisionPresence";
+  import { watchReplyComposers } from "../Mail/Collision/replyComposers";
   import { JackdawCall, setJackdawCallEndedHandler, setJackdawCallWarningHandler } from "../../logic/Meet/Jackdaw/JackdawCall";
   import { CallNotification } from "./CallNotification";
+  import { rememberReturnPoint, returnAfterCall } from "./returnAfterCall";
   import { gt } from "../../l10n/l10n";
   import { onDestroy, onMount } from "svelte";
 
@@ -21,6 +24,9 @@
   const kCallEndedNoticeSeconds = 8;
 
   let stopJackdawCalls: (() => void) | null = null;
+  /** Кто из коллег читает письмо общего ящика или отвечает на него: по тому же соединению */
+  let stopSharedMailboxPresence: (() => void) | null = null;
+  let stopReplyComposers: (() => void) | null = null;
   onMount(() => {
     setJackdawCallEndedHandler((call, message) => {
       showUserError(new Error(message), kCallEndedNoticeSeconds);
@@ -28,8 +34,14 @@
     });
     setJackdawCallWarningHandler((_call, message) => showUserError(new Error(message), kCallEndedNoticeSeconds));
     stopJackdawCalls = startJackdawCalls();
+    stopSharedMailboxPresence = startSharedMailboxPresence();
+    stopReplyComposers = watchReplyComposers();
   });
-  onDestroy(() => stopJackdawCalls?.());
+  onDestroy(() => {
+    stopReplyComposers?.();
+    stopSharedMailboxPresence?.();
+    stopJackdawCalls?.();
+  });
 
   /** Входящий звонок, когда окно Jackdaw не на переднем плане: всплывающее уведомление ОС.
    * Убирается, как только звонок принят, отклонён, отменён или принят на другом устройстве. */
@@ -108,9 +120,12 @@
     if (meeting.state == MeetingState.OutgoingCallConfirm ||
         meeting.state == MeetingState.OutgoingCall ||
         meeting.state == MeetingState.IncomingCall) {
+      rememberReturnPoint(meetApp);
       openApp(meetApp, { meeting });
     }
   }
+  // Звонок закончился — назад в чат или почту, откуда звонили или где застал входящий
+  $: !$meetings.hasItems && returnAfterCall(meetApp);
 
   /** Open sidebar, if meeting is ongoing.
    * Note: Has to be after `openMeet()`, so that sets the correct state first */

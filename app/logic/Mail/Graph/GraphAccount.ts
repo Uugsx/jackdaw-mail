@@ -253,7 +253,9 @@ export class GraphAccount extends ExchangeMailAccount {
       if (this.logging) {
         console.log("Calling <" + url + ">", method.toUpperCase(), "with options", options);
       }
-      return await ky[method](url);
+      let result = await ky[method](url);
+      this.connectionStatus.reportSuccess();
+      return result;
       // let result = options?.result ?? "json";
       // return await ky[method](url)[result](options); // e.g. await ky.get(url).json();
     } catch (ex) {
@@ -267,12 +269,16 @@ export class GraphAccount extends ExchangeMailAccount {
       let ext = ex as any;
       let msg: string;
       let code: string;
+      let hasBody = false;
       try {
         let json = await ext.response.json();
+        hasBody = !!json;
         msg = json.message;
         code = json.code;
       } catch (ex2) {
       }
+      // HTTP 500 с ответом Graph — ошибка запроса, сервер работает
+      this.connectionStatus.reportRequestError(ex, hasBody);
       if (ext.status == 401) {
         throw new LoginError(ex, msg);
       } else if (ext.status && ext.status >= 400 && ext.status < 500) {
@@ -283,6 +289,7 @@ export class GraphAccount extends ExchangeMailAccount {
         throw new ConnectError(ex, msg);
       }
     }
+    this.connectionStatus.reportFailure(ex);
     throw ex;
   }
 

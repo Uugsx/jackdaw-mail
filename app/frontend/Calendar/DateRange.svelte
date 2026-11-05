@@ -1,5 +1,5 @@
 <hbox class="date-range-header">
-  <hbox class="date-range">{@html htmlMonthYear(date, showDays)}</hbox>
+  <hbox class="date-range" title={monthYear(middleOfRange(date))}>{@html htmlMonthYear(date, showDays)}</hbox>
   <Button classes="previous-button" label={$t`Previous ${dateInterval} days`} icon={ChevronLeftIcon} onClick={pagePrevious} iconSize="16px" plain iconOnly />
   <Button classes="next-button" label={$t`Next ${dateInterval} days`} icon={ChevronRightIcon} onClick={pageNext} iconSize="16px" plain iconOnly />
 </hbox>
@@ -58,15 +58,26 @@
 </script>
 
 <style>
+  /* В узкой панели название месяца сжимается, а кнопки листания остаются
+     видимыми (раньше заголовок выходил за край и кнопки обрезались). */
   .date-range-header {
     align-items: center;
     align-self: end;
+    max-width: 100%;
+    min-width: 0;
     margin-block-end: 4px;
   }
+  .date-range-header > :global(button) {
+    flex-shrink: 0;
+  }
   .date-range {
+    display: block;
     font-size: 18px;
     margin-inline-start: 8px;
     margin-inline-end: 8px;
-    min-width: 9em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

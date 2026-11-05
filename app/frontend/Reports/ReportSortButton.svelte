@@ -3,12 +3,25 @@
   import ArrowDownIcon from "lucide-svelte/icons/arrow-down";
   import ArrowUpDownIcon from "lucide-svelte/icons/arrow-up-down";
   import ArrowUpIcon from "lucide-svelte/icons/arrow-up";
+  import { t } from "../../l10n/l10n";
 
   export let label: string;
   export let direction: "asc" | "desc" | null = null;
   export let align: "left" | "right" = "left";
+  /** Вне таблицы (нет aria-sort у заголовка) направление озвучивается в имени кнопки. */
+  export let announceDirection = false;
 
   const dispatch = createEventDispatcher<{ sort: void }>();
+
+  // Подпись может обрезаться в узкой панели, поэтому полное название
+  // и направление сортировки всегда доступны в подсказке.
+  $: directionLabel =
+    direction == "asc"
+      ? $t`sorted ascending`
+      : direction == "desc"
+        ? $t`sorted descending`
+        : $t`not sorted`;
+  $: fullLabel = `${label} — ${directionLabel}`;
 </script>
 
 <button
@@ -16,6 +29,8 @@
   class="table-sort-button"
   class:is-active={direction != null}
   class:align-right={align == "right"}
+  title={fullLabel}
+  aria-label={announceDirection ? fullLabel : undefined}
   on:click={() => dispatch("sort")}
 >
   <span>{label}</span>

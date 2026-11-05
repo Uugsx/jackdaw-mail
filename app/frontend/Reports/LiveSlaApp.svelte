@@ -41,7 +41,10 @@
     formatWorkingTime,
     type WorkingHoursSchedule,
   } from "../../logic/Reports/WorkingHours";
-  import { getWorkingHoursSchedule } from "./WorkingHoursSettings";
+  import {
+    getWorkingHoursSchedule,
+    subscribeWorkingHoursSettings,
+  } from "./WorkingHoursSettings";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { CollectionObserver } from "svelte-collections";
   import type { MailAccount } from "../../logic/Mail/MailAccount";
@@ -153,6 +156,7 @@
   const registerLiveSlaOnDestroy = onDestroy;
   registerLiveSlaOnDestroy(() => {
     mounted = false;
+    unsubscribeWorkingHours?.();
     appGlobal.emailAccounts.unregisterObserver(liveSlaMailAccountsObserver);
     if (mailAccountsReloadTimer != null) {
       clearTimeout(mailAccountsReloadTimer);
@@ -160,8 +164,18 @@
     }
   });
 
+  let unsubscribeWorkingHours: (() => void) | null = null;
+
+  /** Расписание (в т.ч. праздники и сокращённые дни) могло измениться в «Отчётах». */
+  function reloadWorkingHours(): void {
+    if (selectedMailAccountId != null) {
+      workingHours = getWorkingHoursSchedule(selectedMailAccountId);
+    }
+  }
+
   async function initializeLiveSla(): Promise<void> {
     mounted = true;
+    unsubscribeWorkingHours = subscribeWorkingHoursSettings(reloadWorkingHours);
     appGlobal.emailAccounts.registerObserver(liveSlaMailAccountsObserver);
     const session = getReportSession();
     responseTargetMinutes = normalizeResponseTargetMinutes(
@@ -772,6 +786,9 @@
           <span>{$t`Mail account`}</span>
           <select
             bind:value={selectedMailAccountId}
+            title={selectedMailAccount
+              ? `${selectedMailAccount.accountName}${selectedMailAccount.email ? ` — ${selectedMailAccount.email}` : ""}`
+              : undefined}
             disabled={mailAccountsLoading}
             on:change={onAccountChange}
           >
@@ -789,6 +806,7 @@
           <span>{$t`Mail folder`}</span>
           <select
             bind:value={selectedMailFolderId}
+            title={selectedMailFolder?.name}
             disabled={selectedMailAccountId == null || mailFoldersLoading}
             on:change={onFolderChange}
           >
@@ -876,7 +894,10 @@
         >
           <summary>
             <span>{$t`Settings`}</span>
-            <span class="live-settings-summary-text">
+            <span
+              class="live-settings-summary-text"
+              title={`${$t`Who answers`}: ${responderSummary}`}
+            >
               {$t`Who answers`}: {responderSummary}
             </span>
           </summary>

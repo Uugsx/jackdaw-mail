@@ -44,6 +44,8 @@ export class VideoConfMeeting extends Observable {
    * Usually `LocalMediaDeviceStreams` or a protocol-specific impl. */
   mediaDeviceStreams: MediaDeviceStreams;
   hasVideo = true;
+  /** Камеру можно включить и посреди голосового разговора (`hasVideo` false) */
+  canAddVideo = false;
   /** Разговор 1:1 только голосом (не телефонная линия): интерфейс показывает вид телефонного звонка. */
   readonly voiceOnly: boolean = false;
   /** Медиасоединение прервалось (например, сменилась сеть) и восстанавливается: интерфейс показывает «Переподключение…». */

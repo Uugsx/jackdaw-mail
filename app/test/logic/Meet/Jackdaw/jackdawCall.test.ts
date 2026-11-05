@@ -28,9 +28,18 @@ class FakeClient {
 class FakeTrack {
   stopped = false;
   enabled = true;
+  muted = false;
+  listeners: Record<string, (() => void)[]> = {};
   constructor(readonly kind = "audio") {}
   stop() { this.stopped = true; }
   getSettings() { return { deviceId: "mic-1" }; }
+  addEventListener(type: string, listener: () => void) { (this.listeners[type] ??= []).push(listener); }
+  fire(type: string) {
+    this.muted = type == "mute";
+    for (let listener of this.listeners[type] ?? []) {
+      listener();
+    }
+  }
 }
 
 class FakeMediaStream {
@@ -45,8 +54,14 @@ class FakeMediaStream {
 
 class FakeTransceiver {
   sender = { track: null as FakeTrack | null, async replaceTrack(track: FakeTrack | null) { this.track = track; } };
-  receiver = { track: new FakeTrack("audio") };
-  constructor(public direction: string) {}
+  receiver: { track: FakeTrack; framesDecoded: number; getStats(): Promise<Map<string, any>> };
+  constructor(public direction: string, kind = "audio") {
+    this.receiver = {
+      track: new FakeTrack(kind),
+      framesDecoded: 0,
+      async getStats() { return new Map([["in", { type: "inbound-rtp", framesDecoded: this.framesDecoded }]]); },
+    };
+  }
 }
 
 class FakePeerConnection {
@@ -65,8 +80,8 @@ class FakePeerConnection {
   onconnectionstatechange: (() => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
   constructor(readonly configuration: any) {}
-  addTransceiver(_kind: string, init: { direction: string }) {
-    let transceiver = new FakeTransceiver(init.direction);
+  addTransceiver(kind: string, init: { direction: string }) {
+    let transceiver = new FakeTransceiver(init.direction, kind);
     this.transceivers.push(transceiver);
     return transceiver;
   }
@@ -85,6 +100,10 @@ class FakePeerConnection {
     if (description.type == "offer") {
       this.signalingState = "have-remote-offer";
       this.transceivers.push(new FakeTransceiver("recvonly"));
+      // Звонящий новой версии предлагает каналы камеры и показа экрана
+      if (description.sdp.includes("m=video")) {
+        this.transceivers.push(new FakeTransceiver("recvonly", "video"), new FakeTransceiver("recvonly", "video"));
+      }
     } else {
       this.signalingState = "stable";
     }
@@ -154,13 +173,14 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     appGlobal.meetings.clear();
   });
 
-  test("только голос: видео недоступно даже по запросу", () => {
+  test("видеозвонок: камера и показ экрана доступны, вид голосовой, пока нет видео", () => {
     let { call } = makeCall();
     call.prepareOutgoing("bob@example.com", "Bob", true);
-    expect(call.hasVideo).toBe(false);
+    expect(call.hasVideo).toBe(true);
+    expect(call.canAddVideo).toBe(true);
     expect(call.voiceOnly).toBe(true);
-    expect(call.account.canVideo).toBe(false);
-    expect(call.account.canScreenShare).toBe(false);
+    expect(call.account.canVideo).toBe(true);
+    expect(call.account.canScreenShare).toBe(true);
     expect(call.account.canAudio).toBe(true);
     expect(call.myParticipant).toBeTruthy();
   });
@@ -174,7 +194,7 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
 
     await call.call();
     expect(call.state).toBe(MeetingState.OutgoingCall);
-    expect(client.last()).toEqual({ type: "invite", callId: call.callID, to: "bob@example.com", video: false });
+    expect(client.last()).toEqual({ type: "invite", callId: call.callID, to: "bob@example.com", video: true });
     expect(client.registered.has(call.callID)).toBe(true);
 
     call.onSignal({ type: "ringing", callId: call.callID });
@@ -188,7 +208,8 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(call.participants.first.role).toBe(ParticipantRole.User);
     let connection = connections[0];
     expect(connection.configuration.iceServers).toEqual(DEFAULT_ICE_SERVERS);
-    expect(connection.transceivers.map(t => t.direction)).toEqual(["sendrecv"]);
+    expect(connection.transceivers.map(t => t.direction)).toEqual(["sendrecv", "sendrecv", "sendrecv"]);
+    expect(connection.transceivers.map(t => t.receiver.track.kind)).toEqual(["audio", "video", "video"]);
     await flush();
     expect(client.signals("offer")).toEqual([{ type: "signal", callId: call.callID, kind: "offer", sdp: "v=0\r\noffer" }]);
 
@@ -229,6 +250,101 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     await flush();
     expect(sender.track).toBe(otherMic);
     expect(call.selfVideo?.isMe).toBe(true);
+  });
+
+  test("камера и показ экрана уходят в свои каналы без пересогласования", async () => {
+    let { call, connections } = makeCall();
+    call.prepareOutgoing("bob@example.com", "Bob", true);
+    await call.call();
+    let mic = new FakeTrack("audio");
+    let camera = new FakeTrack("video");
+    call.mediaDeviceStreams.cameraMicStream = new FakeMediaStream([mic, camera]) as any;
+    await flush();
+    call.onSignal({ type: "accepted", callId: call.callID, iceServers: null });
+    await flush();
+    let [audio, cameraChannel, screenChannel] = connections[0].transceivers;
+    expect(audio.sender.track).toBe(mic);
+    expect(cameraChannel.sender.track).toBe(camera);
+    expect(screenChannel.sender.track).toBeNull();
+    expect(call.voiceOnly).toBe(false);
+    let offers = connections[0].offerOptions.length;
+
+    let screen = new FakeTrack("video");
+    let screenStream = new FakeMediaStream([screen]) as any;
+    call.mediaDeviceStreams.screenStream = screenStream;
+    await call.startScreenShare(screenStream);
+    expect(screenChannel.sender.track).toBe(screen);
+    call.mediaDeviceStreams.screenStream = null;
+    await call.stopScreenShare(screenStream);
+    expect(screenChannel.sender.track).toBeNull();
+
+    // Камеру выключили: остаётся только микрофон, вид снова голосовой.
+    let micOnly = new FakeMediaStream([mic]) as any;
+    let withCamera = call.mediaDeviceStreams.cameraMicStream;
+    call.mediaDeviceStreams.cameraMicStream = micOnly;
+    await call.stopCameraMic(withCamera);
+    await call.startCameraMic(micOnly);
+    expect(cameraChannel.sender.track).toBeNull();
+    expect(audio.sender.track).toBe(mic);
+    expect(call.voiceOnly).toBe(true);
+    expect(connections[0].offerOptions.length).toBe(offers);
+  });
+
+  test("видео собеседника: показ по кадрам, скрытие при выключенной камере, показ экрана отдельно", async () => {
+    let { call: incomingCall, connections } = makeCall();
+    incomingCall.prepareIncoming({ ...incoming, callId: "call-video", video: true });
+    await incomingCall.answer();
+    incomingCall.onSignal({ type: "joined", callId: "call-video", iceServers: null });
+    let connection = connections[0];
+    incomingCall.onSignal({ type: "signal", callId: "call-video", kind: "offer", sdp: "v=0\r\nm=audio\r\nm=video\r\nm=video" });
+    await flush();
+    expect(connection.transceivers.map(t => t.direction)).toEqual(["sendrecv", "sendrecv", "sendrecv"]);
+
+    let [, cameraChannel, screenChannel] = connection.transceivers;
+    let remoteCamera = cameraChannel.receiver.track;
+    remoteCamera.muted = true;
+    connection.ontrack({ track: remoteCamera, transceiver: cameraChannel });
+    let remoteVideos = () => incomingCall.videos.contents.filter(v => !v.isMe && v.hasVideo);
+    expect(remoteVideos()).toHaveLength(0);
+    expect(incomingCall.voiceOnly).toBe(true);
+
+    remoteCamera.fire("unmute");
+    expect(remoteVideos()).toHaveLength(1);
+    expect(remoteVideos()[0].isScreenShare).toBe(false);
+    expect(incomingCall.participants.first.cameraOn).toBe(true);
+    expect(incomingCall.voiceOnly).toBe(false);
+
+    // Кадры идут — видео остаётся; перестали приходить — собеседник выключил камеру.
+    cameraChannel.receiver.framesDecoded = 30;
+    await (incomingCall as any).checkRemoteVideo();
+    expect(remoteVideos()).toHaveLength(1);
+    (incomingCall as any).remoteVideos[0].lastFrameAt -= 3_000;
+    await (incomingCall as any).checkRemoteVideo();
+    expect(remoteVideos()).toHaveLength(0);
+    expect(incomingCall.participants.first.cameraOn).toBe(false);
+    expect(incomingCall.voiceOnly).toBe(true);
+    cameraChannel.receiver.framesDecoded = 31;
+    await (incomingCall as any).checkRemoteVideo();
+    expect(remoteVideos()).toHaveLength(1);
+    remoteCamera.fire("mute");
+    expect(remoteVideos()).toHaveLength(0);
+
+    connection.ontrack({ track: screenChannel.receiver.track, transceiver: screenChannel });
+    expect(remoteVideos()).toHaveLength(1);
+    expect(remoteVideos()[0].isScreenShare).toBe(true);
+    expect(incomingCall.participants.first.cameraOn).toBe(false);
+    // Неподвижный экран шлёт кадры редко: короткая пауза его не прячет.
+    let screenRecord = (incomingCall as any).remoteVideos[1];
+    screenRecord.lastFrameAt -= 3_000;
+    await (incomingCall as any).checkRemoteVideo();
+    expect(remoteVideos()).toHaveLength(1);
+    screenRecord.lastFrameAt -= 10_000;
+    await (incomingCall as any).checkRemoteVideo();
+    expect(remoteVideos()).toHaveLength(0);
+
+    await incomingCall.hangup();
+    expect((incomingCall as any).remoteVideoTimer).toBeNull();
+    expect(incomingCall.videos.contents.filter(v => !v.isMe)).toHaveLength(0);
   });
 
   test("занято: звонок завершается, пользователь видит причину", async () => {
@@ -288,7 +404,7 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     let { call, client, connections } = makeCall();
     call.prepareIncoming({ ...incoming, video: true });
     expect(call.state).toBe(MeetingState.IncomingCall);
-    expect(call.hasVideo).toBe(false);
+    expect(call.hasVideo).toBe(true);
     expect(call.callID).toBe("call-0001");
     expect(call.participants.first.name).toBe("Bob");
     await call.answer();
@@ -310,14 +426,18 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     call.onSignal({ type: "signal", callId: "call-0001", kind: "offer", sdp: "v=0\r\noffer" });
     await flush();
     expect(connection.transceivers[0].direction).toBe("sendrecv");
+    // Звонящий старой версии не предлагает видео: кнопка камеры прячется.
+    expect(call.canAddVideo).toBe(false);
     expect(client.signals("answer")).toEqual([{ type: "signal", callId: "call-0001", kind: "answer", sdp: "v=0\r\nanswer" }]);
     expect(connection.addedCandidates).toEqual([candidate]);
 
     let remoteTrack = new FakeTrack("audio");
     connection.ontrack({ track: remoteTrack });
     connection.ontrack({ track: remoteTrack });
-    connection.ontrack({ track: new FakeTrack("video") });
-    let remoteAudio = call.videos.contents.filter(v => !v.isMe);
+    let remoteVideoTrack = new FakeTrack("video");
+    connection.ontrack({ track: remoteVideoTrack });
+    expect(call.videos.contents.filter(v => !v.isMe && v.hasVideo)).toHaveLength(1);
+    let remoteAudio = call.videos.contents.filter(v => !v.isMe && !v.hasVideo);
     expect(remoteAudio).toHaveLength(1);
     expect(remoteAudio[0].hasVideo).toBe(false);
     expect(remoteAudio[0].participant).toBe(call.participants.first);
@@ -328,6 +448,7 @@ describe("звонок Jackdaw ↔ Jackdaw", () => {
     expect(client.last()).toEqual({ type: "hangup", callId: "call-0001" });
     expect(connection.closed).toBe(true);
     expect(remoteTrack.stopped).toBe(true);
+    expect(remoteVideoTrack.stopped).toBe(true);
     expect(call.videos.contents.filter(v => !v.isMe)).toHaveLength(0);
     expect(endedMessages).toHaveLength(0);
   });
@@ -746,7 +867,7 @@ describe("выбор способа звонка", () => {
     expect(canStartCall(new PersonUID("bob@example.com", "Bob"))).toBe(false);
   });
 
-  test("видеозвонок — только через WhatsApp", () => {
+  test("видеозвонок без сервиса звонков и WhatsApp недоступен", () => {
     expect(canStartVideoCall(null)).toBe(false);
     expect(canStartVideoCall(new PersonUID("bob@example.com", "Bob"))).toBe(false);
   });

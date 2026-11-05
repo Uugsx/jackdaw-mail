@@ -8,6 +8,7 @@ import { SMLData } from "../SML/SMLData";
 import { EncryptionSystem } from "../Encryption/enums";
 import { assert, fileExtensionForMIMEType, ensureArray } from "../../util/util";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
+import { sanitizeDay } from "../Tasks/ExchangeTask";
 import { logError } from "../../../frontend/Util/error";
 import type { ArrayColl } from "svelte-collections";
 
@@ -81,6 +82,14 @@ export class JSONEMail {
     // Сохраняем время действия в локальном JSON, чтобы список мог показать его
     // без загрузки полного сообщения.
     json.lastVerbAt = email.lastVerbAt?.getTime() ?? null;
+    // Флажок могли снять в другой программе: срок без флажка не храним
+    if ((email.isStarred && (email.flagStartDay || email.flagDueDay)) || email.flagCompletedAt) {
+      json.flag = {
+        startDay: email.flagStartDay,
+        dueDay: email.flagDueDay,
+        completedAt: email.flagCompletedAt?.getTime() ?? null,
+      };
+    }
 
     if (email.signedByKeyID || email.wasEncrypted || email.mustEncrypt || email.shouldEncrypt) {
       let e = json.encryption = {} as any;
@@ -203,6 +212,7 @@ export class JSONEMail {
     email.threadID = sanitize.string(json.threadID ?? json.inReplyTo, null);
     email.downloadComplete = sanitize.boolean(json.downloadComplete);
     this.readLastVerbAt(email, json);
+    this.readFlag(email, json);
 
     // email.contact = findOrCreatePersonUID("foo45@example.com", sanitize.label(json.contactName, null));
   }
@@ -221,6 +231,7 @@ export class JSONEMail {
     email.threadID = sanitize.string(json.threadID ?? json.inReplyTo, null);
     email.downloadComplete = sanitize.boolean(json.downloadComplete, false);
     this.readLastVerbAt(email, json);
+    this.readFlag(email, json);
     this.readTags(email, json);
   }
 
@@ -229,6 +240,14 @@ export class JSONEMail {
       return;
     }
     email.lastVerbAt = sanitize.date(json.lastVerbAt, null);
+  }
+
+  /** Срок флажка и отметка о выполнении. Нет ключа `flag` — флажок без срока. */
+  static readFlag(email: EMail, json: any): void {
+    let flag = json?.flag;
+    email.flagStartDay = sanitizeDay(flag?.startDay);
+    email.flagDueDay = sanitizeDay(flag?.dueDay);
+    email.flagCompletedAt = flag?.completedAt == null ? null : sanitize.date(flag.completedAt, null);
   }
 
   static readExtraData(email: EMail, json: any): void {

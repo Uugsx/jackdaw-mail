@@ -40,10 +40,14 @@ test("reports OWA move progress and repairs stale header completion state", asyn
   });
   source.messages.addAll(messages);
 
-  (target as any).moveOrCopyMessagesReturningIDs = async (_action: string, batch: ArrayColl<any>) => {
-    let id = batch.first.itemID;
-    return new Map([[id, `new-${id}`]]);
-  };
+  (account as any).callOWA = async (request: any) => ({
+    ResponseMessages: {
+      Items: request.Body.ItemIds.map((item: any) => ({
+        ResponseClass: "Success",
+        Items: [{ ItemId: { Id: `new-${item.Id}` } }],
+      })),
+    },
+  });
   let progress: number[] = [];
 
   await (target as any).moveOrCopyMessagesHere(
@@ -53,7 +57,8 @@ test("reports OWA move progress and repairs stale header completion state", asyn
     (completed: number) => progress.push(completed),
   );
 
-  expect(progress).toEqual([1, 2]);
+  // Обе записи уходят одним MoveItem, поэтому прогресс сообщается раз на пачку.
+  expect(progress).toEqual([2]);
   expect(source.messages.length).toBe(0);
   expect(target.messages.length).toBe(2);
 });

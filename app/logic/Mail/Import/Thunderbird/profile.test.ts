@@ -1,8 +1,12 @@
+// app first, to resolve the import cycle around Abstract/Account.ts
+import "../../../app";
 import { ThunderbirdProfile } from "./TBProfile";
 import { connectToBackend } from "../../../../test/logic/util/backend.test";
 import { expect, test } from 'vitest'
+import { hasThunderbirdProfiles } from "./thunderbirdTestProfiles";
 
-test("Read Thunderbird profiles", async () => {
+// Читает настоящие профили Thunderbird этого компьютера
+test.skipIf(!hasThunderbirdProfiles())("Read Thunderbird profiles", async () => {
   await connectToBackend();
   let profiles = await ThunderbirdProfile.findProfiles();
   expect(profiles.length).toBeGreaterThan(0);

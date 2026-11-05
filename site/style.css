@@ -634,6 +634,54 @@ code,
   color: var(--ink-muted);
 }
 
+/* Ключ после оплаты */
+.purchase-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 20px 0;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.purchase-result[hidden],
+.purchase-key[hidden],
+.purchase-result .note[hidden] {
+  display: none;
+}
+
+.purchase-result h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.purchase-result-message {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.purchase-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 100%;
+}
+
+.purchase-key-value {
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--tint);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* Загрузки */
 .download-table .primary-os th {
   color: var(--accent);

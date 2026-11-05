@@ -42,7 +42,7 @@
   <span class="drag-handle" title={$t`Drag to move the block`} aria-hidden="true">
     <GripIcon size="14px" />
   </span>
-  <span class="layout-label">{sectionLabel}</span>
+  <span class="layout-label" title={sectionLabel}>{sectionLabel}</span>
   <button
     type="button"
     class="layout-button"
@@ -167,6 +167,19 @@
 
   @media (max-width: 560px) {
     .layout-label,
+    .width-control > span,
+    .height-button span {
+      display: none;
+    }
+
+    .height-button {
+      min-width: 26px;
+    }
+  }
+
+  /* Блок на треть ширины в широком окне: медиазапрос не срабатывает, а места
+     под подписи уже нет — ориентируемся на ширину самого блока. */
+  @container dashboard-item (max-width: 420px) {
     .width-control > span,
     .height-button span {
       display: none;

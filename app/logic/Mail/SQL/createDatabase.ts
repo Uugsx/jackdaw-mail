@@ -21,7 +21,7 @@ export const mailDatabaseSchema = sql`
   CREATE TABLE "emailPersonRel" (
     "emailID" INTEGER not null,
     "emailPersonID" INTEGER not null,
-    "recipientType" INTEGER not null, -- 1 = from, 2 = to, 3 = cc, 4 = bcc, 5 = replyto, 6 = sender
+    "recipientType" INTEGER not null, -- 1 = from, 2 = to, 3 = cc, 4 = bcc, 5 = replyto, 6 = sender, 7 = Disposition-Notification-To
     FOREIGN KEY (emailID)
       REFERENCES email (id)
       ON DELETE CASCADE,

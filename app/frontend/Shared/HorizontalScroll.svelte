@@ -7,7 +7,8 @@
       ‹
     </button>
   {/if}
-  <div class="h-scroll-viewport" bind:this={viewportEl} on:scroll={updateScrollMetrics}>
+  <div class="h-scroll-viewport" bind:this={viewportEl} on:scroll={updateScrollMetrics}
+    on:wheel|nonpassive={onWheel}>
     <div class="h-scroll-content" bind:this={contentEl}>
       <slot />
     </div>
@@ -113,6 +114,21 @@
       return;
     }
     viewportEl.scrollBy({ left: delta, behavior: "smooth" });
+  }
+
+  /** Колесо мыши (вертикальное) прокручивает по горизонтали; трекпадный deltaX работает нативно. */
+  function onWheel(event: WheelEvent) {
+    if (!viewportEl || !overflows || event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      return;
+    }
+    let delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+    let maxScroll = viewportEl.scrollWidth - viewportEl.clientWidth;
+    let target = viewportEl.scrollLeft + delta;
+    if ((delta < 0 && viewportEl.scrollLeft <= 0) || (delta > 0 && viewportEl.scrollLeft >= maxScroll)) {
+      return;
+    }
+    event.preventDefault();
+    viewportEl.scrollLeft = Math.max(0, Math.min(maxScroll, target));
   }
 
   function onTrackPointerDown(event: PointerEvent) {

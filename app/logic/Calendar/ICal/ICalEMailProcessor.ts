@@ -52,6 +52,8 @@ function iTIPMethod(ics: any): InvitationMessage {
     return InvitationMessage.Invitation;
   case "REPLY":
     return InvitationMessage.ParticipantReply;
+  case "COUNTER":
+    return InvitationMessage.CounterProposal;
   }
   return InvitationMessage.None;
 }

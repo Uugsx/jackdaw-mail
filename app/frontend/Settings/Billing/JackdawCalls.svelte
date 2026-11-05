@@ -115,6 +115,9 @@
       </ul>
     {/if}
   </HeaderGroupBox>
+
+  <CallsAndChatPrefs />
+  <CollisionSettings />
 </vbox>
 
 <script context="module" lang="ts">
@@ -201,6 +204,8 @@
   import Button from "../../Shared/Button.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
+  import CollisionSettings from "../../Mail/Collision/CollisionSettings.svelte";
+  import CallsAndChatPrefs from "./CallsAndChatPrefs.svelte";
   import CheckIcon from "lucide-svelte/icons/check";
   import RefreshIcon from "lucide-svelte/icons/refresh-cw";
   import { t } from "../../../l10n/l10n";
@@ -420,8 +425,9 @@
     border-radius: 50%;
     background: color-mix(in srgb, var(--main-fg) 35%, transparent);
   }
+  /* Зелёный, как «В сети» в чате: оранжевый акцент читался как предупреждение */
   .status-dot.online {
-    background: var(--icon-primary);
+    background: var(--success-fg, #2F7A3E);
   }
   .status-dot.connecting {
     background: color-mix(in srgb, var(--icon-primary) 45%, transparent);

@@ -19,6 +19,7 @@
   import { createEventDispatcher } from 'svelte';
   import { getUILocale } from '../../../l10n/l10n';
   import { backgroundError } from '../../Util/error';
+  import { classifyPastedFiles, filesFromClipboard } from './clipboardFiles';
   const dispatchEvent = createEventDispatcher<{ change: string }>();
 
   /** in/out */
@@ -32,6 +33,9 @@
   export let fixedImageSize = false;
   /** Обработать вставку файла изображения из системного буфера. */
   export let onImagePaste: ((file: File, displayWidth: number) => Promise<void> | void) | null = null;
+
+  /** Обработать вставку файлов, которые не картинка-снимок (PDF, Word…): прикрепить к письму. */
+  export let onFilesPaste: ((files: File[]) => Promise<void> | void) | null = null;
 
   let rootEl: HTMLDivElement;
   let lastHTML: string = null;
@@ -79,10 +83,18 @@
       ],
       editorProps: fixedImageSize && onImagePaste ? {
         handlePaste: (view, event) => {
-          const clipboardItem = Array.from(event.clipboardData?.items ?? [])
-            .find(item => item.kind == "file" && item.type.startsWith("image/"));
-          const file = clipboardItem?.getAsFile();
-          if (!file) {
+          const pasted = classifyPastedFiles(filesFromClipboard(event.clipboardData));
+          if (pasted.attach.length) {
+            // Файл из Finder и т.п.: вложением, а иконку-превью в текст не вставляем
+            if (!onFilesPaste) {
+              return false;
+            }
+            void Promise.resolve(onFilesPaste(pasted.attach)).catch(backgroundError);
+            return true;
+          }
+          const file = pasted.inline[0];
+          // Текст с картинками (Word, веб-страница): вставляет сам редактор, иначе пропал бы текст
+          if (!file || event.clipboardData?.getData("text/plain")?.trim()) {
             return false;
           }
           const displayWidth = view.dom.clientWidth || rootEl.clientWidth;

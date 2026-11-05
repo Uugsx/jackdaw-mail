@@ -2,6 +2,7 @@
   <hbox class="top buttons">
     <Button plain
       label={$t`Delete`}
+      tooltip={$t`Delete`}
       onClick={onDelete}
       icon={DeleteIcon}
       />
@@ -78,7 +79,7 @@
       <vbox class="archive-folders">
         <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
           <ArchiveIcon size="14px" />
-          <span>Сетевой архив</span>
+          <span>{$t`Online archive`}</span>
         </hbox>
         <FolderList
           folders={archiveMailboxRoot.subFolders}

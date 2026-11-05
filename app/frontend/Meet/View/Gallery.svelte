@@ -1,7 +1,7 @@
 <vbox class="gallery" bind:clientWidth={gridWidth} bind:clientHeight={gridHeight} flex>
   <Scroll>
     <grid class="participants"
-      style="grid-template-columns: {gridColumns}"
+      style="grid-template-columns: {gridColumns}; min-height: {gridHeight ?? 0}px"
       class:one-to-one={$videos.length <= 1 || showSelf && $videos.length <= 2}
       >
       {#each $videos.each as video (video.id)}
@@ -64,6 +64,11 @@
       rows = 1;
     }
     videoHeight = Math.floor(height / rows);
+    if (count <= 2 && columnCount == 2) {
+      // Две плитки в ряд — в пропорции кадра 16:9, а не во всю высоту: иначе камера
+      // обрезалась по бокам наполовину. Свободное место — сверху и снизу поровну.
+      videoHeight = Math.min(videoHeight, Math.floor(videoWidth / 16 * 9));
+    }
     // console.log("gallery", "columns", columnCount, "rows", rows, "grid", width, "x", height, "video", videoWidth, "x", videoHeight, "ideal height", idealVideoHeight);
 
     gridColumns = `repeat(${columnCount}, 1fr)`;
@@ -76,6 +81,7 @@
   }
   .participants {
     display: grid;
+    align-content: center;
     /* grid-template-columns/rows: see code above */
   }
   .gallery :global(.scroll) {

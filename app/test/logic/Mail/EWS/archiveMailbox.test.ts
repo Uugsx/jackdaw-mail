@@ -80,3 +80,26 @@ test("moves primary mailbox messages to the Exchange Online Archive", async () =
   expect(source.countUnread).toBe(0);
   expect(message.isDeleted).toBe(true);
 });
+
+test("запрашивает сетевой архив общего ящика через его адрес", async () => {
+  let account = fakeAccount();
+  account.username = "integrators@example.com";
+  (account as any).sharedFolderRoot = "msgfolderroot";
+  let requests: any[] = [];
+  (account as any).callEWS = async (request: any) => {
+    requests.push(request);
+    return {
+      RootFolder: {
+        ParentFolder: { FolderId: { Id: "integrators-archive-root" } },
+        Folders: { Folder: [] },
+      },
+    };
+  };
+
+  await (account as any).listArchiveMailbox();
+
+  let parent = requests[0].m$FindFolder.m$ParentFolderIds.t$DistinguishedFolderId;
+  expect(parent.Id).toBe("archivemsgfolderroot");
+  expect(parent.t$Mailbox.t$EmailAddress).toBe("integrators@example.com");
+  expect(account.archiveMailboxRoot?.id).toBe("integrators-archive-root");
+});

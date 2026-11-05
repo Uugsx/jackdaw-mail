@@ -38,6 +38,8 @@
 
 <style>
   .duration {
+    /* Ширина — под цифры, без отступов: общие поля считают ширину с отступами (border-box) */
+    box-sizing: content-box;
     width: 4em;
     text-align: right;
   }

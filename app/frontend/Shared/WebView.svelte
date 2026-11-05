@@ -35,6 +35,7 @@
     updatePaneFocusFromWebViewInput,
   } from "../MainWindow/paneFocus";
   import { appGlobal } from "../../logic/app";
+  import { imageOpenGuestScript, parseImageOpenMessage } from "./webViewImageOpen";
   // import { Menu } from "@svelteuidev/core";
   // #endif
   import { stringToBlobURL } from "../Util/util";
@@ -229,22 +230,27 @@
       // #if [!WEBMAIL]
       if (listenersAttachedTo !== webviewE) {
         listenersAttachedTo = webviewE;
+        if (allowImageOpen) {
+          addImageOpenConsoleListener(webviewE);
+        }
         if (forwardKeysToMail) {
           await addInputListener();
         }
         if (containNavigation) {
           addContainedNavigationListeners();
         }
-        if (allowImageOpen) {
-          await addImageOpenListener();
-        }
         if (containNavigation) {
           let id = (webviewE as any).getWebContentsId();
           appGlobal.remoteApp.containWebContentsNavigation(id);
         }
-        if (!containNavigation) {
-          await addLinkListener();
-        }
+      }
+      // Скрипты живут в документе: при смене письма тот же webview загружает
+      // новый документ, а сбой на прошлом dom-ready не должен оставить письмо без них.
+      if (allowImageOpen) {
+        await addImageOpenListener();
+      }
+      if (!containNavigation) {
+        await addLinkListener();
       }
       if (enableZoomWheel) {
         let webview = webviewE as HTMLElement & { __jackdawZoomWheel?: boolean };
@@ -332,36 +338,20 @@
     if (!webviewE) {
       return;
     }
-    await executeGuestJavaScript(`
-      (() => {
-        if (window.__jackdawImageOpenListener) {
-          return;
-        }
-        window.__jackdawImageOpenListener = true;
-        document.addEventListener("click", event => {
-          const target = event.target;
-          if (target instanceof Element && target.closest("img")) {
-            event.preventDefault();
-          }
-        }, true);
-      })()
-    `);
-    let id = (webviewE as any).getWebContentsId();
-    await appGlobal.remoteApp.addEventListenerWebContents(id, "input-event", async (event) => {
-      if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
+    await executeGuestJavaScript(imageOpenGuestScript());
+  }
+
+  /** Один раз на элемент webview: сообщения о клике приходят из любого загруженного в него письма. */
+  function addImageOpenConsoleListener(el: HTMLIFrameElement) {
+    el.addEventListener("console-message", (event: Event) => {
+      let point = parseImageOpenMessage((event as Event & { message?: string }).message);
+      if (!point) {
         return;
       }
-      let onImage = await executeGuestJavaScript(`
-        (function () {
-          const el = document.elementFromPoint(${event.x}, ${event.y});
-          return !!(el && el.closest("img"));
-        })()
-      `);
-      if (!onImage) {
-        return;
-      }
-      const { openMailImageFromContext } = await import("../Mail/Message/openMailImage");
-      await openMailImageFromContext(webviewE, event.x, event.y);
+      catchErrors(async () => {
+        const { openMailImageFromContext } = await import("../Mail/Message/openMailImage");
+        await openMailImageFromContext(el, point.x, point.y);
+      });
     });
   }
 

@@ -16,7 +16,14 @@ async function accountSetup() {
   await registerSMLHTTP(mailAccount.identities.first);
 }
 
-beforeAll(accountSetup, 30000);
+/** Нужны запущенный бэкенд (JPC_SECRET), настоящий ящик в logins.ts и сеть */
+const kLiveBackend = !!process.env.JPC_SECRET;
+
+beforeAll(async () => {
+  if (kLiveBackend) {
+    await accountSetup();
+  }
+}, 30000);
 afterAll(stopBackend);
 
 let acc: SMLHTTPAccount;
@@ -34,7 +41,7 @@ async function registerSMLHTTP(identity: MailIdentity) {
   }
 }
 
-test("SML HTTP resource REST API", async () => {
+test.skipIf(!kLiveBackend)("SML HTTP resource REST API", async () => {
   let bundle = crypto.randomUUID();
   let mainRes = crypto.randomUUID();
   let mainContent = { "question": "abs" };

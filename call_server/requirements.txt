@@ -1,6 +1,0 @@
-websockets>=13,<16
-# Обратное подтверждение адреса письмом (inbound.py)
-aiosmtpd>=1.4,<2
-dkimpy>=1.1,<2
-pyspf>=2.0.14,<3
-dnspython>=2.6,<3

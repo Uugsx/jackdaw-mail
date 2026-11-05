@@ -6,6 +6,8 @@ import { pathToFileURL } from 'url'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../build/icon.png?asset'
 import { installSignalServiceCATrust } from './signalServiceCA'
+import { installTestProfileGuards, isTestProfile, testJPCPort } from '../../backend/testProfile'
+import { nativeDialogLabels, registerNativeDialogHandlers } from '../../backend/nativeDialogs'
 import { connectOAuth2Window } from './oauth2Window'
 import { getSpellcheckSuggestions } from './spellcheck'
 import {
@@ -53,6 +55,10 @@ let currentJPCSecret: string | null = null;
 const composeWindows = new Map<string, { window: BrowserWindow; payload: ComposeWindowMail }>();
 const messageWindows = new Map<string, { window: BrowserWindow; payload: MessageWindowPayload }>();
 const kComposeWindowRequestTimeoutMS = 60_000;
+/** Отправка письма с крупным вложением по медленному SMTP идёт дольше минуты. По таймауту
+ * окно показывало ошибку, а главное окно всё равно отправляло: повторное «Отправить»
+ * давало получателям дубль. Ждём отправку дольше, чем любой разумный SMTP. */
+const kComposeWindowSendTimeoutMS = 15 * 60_000;
 const kComposeWindowSearchTextMaxLength = 512;
 const pendingComposeWindowSends = new Map<string, {
   windowID: string;
@@ -120,6 +126,8 @@ function isDemoModeRequested(): boolean {
   return demoModeRequested;
 }
 const nativeMenuLabelKeys = Object.keys(currentNativeMenuLabels) as (keyof NativeMenuLabels)[];
+
+registerNativeDialogHandlers();
 
 ipcMain.on(nativeMenuLabelsChannel, (_event, labels: unknown) => {
   if (!isNativeMenuLabels(labels)) {
@@ -190,7 +198,7 @@ function forwardComposeWindowSend(windowID: string, payload: ComposeWindowMail):
     const timeout = setTimeout(() => {
       pendingComposeWindowSends.delete(requestID);
       resolve({ ok: false, errorMessage: "The main window did not respond" });
-    }, kComposeWindowRequestTimeoutMS);
+    }, kComposeWindowSendTimeoutMS);
     pendingComposeWindowSends.set(requestID, { windowID, resolve, timeout });
     try {
       window.webContents.send(composeWindowSendRequestChannel, requestID, windowID, payload);
@@ -260,10 +268,15 @@ function closeMessageWindows(): void {
 }
 
 function loadRendererWindow(window: BrowserWindow, hash: string): Promise<void> {
+  // Копии для автопроверок: порт backend нужен и отдельным окнам письма и черновика
+  if (testJPCPort()) {
+    hash += '&jpcPort=' + testJPCPort();
+  }
   if (is.dev) {
     return window.loadURL('http://localhost:5454/#' + hash);
   }
-  if (process.env['ELECTRON_RENDERER_URL']) {
+  // Только в разработке: в выпуске переменная окружения подменила бы интерфейс чужой страницей
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     return window.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#' + hash);
   }
   return window.loadFile(join(__dirname, '../renderer/index.html'), { hash });
@@ -669,16 +682,16 @@ async function createWindow(): Promise<void> {
         event.preventDefault();
         return;
       }
-      // В основном процессе нет локализации интерфейса: язык — по системе, как в backend.ts
-      const russian = app.getLocale().toLowerCase().startsWith('ru');
+      // Подписи на языке интерфейса передаёт рендерер (nativeDialogs.ts), до этого — по языку системы
+      const labels = nativeDialogLabels();
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'question',
-        buttons: russian ? ['Завершить звонок и закрыть', 'Остаться в звонке'] : ['End call and close', 'Stay in call'],
+        buttons: [labels.endCallAndClose, labels.stayInCall],
         defaultId: 1,
         cancelId: 1,
         title: 'Jackdaw Mail',
-        message: russian ? 'Идёт звонок.' : 'A call is in progress.',
-        detail: russian ? 'Если закрыть окно, звонок завершится.' : 'Closing the window will end the call.',
+        message: labels.callInProgress,
+        detail: labels.callCloseDetail,
       });
       if (choice === 0) {
         // preventDefault() здесь разрешает закрытие, вопреки отмене в renderer.
@@ -848,7 +861,8 @@ function createMenu() {
           ],
         },
         { type: 'separator' },
-        { role: 'toggleDevTools', label: labels.toggleDevTools },
+        // В выпуске DevTools не открываются: консоль окна имеет полный доступ к backend
+        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools', label: labels.toggleDevTools } as MenuItemConstructorOptions]),
         { type: 'separator' },
         { role: 'resetZoom', label: labels.resetZoom },
         { role: 'zoomIn', label: labels.zoomIn },
@@ -985,8 +999,11 @@ async function whenReady() {
   handleCommandline(process.argv.splice(1));
 
   allowCrossDomainRequestsFromFrontend();
+  installPermissionHandlers(session.defaultSession);
+  app.on('session-created', installPermissionHandlers);
   installSignalServiceCATrust(); // renderer's HTTPS REST to *.signal.org (the wss socket runs in the backend with its own CA)
 
+  installTestProfileGuards();
   createMenu();
   await createWindow();
 
@@ -1025,11 +1042,19 @@ app.on('web-contents-created', (_event, webContents) => {
   setWindowOpenHandler(webContents);
   // В <webview> показывается недоверенный контент: Node.js и preload ему не положены,
   // даже если атрибуты тега будут подменены.
-  webContents.on('will-attach-webview', (_attachEvent, webPreferences) => {
+  webContents.on('will-attach-webview', (attachEvent, webPreferences, params) => {
     delete webPreferences.preload;
+    delete (webPreferences as { preloadURL?: string }).preloadURL;
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
     webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    webPreferences.allowRunningInsecureContent = false;
+    if (!isAllowedWebViewSource(params.src)) {
+      console.error('Blocked <webview> with source', params.src?.slice(0, 100));
+      attachEvent.preventDefault();
+    }
   });
 });
 
@@ -1101,6 +1126,12 @@ function allowCrossDomainRequestsFromFrontend() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     filter,
     (details, callback) => {
+      // Только запросы самого интерфейса. Письма в <webview>, виджеты и прочие страницы
+      // не получают обход CORS: иначе их скрипты читали бы ответы роутера и сервисов на localhost.
+      if (!isAppRendererContents(details.webContents)) {
+        callback({});
+        return;
+      }
       let requestHeaders = details.requestHeaders ?? {};
       for (let name in requestHeaders) {
         switch (name.toLowerCase()) {
@@ -1127,6 +1158,10 @@ function allowCrossDomainRequestsFromFrontend() {
   session.defaultSession.webRequest.onHeadersReceived(
     filter,
     (details, callback) => {
+      if (!isAppRendererContents(details.webContents)) {
+        callback({});
+        return;
+      }
       let responseHeaders = details.responseHeaders ?? {};
       // Remove server response
       for (let name in responseHeaders) {
@@ -1148,6 +1183,46 @@ function allowCrossDomainRequestsFromFrontend() {
   );
 }
 
+/** Окно с интерфейсом приложения (главное, письмо, черновик), а не гостевая страница */
+function isAppRendererContents(webContents: WebContents | undefined | null): boolean {
+  return !!webContents && !webContents.isDestroyed() &&
+    webContents.getType() == 'window' && isAppRendererURL(webContents.getURL());
+}
+
+/** Что разрешено страницам веб-приложений и виджетов в их собственных сессиях (`persist:…`).
+ * Геолокация, чтение буфера обмена, USB/HID/serial и прочее — нет. */
+const kWebAppPermissions = new Set([
+  'notifications', 'fullscreen', 'media', 'clipboard-sanitized-write', 'pointerLock', 'speaker-selection',
+]);
+
+function isPermissionAllowed(webContents: WebContents | null, permission: string, ses: Electron.Session): boolean {
+  if (isAppRendererContents(webContents)) {
+    return true;
+  }
+  // Письма, приглашения и сообщения чата в <webview> без своей сессии: им ничего не положено
+  if (ses == session.defaultSession) {
+    return permission == 'fullscreen';
+  }
+  return kWebAppPermissions.has(permission);
+}
+
+const permissionHandledSessions = new WeakSet<Electron.Session>();
+
+/** Electron по умолчанию молча разрешает всё (камера, микрофон, геолокация, буфер обмена, устройства) */
+function installPermissionHandlers(ses: Electron.Session): void {
+  if (permissionHandledSessions.has(ses) || isTestProfile()) {
+    return;
+  }
+  permissionHandledSessions.add(ses);
+  ses.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(isPermissionAllowed(webContents, permission, ses));
+  });
+  ses.setPermissionCheckHandler((webContents, permission) => {
+    return isPermissionAllowed(webContents, permission, ses);
+  });
+  ses.setDevicePermissionHandler(() => false);
+}
+
 function setWindowOpenHandler(webContents: WebContents) {
   webContents.setWindowOpenHandler(({ url }) => {
     if (webContents.getType() == "webview" && isExternalLinkURL(url)) {
@@ -1155,6 +1230,11 @@ function setWindowOpenHandler(webContents: WebContents) {
     }
     return { action: 'deny' };
   });
+}
+
+/** <webview> показывает письма (blob:), веб-приложения и виджеты (http/https), но не файлы с диска */
+export function isAllowedWebViewSource(src: string | undefined): boolean {
+  return !src || /^(?:https?:|blob:|about:blank$)/i.test(src);
 }
 
 function isExternalLinkURL(url: string | undefined): boolean {
@@ -1186,7 +1266,7 @@ function isAppRendererURL(url: string): boolean {
     if (is.dev) {
       return target.origin == 'http://localhost:5454';
     }
-    if (process.env['ELECTRON_RENDERER_URL']) {
+    if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
       return target.origin == new URL(process.env['ELECTRON_RENDERER_URL']).origin;
     }
     return target.protocol == 'file:' && target.pathname == pathToFileURL(join(__dirname, '../renderer/index.html')).pathname;

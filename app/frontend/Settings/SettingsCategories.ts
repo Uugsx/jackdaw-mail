@@ -14,9 +14,13 @@ import GlobalKeyboardShortcuts from "./Global/KeyboardShortcuts.svelte";
 import MailAppearance from "./Mail/Appearance.svelte";
 import MailNotifications from "./Mail/Notifications.svelte";
 import MailRead from "./Mail/Read.svelte";
+import MailAlertIncidents from "./Mail/AlertIncidents.svelte";
 import MailSend from "./Mail/Send.svelte";
 import MailTags from "./Mail/Tags.svelte";
 import MailRules from "./Mail/Rules.svelte";
+import MailTemplates from "./Mail/Templates.svelte";
+import MailJunk from "./Mail/Junk.svelte";
+import MailQuickSteps from "./Mail/QuickSteps.svelte";
 import MailSharing from "./Mail/Sharing.svelte";
 import AccountGeneral from "./AccountGeneral.svelte";
 import AccountURLServer from "./AccountURLServer.svelte";
@@ -26,9 +30,12 @@ import AccountFolders from "./Mail/Account/Folders.svelte";
 import AccountIdentity from "./Mail/Account/Identity.svelte";
 import AccountMailAppearance from "./Mail/Account/Appearance.svelte";
 import AccountMailNotifications from "./Mail/Account/Notifications.svelte";
+import AccountOutOfOffice from "./Mail/Account/OutOfOffice.svelte";
+import AccountServerRules from "./Mail/Account/ServerRules.svelte";
 import AccountXMPPServer from "./Chat/AccountXMPPServer.svelte";
 import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
+import CalendarWorkingHours from "./Calendar/WorkingHours.svelte";
 import About from "./About/About.svelte";
 import Feedback from "./About/Feedback.svelte";
 import Billing from "./Billing/Billing.svelte";
@@ -38,6 +45,7 @@ import Debug from "./About/Debug.svelte";
 // #endif
 import { Account } from "../../logic/Abstract/Account";
 import { MailAccount } from "../../logic/Mail/MailAccount";
+import { ExchangeMailAccount } from "../../logic/Mail/EWS/ExchangeMailAccount";
 import { XMPPAccount } from "../../logic/Chat/XMPP/XMPPAccount";
 // #if [!WEBMAIL]
 import { MatrixAccount } from "../../logic/Chat/Matrix/MatrixAccount";
@@ -71,6 +79,8 @@ globalSettings.subCategories.addAll([
   new SettingsCategory("global-workspaces", gt`Workspaces`, GlobalWorkspaces),
   new SettingsCategory("global-system-integration", gt`System integration`, GlobalSystemIntegration),
   new SettingsCategory("global-keyboard-shortcuts", gt`Keyboard shortcuts`, GlobalKeyboardShortcuts),
+  // Окно настроек показывает только «Общие» и «Почту», поэтому рабочее время календаря здесь
+  new SettingsCategory("calendar-working-hours", gt`Work time`, CalendarWorkingHours),
 ]);
 settingsCategories.add(globalSettings);
 
@@ -81,6 +91,10 @@ mailSettings.subCategories.addAll([
   new SettingsCategory("mail-read", gt`Read *=> in the sense of to read emails`, MailRead),
   new SettingsCategory("mail-send", gt`Send *=> send emails`, MailSend),
   new SettingsCategory("mail-tags", gt`Categories`, MailTags),
+  new SettingsCategory("mail-alert-incidents", gt`Alert incidents`, MailAlertIncidents),
+  new SettingsCategory("mail-templates", gt`Templates *=> Email templates`, MailTemplates),
+  new SettingsCategory("mail-junk", gt`Junk mail`, MailJunk),
+  new SettingsCategory("mail-quick-steps", gt`Quick steps`, MailQuickSteps),
 ]);
 mailSettings.accounts = appGlobal.emailAccounts;
 // #if [!WEBMAIL]
@@ -97,7 +111,9 @@ accountSettings.add(new AccSetting(MailAccount, "mail-server", gt`Server`, Accou
 // #endif
 accountSettings.add(new AccSetting(MailAccount, "mail-folders", gt`Folders`, AccountFolders));
 accountSettings.add(new AccSetting(MailAccount, "mail-identity", gt`Sender and signature`, AccountIdentity));
+accountSettings.add(new AccSetting(ExchangeMailAccount, "mail-out-of-office", gt`Automatic replies`, AccountOutOfOffice));
 accountSettings.add(new AccSetting(MailAccount, "mail-rules", gt`Rules *=> Criteria after which emails should be sorted`, MailRules));
+accountSettings.add(new AccSetting(ExchangeMailAccount, "mail-server-rules", gt`Server rules`, AccountServerRules));
 accountSettings.add(new AccSetting(MailAccount, "mail-sharing", gt`Sharing *=> Accessing mail account of team mates`, MailSharing));
 
 // #if [DEV]

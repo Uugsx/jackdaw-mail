@@ -2,7 +2,7 @@
   <RoundButton
     icon={logo}
     iconSize="32px"
-    label="Switch apps"
+    label={$t`Switch apps`}
     classes="plain small"
     border={false}
     padding="6px"
@@ -13,6 +13,7 @@
 <script lang="ts">
   import { goTo } from "../selectedApp";
   import RoundButton from "../../Shared/RoundButton.svelte";
+  import { t } from "../../../l10n/l10n";
   import logo from '../../asset/icon/general/logo.svg?raw';
 
   export let onClick = onOpen;

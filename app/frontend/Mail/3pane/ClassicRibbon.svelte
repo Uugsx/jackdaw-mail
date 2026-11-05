@@ -261,6 +261,7 @@
   import { selectedMessages as selectedMessagesStore } from "../Selected";
   import { t, gt } from "../../../l10n/l10n";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import { onDestroy } from "svelte";
   import {
     ribbonPreferences,
     type RibbonGroupId,
@@ -300,6 +301,7 @@
   let flagsEpoch = 0;
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   function onMessageChange() {
     replyAllRev++;
     flagsEpoch++;
@@ -652,8 +654,8 @@
     width: 66px;
     min-width: 66px;
     height: 54px;
-    gap: 4px;
-    padding: 4px 6px;
+    gap: 2px;
+    padding: 3px 4px;
     font-size: 10px;
     line-height: 1.15;
   }
@@ -661,13 +663,16 @@
     width: 22px;
     height: 22px;
   }
+  /* До двух строк: «Ответить всем» иначе обрезается до «Ответит…». */
   .classic-ribbon.large .ribbon-btn > span:not(.ribbon-icon) {
-    display: block;
+    display: -webkit-box;
     max-width: 100%;
     overflow: hidden;
     text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: break-word;
   }
   .classic-ribbon.large .ribbon-btn .ribbon-icon {
     width: 22px;

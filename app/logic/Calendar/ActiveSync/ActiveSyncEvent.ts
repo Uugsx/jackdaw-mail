@@ -336,6 +336,10 @@ export class ActiveSyncEvent extends ExchangeEvent {
     await super.makeExclusions(exclusions);
   }
 
+  get canProposeNewTime(): boolean {
+    return false;
+  }
+
   async respondToInvitation(response: InvitationResponseInMessage): Promise<void> {
     assert(this.isIncomingMeeting, "Only invitations can be responded to");
     let SendResponse = this.calendar.account.protocolVersion == "16.1" ? {} : [];

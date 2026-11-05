@@ -1,3 +1,4 @@
+import type { ProposalResponse, TimeProposal } from "./Invitation/TimeProposal";
 import type { Calendar } from "./Calendar";
 import type { Participant } from "./Participant";
 import { Attachment, ContentDisposition, type MessageWithAttachments } from "../Abstract/Attachment";
@@ -895,6 +896,21 @@ export class Event extends Observable {
     const { ICalIncomingInvitation } = await import("./ICal/ICalIncomingInvitation"); // HACK to avoid circular import in `InvitationEvent`
     await ICalIncomingInvitation.respondToInvitationFromCalEvent(this, response, mailAccount);
     if (save) { // `save == false` for deleted events and `InvitationEvent`
+      await this.save();
+    }
+  }
+
+  /** «Предложить другое время» из календаря. ActiveSync этого не умеет. */
+  get canProposeNewTime(): boolean {
+    return this.isIncomingMeeting;
+  }
+
+  /** Ответ «Под вопросом» / «Отклонить» с новым временем. Время встречи у себя не меняется. */
+  async proposeNewTime(response: ProposalResponse, proposal: TimeProposal, mailAccount?: MailAccount, save = true): Promise<void> {
+    assert(this.isIncomingMeeting, "Only invitations can be responded to");
+    const { ICalIncomingInvitation } = await import("./ICal/ICalIncomingInvitation"); // HACK to avoid circular import in `InvitationEvent`
+    await ICalIncomingInvitation.proposeNewTimeFromCalEvent(this, response, proposal, mailAccount);
+    if (save) {
       await this.save();
     }
   }

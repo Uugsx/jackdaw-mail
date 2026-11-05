@@ -89,6 +89,37 @@ export function onDragStartMail(event: DragEvent, message: EMail) {
   event.dataTransfer.setData(kDragMIME, ids);
   event.dataTransfer.setData("text/plain", ids);
   event.dataTransfer.effectAllowed = "copyMove";
+  if (messages.length == 1) {
+    addDesktopDownload(event, message);
+  }
+}
+
+/**
+ * Перетаскивание письма на рабочий стол или в папку Finder/Проводника: Chromium
+ * сохраняет файл .eml по `DownloadURL`. MIME нужен сразу, во время dragstart,
+ * поэтому если письмо ещё не загружено, начинаем загрузку и в этот раз
+ * перетаскиваем только внутри приложения.
+ */
+export function addDesktopDownload(event: DragEvent, message: EMail): boolean {
+  if (!message.mime?.length) {
+    message.loadMIME().catch(() => undefined);
+    return false;
+  }
+  let filename = emlFilename(message.subject);
+  let url = URL.createObjectURL(new Blob([message.mime], { type: "message/rfc822" }));
+  event.dataTransfer.setData("DownloadURL", `message/rfc822:${filename}:${url}`);
+  // Сохранение идёт уже после отпускания: ссылку освобождаем позже
+  (event.target as EventTarget)?.addEventListener?.("dragend", () =>
+    setTimeout(() => URL.revokeObjectURL(url), kRevokeDownloadMS), { once: true });
+  return true;
+}
+
+const kRevokeDownloadMS = 60 * 1000;
+
+/** Имя файла по теме: без `:` (разделитель в DownloadURL) и запрещённых в Windows символов */
+export function emlFilename(subject: string | null | undefined): string {
+  let name = (subject ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  return (name || "email") + ".eml";
 }
 
 export async function onDropMail(event: DragEvent, folder: Folder) {

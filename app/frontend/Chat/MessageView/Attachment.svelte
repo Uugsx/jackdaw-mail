@@ -6,8 +6,13 @@
   <vbox class="image-wrap">
     {#if $attachment.content}
       <Clickable onClick={onOpen}>
-        <img class="image" src={$attachment.blobURL} alt={$attachment.filename} />
+        <img class="image" src={$attachment.blobURL} alt={$attachment.filename} title={$t`Open ${$attachment.filename}`} />
       </Clickable>
+      {#if uploadProgress != null}
+        <vbox class="upload-over">
+          <progress class="upload" max="1" value={uploadProgress} aria-label={$t`Uploading ${$attachment.filename}`}></progress>
+        </vbox>
+      {/if}
       <hbox class="image-menu">
         <AttachmentMenu {attachment} />
       </hbox>
@@ -42,7 +47,12 @@
         </hbox>
         <hbox class="bottom-row font-smallest">
           <hbox class="size">
-            {#if downloadError}
+            {#if uploadProgress != null}
+              <hbox class="uploading">
+                <progress class="upload" max="1" value={uploadProgress} aria-label={$t`Uploading ${$attachment.filename}`}></progress>
+                <span>{Math.round(uploadProgress * 100)} %</span>
+              </hbox>
+            {:else if downloadError}
               <hbox class="download-error" role="alert" title={downloadError.message}>{$t`Download failed`}</hbox>
               <Button label={$t`Retry`} icon={RetryIcon} iconSize="14px" iconOnly plain onClick={onRetryDownload} />
             {:else if $attachment.size}
@@ -62,7 +72,8 @@
 <script lang="ts">
   import type { Attachment } from "../../../logic/Abstract/Attachment";
   import { fileSize } from "../../Files/file";
-  import { openFileInternallyFromFile, canOpenFileInternally } from "../../Files/open";
+  import { openFileInternally, canOpenFileInternally } from "../../Files/open";
+  import { canPreviewAttachment, previewAttachment } from "../../Mail/Attachments/attachmentPreview";
   import AttachmentMenu from "../../Mail/Message/AttachmentMenu.svelte";
   import FileIcon from "../../Files/Thumbnail/FileIcon.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
@@ -77,6 +88,8 @@
   $: isImage = $attachment.mimeType?.startsWith("image/");
   /** Файл чата Jackdaw не скачался: показываем ошибку с повтором вместо вечного «Downloading…» */
   $: downloadError = $attachment instanceof JackdawChatAttachment && !$attachment.content ? $attachment.downloadError : null;
+  /** Свой файл загружается на сервер: полоса загрузки, 0…1 */
+  $: uploadProgress = $attachment instanceof JackdawChatAttachment ? $attachment.uploadProgress : null;
 
   async function onRetryDownload(event?: Event) {
     event?.stopPropagation(); // не открывать файл по клику на «Повторить»
@@ -92,10 +105,14 @@
     if (!attachment.content) {
       return; // not downloaded yet
     }
-    if (canOpenFileInternally(attachment.mimeType)) {
-      await openFileInternallyFromFile(attachment.content);
+    // Как у вложений письма: .eml — в просмотре писем, картинки (и GIF), PDF, Office и текст —
+    // во встроенном просмотре, остальное — внешней программой
+    if (canOpenFileInternally(attachment.mimeType) || attachment.filename?.toLowerCase().endsWith(".eml")) {
+      await openFileInternally(new Uint8Array(await attachment.content.arrayBuffer()), "message/rfc822");
+    } else if (canPreviewAttachment(attachment)) {
+      await previewAttachment(attachment);
     } else {
-      await attachment.saveFile(); // offer to save the blob to disk
+      await attachment.openOSApp();
     }
   }
 
@@ -110,13 +127,6 @@
 </script>
 
 <style>
-  :global(.bubble) :has(.image) {
-    background-color: blue;
-    padding: 20px;
-  }
-  :global(.bubble:before) :has(.image) {
-    display: none;
-  }
   .image-wrap {
     position: relative;
   }
@@ -133,13 +143,31 @@
   .image-wrap:hover .image-menu {
     opacity: 1;
   }
+  /* Превью, а не картинка во всю ленту: полный размер открывается по клику */
   .image {
-    max-width: 280px;
-    max-height: 320px;
-    border-radius: 3px;
+    display: block;
+    max-width: 240px;
+    max-height: 200px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
     object-fit: contain;
-    cursor: pointer;
-    margin: -8px -14px;
+    cursor: zoom-in;
+  }
+  .upload-over {
+    position: absolute;
+    inset-inline: 8px;
+    bottom: 8px;
+  }
+  .upload {
+    width: 100%;
+    min-width: 80px;
+    height: 4px;
+    accent-color: var(--selected-border, var(--icon-primary));
+  }
+  .uploading {
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
   }
   .loading {
     padding: 24px;

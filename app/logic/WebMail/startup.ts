@@ -10,6 +10,7 @@ import { loadTagsList } from '../Abstract/Tag';
 import { getComputerOn } from '../util/backend-wrapper';
 import { logError } from '../../frontend/Util/error';
 import { refreshProEntitlement } from '../Billing/ProEntitlement';
+import { markChatAccountsRead } from '../Chat/Jackdaw/JackdawChats';
 
 export async function getStartObjects(): Promise<void> {
   gLicense.license = { valid: true }; // Proprietary, see comment in License.ts
@@ -21,6 +22,7 @@ export async function getStartObjects(): Promise<void> {
   appGlobal.calendars.add(await createPersonalCalendar());
 
   await login();
+  markChatAccountsRead();
 
   readSavedSearches();
   await loadTagsList();

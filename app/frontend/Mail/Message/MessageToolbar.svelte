@@ -43,6 +43,30 @@
       plain
       />
   </hbox>
+  <hbox class="note">
+    <Button
+      icon={NoteIcon}
+      iconSize="18px"
+      iconOnly
+      label={$t`Note on message`}
+      onClick={() => requestNoteEdit(message)}
+      disabled={!message}
+      plain
+      />
+  </hbox>
+  {#if translationAvailable}
+    <hbox class="translate" class:translated={translatedShown}>
+      <Button
+        icon={LanguagesIcon}
+        iconSize="18px"
+        iconOnly
+        label={translatedShown ? $t`Show original` : $t`Translate this email`}
+        onClick={() => translation.toggle()}
+        disabled={$translation.status == "translating"}
+        plain
+        />
+    </hbox>
+  {/if}
   <hbox class="archive">
     <Button
       icon={ArchiveIcon}
@@ -137,7 +161,7 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { mailApp } from "../MailJackdawApp";
   import { SpecialFolder } from "../../../logic/Mail/Folder";
-  import { selectedMessage, selectedMessages } from "../Selected";
+  import { neighbourMessage, selectedMessage, selectedMessages } from "../Selected";
   import { openEMailMessage } from "../open";
   import MessageMenu from "./MessageMenu.svelte";
   import MessageMovePopup from "../Message/MessageMovePopup.svelte";
@@ -146,6 +170,8 @@
   import Popup from "../../Shared/Popup.svelte";
   import Button from "../../Shared/Button.svelte";
   import StarIcon from "lucide-svelte/icons/star";
+import NoteIcon from "lucide-svelte/icons/notebook-pen";
+import { requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import CircleIcon from "lucide-svelte/icons/circle";
   import ReplyIcon from "lucide-svelte/icons/reply";
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
@@ -157,6 +183,8 @@
   import NotSpamIcon from "lucide-svelte/icons/shield-off";
   import WriteIcon from "lucide-svelte/icons/pencil";
   import FolderActionsIcon from "lucide-svelte/icons/folder-dot";
+  import LanguagesIcon from "lucide-svelte/icons/languages";
+  import { getMessageTranslation, getTranslationEngineSetting, isMailTranslationAvailable } from "./messageTranslation";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import { catchErrors } from "../../Util/error";
@@ -166,13 +194,20 @@
   import { markMessagesRead, messagesRepresentSameMail } from "../mailReadActions";
   import { appGlobal } from "../../../logic/app";
   import { computeCanReplyAll, subscribeCanReplyAll } from "../canReplyAll";
+  import { onDestroy } from "svelte";
 
   export let message: EMail;
   export let onReply: (() => void | Promise<void>) | null = null;
   export let onReplyAll: (() => void | Promise<void>) | null = null;
 
+  let translationEngineSetting = getTranslationEngineSetting();
+  $: translationAvailable = isMailTranslationAvailable($translationEngineSetting.value);
+  $: translation = getMessageTranslation(message);
+  $: translatedShown = $translation.status == "translated" && !$translation.showOriginal;
+
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  onDestroy(() => replyAllUnsub?.());
   let canReplyAll = false;
   $: {
     replyAllUnsub?.();
@@ -222,7 +257,7 @@
   }
   function selectNextAfterAction(list: EMail[]) {
     let anchor = list[0] ?? message;
-    let next = anchor?.nextMessage();
+    let next = anchor ? neighbourMessage(anchor) : null;
     $selectedMessages.replaceAll(next ? [next] : []);
     $selectedMessage = next ?? null;
   }
@@ -326,6 +361,9 @@
   }
   .buttons :global(svg) {
     stroke-width: 1.3px;
+  }
+  .translate.translated :global(svg) {
+    color: var(--icon-primary);
   }
   .star.starred :global(svg) {
     fill: var(--icon-primary);

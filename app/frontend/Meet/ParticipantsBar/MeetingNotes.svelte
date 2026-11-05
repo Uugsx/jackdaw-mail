@@ -19,7 +19,7 @@
       <Scroll>
         <div class="description value font-small">
           {#if event.descriptionHTML}
-            {@html event.descriptionHTML}
+            {@html restrictHTMLForAppDOM(event.descriptionHTML)}
           {:else}
             {event.descriptionText}
           {/if}
@@ -30,6 +30,7 @@
 {/if}
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import type { VideoConfMeeting } from "../../../logic/Meet/VideoConfMeeting";
   import Scroll from "../../Shared/Scroll.svelte";
   import Button from "../../Shared/Button.svelte";

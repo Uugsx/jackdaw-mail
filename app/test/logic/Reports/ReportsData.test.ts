@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +20,14 @@ import {
   type RawMailTopicRow,
 } from "../../../logic/Reports/ReportsData";
 import type { WorkingHoursSchedule } from "../../../logic/Reports/WorkingHours";
+import { loadUILocale, setUILocale } from "../../../l10n/l10n";
+import { loadLanguageMessages } from "../../../l10n/messagesLoader";
+
+// Подписи для записей без имени идут на языке интерфейса; ожидания ниже — для русского.
+beforeAll(async () => {
+  await loadLanguageMessages("en");
+  await loadUILocale("ru");
+});
 
 describe("ReportsData helpers", () => {
   test("builds a thirty-day default range ending today", () => {
@@ -80,6 +88,15 @@ describe("ReportsData helpers", () => {
       "Printer issue",
     );
     expect(normalizeReportTopic(" ")).toBe("(без темы)");
+  });
+
+  test("labels a missing topic in the interface language", () => {
+    setUILocale("en");
+    try {
+      expect(normalizeReportTopic(" ")).toBe("(no subject)");
+    } finally {
+      setUILocale("ru");
+    }
   });
 
   test("merges normalized topic variants before ranking", () => {

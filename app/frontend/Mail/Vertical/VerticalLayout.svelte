@@ -13,6 +13,7 @@
     <Splitter name="mail.vertical.msgs" initialRightRatio={2}>
       <vbox flex class="message-list-pane" slot="left">
         <FolderHeader folder={selectedFolder} {searchMessages} />
+        <FocusedTabs folder={searchMessages ? null : selectedFolder} />
         <MailUndoToast />
         {#key selectedFolder?.id ?? ""}
         <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages}
@@ -46,6 +47,11 @@
   import MailUndoToast from "../MailUndoToast.svelte";
   import Splitter from "../../Shared/Splitter.svelte";
   import { ArrayColl, type Collection } from 'svelte-collections';
+  import FocusedTabs from "../Focused/FocusedTabs.svelte";
+  import { focusedMessages, focusedTab } from "../Focused/focusedView";
+  import { focusedClassificationChanged, focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
+  const focusedEnabled = focusedInboxEnabled();
+
 
   export let accounts: Collection<MailAccount>; /** in */
   export let folders: Collection<Folder>; /** in */
@@ -56,7 +62,7 @@
   export let selectedMessages: ArrayColl<EMail>; /** in/out */
   let selectedFolders: ArrayColl<Folder>;
 
-  $: folderMessages = selectedFolder?.messages;
+  $: folderMessages = focusedMessages(selectedFolder, $focusedTab, $focusedEnabled.value, $focusedClassificationChanged);
   $: messages = searchMessages ?? folderMessages ?? new ArrayColl<EMail>();
 </script>
 

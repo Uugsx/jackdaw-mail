@@ -6,31 +6,59 @@ import {
   createResponseReminderIndexes,
   addEMailStatusColumns,
   repairReportReplyIndexes,
+  dedupeEMailPersons,
   createEMailLookupIndexes,
+  dedupeEMailsWithoutPID,
+  createFollowUpReminderTable,
+  createExchangeTaskTable,
+  createScheduledSendTable,
+  createMailTemplateTable,
+  createMessageNoteTable,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 // <copied from="Mail/SQL/Account/SQLDatabase.ts">
 
 let mailDatabase: Database;
 
+/** Миграции mail.db по порядку. Новые — только в конец списка:
+ * номер последней выполненной хранится в user_version. */
+export const mailDatabaseMigrations = [
+  mailDatabaseSchema,
+  createFolderIDDateSentIndex,
+  createReportReplyIndexes,
+  createResponseReminderIndexes,
+  addEMailStatusColumns,
+  repairReportReplyIndexes,
+  // Уже выпущена седьмой (PR #14): установленные базы стоят на user_version 7.
+  createEMailLookupIndexes,
+  dedupeEMailPersons,
+  dedupeEMailsWithoutPID,
+  // Десятая: «Напомнить, если не ответят».
+  createFollowUpReminderTable,
+  // Одиннадцатая: задачи Exchange.
+  createExchangeTaskTable,
+  // Двенадцатая: отмена отправки и «Отправить позже».
+  createScheduledSendTable,
+  // Тринадцатая: шаблоны писем.
+  createMailTemplateTable,
+  // Четырнадцатая: заметки к письмам.
+  createMessageNoteTable,
+];
+
+const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
+  await database.migrate(...mailDatabaseMigrations);
+  await database.pragma("foreign_keys = true");
+  await database.pragma("journal_mode = WAL");
+});
+
 export async function getDatabase(): Promise<Database> {
   if (mailDatabase) {
     return mailDatabase;
   }
-  mailDatabase = await getSQLiteDatabase("mail.db");
-  await mailDatabase.migrate(
-    mailDatabaseSchema,
-    createFolderIDDateSentIndex,
-    createReportReplyIndexes,
-    createResponseReminderIndexes,
-    addEMailStatusColumns,
-    repairReportReplyIndexes,
-    createEMailLookupIndexes,
-  );
-  await mailDatabase.pragma("foreign_keys = true");
-  await mailDatabase.pragma("journal_mode = WAL");
+  mailDatabase = await openMailDatabase();
   return mailDatabase;
 }
 
@@ -42,11 +70,17 @@ export async function getDatabase(): Promise<Database> {
 export async function makeTestDatabase(): Promise<Database> {
   mailDatabase = await getSQLiteDatabase("test-mail.db");
   await deleteDatabase();
+  mailDatabase = await getSQLiteDatabase("test-mail.db");
   await mailDatabase.migrate(
     mailDatabaseSchema,
     createReportReplyIndexes,
     createResponseReminderIndexes,
     createEMailLookupIndexes,
+    createFollowUpReminderTable,
+    createExchangeTaskTable,
+    createScheduledSendTable,
+    createMailTemplateTable,
+    createMessageNoteTable,
   );
   await mailDatabase.pragma("foreign_keys = true");
   await mailDatabase.pragma("journal_mode = WAL");

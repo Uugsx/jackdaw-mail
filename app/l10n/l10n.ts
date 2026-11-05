@@ -5,6 +5,9 @@ import { sanitize } from '../../lib/util/sanitizeDatatypes';
 
 import { sourceLocale, localeMapping } from './list';
 import { languageMessages, hasLanguageMessages, loadLanguageMessages } from './messagesLoader';
+import { commentSymbol } from './commentSymbol';
+
+export { commentSymbol };
 
 /** @lang Either 2-letter ISO lang code, or 5-letter ISO locale code
  * Must match list.ts */
@@ -141,12 +144,6 @@ function initLocale() {
   setUILocale(getUILocale());
 }
 
-/** In strings, this is the separator between the actual string and the comment for translators or machine translation.
- * This allows to give context to short strings.
- * It also allows to disambiguate "read" (past tense) between "read" (instruction).
- *
- * Also in config.ts because of the plugin */
-export const commentSymbol = " *=> ";
 
 /** Used in Svelte files, e.g.
  * $t`Hello World!` or $t`Hello ${username}!` */

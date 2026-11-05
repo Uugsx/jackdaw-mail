@@ -274,6 +274,15 @@
               on:click={() => dispatch("insertSignature")}>
               <SignatureIcon size="18px" />
             </button>
+            <button type="button" class="ribbon-btn" title={$t`Templates *=> Email templates`}
+              aria-label={$t`Templates *=> Email templates`}
+              aria-haspopup="menu"
+              aria-expanded={templateMenuOpen}
+              class:on={templateMenuOpen}
+              bind:this={templateMenuAnchor}
+              on:click={() => templateMenuOpen = !templateMenuOpen}>
+              <TemplateIcon size="18px" />
+            </button>
             <button type="button" class="ribbon-btn" title={$t`Actions`}
               disabled={!!hasSML}
               on:click={() => dispatch("openActions")}>
@@ -301,6 +310,14 @@
               class:on={isFlagged}
               on:click={() => dispatch("toggleFlag")}>
               <FlagIcon size="18px" />
+            </button>
+            <button type="button" class="ribbon-btn" title={$t`Remind me if nobody replies`}
+              class:on={!!followUpReminder}
+              aria-haspopup="menu"
+              aria-expanded={followUpMenuOpen}
+              bind:this={followUpMenuAnchor}
+              on:click={() => followUpMenuOpen = !followUpMenuOpen}>
+              <BellRingIcon size="18px" />
             </button>
             <button type="button" class="ribbon-btn" title={$t`Emoji`}
               class:on={showEmojis}
@@ -364,6 +381,7 @@
               <MailOpenIcon size="16px" />
               <span>{$t`Request delivery receipt`}</span>
             </button>
+            <slot name="tracking" />
           </hbox>
           <span class="group-label">{$t`Tracking`}</span>
         </vbox>
@@ -410,7 +428,39 @@
 
   {#if sendMenuAnchor}
     <Menu bind:isMenuOpen={sendMenuOpen} anchor={sendMenuAnchor} boundaryElSel=".mail-composer-window">
+      <MenuLabel label={$t`Send later`} />
+      <MenuItem
+        label={$t`Tomorrow morning` + " · " + formatSendLaterTime(tomorrowMorning())}
+        icon={SunriseIcon}
+        onClick={() => { sendMenuOpen = false; dispatch("sendLater", tomorrowMorning()); }} />
+      <MenuItem
+        label={$t`Monday morning` + " · " + formatSendLaterTime(nextMondayMorning())}
+        icon={CalendarDaysIcon}
+        onClick={() => { sendMenuOpen = false; dispatch("sendLater", nextMondayMorning()); }} />
+      <MenuItem
+        label={$t`Pick date and time…`}
+        icon={CalendarClockIcon}
+        onClick={onPickSendLater} />
+      <MenuDivider />
       <MenuItem label={$t`Save draft`} onClick={() => { sendMenuOpen = false; dispatch("saveDraft"); }} />
+    </Menu>
+  {/if}
+
+  {#if templateMenuAnchor}
+    <Menu bind:isMenuOpen={templateMenuOpen} anchor={templateMenuAnchor} boundaryElSel=".mail-composer-window">
+      <TemplateMenuItems
+        onInsert={id => { templateMenuOpen = false; dispatch("insertTemplate", id); }}
+        onSave={() => { templateMenuOpen = false; dispatch("saveAsTemplate"); }}
+        onManage={canManageTemplates ? () => { templateMenuOpen = false; dispatch("manageTemplates"); } : null} />
+    </Menu>
+  {/if}
+
+  {#if followUpMenuAnchor}
+    <Menu bind:isMenuOpen={followUpMenuOpen} anchor={followUpMenuAnchor} boundaryElSel=".mail-composer-window">
+      <FollowUpMenuItems
+        selected={followUpReminder}
+        onSelect={choice => { dispatch("setFollowUp", choice); }}
+        onClear={() => { dispatch("setFollowUp", null); }} />
     </Menu>
   {/if}
 
@@ -536,8 +586,20 @@
   import CheckIcon from "lucide-svelte/icons/check";
   import ListChecksIcon from "lucide-svelte/icons/list-checks";
   import FlagIcon from "lucide-svelte/icons/flag";
+  import BellRingIcon from "lucide-svelte/icons/bell-ring";
+  import FollowUpMenuItems from "../FollowUp/FollowUpMenuItems.svelte";
+  import TemplateMenuItems from "../Templates/TemplateMenuItems.svelte";
+  import TemplateIcon from "lucide-svelte/icons/file-text";
+  import type { FollowUpChoice } from "../../../logic/Mail/FollowUp/FollowUpReminder";
   import Menu from "../../Shared/Menu/Menu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
+  import MenuLabel from "../../Shared/Menu/MenuLabel.svelte";
+  import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
+  import SunriseIcon from "lucide-svelte/icons/sunrise";
+  import CalendarDaysIcon from "lucide-svelte/icons/calendar-days";
+  import CalendarClockIcon from "lucide-svelte/icons/calendar-clock";
+  import { nextMondayMorning, tomorrowMorning } from "../../../logic/Mail/SendLater/SendLater";
+  import { formatSendLaterTime, pickSendLaterDate } from "../SendLater/pickSendLaterDate";
   import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import type { MailImportanceLevel } from "../../../logic/Mail/EMail";
@@ -555,6 +617,8 @@
   export let requestReadReceipt = false;
   export let requestDeliveryReceipt = false;
   export let isFlagged = false;
+  /** «Напомнить, если не ответят», выбранное для этого письма. */
+  export let followUpReminder: FollowUpChoice | null = null;
   export let showEmojis = false;
   export let spellcheckOn = false;
   export let editorZoom = 100;
@@ -562,9 +626,12 @@
   export let signatureEnabled = true;
   export let openLinkDialog = false;
   export let quoteEditor: QuoteEditorHandle | null = null;
+  /** В отдельном окне редактора нет настроек: пункт «Управление шаблонами» скрыт */
+  export let canManageTemplates = true;
 
   const dispatch = createEventDispatcher<{
     send: void;
+    sendLater: Date;
     addAttachment: void;
     insertSignature: void;
     toggleHighImportance: void;
@@ -577,7 +644,15 @@
     toggleSpellcheck: void;
     setZoom: number;
     openActions: void;
+    setFollowUp: FollowUpChoice | null;
+    insertTemplate: number;
+    saveAsTemplate: void;
+    manageTemplates: void;
   }>();
+  let templateMenuOpen = false;
+  let templateMenuAnchor: HTMLButtonElement;
+  let followUpMenuOpen = false;
+  let followUpMenuAnchor: HTMLButtonElement;
 
   let activeTab: "message" | "options" = "message";
   const zoomLevels = [90, 100, 125];
@@ -595,6 +670,14 @@
   let pasteMenuAnchor: HTMLButtonElement;
   let sendMenuOpen = false;
   let sendMenuAnchor: HTMLButtonElement;
+
+  async function onPickSendLater() {
+    sendMenuOpen = false;
+    let sendAt = await pickSendLaterDate();
+    if (sendAt) {
+      dispatch("sendLater", sendAt);
+    }
+  }
   let textColorMenuOpen = false;
   let textColorMenuAnchor: HTMLButtonElement;
   let highlightMenuOpen = false;
@@ -1241,6 +1324,7 @@
     padding: 2px 6px;
     border: 1px solid var(--toolbar-control-border);
     border-radius: 6px;
+    box-shadow: none;
     background: var(--toolbar-control-bg);
     color: var(--headerbar-fg);
     font: inherit;

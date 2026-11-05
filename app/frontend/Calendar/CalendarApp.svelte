@@ -53,14 +53,17 @@
   .main {
     margin: 0px 16px 16px 16px;
   }
+  /* В узкой панели заголовок переносится на вторую строку, поэтому высота
+     минимальная, а не фиксированная. */
   .main :global(.range-header) {
-    height: 58px;
+    min-height: 58px;
+    flex-wrap: wrap;
     align-items: center;
   }
   .main.mobile {
     margin-inline-end: 0px;
   }
   .main.mobile :global(.range-header) {
-    height: 36px;
+    min-height: 36px;
   }
 </style>

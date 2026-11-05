@@ -73,10 +73,16 @@ test("recognizes a labeled customer number across different subjects", () => {
   expect(signal?.sharedIdentifiers).toContain("1010002318");
 });
 
-test("does not connect messages only because they use the same corporate domain", () => {
-  expect(classifyRelatedMail(
+test("links the same corporate domain only as the weakest client signal", () => {
+  const signal = classifyRelatedMail(
     { subject: "Проблема с заказом", body: "Нужна проверка.", contactEmail: "hello@syle.ru" },
     { subject: "Уточнение по интеграции", body: "Есть новости?", contactEmail: "support@syle.ru" },
+  );
+  expect(signal).toMatchObject({ reason: "same-domain" });
+  expect(signal!.score).toBeLessThan(0.5);
+  expect(classifyRelatedMail(
+    { subject: "Проблема с заказом", body: "Нужна проверка.", contactEmail: "hello@gmail.com" },
+    { subject: "Уточнение по интеграции", body: "Есть новости?", contactEmail: "support@gmail.com" },
   )).toBeNull();
 });
 
@@ -104,18 +110,26 @@ test("recognizes an existing mail conversation by thread or message reference", 
   ).toMatchObject({ reason: "same-identifier" });
 });
 
-test("finds a similar topic from shared meaningful words", () => {
-  const signal = classifyRelatedMail(
+test("does not link messages only by a generic support subject", () => {
+  expect(classifyRelatedMail(
     {
       subject: "Ошибка интеграции API",
       body: "Не удается получить ответ клиента при интеграции API.",
     },
     {
-      subject: "Проблема интеграции API",
+      subject: "RE: Ошибка интеграции API",
       body: "При интеграции API не приходит ответ от клиента.",
     },
+  )).toBeNull();
+});
+
+test("finds a similar specific topic from shared meaningful words", () => {
+  const signal = classifyRelatedMail(
+    { subject: "Не закрываются заказы на пункты выдачи", body: "Проверьте, пожалуйста." },
+    { subject: "RE: Не закрываются заказы на пункты выдачи", body: "Есть новости?" },
   );
-  expect(signal).toMatchObject({ reason: "similar-topic" });
+  expect(signal).toMatchObject({ reason: "same-topic" });
+  expect(signal!.features.map(feature => feature.kind)).toEqual(["subject"]);
 });
 
 test("does not connect unrelated messages with common boilerplate only", () => {

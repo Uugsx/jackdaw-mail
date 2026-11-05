@@ -10,8 +10,12 @@ import { catchErrors } from './Util/error';
 import { gt } from '../l10n/l10n';
 import * as Sentry from "@sentry/svelte";
 import { installTooltips } from './Shared/tooltip';
+import { installNativeDialogs } from './Util/nativeDialogs';
 
 installTooltips(document);
+installNativeDialogs();
+
+const kPrivateBreadcrumbCategories = new Set(["console", "fetch", "xhr", "navigation"]);
 
 if (production) {
   Sentry.init({
@@ -20,8 +24,15 @@ if (production) {
     // An array here would *add* to the default integrations, not replace them.
     // `BrowserSession` sends a session to the server on every navigation.
     integrations: defaults => defaults.filter(integration => integration.name != "BrowserSession"),
-    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их
-    beforeBreadcrumb: breadcrumb => breadcrumb.category == "console" ? null : breadcrumb,
+    // Логи консоли могут содержать адреса, токены и содержимое писем — не отправляем их.
+    // Адреса запросов и переходов — тоже: в них адреса почты, поисковые запросы и секрет связи с backend (#jpcSecret).
+    beforeBreadcrumb: breadcrumb => kPrivateBreadcrumbCategories.has(breadcrumb.category ?? "") ? null : breadcrumb,
+    beforeSend: event => {
+      if (event.request?.url) {
+        event.request.url = event.request.url.replace(/#.*$/, "");
+      }
+      return event;
+    },
   });
 }
 

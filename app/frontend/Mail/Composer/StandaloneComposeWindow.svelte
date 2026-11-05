@@ -1,6 +1,6 @@
 <svelte:window on:click|capture={onClickTopLevel} />
 
-<vbox flex class="standalone-compose">
+<vbox flex class="standalone-compose standalone-window">
   <NotificationBar notifications={$notifications} />
   {#if loading}
     <vbox flex class="compose-state" aria-live="polite">
@@ -24,6 +24,8 @@
 <script lang="ts">
   import Notice from "../../Shared/Notice.svelte";
   import { onMount } from "svelte";
+  import { applyThemeAttribute } from "../../Settings/Global/themeAttribute";
+  import { getLocalStorage } from "../../Util/LocalStorage";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { PersonUID } from "../../../logic/Abstract/PersonUID";
   import { appGlobal } from "../../../logic/app";
@@ -81,11 +83,12 @@
     }
   }
 
-  async function sendInOwner(): Promise<void> {
+  async function sendInOwner(sendAt?: Date): Promise<void> {
     assert(mail, "Compose window message is missing");
     let nativeAPI = (window as any).api;
     assert(typeof nativeAPI?.sendComposeWindowMail === "function", "Compose window send is unavailable");
     let payload = await serializeComposeMail(mail, composeWindowID);
+    payload.sendAt = sendAt ? sendAt.toISOString() : null;
     let result = await nativeAPI.sendComposeWindowMail(composeWindowID, payload);
     if (!result?.ok) {
       throw new Error(result?.errorMessage ?? "Could not send the message");
@@ -122,6 +125,7 @@
   }
 
   onMount(() => {
+    applyThemeAttribute(getLocalStorage("appearance.theme", "system").value);
     void load();
   });
 </script>

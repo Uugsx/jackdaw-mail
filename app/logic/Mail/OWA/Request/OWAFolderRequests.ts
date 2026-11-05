@@ -611,6 +611,20 @@ export function owaDeleteFolderRequest(folderID: string): OWARequest {
   });
 }
 
+/** «Очистить папку» на сервере: удаляет элементы любых типов (письма, встречи,
+ * контакты, задачи, заметки), а с `deleteSubFolders` — и подпапки. */
+export function owaEmptyFolderRequest(folderID: string, deleteSubFolders: boolean): OWARequest {
+  return new OWARequest("EmptyFolder", {
+    __type: "EmptyFolderRequest:#Exchange",
+    FolderIds: [{
+      __type: "FolderId:#Exchange",
+      Id: folderID,
+    }],
+    DeleteType: "HardDelete",
+    DeleteSubFolders: deleteSubFolders,
+  });
+}
+
 export function owaFolderMarkAllMsgsReadRequest(folderID: string, read = true): OWARequest {
   return new OWARequest("MarkAllItemsAsRead", {
     __type: "MarkAllItemsAsReadRequest:#Exchange",

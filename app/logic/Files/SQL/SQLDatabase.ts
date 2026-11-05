@@ -2,17 +2,21 @@ import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { filesDatabaseSchema } from "./createDatabase";
 import { addLastModOnServer } from "./SQLFileMigrate";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../util/openDatabaseOnce";
 
 let filesDatabase: Database;
+
+const openFilesDatabase = openDatabaseOnce(() => getSQLiteDatabase("files.db"), async database => {
+  await database.migrate(filesDatabaseSchema, addLastModOnServer);
+  await database.pragma('foreign_keys = true');
+  await database.pragma('journal_mode = WAL');
+});
 
 export async function getDatabase(): Promise<Database> {
   if (filesDatabase) {
     return filesDatabase;
   }
-  filesDatabase = await getSQLiteDatabase("files.db");
-  await filesDatabase.migrate(filesDatabaseSchema, addLastModOnServer);
-  await filesDatabase.pragma('foreign_keys = true');
-  await filesDatabase.pragma('journal_mode = WAL');
+  filesDatabase = await openFilesDatabase();
   return filesDatabase;
 }
 

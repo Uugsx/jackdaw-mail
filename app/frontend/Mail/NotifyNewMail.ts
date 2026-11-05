@@ -27,6 +27,7 @@ import {
   stopMailFolderNotificationPolling,
   syncMailFolderNotificationPolling,
 } from "./mailFolderNotificationSettings";
+import { filterAlertIncidentNotifications } from "./alertIncidentSettings";
 
 export async function newMailListener() {
   appGlobal.emailAccounts.registerObserver(accountsObserver);
@@ -54,6 +55,8 @@ export async function showNewMail(messages: EMail[]) {
     }
     return notify;
   });
+  // Папка алертов: уведомляем о новом инциденте или возобновлении, а не о каждом письме
+  messages = filterAlertIncidentNotifications(messages);
   if (!messages.length) {
     return;
   }
@@ -112,8 +115,11 @@ export async function showNewMail(messages: EMail[]) {
   // Dock-бейдж должен следовать фактическому числу непрочитанных писем.
   notification.updatesTaskbarBadge = false;
   notification.onClick = () => openMessage(firstMsg);
-  notification.onReply = replyText => reply(firstMsg, replyText);
-  notification.replyPlaceholder = gt`Reply…`;
+  // В сводном уведомлении о нескольких письмах ответ ушёл бы автору первого
+  if (singleMsg) {
+    notification.onReply = replyText => reply(singleMsg, replyText);
+    notification.replyPlaceholder = gt`Reply…`;
+  }
   await notification.show();
   syncMailTaskbarBadge();
 }

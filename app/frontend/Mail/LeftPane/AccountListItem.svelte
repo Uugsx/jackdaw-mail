@@ -4,7 +4,7 @@
   role="button"
   tabindex="0"
   aria-expanded={expanded}
-  title={!$account.isLoggedIn ? errorMsg : ""}
+  title={connectionDetails || (!$account.isLoggedIn ? errorMsg : "")}
   on:contextmenu={contextMenu.onContextMenu}
   on:click={onRowClick}
   on:keydown={onRowKeyDown}
@@ -23,7 +23,11 @@
       <hbox class="expand-placeholder" />
     {/if}
   </hbox>
-  {#if $account.isLoggedIn}
+  {#if connectionProblem}
+    <hbox class="icon connection-problem">
+      <OfflineIcon size={iconSize} aria-hidden="true" />
+    </hbox>
+  {:else if $account.isLoggedIn}
     <hbox class="icon">
       {#if accountIcon && failedAccountIcon != accountIcon}
         <img src={accountIcon} width={iconLogoSize} height={iconLogoSize} alt="" class="logo" on:error={onAccountIconError} />
@@ -36,7 +40,15 @@
       <Icon data={MailXIcon} size={iconSize} />
     </hbox>
   {/if}
-  <hbox class="label font-small">{$account.name}</hbox>
+  <vbox class="label-box">
+    <!-- Имя может обрезаться; подсказка строки о связи важнее и не перекрывается. -->
+    <hbox class="label font-small"
+      title={connectionDetails || !$account.isLoggedIn ? undefined : $account.name}
+      >{$account.name}</hbox>
+    {#if connectionProblem}
+      <hbox class="connection-status font-smallest">{connectionLine}</hbox>
+    {/if}
+  </vbox>
   <hbox class="trailing">
     {#if inboxBadge}
       <hbox class="count mail-folder-count">{inboxBadge}</hbox>
@@ -61,6 +73,7 @@
 <script lang="ts">
   import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
+  import type { Folder } from "../../../logic/Mail/Folder";
   import { openSettingsCategoryForAccount } from "../../Settings/Window/CategoriesUtils";
   import { appGlobal } from "../../../logic/app";
   import Icon from "svelte-icon/Icon.svelte";
@@ -71,6 +84,8 @@
   import MailIcon from "../../asset/icon/appBar/mail.svg?raw";
   import MailXIcon from "../../asset/icon/mail/mail-question.svg?raw";
   import DisconnectedIcon from "lucide-svelte/icons/unplug";
+  import OfflineIcon from "lucide-svelte/icons/cloud-off";
+  import { connectionProblemDetails, connectionProblemLine, newestMessageTime } from "../connectionProblemNotice";
   import SettingsIcon from "lucide-svelte/icons/settings";
   import ExpandIcon from "lucide-svelte/icons/chevron-right";
   import CollapseIcon from "lucide-svelte/icons/chevron-down";
@@ -88,24 +103,31 @@
   const dispatch = createEventDispatcher<{ select: MailAccount; toggleExpand: MailAccount }>();
   let failedAccountIcon: string | null = null;
 
-  /** Re-run when folders load, counts change, or selection moves. */
-  $: _epoch = $mailUnreadEpoch;
-  $: _account = $account;
   $: accountIcon = typeof $account.icon == "string" ? $account.icon : null;
   $: if (failedAccountIcon && failedAccountIcon != accountIcon) {
     failedAccountIcon = null;
   }
-  $: inboxFolder = findInboxFolder(account);
-  $: inboxBadge = (() => {
-    let inbox = findInboxFolder(account);
+  /* Счётчики и папки передаются аргументами: в legacy-режиме `$:` пересчитывается
+   * только по переменным, упомянутым в самом выражении. Раньше `$mailUnreadEpoch`
+   * стоял отдельной строкой, и число на строке ящика оставалось старым, пока не
+   * менялся выбор папки. */
+  $: inboxFolder = inboxAtEpoch($mailUnreadEpoch, $account);
+  $: inboxBadge = inboxBadgeAtEpoch($mailUnreadEpoch, $account, $selectedAccount, $selectedFolder);
+
+  function inboxAtEpoch(_epoch: number, mailAccount: MailAccount) {
+    return findInboxFolder(mailAccount);
+  }
+
+  function inboxBadgeAtEpoch(_epoch: number, mailAccount: MailAccount, activeAccount: MailAccount, activeFolder: Folder): number {
+    let inbox = findInboxFolder(mailAccount);
     if (!inbox) {
       return 0;
     }
-    return accountInboxBadgeCount(account, $selectedAccount, $selectedFolder, {
+    return accountInboxBadgeCount(mailAccount, activeAccount, activeFolder, {
       countUnread: inbox.countUnread,
       countNewArrived: inbox.countNewArrived,
     });
-  })();
+  }
 
   async function login() {
     await account.login(true);
@@ -145,6 +167,16 @@
     : $errors.hasItems
       ? friendlyErrorMessage(errors.first)
       : "";
+  /* Общий ящик OWA ходит на сервер через основной аккаунт: его состояние и показываем */
+  $: connectionAccount = account.connectionStatusSource;
+  $: connectionProblem = $connectionAccount.connectionStatus.problem;
+  $: connectionLine = connectionProblem
+    ? connectionProblemLine($connectionAccount.connectionStatus.lastSuccessAt)
+    : "";
+  $: connectionDetails = connectionProblem
+    ? connectionProblemDetails(connectionProblem, $connectionAccount.connectionStatus.lastSuccessAt,
+        newestMessageTime($account.inbox))
+    : "";
   $: iconSize = $appGlobal.isMobile ? "24px" : "16px";
   $: iconLogoSize = $appGlobal.isMobile ? "24px" : "18px";
 </script>
@@ -201,16 +233,42 @@
   .logo {
     border-radius: 2px;
   }
+  .label-box {
+    grid-column: 3;
+    margin-inline-start: 4px;
+    min-width: 0;
+  }
   .label {
     /* Многоточие работает только у блочного элемента, не у flex. */
     display: block;
-    grid-column: 3;
-    margin-inline-start: 4px;
     font-weight: 400;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .connection-status {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--warning-fg, #8A5A00);
+  }
+  .icon.connection-problem {
+    color: var(--warning-fg, #8A5A00);
+  }
+  /* Перекрывает общий цвет обводки иконок строки выше */
+  .icon.connection-problem :global(path),
+  .icon.connection-problem :global(line) {
+    stroke: currentColor;
+  }
+  /* На десктопе цвет предупреждения одинаков у выбранной и обычной строки
+     (контраст на фоне выбора ≥ 4.5:1 в обеих темах). На мобильном фон выбора
+     янтарный, предупреждение на нём не читается — там цвет строки. */
+  :global(.main-window.mobile) .account-row.selected .connection-status,
+  :global(.main-window.mobile) .account-row.selected .icon.connection-problem {
+    color: inherit;
   }
   .trailing {
     grid-column: 4;

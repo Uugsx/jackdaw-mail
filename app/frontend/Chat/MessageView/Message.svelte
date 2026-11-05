@@ -1,5 +1,7 @@
+<svelte:window on:pointerdown|capture={onPointerDownAnywhere} on:pointermove={onPointerMoveAnywhere} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <hbox flex
+  bind:this={messageE}
   class="message"
   class:incoming={!displayOutgoing}
   class:outgoing={displayOutgoing}
@@ -10,7 +12,7 @@
   on:pointerleave={onHoverEnd}
   >
   {#if !displayOutgoing}
-    <vbox class="avatar"  from={author?.name}>
+    <vbox class="avatar"  from={$author?.name}>
       {#if author?.picture && !followup}
         <PersonPicture person={author} size={32} />
       {/if}
@@ -20,24 +22,74 @@
     {#if !(fastFollowup && hideHeaderFollowup)}
       <hbox class="meta font-smallest" class:singlechat={!isGroupChat}>
         {#if !displayOutgoing && !followup}
-          <hbox class="from value">{author?.name}</hbox>
+          <hbox class="from value">{$author?.name}</hbox>
         {/if}
         <hbox flex>
           <slot name="above-center" />
         </hbox>
+        {#if isEdited}
+          <hbox class="edited value" title={$t`The sender edited this message`}>{$t`edited`}</hbox>
+        {/if}
         <hbox class="time value">{getDateTimeString($message.sent)}</hbox>
+        {#if displayOutgoing && deliveryLabel}
+          <!-- Как в мессенджерах: часы — отправляется, ✓ — на сервере, ✓✓ — доставлено, синие ✓✓ — прочитано -->
+          <hbox class="delivery" class:seen={deliveryStatus == DeliveryStatus.Seen}
+            title={deliveryLabel} aria-label={deliveryLabel} role="img">
+            {#if deliveryStatus == DeliveryStatus.Sending}
+              <ClockIcon size="12" />
+            {:else if deliveryStatus == DeliveryStatus.Server}
+              <CheckIcon size="13" />
+            {:else}
+              <CheckCheckIcon size="13" />
+            {/if}
+          </hbox>
+        {/if}
       </hbox>
     {/if}
-    {#if showActions && showActionBar}
-      <vbox class="hover-popup-anchor">
-        <vbox class="hover-above-msg">
-          <ActionBar {message} />
+    {#if showActions && (showActionBar || sideReactions)}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <vbox class="hover-popup-anchor" on:pointerdown={() => pinned = true}>
+        <!-- На компьютере обе панели сбоку от пузыря, на свободной стороне ленты:
+          над и под пузырём они закрывали имя, время, текст и соседние сообщения -->
+        <vbox class="side-popups" class:side={sidePopups}
+          style={sidePopups && sideSpace ? `max-width: ${sideSpace}px` : ""}>
+          {#if showActionBar}
+            <vbox class="hover-above-msg">
+              <ActionBar {message} />
+            </vbox>
+          {/if}
+          {#if sideReactions}
+            <vbox class="hover-after-msg">
+              <ReactionBar {message} bind:isOpen={showActions} />
+            </vbox>
+          {/if}
         </vbox>
       </vbox>
     {/if}
-    <Attachments message={$message} />
-    {#if $message.rawText || $message.hasHTML || $$slots.bubble}
-      <vbox class="bubble">
+    <Attachments message={$message} hideFilenames={linkedFilenames} />
+    {#if links.length}
+      <vbox class="links">
+        {#each links as link}
+          <LinkCard {link} message={$message} />
+        {/each}
+      </vbox>
+    {/if}
+    {#if hasBody || $$slots.bubble}
+      <vbox class="bubble" class:deleted={isDeletedForAll}>
+        {#if $message.inReplyTo}
+          {#if quotedVisible}
+            <div class="quote font-small">
+              <span class="quote-author">{quoted.from?.name ?? ""}</span>
+              <span class="quote-text">{quoteSnippet(quoted) || $t`File`}</span>
+            </div>
+          {:else}
+            <!-- Исходное удалено или не загружено: короткая приглушённая строка вместо пустой цитаты -->
+            <div class="quote-missing font-smallest">
+              <ReplyIcon size="12" aria-hidden="true" />
+              <span>{$t`Reply to a deleted message`}</span>
+            </div>
+          {/if}
+        {/if}
         {#if $$slots.menu}
           <hbox class="menu" class:openMenuOnMessageHover>
             <slot name="menu" />
@@ -46,7 +98,7 @@
         <slot name="inner-top" />
           <div class="text value font-normal">
             {#if renderHTML}
-              {@html $message.html || ""}
+              {@html restrictHTMLForAppDOM($message.html || "")}
             {/if}
             <!-- TODO Security: Jail HTML into untrusted <iframe> for additional protection.
             <WebView title={$t`Text`} html={$message.html || ""} {headHTML} autoSize />
@@ -75,8 +127,9 @@
         {/each}
       </hbox>
     {/if}
-    {#if showReactions && showActions && canReact}
-      <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length}>
+    {#if !sidePopups && showReactions && showActions && canReact}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <vbox class="hover-popup-anchor" class:haveReaction={$reactions.length} on:pointerdown={() => pinned = true}>
         <vbox class="hover-after-msg">
           <ReactionBar {message} bind:isOpen={showActions} />
         </vbox>
@@ -86,6 +139,7 @@
 </hbox>
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import type { Message } from "../../../logic/Abstract/Message";
   import { assert } from "../../../logic/util/util";
   import { ChatMessage, DeliveryStatus } from "../../../logic/Chat/ChatMessage";
@@ -95,7 +149,20 @@
   import cssBody from "../../Mail/Message/content-body.css?inline";
   import cssFont from "../../asset/font/Karla.css?inline";
   import { ChatPersonUID } from "../../../logic/Chat/ChatPersonUID";
+  import { appGlobal } from "../../../logic/app";
   import ReactionBar from "./ReactionBar.svelte";
+  import { onDestroy } from "svelte";
+  import LinkCard from "./LinkCard.svelte";
+  import type { ChatLinkRef } from "../../../logic/Chat/Jackdaw/JackdawChatProtocol";
+  import { linkedEmailAttachment } from "../../../logic/Chat/Jackdaw/chatLinks";
+  import CheckIcon from "lucide-svelte/icons/check";
+  import CheckCheckIcon from "lucide-svelte/icons/check-check";
+  import ClockIcon from "lucide-svelte/icons/clock";
+  import ReplyIcon from "lucide-svelte/icons/corner-up-left";
+  function htmlToPlain(html: string): string {
+    return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ");
+  }
+  import { quoteSnippet } from "../replyState";
   import ActionBar from "./ActionBar.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";
   import WebView from "../../Shared/WebView.svelte";
@@ -123,6 +190,15 @@
 
   $: isGroupChat = ($message as ChatMessage).to?.contact instanceof Group;
   $: author = (($message instanceof ChatMessage && $message.from) || $message.contact) as ChatPersonUID | Person | Group;
+  /** Сообщение, на которое это — ответ: ищем в загруженной истории чата */
+  $: quoted = $message.inReplyTo && $message instanceof ChatMessage
+    ? $message.to?.messages.find(m => m.id == $message.inReplyTo) as ChatMessage | undefined
+    : undefined;
+  /** Удалённое у всех исходное не цитируем: его текст не должен оставаться в ответах.
+   * `$quoted` — подписка: исходное могут удалить уже после ответа. */
+  $: quotedVisible = !!$quoted && ($quoted as any).deletedForAll !== true;
+  $: isEdited = (($message as any).edited ?? false) === true;
+  $: isDeletedForAll = (($message as any).deletedForAll ?? false) === true;
   $: previousAuthor = (previousMessage instanceof ChatMessage && previousMessage.from) || previousMessage?.contact;
   $: displayOutgoing = outgoingOverride ?? $message.outgoing;
   $: previousDisplayOutgoing = previousOutgoingOverride ?? previousMessage?.outgoing;
@@ -131,10 +207,26 @@
   $: fastFollowup = followup &&
     $message.sent.getTime() - previousMessage.sent.getTime() < 5 * 60 * 1000; // < 5 mins apart
   $: reactions = $message.reactions;
+  /** Письма и события, которыми поделились в чате */
+  $: links = ($message as { links?: ChatLinkRef[] }).links ?? [];
+  /** Письма, отправленные карточкой: файл .eml открывается с карточки, отдельный файл не показываем */
+  $: linkedFilenames = links.map(link => linkedEmailAttachment($message, link)?.filename).filter(Boolean) as string[];
+  $: deliveryStatus = $message instanceof ChatMessage ? $message.deliveryStatus : DeliveryStatus.Unknown;
+  $: deliveryLabel = deliveryStatus == DeliveryStatus.Sending ? $t`Sending…`
+    : deliveryStatus == DeliveryStatus.Server ? $t`Message sent`
+    : deliveryStatus == DeliveryStatus.User ? $t`Delivered`
+    : deliveryStatus == DeliveryStatus.Seen ? $t`Read by recipient`
+    : "";
+  /** Есть что показать в пузыре. Сообщение только с файлом и пустым абзацем — без пузыря. */
+  $: hasBody = isDeletedForAll || !!$message.rawText?.trim() ||
+    ($message.hasHTML && (/<(img|video|table|hr)\b/i.test($message.html) || !!htmlToPlain($message.html).trim()));
   /** Своё сообщение не дошло до сервера: показываем это и даём отправить снова */
   $: isFailed = displayOutgoing && $message instanceof ChatMessage && $message.deliveryStatus == DeliveryStatus.Failed;
   /** Панель реакций — только где протокол их поддерживает (у писем — как раньше) */
   $: canReact = !($message instanceof ChatMessage) || $message.canReact;
+  /** На телефоне свободного места сбоку нет: там панели над и под пузырём */
+  const sidePopups = !appGlobal.isMobile;
+  $: sideReactions = sidePopups && showReactions && canReact;
 
   async function onRetry() {
     assert(message instanceof ChatMessage, "Only chat messages can be sent again");
@@ -145,20 +237,88 @@
 
   let showActions = false; // on hover (desktop) or long press (mobile)
   let hoverTimer: NodeJS.Timeout | null = null;
+  /** Указатель ушёл с сообщения: панели скрываются не сразу, чтобы до них можно было дотянуться */
+  let leaveTimer: NodeJS.Timeout | null = null;
+  /** Время, за которое указатель переходит с пузыря на панель реакций и не теряет её */
+  const kHideDelayMs = 1000;
+  /** Насколько дальше сообщения и панелей указатель ещё «идёт к панели» */
+  const kNearPx = 32;
   function onHoverStart() {
-    if (hoverTimer) {
+    clearTimeout(leaveTimer);
+    leaveTimer = null;
+    if (hoverTimer || showActions) {
       return;
     }
     hoverTimer = setTimeout(() => {
       hoverTimer = null;
+      measureSideSpace();
       showActions = true;
     }, 300)
+  }
+  let messageE: HTMLElement;
+  /** Свободное место сбоку от сообщения: там панели помещаются в один ряд, иначе — в два */
+  let sideSpace = 0;
+  /** Отступы сообщения в ленте (`.message` margin) и зазор до пузыря */
+  const kSideGapPx = 20 + 32 + 8;
+  function measureSideSpace() {
+    if (!sidePopups || !messageE?.parentElement) {
+      return;
+    }
+    sideSpace = Math.max(0, messageE.parentElement.clientWidth - messageE.offsetWidth - kSideGapPx);
+  }
+  /** Пользователь нажал на панель (меню «Удалить», все смайлики): панель остаётся,
+   * пока он не нажмёт в другом месте, даже если указатель ушёл с сообщения */
+  let pinned = false;
+  $: if (!showActions) {
+    pinned = false;
+  }
+  function onPointerDownAnywhere(event: PointerEvent) {
+    if (!pinned) {
+      return;
+    }
+    let target = event.target as Element | null;
+    // Меню и окна выбора смайликов показываются поверх окна, вне сообщения
+    if (messageE?.contains(target) || target?.closest?.('[role="menu"], [role="dialog"], .svelteui-Popper-root, .popup')) {
+      return;
+    }
+    pinned = false;
+    showActions = false;
   }
   function onHoverEnd() {
     clearTimeout(hoverTimer);
     hoverTimer = null;
-    showActions = false;
+    if (pinned) {
+      return;
+    }
+    scheduleHide();
   }
+  function scheduleHide() {
+    clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+      leaveTimer = null;
+      showActions = false;
+    }, kHideDelayMs);
+  }
+  /** Пока указатель рядом с сообщением или его панелями (идёт к ним по диагонали, через соседние
+   * сообщения), панели не скрываются: на Windows путь до панели часто проходит мимо пузыря. */
+  function onPointerMoveAnywhere(event: PointerEvent) {
+    if (!leaveTimer || !messageE) {
+      return;
+    }
+    let rects = [messageE, ...messageE.querySelectorAll(".side-popups, .hover-after-msg, .hover-above-msg")]
+      .map(element => element.getBoundingClientRect())
+      .filter(rect => rect.width && rect.height);
+    let near = rects.some(rect =>
+      event.clientX >= rect.left - kNearPx && event.clientX <= rect.right + kNearPx &&
+      event.clientY >= rect.top - kNearPx && event.clientY <= rect.bottom + kNearPx);
+    if (near) {
+      scheduleHide();
+    }
+  }
+  onDestroy(() => {
+    clearTimeout(hoverTimer);
+    clearTimeout(leaveTimer);
+  });
 </script>
 
 <style>
@@ -259,6 +419,43 @@
     margin-block-end: 2px;
     color: #818181;
   }
+  .edited {
+    margin-inline-end: 6px;
+    opacity: 0.7;
+    font-style: italic;
+  }
+  .quote {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-block-end: 6px;
+    padding: 4px 8px;
+    border-inline-start: 3px solid var(--selected-border, currentColor);
+    border-radius: 4px;
+    background-color: var(--hover-bg);
+    max-width: 100%;
+  }
+  .quote-author {
+    font-weight: 600;
+  }
+  .quote-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+  .quote-missing {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-block-end: 4px;
+    font-style: italic;
+    opacity: 0.6;
+  }
+  .bubble.deleted .text {
+    font-style: italic;
+    opacity: 0.7;
+  }
   .meta.singlechat {
     color: #999999;
   }
@@ -310,6 +507,21 @@
     color: var(--main-fg);
     box-shadow: 1px 1px 2px 0px rgba(0, 0, 0, 10%);
   }
+  .links {
+    align-items: flex-start;
+  }
+  .outgoing .links {
+    align-items: flex-end;
+  }
+  .delivery {
+    align-items: center;
+    margin-inline-start: 4px;
+    opacity: 0.6;
+  }
+  .delivery.seen {
+    opacity: 1;
+    color: var(--selected-border, #2a8bf2);
+  }
   .hover-popup-anchor {
     position: relative;
     height: 0;
@@ -333,6 +545,34 @@
   .hover-above-msg {
     bottom: 0px;
     right: 10px;
+  }
+  /* Сбоку от пузыря, на свободной стороне ленты (сообщение не шире 75 %) */
+  .side-popups.side {
+    position: absolute;
+    top: 0;
+    z-index: 2;
+    width: max-content;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+  /* Панель действий — ближе к пузырю, реакции — за ней; без места — второй строкой */
+  /* Зазор до пузыря — отступ самой панели, а не пустое место: указатель проходит его, не теряя панель */
+  .outgoing .side-popups.side {
+    right: 100%;
+    padding-inline-end: 8px;
+    flex-direction: row-reverse;
+  }
+  .incoming .side-popups.side {
+    left: 100%;
+    padding-inline-start: 8px;
+  }
+  .side-popups.side .hover-above-msg,
+  .side-popups.side .hover-after-msg {
+    position: static;
+    align-self: auto;
+    margin-inline-end: 0;
   }
   .hover-after-msg {
     top: 0px;

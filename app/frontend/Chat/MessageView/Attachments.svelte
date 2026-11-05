@@ -11,8 +11,10 @@
   import Attachment from "./Attachment.svelte";
 
   export let message: Message;
+  /** Вложения, которые показаны иначе (письмо в карточке) */
+  export let hideFilenames: string[] = [];
 
-  $: attachments = message.attachments.filterObservable(a => !a.hidden);
+  $: attachments = message.attachments.filterObservable(a => !a.hidden && !hideFilenames.includes(a.filename));
 </script>
 
 <style>

@@ -8,11 +8,19 @@ import {
   selectedMessage,
   selectedMessages,
   listVisibleMessages,
+  neighbourMessage,
 } from "../Selected";
 import { openComposer, openEMailMessage } from "../open";
 import { markMessagesRead } from "../mailReadActions";
 import { get } from "svelte/store";
+import { requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
 import { isMailPaneFocused } from "../../MainWindow/paneFocus";
+import {
+  getHoveredMessage,
+  getMailActionTargets,
+  resolveMailActionTargets,
+  suppressHoveredMessage,
+} from "../hoveredMessage";
 import {
   isConfigurableKeyboardActionId,
   type ConfigurableKeyboardActionId,
@@ -86,7 +94,7 @@ export function canExecuteConfigurableMailAction(actionId: string): boolean {
   if (!isConfigurableKeyboardActionId(actionId) || !isMailPaneFocused()) {
     return false;
   }
-  let messages = getSelectedMailMessages();
+  let { messages } = getMailActionTargets();
   switch (actionId) {
     case "mail.newEmail":
       return !!get(selectedAccount) || !!getSelectedMailMessage()?.folder?.account;
@@ -108,8 +116,9 @@ function moveSelectedMessage(previous: boolean): boolean {
   if (!message) {
     return false;
   }
+  suppressHoveredMessage();
   let selectedMessagesColl = get(selectedMessages);
-  let next = message.nextMessage(previous);
+  let next = neighbourMessage(message, previous);
   selectedMessagesColl.clear();
   if (next) {
     selectedMessagesColl.add(next);
@@ -118,15 +127,18 @@ function moveSelectedMessage(previous: boolean): boolean {
   return true;
 }
 
-/** Выполняет пользовательское назначение, не меняя существующие штатные сочетания. */
+/**
+ * Выполняет пользовательское назначение, не меняя существующие штатные сочетания.
+ * Курсор над письмом вне выделения — действие только для него, выделение не меняется.
+ */
 export async function executeConfigurableMailAction(
   actionId: ConfigurableKeyboardActionId,
 ): Promise<boolean> {
   if (!canExecuteConfigurableMailAction(actionId)) {
     return false;
   }
-  let messages = getSelectedMailMessages();
-  let message = getSelectedMailMessage();
+  let { messages, hoverOnly } = getMailActionTargets();
+  let message = hoverOnly ? messages[0] : getSelectedMailMessage();
   switch (actionId) {
     case "mail.toggleRead":
       await markMessagesRead(messages, majority(messages, current => current.isRead) ? false : true);
@@ -144,22 +156,22 @@ export async function executeConfigurableMailAction(
       await runMailActions(messages, current => current.markImportant(!majority(messages, mail => mail.isImportant)));
       return true;
     case "mail.markSpam":
-      moveSelectedMessage(false);
+      if (!hoverOnly) moveSelectedMessage(false);
       await runMailActions(messages, current => current.treatSpam(true));
       return true;
     case "mail.markNotSpam":
       await runMailActions(messages, current => current.treatSpam(false));
       return true;
     case "mail.archive":
-      moveSelectedMessage(false);
+      if (!hoverOnly) moveSelectedMessage(false);
       await moveMessagesToArchive(messages);
       return true;
     case "mail.delete":
-      moveSelectedMessage(false);
+      if (!hoverOnly) moveSelectedMessage(false);
       await deleteMessagesFromUI(messages);
       return true;
     case "mail.permanentDelete":
-      moveSelectedMessage(false);
+      if (!hoverOnly) moveSelectedMessage(false);
       await deleteMessagesPermanent(messages);
       return true;
     case "mail.nextMessage":
@@ -211,10 +223,19 @@ export async function executeConfigurableMailAction(
       return true;
     case "mail.selectAll":
       return selectAllVisibleMessagesFromCommand();
-    case "mail.openSelected":
-      if (!message) return false;
-      await openEMailMessage(message);
+    case "mail.note": {
+      let target = message ?? messages[0];
+      if (!target) return false;
+      requestNoteEdit(target);
       return true;
+    }
+    case "mail.openSelected": {
+      // Enter открывает именно выделенное письмо, как и подписано в настройках
+      let selected = getSelectedMailMessage();
+      if (!selected) return false;
+      await openEMailMessage(selected);
+      return true;
+    }
   }
 }
 
@@ -232,14 +253,19 @@ export async function onKeyOnList(event: KeyboardEvent) {
   /** Important to use normal static array here. If were were to use `selectedMessages` Collection,
    * it would observe changes to selection even in the future and keep triggering
    * the action for all future selections. */
-  let messages = selectedMessagesColl?.contents;
-  if (!messages?.length) {
+  let selection = selectedMessagesColl?.contents ?? [];
+  /** Курсор над письмом вне выделения — действие только для него, выделение не трогаем. */
+  let { messages, hoverOnly } = resolveMailActionTargets(selection, null, getHoveredMessage());
+  if (!messages.length) {
     return;
   }
-  let message = get(selectedMessage) ?? messages[0];
+  let selected = get(selectedMessage) ?? selection[0];
+  let message = hoverOnly ? messages[0] : selected;
 
-  function goToNextMessage(previous = false, from: EMail = message) {
-    let next = from?.nextMessage(previous) ?? null;
+  /** Без `previous` — письмо, которое встанет на место убираемого (ниже, а у края — выше). */
+  function goToNextMessage(previous?: boolean, from: EMail = selected) {
+    suppressHoveredMessage();
+    let next = from ? neighbourMessage(from, previous) : null;
     selectedMessagesColl.clear();
     if (next) {
       selectedMessagesColl.add(next);
@@ -259,6 +285,10 @@ export async function onKeyOnList(event: KeyboardEvent) {
       let isRead = majority(messages, msg => msg.isRead);
       await markMessagesRead(messages, !isRead);
       return;
+    } else if (event.key == "o") { // Jackdaw: заметка к письму
+      consume(event);
+      requestNoteEdit(message);
+      return;
     } else if (event.key == "s" || event.key == "Insert") { // s: Thunderbird, Insert: Outlook
       consume(event);
       let isStarred = majority(messages, msg => msg.isStarred);
@@ -271,22 +301,22 @@ export async function onKeyOnList(event: KeyboardEvent) {
       return;
     } else if (event.key == "j") { // Thunderbird
       consume(event);
-      goToNextMessage();
+      if (!hoverOnly) goToNextMessage();
       await runMailActions(messages, msg => msg.treatSpam());
       return;
     } else if (event.key == "a") { // Archive
       consume(event);
-      goToNextMessage();
+      if (!hoverOnly) goToNextMessage();
       await moveMessagesToArchive(messages);
       return;
     } else if (event.key == "Delete" || event.key == "Backspace") {
       consume(event);
-      goToNextMessage();
+      if (!hoverOnly) goToNextMessage();
       await deleteMessagesFromUI(messages);
       return;
     } else if (event.key == "f") { // Thunderbird
       consume(event);
-      goToNextMessage();
+      goToNextMessage(false);
       return;
     } else if (event.key == "b") { // Thunderbird
       consume(event);
@@ -357,7 +387,7 @@ export async function onKeyOnList(event: KeyboardEvent) {
       return;
     } else if (event.key == "Delete" || event.key == "Backspace") { // Thunderbird
       consume(event);
-      goToNextMessage();
+      if (!hoverOnly) goToNextMessage();
       await deleteMessagesPermanent(messages);
       return;
     }
@@ -382,7 +412,8 @@ export async function onKeyOnMessage(event: KeyboardEvent, onZoomKey?: (event: K
       }
       event.preventDefault();
       event.stopPropagation();
-      let next = message.nextMessage(event.key == "ArrowUp");
+      suppressHoveredMessage();
+      let next = neighbourMessage(message, event.key == "ArrowUp");
       if (!next) {
         return;
       }

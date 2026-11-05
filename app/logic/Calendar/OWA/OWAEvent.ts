@@ -1,4 +1,5 @@
 import { ExchangeEvent } from "../EWS/ExchangeEvent";
+import { addEWSTimeProposal, checkTimeProposal, type ProposalResponse, type TimeProposal } from "../Invitation/TimeProposal";
 import { kSpecialWeekdays, relativeWeekdayString } from "../EWS/EWSEvent";
 import { RecurrenceCase } from "../Event";
 import { Participant } from "../Participant";
@@ -105,7 +106,7 @@ export class OWAEvent extends ExchangeEvent {
     this.isCancelled = sanitize.boolean(json.IsCancelled, false);
     let organizer: string | undefined;
     let participants: Participant[] = [];
-    if (json.Organizer && (json.RequiredAttendees || json.OptionalAttendees)) {
+    if (json.Organizer && (json.RequiredAttendees || json.OptionalAttendees || json.Resources)) {
       organizer = sanitize.emailAddress(json.Organizer.Mailbox.EmailAddress);
       json.Organizer.ResponseType = "Organizer";
       addParticipants([json.Organizer], participants);
@@ -115,6 +116,9 @@ export class OWAEvent extends ExchangeEvent {
     }
     if (json.OptionalAttendees) {
       addParticipants(json.OptionalAttendees, participants, organizer, true);
+    }
+    if (json.Resources) {
+      addParticipants(json.Resources, participants, organizer, false, true);
     }
     this.participants.replaceAll(participants);
     if (json.ResponseType) {
@@ -297,10 +301,10 @@ export class OWAEvent extends ExchangeEvent {
     request.addField("CalendarItem", "Location", { __type: "EnhancedLocation:#Exchange", DisplayName: this.getLocationForServer(), PostalAddress: { __type: "PersonaPostalAddress:#Exchange", Type: "Business", LocationSource: "None", } }, "EnhancedLocation");
     // Empty arrays must be null → DeleteItemField; [] would wipe attendees on Exchange.
     let required = !withoutAttendees
-      ? this.participants.contents.filter(p => !p.isOptional)
+      ? this.participants.contents.filter(p => !p.isOptional && !p.isResource)
       : [];
     let optional = !withoutAttendees
-      ? this.participants.contents.filter(p => p.isOptional)
+      ? this.participants.contents.filter(p => p.isOptional && !p.isResource)
       : [];
     request.addField("CalendarItem", "RequiredAttendees", required.length ? required.map(entry => ({
       __type: "AttendeeType:#Exchange",
@@ -316,6 +320,16 @@ export class OWAEvent extends ExchangeEvent {
         Name: entry.name,
       }
     })) : null, "calendar:OptionalAttendees");
+    let resources = this.resourcesForServer(withoutAttendees);
+    if (resources) {
+      request.addField("CalendarItem", "Resources", resources.length ? resources.map(entry => ({
+        __type: "AttendeeType:#Exchange",
+        Mailbox: {
+          EmailAddress: entry.emailAddress,
+          Name: entry.name,
+        }
+      })) : null, "calendar:Resources");
+    }
     request.addField("CalendarItem", "LegacyFreeBusyStatus", this.freeBusyStatus || "Busy", "calendar:LegacyFreeBusyStatus");
     request.addField("CalendarItem", "Sensitivity", this.isPrivate ? "Private" : "Normal", "item:Sensitivity");
     let timezone = IANAToWindowsTimezone[this.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone] || "UTC";
@@ -493,6 +507,15 @@ export class OWAEvent extends ExchangeEvent {
   }
 
   async respondToInvitation(response: InvitationResponseInMessage): Promise<void> {
+    await this.sendInvitationResponse(response);
+  }
+
+  async proposeNewTime(response: ProposalResponse, proposal: TimeProposal): Promise<void> {
+    assert(!checkTimeProposal(proposal), "Invalid time proposal");
+    await this.sendInvitationResponse(response, proposal);
+  }
+
+  protected async sendInvitationResponse(response: InvitationResponseInMessage, proposal?: TimeProposal): Promise<void> {
     assert(this.isIncomingMeeting, "Only invitations can be responded to");
     let itemID = this.itemID;
     // Unfortunately this API won't take an OccurrenceItemId directly.
@@ -508,6 +531,9 @@ export class OWAEvent extends ExchangeEvent {
       __type: "ItemId:#Exchange",
       Id: itemID,
     });
+    if (proposal) {
+      addEWSTimeProposal(request, ResponseTypes[response], proposal);
+    }
     await this.calendar.callOWA(request);
     try {
       await this.calendar.getEvents([itemID], new ArrayColl<OWAEvent>(), this.parentEvent);
@@ -522,11 +548,11 @@ export class OWAEvent extends ExchangeEvent {
 }
 
 
-function addParticipants(attendees: { Mailbox: { EmailAddress: string, Name: string }, ResponseType: string }[], participants: Participant[], organizer?: string, isOptional = false) {
+function addParticipants(attendees: { Mailbox: { EmailAddress: string, Name: string }, ResponseType: string }[], participants: Participant[], organizer?: string, isOptional = false, isResource = false) {
   for (let attendee of attendees) {
     let emailAddress = sanitize.emailAddress(attendee.Mailbox.EmailAddress, null);
     if (emailAddress != organizer && emailAddress) {
-      participants.push(new Participant(emailAddress, sanitize.nonemptystring(attendee.Mailbox.Name, null), sanitize.integer(InvitationResponse[attendee.ResponseType as keyof typeof InvitationResponse], InvitationResponse.Unknown), isOptional));
+      participants.push(new Participant(emailAddress, sanitize.nonemptystring(attendee.Mailbox.Name, null), sanitize.integer(InvitationResponse[attendee.ResponseType as keyof typeof InvitationResponse], InvitationResponse.Unknown), isOptional, isResource));
     }
   }
 }

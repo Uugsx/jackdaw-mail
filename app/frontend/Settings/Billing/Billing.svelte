@@ -117,7 +117,7 @@
         <div class="plan-price">{$t`${formatPrice(BILLING_PRICE_AMOUNTS_USD.monthly)} per month`}</div>
         <p>{$t`Pay month by month. After checkout, activate the license key on every device you use.`}</p>
         <Button
-          label={getCheckoutLabel("monthly")}
+          label={getCheckoutLabel("monthly", checkoutChecking, checkoutAvailability)}
           icon={ExternalLinkIcon}
           classes="plan-action"
           disabled={checkoutChecking || !isCheckoutAvailable("monthly")}
@@ -131,7 +131,7 @@
         <div class="plan-price">{$t`${formatPrice(BILLING_PRICE_AMOUNTS_USD.yearly)} per year`}</div>
         <p>{$t`One annual payment. The checkout shows the final price and renewal terms before payment.`}</p>
         <Button
-          label={getCheckoutLabel("yearly")}
+          label={getCheckoutLabel("yearly", checkoutChecking, checkoutAvailability)}
           icon={ExternalLinkIcon}
           classes="filled plan-action"
           disabled={checkoutChecking || !isCheckoutAvailable("yearly")}
@@ -264,9 +264,10 @@
     return checkoutAvailability[plan] === true;
   }
 
-  function getCheckoutLabel(plan: BillingPlan): string {
-    if (checkoutChecking) return $t`Checking…`;
-    if (!isCheckoutAvailable(plan)) return $t`Store unavailable`;
+  /** Состояние передаётся аргументами: иначе Svelte не перерисует метку после загрузки конфигурации. */
+  function getCheckoutLabel(plan: BillingPlan, checking: boolean, availability: Readonly<Record<BillingPlan, boolean>>): string {
+    if (checking) return $t`Checking…`;
+    if (availability[plan] !== true) return $t`Store unavailable`;
     return plan == "monthly" ? $t`Buy monthly` : $t`Buy yearly`;
   }
 
@@ -601,6 +602,28 @@
   }
 
   @media (max-width: 720px) {
+    .access-layout,
+    .plans,
+    .feature-list li {
+      grid-template-columns: 1fr;
+    }
+
+    .activation-row {
+      flex-direction: column;
+    }
+
+    :global(.activation-button) {
+      align-self: flex-start;
+    }
+
+    .trial-panel {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  /* Справа от списка разделов настроек места меньше, чем ширина окна. */
+  @container settings-page (max-width: 720px) {
     .access-layout,
     .plans,
     .feature-list li {

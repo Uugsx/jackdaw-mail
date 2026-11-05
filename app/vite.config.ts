@@ -1,5 +1,6 @@
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { defineConfig, defaultClientConditions } from 'vite'
+import { configDefaults } from 'vitest/config';
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import wasm from 'vite-plugin-wasm';
@@ -45,6 +46,10 @@ export default defineConfig({
     // Calendar tests build local-time dates and compare against UTC iCal
     // strings, so they only pass when the machine runs in UTC.
     env: { TZ: "UTC" },
+    // Помощник для подключения к бэкенду, а не набор тестов
+    exclude: [...configDefaults.exclude, "test/logic/util/backend.test.ts"],
+    // beforeAll компилирует Svelte-компоненты; при полном параллельном прогоне это дольше 10 с
+    hookTimeout: 30000,
     server: {
       deps: {
         // Workaround for app/logic/Abstract/Workspace.ts

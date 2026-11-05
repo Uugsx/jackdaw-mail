@@ -13,7 +13,9 @@ import {
   parseServerMessage,
   reconnectDelay,
   serverErrorMessage,
+  USER_STATUSES,
   type JackdawServerMessage,
+  type JackdawUserStatus,
 } from "./JackdawCallProtocol";
 
 export type JackdawCallStatus =
@@ -23,7 +25,8 @@ export type JackdawCallStatus =
   | "online"
   /** Сеть или сервис недоступны, идёт переподключение */
   | "offline"
-  /** Сервис отклонил лицензию: переподключаться бессмысленно до её смены */
+  /** Сервис отклонил лицензию: сам клиент не переподключается до её смены, возврата сети,
+   * пробуждения системы или кнопки «Переподключить» (`restart()`) */
   | "rejected";
 
 /** Минимум WebSocket, который нужен клиенту. Позволяет тестам подставить свой транспорт. */
@@ -50,6 +53,9 @@ export interface JackdawCallClientOptions {
   url: string | null;
   getCredential(): ProCallCredential | null;
   getDisplayName(): string;
+  /** Адреса почтовых ящиков и личностей в приложении на этом устройстве.
+   * Сервер раздаёт адреса с других устройств лицензии только из этого списка. */
+  getMailboxEmails?(): string[];
   createSocket?(url: string): CallSocket;
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
   onIncoming?(message: Extract<JackdawServerMessage, { type: "incoming" }>): void;
@@ -68,14 +74,33 @@ export class JackdawCallServiceError extends Error {
 const PROOFS_STORAGE_KEY = "jackdaw.calls.email-proofs.v1";
 /** Адреса, отключённые на этом устройстве: подтверждения с других устройств лицензии их не включают */
 const EXCLUDED_STORAGE_KEY = "jackdaw.calls.excluded-emails.v1";
+/** Адреса вне списка ящиков (псевдонимы), подтверждённые на этом устройстве: они тоже наши.
+ * Без этого псевдоним работал только до переподключения, а затем его подтверждение стиралось,
+ * и сообщения собеседников на этот адрес не доходили («Не отправлено»). */
+const OWN_ALIASES_STORAGE_KEY = "jackdaw.calls.own-aliases.v1";
+const STATUS_STORAGE_KEY = "jackdaw.calls.status.v1";
 const SOCKET_OPEN = 1;
 const LOOKUP_CACHE_MS = 60_000;
 const LOOKUP_DEBOUNCE_MS = 250;
 const LOOKUP_BATCH = 50;
 const REQUEST_TIMEOUT_MS = 15_000;
+/** Поиск GIF: сервер ждёт провайдера до 8 с (call_server/gifs.py), плюс дорога туда и обратно */
+const GIF_SEARCH_TIMEOUT_MS = 12_000;
+/** Сколько поиск GIF ждёт входа по лицензии, если подключение ещё идёт */
+const GIF_CONNECT_WAIT_MS = 6_000;
 const HEARTBEAT_MS = 25_000;
-/** Сервис закрывает соединение кодом 1008 при отзыве лицензии или нарушении протокола. */
-const POLICY_VIOLATION_CLOSE = 1008;
+/** Сколько ждать `pong` на `ping`. После сна системы или смены сети сокет остаётся «открытым»,
+ * хотя TCP уже мёртв, и ОС закрывает его лишь через минуты. */
+const PONG_TIMEOUT_MS = 10_000;
+/** Сколько ждать `welcome` после начала подключения: иначе молчащий сервер оставил бы клиент «подключающимся» навсегда */
+const HANDSHAKE_TIMEOUT_MS = 20_000;
+/**
+ * Ошибки входа, которыми сервис действительно отказывает этому устройству (call_server/calls.py,
+ * `CredentialVerifier.verify`): без новой лицензии повторять вход бессмысленно.
+ * Остальные (`service_unavailable`, `rate_limited`, `internal_error`) временные.
+ * Закрытие кодом 1008 без `error` — тоже не отказ: так сервер закрывает и «slow consumer», и «closed by server».
+ */
+const REJECTING_HELLO_ERRORS = new Set(["license_inactive", "device_not_activated", "invalid_credential"]);
 
 interface Waiter {
   match(message: JackdawServerMessage): boolean;
@@ -90,12 +115,21 @@ export class JackdawCallClient extends Observable {
   /** Последняя ошибка сервиса, для показа в настройках */
   @notifyChangedProperty
   lastError: string | null = null;
+  /** С какого момента нет связи (`now()`, мс), null — связь есть или клиент выключен */
+  @notifyChangedProperty
+  offlineSince: number | null = null;
   /** Адреса, подтверждённые для звонков и сейчас зарегистрированные на сервере */
   @notifyChangedProperty
   verifiedEmails: string[] = [];
   /** Меняется при каждом обновлении справочника, чтобы интерфейс перерисовал кнопки звонка */
   @notifyChangedProperty
   presenceVersion = 0;
+  /** Свой статус: общий для всех устройств адреса, хранится на сервере и на устройстве */
+  @notifyChangedProperty
+  myStatus: JackdawUserStatus = "available";
+  /** До какого момента (`now()`, мс) действует статус; null — пока не сменят */
+  @notifyChangedProperty
+  myStatusUntil: number | null = null;
 
   protected readonly options: JackdawCallClientOptions;
   protected socket: CallSocket | null = null;
@@ -103,9 +137,16 @@ export class JackdawCallClient extends Observable {
   protected attempt = 0;
   protected reconnectTimer: unknown = null;
   protected heartbeatTimer: unknown = null;
+  protected handshakeTimer: unknown = null;
+  /** Ожидание `pong`: до `pongDeadline` (`now()`, мс) */
+  protected pongTimer: unknown = null;
+  protected pongDeadline = 0;
   protected lookupTimer: unknown = null;
   protected readonly lookupQueue = new Set<string>();
   protected readonly reachable = new Map<string, { value: boolean; at: number }>();
+  /** Статусы собеседников из справочника; нет записи — «в сети» */
+  protected readonly peerStatuses = new Map<string, JackdawUserStatus>();
+  protected statusTimer: unknown = null;
   protected readonly waiters = new Set<Waiter>();
   protected readonly calls = new Map<string, JackdawCallSignalTarget>();
   /** Остальные получатели сообщений сервера, например чат */
@@ -115,6 +156,7 @@ export class JackdawCallClient extends Observable {
   constructor(options: JackdawCallClientOptions) {
     super();
     this.options = options;
+    this.loadStatus();
   }
 
   protected setTimer(callback: () => void, ms: number): unknown {
@@ -151,15 +193,25 @@ export class JackdawCallClient extends Observable {
     this.reconnectTimer = null;
     this.closeSocket();
     this.status = "disabled";
+    this.offlineSince = null;
     this.verifiedEmails = [];
     this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
   }
 
-  /** После смены лицензии или сети: переподключиться сразу. */
+  /** После смены лицензии или сети, по кнопке «Переподключить»: переподключиться сразу.
+   * Время потери связи сохраняется: пока вход не удался, связи по-прежнему нет. */
   restart(): void {
+    let offlineSince = this.offlineSince;
     this.stop();
+    this.offlineSince = offlineSince;
     this.attempt = 0;
     this.start();
+  }
+
+  /** Связь потеряна: клиент переподключается сам или ждёт `restart()` */
+  protected markOffline(status: "offline" | "rejected"): void {
+    this.offlineSince ??= this.now();
+    this.status = status;
   }
 
   protected connect(): void {
@@ -181,14 +233,27 @@ export class JackdawCallClient extends Observable {
       return;
     }
     this.socket = socket;
+    this.handshakeTimer = this.setTimer(() => {
+      this.handshakeTimer = null;
+      if (this.socket != socket || this.status == "online") return;
+      this.closeSocket();
+      this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
+      this.scheduleReconnect();
+    }, HANDSHAKE_TIMEOUT_MS);
     socket.onopen = () => {
       if (this.socket != socket) return;
       let excluded = this.readExcluded();
+      let mailboxes = this.mailboxEmails();
+      this.helloMailboxes = mailboxes;
       this.sendRaw({
         type: "hello",
         credential,
         name: this.options.getDisplayName(),
-        emailProofs: Object.values(this.readProofs()),
+        ...this.statusForServer(),
+        emailProofs: Object.entries(this.readProofs())
+          .filter(([email]) => this.isOwnAddress(email, mailboxes))
+          .map(([, proof]) => proof),
+        ...(mailboxes ? { mailboxEmails: [...mailboxes] } : {}),
         ...(excluded.length ? { excludedEmails: excluded } : {}),
         activeCalls: [...this.calls.keys()],
       });
@@ -203,24 +268,20 @@ export class JackdawCallClient extends Observable {
     socket.onerror = () => {
       // Подробности придут в onclose; сам браузер не раскрывает причину ошибки.
     };
-    socket.onclose = event => {
+    socket.onclose = () => {
       if (this.socket != socket) return;
       this.socket = null;
-      this.clearTimer(this.heartbeatTimer);
-      this.heartbeatTimer = null;
+      this.clearSocketTimers();
       this.verifiedEmails = [];
       this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
-      if (this.stopped) return;
-      if (this.status == "rejected" || (event as { code?: number })?.code == POLICY_VIOLATION_CLOSE && this.status != "online") {
-        this.status = "rejected";
-        return;
-      }
+      if (this.stopped || this.status == "rejected") return;
+      // Код закрытия не различает отказ и временный сбой: отказ приходит отдельным `error` на `hello`.
       this.scheduleReconnect();
     };
   }
 
   protected scheduleReconnect(): void {
-    this.status = "offline";
+    this.markOffline("offline");
     let delay = reconnectDelay(this.attempt++);
     this.reconnectTimer = this.setTimer(() => this.connect(), delay);
   }
@@ -228,8 +289,7 @@ export class JackdawCallClient extends Observable {
   protected closeSocket(): void {
     let socket = this.socket;
     this.socket = null;
-    this.clearTimer(this.heartbeatTimer);
-    this.heartbeatTimer = null;
+    this.clearSocketTimers();
     if (socket) {
       try {
         socket.close(1000, "client stopped");
@@ -239,12 +299,52 @@ export class JackdawCallClient extends Observable {
     }
   }
 
+  protected clearSocketTimers(): void {
+    this.clearTimer(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+    this.clearTimer(this.handshakeTimer);
+    this.handshakeTimer = null;
+    this.clearTimer(this.pongTimer);
+    this.pongTimer = null;
+  }
+
   protected scheduleHeartbeat(): void {
     this.clearTimer(this.heartbeatTimer);
     this.heartbeatTimer = this.setTimer(() => {
-      this.sendRaw({ type: "ping" });
+      if (this.mailboxesChangedSinceHello()) {
+        // Узнали новый адрес ящика (например, основной адрес Exchange): сервер выдаёт его подтверждение при входе
+        this.restart();
+        return;
+      }
+      this.checkConnection();
       this.scheduleHeartbeat();
     }, HEARTBEAT_MS);
+  }
+
+  /**
+   * Проверяет, живо ли соединение на связи: шлёт `ping` и переподключается, если `pong` не пришёл за `timeoutMs`.
+   * Повторная проверка до ответа срок не продлевает, только сокращает.
+   * Идущий звонок не обрывается, пока соединение отвечает.
+   */
+  checkConnection(timeoutMs = PONG_TIMEOUT_MS): void {
+    let socket = this.socket;
+    if (!socket || this.status != "online") return;
+    let deadline = this.now() + timeoutMs;
+    // Срок ставится до отправки: ответ не может обогнать собственное ожидание.
+    if (this.pongTimer == null || deadline < this.pongDeadline) {
+      this.clearTimer(this.pongTimer);
+      this.pongDeadline = deadline;
+      this.pongTimer = this.setTimer(() => {
+        this.pongTimer = null;
+        if (this.socket != socket) return;
+        // Сокет «открыт», но сервер не отвечает: ждать закрытия TCP от ОС — минуты.
+        this.closeSocket();
+        this.verifiedEmails = [];
+        this.failAllWaiters(new JackdawCallServiceError("service_unavailable"));
+        this.scheduleReconnect();
+      }, timeoutMs);
+    }
+    this.sendRaw({ type: "ping" });
   }
 
   protected sendRaw(message: Record<string, unknown>): boolean {
@@ -266,8 +366,11 @@ export class JackdawCallClient extends Observable {
       case "welcome":
         this.attempt = 0;
         this.lastError = null;
-        this.verifiedEmails = message.emails;
-        this.forgetUnacceptedProofs(message.emails, message.proofs);
+        this.offlineSince = null;
+        this.clearTimer(this.handshakeTimer);
+        this.handshakeTimer = null;
+        this.verifiedEmails = this.ownMailboxesOnly(message.emails);
+        this.forgetUnacceptedProofs(this.verifiedEmails, message.proofs);
         this.status = "online";
         this.reachable.clear();
         this.presenceVersion++;
@@ -275,9 +378,21 @@ export class JackdawCallClient extends Observable {
         this.flushLookups();
         this.notifyCallsReconnected(message.resumedCalls);
         break;
+      case "status":
+        this.applyStatus(message.status, message.untilIn == null ? null : this.now() + message.untilIn * 1000);
+        break;
+      case "pong":
+        this.clearTimer(this.pongTimer);
+        this.pongTimer = null;
+        break;
       case "verified":
+        if (!this.isOwnVerification(message.email, message.requestedEmail)) {
+          // Коллега с той же лицензией подтвердил свой адрес — это не наш ящик.
+          break;
+        }
         this.saveProof(message.email, message.proof);
         this.setExcluded(message.email, false);
+        this.rememberOwnAlias(message.email);
         if (!this.verifiedEmails.includes(message.email)) {
           this.verifiedEmails = [...this.verifiedEmails, message.email].sort();
         }
@@ -286,6 +401,12 @@ export class JackdawCallClient extends Observable {
         let at = this.now();
         for (let [email, value] of Object.entries(message.reachable)) {
           this.reachable.set(email, { value, at });
+          let peerStatus = message.statuses[email];
+          if (value && peerStatus && peerStatus != "available") {
+            this.peerStatuses.set(email, peerStatus);
+          } else {
+            this.peerStatuses.delete(email);
+          }
         }
         this.presenceVersion++;
         break;
@@ -304,11 +425,17 @@ export class JackdawCallClient extends Observable {
         break;
       case "error":
         if (message.requestType == "hello") {
-          this.status = "rejected";
           this.lastError = serverErrorMessage(message.code);
-          // Сокет закроется сервером или здесь; без новой лицензии повторять вход бессмысленно.
+          // Сокет закроется сервером или здесь.
           this.closeSocket();
+          this.verifiedEmails = [];
           this.failAllWaiters(new JackdawCallServiceError(message.code));
+          if (REJECTING_HELLO_ERRORS.has(message.code)) {
+            // Без новой лицензии повторять вход бессмысленно.
+            this.markOffline("rejected");
+          } else if (!this.stopped) {
+            this.scheduleReconnect();
+          }
           return;
         }
         if (message.callId) {
@@ -418,6 +545,7 @@ export class JackdawCallClient extends Observable {
 
   async startVerification(emailAddress: string): Promise<void> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor(message =>
       message.type == "verify-sent" && message.email == email ||
       message.type == "error" && message.requestType == "verify-start" && (message.email == email || !message.email));
@@ -427,6 +555,7 @@ export class JackdawCallClient extends Observable {
 
   async finishVerification(emailAddress: string, code: string): Promise<void> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor(message =>
       message.type == "verified" && message.email == email ||
       message.type == "error" && message.requestType == "verify-finish" && (message.email == email || !message.email));
@@ -440,6 +569,7 @@ export class JackdawCallClient extends Observable {
    */
   async startReverseVerification(emailAddress: string): Promise<{ token: string, address: string, mailSubject: string, expiresIn: number }> {
     let email = this.requireEmail(emailAddress);
+    this.requestedVerifications.add(email);
     let reply = this.waitFor<Extract<JackdawServerMessage, { type: "verify-reverse-ready" }>>(message =>
       message.type == "verify-reverse-ready" && message.email == email ||
       message.type == "error" && message.requestType == "verify-reverse-start" && (message.email == email || !message.email));
@@ -475,6 +605,7 @@ export class JackdawCallClient extends Observable {
     let proofs = this.readProofs();
     delete proofs[email];
     this.writeProofs(proofs);
+    this.writeOwnAliases(this.readOwnAliases().filter(alias => alias != email));
     // Иначе сервер вернёт адрес при следующем входе: он подтверждён на другом устройстве лицензии.
     this.setExcluded(email, true);
     this.verifiedEmails = this.verifiedEmails.filter(e => e != email);
@@ -537,6 +668,77 @@ export class JackdawCallClient extends Observable {
     }
   }
 
+  /** Адреса, подтверждение которых начали на этом устройстве */
+  protected requestedVerifications = new Set<string>();
+
+  /** Подтверждение адреса относится к нашему ящику или к проверке, начатой здесь.
+   * Иначе это адрес коллеги с той же лицензией: он видел бы себя «своим адресом». */
+  protected isOwnVerification(email: string, requestedEmail?: string): boolean {
+    let mailboxes = this.mailboxEmails();
+    let candidates = [email, normalizeCallEmail(requestedEmail ?? "")].filter((e): e is string => !!e);
+    return !mailboxes ||
+      candidates.some(e => mailboxes.has(e) || this.requestedVerifications.has(e));
+  }
+
+  /** Ящики, о которых сообщили серверу при входе в этом соединении */
+  protected helloMailboxes: Set<string> | null = null;
+
+  /** Ящиков стало больше, чем при входе, и звонка нет: переподключение его не оборвёт */
+  protected mailboxesChangedSinceHello(): boolean {
+    let mailboxes = this.mailboxEmails();
+    if (!mailboxes || this.calls.size || this.status != "online") return false;
+    return [...mailboxes].some(email => !this.helloMailboxes?.has(email));
+  }
+
+  /** null — ящики ещё не известны (аккаунты не загружены): тогда ничего не отбрасываем */
+  protected mailboxEmails(): Set<string> | null {
+    let emails = (this.options.getMailboxEmails?.() ?? [])
+      .map(normalizeCallEmail)
+      .filter((email): email is string => !!email);
+    return emails.length ? new Set(emails) : null;
+  }
+
+  /** Адрес, подтверждённый на устройстве коллеги с той же лицензией, — не наш:
+   * иначе коллега видел себя в нашем адресе («Это ваш собственный адрес»)
+   * и получал наши сообщения чата. Такие подтверждения здесь же забываем. */
+  protected ownMailboxesOnly(emails: string[]): string[] {
+    return emails.filter(email => this.isOwnAddress(email, this.helloMailboxes));
+  }
+
+  /** Наш ящик или псевдоним, подтверждённый на этом устройстве. Ящики неизвестны — считаем своим всё. */
+  protected isOwnAddress(email: string, mailboxes: Set<string> | null): boolean {
+    return !mailboxes || mailboxes.has(email) || this.readOwnAliases().includes(email);
+  }
+
+  /** Адрес подтверждён здесь, но это не ящик приложения: запоминаем как свой псевдоним */
+  protected rememberOwnAlias(email: string): void {
+    let mailboxes = this.mailboxEmails();
+    let aliases = this.readOwnAliases();
+    if (!mailboxes || mailboxes.has(email) || aliases.includes(email)) return;
+    this.writeOwnAliases([...aliases, email]);
+  }
+
+  protected readOwnAliases(): string[] {
+    try {
+      let value = JSON.parse(this.options.storage?.getItem(OWN_ALIASES_STORAGE_KEY) ?? "[]");
+      return Array.isArray(value) ? [...new Set(value.map(normalizeCallEmail).filter((e): e is string => !!e))] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  protected writeOwnAliases(aliases: string[]): void {
+    try {
+      if (aliases.length) {
+        this.options.storage?.setItem(OWN_ALIASES_STORAGE_KEY, JSON.stringify(aliases));
+      } else {
+        this.options.storage?.removeItem(OWN_ALIASES_STORAGE_KEY);
+      }
+    } catch {
+      // Без хранилища псевдоним действует до переподключения.
+    }
+  }
+
   protected readExcluded(): string[] {
     try {
       let value = JSON.parse(this.options.storage?.getItem(EXCLUDED_STORAGE_KEY) ?? "[]");
@@ -578,6 +780,69 @@ export class JackdawCallClient extends Observable {
     return cached?.value;
   }
 
+  /** Статус собеседника по последнему ответу справочника */
+  statusOf(emailAddress: string | null | undefined): JackdawUserStatus {
+    let email = normalizeCallEmail(emailAddress);
+    return email ? this.peerStatuses.get(email) ?? "available" : "available";
+  }
+
+  /**
+   * Меняет свой статус на всех устройствах.
+   * @param durationSeconds сколько действует статус; без него — пока не сменят
+   */
+  setMyStatus(status: JackdawUserStatus, durationSeconds?: number): void {
+    let until = status != "available" && durationSeconds ? this.now() + durationSeconds * 1000 : null;
+    this.applyStatus(status, until);
+    if (this.isOnline) {
+      this.send({ type: "status-set", ...this.statusForServer(true) });
+    }
+  }
+
+  /** Статус для сервера. Без `always` «в сети» не отправляется: при входе сервер знает его сам. */
+  protected statusForServer(always = false): { status?: JackdawUserStatus, untilIn?: number } {
+    if (this.myStatus == "available" && !always) return {};
+    let untilIn = this.myStatusUntil == null ? undefined : Math.max(1, Math.round((this.myStatusUntil - this.now()) / 1000));
+    return untilIn == null ? { status: this.myStatus } : { status: this.myStatus, untilIn };
+  }
+
+  protected applyStatus(status: JackdawUserStatus, until: number | null): void {
+    if (until != null && until <= this.now()) {
+      status = "available";
+      until = null;
+    }
+    this.myStatus = status;
+    this.myStatusUntil = until;
+    this.saveStatus();
+    this.clearTimer(this.statusTimer);
+    this.statusTimer = until == null ? null : this.setTimer(() => {
+      this.statusTimer = null;
+      this.applyStatus("available", null);
+    }, until - this.now());
+  }
+
+  protected loadStatus(): void {
+    try {
+      let value = JSON.parse(this.options.storage?.getItem(STATUS_STORAGE_KEY) ?? "null");
+      if (value && USER_STATUSES.includes(value.status)) {
+        this.applyStatus(value.status, typeof value.until == "number" ? value.until : null);
+      }
+    } catch {
+      // Повреждённая запись — остаётся «в сети»
+    }
+  }
+
+  protected saveStatus(): void {
+    try {
+      if (this.myStatus == "available") {
+        this.options.storage?.removeItem(STATUS_STORAGE_KEY);
+      } else {
+        this.options.storage?.setItem(STATUS_STORAGE_KEY, JSON.stringify({ status: this.myStatus, until: this.myStatusUntil }));
+      }
+    } catch {
+      // Хранилище недоступно: статус действует до перезапуска
+    }
+  }
+
   /** Спрашивает сервер сразу. Для нажатия кнопки звонка, когда кэш устарел. */
   async lookupNow(emailAddresses: string[]): Promise<Record<string, boolean>> {
     let emails = [...new Set(emailAddresses.map(normalizeCallEmail).filter((e): e is string => !!e))].slice(0, LOOKUP_BATCH);
@@ -588,6 +853,51 @@ export class JackdawCallClient extends Observable {
       message.type == "error" && message.requestId == requestId);
     this.send({ type: "lookup", requestId, emails });
     return (await reply).reachable;
+  }
+
+  /**
+   * Поиск GIF через сервер (ключ провайдера хранится только там). Пустой запрос — популярное.
+   * @throws JackdawCallServiceError с кодом:
+   *   `gifs_no_license` — на устройстве нет Pro или сервис отклонил лицензию;
+   *   `not_connected` — нет связи с сервером, повторить можно позже;
+   *   `unknown_type` — старый сервер без поиска GIF; `gifs_unavailable` — на сервере нет ключа;
+   *   `gifs_failed`, `rate_limited`, `invalid_query`, `service_unavailable` (нет ответа за `timeoutMs`).
+   */
+  async searchGIFs(query: string, locale: string, page = 1, timeoutMs = GIF_SEARCH_TIMEOUT_MS):
+    Promise<Extract<JackdawServerMessage, { type: "gif-results" }>> {
+    if (this.status == "connecting") {
+      // Выбор GIF открыли сразу после запуска: вход по лицензии ещё идёт.
+      await this.waitUntilSettled(Math.min(timeoutMs, GIF_CONNECT_WAIT_MS));
+    }
+    if (!this.isOnline) {
+      throw new JackdawCallServiceError(this.status == "disabled" || this.status == "rejected" ? "gifs_no_license" : "not_connected");
+    }
+    let requestId = this.nextRequestID("gif");
+    return await this.request<Extract<JackdawServerMessage, { type: "gif-results" }>>(
+      { type: "gif-search", requestId, query, locale, page },
+      reply => reply.type == "gif-results" && reply.requestId == requestId ||
+        reply.type == "error" && reply.requestId == requestId,
+      timeoutMs);
+  }
+
+  /** Ждёт, пока подключение закончится успехом или неудачей, но не дольше `timeoutMs`. */
+  protected waitUntilSettled(timeoutMs: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      let unsubscribe: (() => void) | null = null;
+      let done = false;
+      let finish = () => {
+        if (done) return;
+        done = true;
+        this.clearTimer(timer);
+        // Не во время рассылки наблюдателям: отписка посреди неё пропустила бы следующего
+        queueMicrotask(() => unsubscribe?.());
+        resolve();
+      };
+      let timer = this.setTimer(finish, timeoutMs);
+      unsubscribe = this.subscribe(() => {
+        if (this.status != "connecting") finish();
+      });
+    });
   }
 
   protected queueLookup(email: string): void {

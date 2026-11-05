@@ -4,7 +4,7 @@
   on:swiperight={onNextMessage}
   >
   <hbox class="subject-line">
-    <value class="subject">{$message.subject}</value>
+    <value class="subject" title={$message.subject}>{$message.subject}</value>
     <hbox flex />
     <hbox class="subject-tools">
       {#key $message.dbID ?? $message.messageID}
@@ -23,6 +23,11 @@
     </hbox>
   </hbox>
   <ShowReplyBanner {message} />
+  {#if !readOnly}
+    <CollisionBadge {message} />
+    <ReadReceiptBanner {message} />
+  {/if}
+  <VotingBanner {message} {readOnly} />
   <hbox class="message-meta">
     {#if $message.contact instanceof Person && $message.contact.picture}
       <PersonPicture person={$message.contact} size={avatarSize} />
@@ -37,6 +42,13 @@
                 <span class="sender-email">&lt;{$message.from.emailAddress}&gt;</span>
               {/if}
             </value>
+          {:else if $message.sender}
+            <!-- «Отправить от имени»: как Outlook, «Помощник от имени Руководителя» -->
+            <hbox class="on-behalf">
+              <Recipient recipient={$message.sender} showFullEmail={false} />
+              <span class="on-behalf-label font-small">{$t`on behalf of *=> Sender on behalf of mailbox owner`}</span>
+              <Recipient recipient={$message.from} showFullEmail={true} />
+            </hbox>
           {:else}
             <Recipient recipient={$message.from} showFullEmail={true} />
           {/if}
@@ -92,13 +104,19 @@
     </vbox>
   </hbox>
   {#if message.to.isEmpty || message.from.emailAddress == kDummyPerson.emailAddress}
+  <!-- После загрузки тела (например, повтором в MessageBody) шапка тоже пробует снова -->
+  {#key `${headerLoadAttempt}:${$message.loadedBody}`}
   {#await message.loadForDisplay()}
     <!-- Subject etc. are loaded by search,
       and body is loaded by MessageBody calling message.loadBody(),
       but not to/from etc. -->
   {:catch ex}
-    <ErrorMessageInline {ex} />
+    <!-- Пока тело не загрузилось, ту же ошибку связи уже показывает MessageBody -->
+    {#if $message.loadedBody}
+      <ErrorMessageInline {ex} onRetry={() => headerLoadAttempt++} />
+    {/if}
   {/await}
+  {/key}
 {/if}
 </vbox>
 
@@ -108,6 +126,7 @@
   import { Person } from "../../../logic/Abstract/Person";
   import type { PersonOrGroup } from "../../Contacts/Person/PersonOrGroup";
   import { selectedPerson } from "../../Contacts/Person/Selected";
+  import { neighbourMessage } from "../Selected";
   import type { Tag } from "../../../logic/Abstract/Tag";
   import { appGlobal } from "../../../logic/app";
   import MessageToolbar from "./MessageToolbar.svelte";
@@ -123,6 +142,10 @@
   import EncryptionDetails from "./EncryptionDetails.svelte";
   import ErrorMessageInline from "../../Shared/ErrorMessageInline.svelte";
   import ShowReplyBanner from "./ShowReplyBanner.svelte";
+  import ReadReceiptBanner from "./ReadReceiptBanner.svelte";
+  import VotingBanner from "../Voting/VotingBanner.svelte";
+  import CollisionBadge from "../Collision/CollisionBadge.svelte";
+  import { beginCollisionActivity } from "../Collision/collisionPresence";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import RemoveIcon from "lucide-svelte/icons/x";
   import { getLocalStorage } from "../../Util/LocalStorage";
@@ -150,6 +173,9 @@
   $: catchErrors(() => markMessageAsRead(message, readDelay), backgroundError);
   let readTimeout: NodeJS.Timeout;
   function markMessageAsRead(message: EMail, readDelay: number) {
+    // Иначе таймер прошлого письма срабатывает после перехода на прочитанное письмо
+    // или в ручном режиме и помечает прочитанным письмо, которое уже не открыто
+    clearTimeout(readTimeout);
     if (message.isRead) {
       return;
     }
@@ -159,7 +185,6 @@
     if (readDelay == 0) {
       readDelay = 0.2; // Avoid that normal scrolling marks all msgs as read
     }
-    clearTimeout(readTimeout);
     readTimeout = setTimeout(() => {
       message.markRead(true)
         .catch(message.folder.account.errorCallback);
@@ -169,7 +194,23 @@
     clearTimeout(readTimeout);
   });
 
+  // «Читает» для коллег по общему ящику, пока письмо открыто
+  let stopViewing: () => void = () => {};
+  let viewing: EMail | null = null;
+  $: trackViewing(readOnly ? null : message);
+  function trackViewing(viewed: EMail | null) {
+    if (viewed === viewing) return;
+    viewing = viewed;
+    // Сначала новое, затем снятие старого: то же письмо не мигает у коллег «закрыл — открыл».
+    let stopPrevious = stopViewing;
+    stopViewing = beginCollisionActivity(viewed, "viewing");
+    stopPrevious();
+  }
+  onDestroy(() => stopViewing());
+
   let isEncryptionExpanded = false;
+  /** Повтор загрузки получателей после сбоя */
+  let headerLoadAttempt = 0;
   $: $message, closeEncryption()
   function closeEncryption() {
     isEncryptionExpanded = false;
@@ -192,10 +233,10 @@
   }
 
   function onNextMessage() {
-    message = message.nextMessage(false);
+    message = neighbourMessage(message, false) ?? message;
   }
   function onPreviousMessage() {
-    message = message.nextMessage(true);
+    message = neighbourMessage(message, true) ?? message;
   }
 </script>
 
@@ -231,6 +272,15 @@
   .sender,
   .message-actions {
     min-width: 0;
+  }
+  .on-behalf {
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 0.375em;
+    min-width: 0;
+  }
+  .on-behalf-label {
+    opacity: 0.7;
   }
   .message-actions {
     flex: 0 1 auto;
@@ -414,9 +464,42 @@
     }
     .subject-tools {
       margin-inline-start: auto;
+      /* Масштаб, фон и вид письма переносятся на вторую строку,
+       * а не вылезают за правый край узкой области письма. */
+      flex-shrink: 1;
+      min-width: 0;
+      max-width: 100%;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      row-gap: 2px;
     }
     .message-meta {
       align-items: flex-start;
+    }
+    /* Имя получателя обрезается многоточием, а не рвётся по словам
+     * с доменом и запятой в отдельных столбцах. */
+    /* Список занимает всю строку: иначе его ширина считается на отступ
+     * кнопки «+N» меньше и имя сокращается без необходимости. */
+    .recipients :global(.persons) {
+      flex: 1 1 auto;
+    }
+    .recipients :global(.recipient) {
+      min-width: 0;
+      max-width: calc(100% - 0.6em);
+      white-space: nowrap;
+    }
+    /* Сначала сокращается имя (но не до нуля), затем домен. */
+    .recipients :global(.recipient .name) {
+      flex: 0 10000 auto;
+      min-width: min(4em, 100%);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recipients :global(.recipient .domain) {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .message-actions {
       flex-wrap: wrap;
@@ -425,6 +508,30 @@
     .message-actions :global(.buttons) {
       flex-wrap: wrap;
       justify-content: flex-start;
+    }
+  }
+  /* Совсем узкая область письма на компьютере (телефон раскладывается сам,
+   * через isSmall): аватар остаётся рядом с именем, а кнопки и получатели
+   * занимают всю ширину под ним, а не узкий столбец справа от аватара. */
+  @media (min-width: 601px) {
+    @container message-header (max-width: 480px) {
+      .message-details,
+      .identity-row {
+        display: contents;
+      }
+      .message-meta {
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 4px;
+      }
+      .sender {
+        flex: 1 1 0;
+      }
+      /* Получатели и подробности шифрования (дети .message-details) */
+      .message-actions,
+      .message-details > :global(*) {
+        flex: 1 1 100%;
+      }
     }
   }
   @media (prefers-reduced-motion: reduce) {

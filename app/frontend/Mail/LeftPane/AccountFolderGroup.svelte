@@ -23,7 +23,7 @@
       {#if archiveMailboxRoot}
         <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
           <ArchiveIcon size="14px" />
-          <span>Сетевой архив</span>
+          <span>{$t`Online archive`}</span>
         </hbox>
         <FolderList
           folders={archiveMailboxRoot.subFolders}
@@ -48,6 +48,7 @@
   import AccountListItem from "./AccountListItem.svelte";
   import FolderList from "./FolderList.svelte";
   import ArchiveIcon from "lucide-svelte/icons/archive";
+  import { t } from "../../../l10n/l10n";
   import { ArrayColl } from "svelte-collections";
   import { createEventDispatcher } from "svelte";
 

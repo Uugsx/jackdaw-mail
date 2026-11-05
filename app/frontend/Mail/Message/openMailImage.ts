@@ -7,6 +7,8 @@ import { backgroundError, showUserError } from "../../Util/error";
 import { fileExtensionForMIMEType } from "../../../logic/Files/FileType/MIMETypes";
 import { gt } from "../../../l10n/l10n";
 import { kMailImageSourceAttribute } from "../../../logic/Mail/mailImage";
+import { Attachment } from "../../../logic/Abstract/Attachment";
+import { previewAttachment, previewKind } from "../Attachments/attachmentPreview";
 
 type WebviewGuest = HTMLIFrameElement & {
   getWebContentsId?: () => number;
@@ -85,7 +87,7 @@ export async function openMailImageFromElement(
   let dataURL = await imageElementToDataURL(img);
   if (dataURL) {
     let blob = await dataURLToBlob(dataURL);
-    await saveAndOpenBlob(blob, imageSource(img) ?? undefined, suggestedFilename);
+    await previewImageBlob(blob, imageSource(img) ?? undefined, suggestedFilename);
     return;
   }
   let srcURL = imageSource(img);
@@ -93,10 +95,10 @@ export async function openMailImageFromElement(
   if (!blob) {
     throw new UserError(gt`Could not read the image`);
   }
-  await saveAndOpenBlob(blob, srcURL, suggestedFilename);
+  await previewImageBlob(blob, srcURL, suggestedFilename);
 }
 
-/** Open an inline email image in the default OS image viewer. */
+/** Open an inline email image in the app's preview, like an attachment. */
 export async function openMailImageAtPoint(
   webview: WebviewGuest | null | undefined,
   x: number,
@@ -110,7 +112,7 @@ export async function openMailImageAtPoint(
   let dataURL = await extractImageDataURLFromWebview(webview, x, y, srcURL);
   if (dataURL) {
     let blob = await dataURLToBlob(dataURL);
-    await saveAndOpenBlob(blob, srcURL, suggestedFilename);
+    await previewImageBlob(blob, srcURL, suggestedFilename);
     return;
   }
   let imageURL = srcURL || await extractImageSourceFromWebview(webview, x, y);
@@ -118,7 +120,7 @@ export async function openMailImageAtPoint(
   if (!blob) {
     throw new UserError(gt`Could not read the image`);
   }
-  await saveAndOpenBlob(blob, imageURL, suggestedFilename);
+  await previewImageBlob(blob, imageURL, suggestedFilename);
 }
 
 /** @deprecated Use openMailImageAtPoint — kept for callers with URL only. */
@@ -135,14 +137,38 @@ export async function openMailImageURL(
   if (!blob) {
     throw new UserError(gt`Could not read the image`);
   }
-  await saveAndOpenBlob(blob, srcURL, suggestedFilename);
+  await previewImageBlob(blob, srcURL, suggestedFilename);
 }
 
 /** Форматы, которые ОС откроет просмотрщиком картинок. Тип и имя файла задаёт отправитель письма,
  * поэтому расширение берётся только отсюда: иначе «картинка» invoice.exe запустилась бы как программа. */
 const kOpenableImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "image/tiff", "image/heic", "image/heif"]);
 
-async function saveAndOpenBlob(blob: Blob, srcURL?: URLString, suggestedFilename?: string) {
+/** Картинка из текста письма в виде вложения для встроенного просмотра.
+ * Своего файла на диске у неё нет: для внешней программы пишем временный. */
+export class MailImageAttachment extends Attachment {
+  async openOSApp() {
+    await openOSAppForFile(await this.writeTempFile());
+  }
+  async openOSFolder() {
+    await appGlobal.remoteApp.showFileInFolder(await this.writeTempFile());
+  }
+  protected async writeTempFile(): Promise<string> {
+    if (this.filepathLocal) {
+      return this.filepathLocal;
+    }
+    let filesDir = await getFilesDir();
+    let tmpDir = `${filesDir}/tmp`;
+    await appGlobal.remoteApp.fs.mkdir(tmpDir, { recursive: true, mode: 0o700 });
+    let tempPath = `${tmpDir}/${crypto.randomUUID()}-${this.filename}`;
+    await appGlobal.remoteApp.writeFile(tempPath, 0o644, new Uint8Array(await this.content.arrayBuffer()));
+    this.filepathLocal = tempPath;
+    return tempPath;
+  }
+}
+
+/** Только проверенный формат картинки, имя файла без опасного расширения */
+export async function mailImageAttachment(blob: Blob, srcURL?: URLString, suggestedFilename?: string): Promise<MailImageAttachment> {
   let mimeType = blob.type.split(";")[0].trim().toLowerCase();
   if (!kOpenableImageTypes.has(mimeType)) {
     blob = await reencodeImageAsPNG(blob);
@@ -151,12 +177,18 @@ async function saveAndOpenBlob(blob: Blob, srcURL?: URLString, suggestedFilename
   let ext = fileExtensionForMIMEType(mimeType) || "png";
   let baseName = sanitize.filename(suggestedFilename || guessImageFilename(srcURL, ext), "image").replace(/\.[^.]*$/, "") || "image";
   let filename = sanitize.filename(`${baseName}.${ext}`, `image.${ext}`);
-  let filesDir = await getFilesDir();
-  let tmpDir = `${filesDir}/tmp`;
-  await appGlobal.remoteApp.fs.mkdir(tmpDir, { recursive: true, mode: 0o700 });
-  let tempPath = `${tmpDir}/${crypto.randomUUID()}-${filename}`;
-  await appGlobal.remoteApp.writeFile(tempPath, 0o644, new Uint8Array(await blob.arrayBuffer()));
-  await openOSAppForFile(tempPath);
+  let attachment = new MailImageAttachment();
+  attachment.fromFile(new File([blob], filename, { type: mimeType }));
+  return attachment;
+}
+
+async function previewImageBlob(blob: Blob, srcURL?: URLString, suggestedFilename?: string) {
+  let attachment = await mailImageAttachment(blob, srcURL, suggestedFilename);
+  if (previewKind(attachment.filename, attachment.mimeType) == "image") {
+    await previewAttachment(attachment, [attachment]);
+  } else {
+    await attachment.openOSApp(); // AVIF, TIFF, HEIC: Chromium может их не показать
+  }
 }
 
 /** Декодирует данные как картинку и сохраняет пиксели в PNG. Не-картинка вызывает ошибку. */

@@ -45,6 +45,16 @@ export class ChatRoomEvent extends Message {
   set room(val: ChatRoom) {
     this.to = val;
   }
+
+  /** Хранилище чата сохраняет и события, см. `SQLChatMessage.save()` */
+  async save() {
+    await this.to.account.storage.saveMessage(this);
+  }
+
+  async deleteMessage() {
+    this.to.messages.remove(this);
+    await this.to.account.storage.deleteMessage(this);
+  }
 }
 
 export class JoinLeave extends ChatRoomEvent {

@@ -306,3 +306,74 @@ describe("MailListRows", () => {
     expect(subjects(model.rows)).toEqual(["only"]);
   });
 });
+
+describe("сортировка по столбцам таблицы", () => {
+  function mailWith(subject: string, sent: Date, fields: Record<string, unknown>): EMail {
+    return Object.assign(fakeMail(subject, sent, fields.from as string | undefined), fields) as EMail;
+  }
+  function tags(...names: string[]) {
+    return new ArrayColl(names.map(name => ({ name })));
+  }
+
+  test("размер: от большого к маленькому и обратно, равные — новые первыми", () => {
+    let messages = new ArrayColl<EMail>([
+      mailWith("small", jan1, { size: 1_000 }),
+      mailWith("big", jan1, { size: 900_000 }),
+      mailWith("unknown", jan2, { size: undefined }),
+      mailWith("big newer", jan2, { size: 900_000 }),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "size-desc");
+    expect(subjects(model.rows)).toEqual(["big newer", "big", "small", "unknown"]);
+    // Без заголовков групп: группировка только по дате, теме и отправителю
+    expect(model.rows.contents.every(row => row.kind == "message")).toBe(true);
+    model.setSource(messages, "size-asc");
+    expect(subjects(model.rows)).toEqual(["unknown", "small", "big newer", "big"]);
+    model.dispose();
+  });
+
+  test("флажок, важность и вложения: письма с признаком первыми или последними", () => {
+    let messages = new ArrayColl<EMail>([
+      mailWith("plain", jan2, {}),
+      mailWith("flagged", jan1, { isStarred: true, isImportant: true, hasVisibleAttachments: true }),
+    ]);
+    let model = new MailListRows();
+    for (let sort of ["flag-desc", "importance-desc", "attachment-desc"] as const) {
+      model.setSource(messages, sort);
+      expect(subjects(model.rows)).toEqual(["flagged", "plain"]);
+    }
+    for (let sort of ["flag-asc", "importance-asc", "attachment-asc"] as const) {
+      model.setSource(messages, sort);
+      expect(subjects(model.rows)).toEqual(["plain", "flagged"]);
+    }
+    model.dispose();
+  });
+
+  test("категории: по алфавиту, письма без категорий в конце при любом направлении", () => {
+    let messages = new ArrayColl<EMail>([
+      mailWith("none", jan3, {}),
+      mailWith("beta", jan1, { tags: tags("Бета") }),
+      mailWith("alpha", jan2, { tags: tags("Альфа", "Бета") }),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "categories");
+    expect(subjects(model.rows)).toEqual(["alpha", "beta", "none"]);
+    model.setSource(messages, "categories-desc");
+    expect(subjects(model.rows)).toEqual(["beta", "alpha", "none"]);
+    model.dispose();
+  });
+
+  test("отправитель и тема в обратном порядке сохраняют заголовки групп", () => {
+    let messages = new ArrayColl<EMail>([
+      fakeMail("Re: Alpha", jan1, "anna@example.com"),
+      fakeMail("Beta", jan2, "boris@example.com"),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "sender-desc");
+    expect(subjects(model.rows)).toEqual(["Beta", "Re: Alpha"]);
+    expect(senderRows(model.rows).map(row => row.label)).toEqual(["boris@example.com", "anna@example.com"]);
+    model.setSource(messages, "subject-desc");
+    expect(topicLabels(model.rows)).toEqual(["Beta", "Alpha"]);
+    model.dispose();
+  });
+});

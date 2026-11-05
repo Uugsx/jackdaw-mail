@@ -153,4 +153,13 @@
       flex-basis: 100%;
     }
   }
+  /* Справа от списка разделов настроек места меньше, чем ширина окна. */
+  @container settings-page (max-width: 600px) {
+    .sound-row {
+      flex-wrap: wrap;
+    }
+    .sound-copy {
+      flex-basis: 100%;
+    }
+  }
 </style>

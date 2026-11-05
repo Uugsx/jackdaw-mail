@@ -1,6 +1,6 @@
 <vbox flex class="pane">
   <Header bind:selectedAccount={$selectedAccount} {accounts} />
-  <RoomList {rooms} bind:selectedRoom bind:selectedContact {doSearch} />
+  <RoomList {rooms} account={$selectedAccount} bind:selectedRoom bind:selectedContact {doSearch} />
 </vbox>
 {#if $appGlobal.isMobile}
   <RoomsBarM />

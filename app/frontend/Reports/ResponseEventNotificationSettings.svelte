@@ -143,7 +143,9 @@
     gap: 5px;
   }
 
+  /* В узкой боковой панели широкого окна медиазапрос ниже не срабатывает, поэтому строка переносится сама. */
   .event-notification-sounds :global(.sound-row) {
+    flex-wrap: wrap;
     min-height: 34px;
     padding-block: 3px 5px;
   }

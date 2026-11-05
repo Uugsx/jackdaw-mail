@@ -143,6 +143,7 @@ export class SystemNotification {
       body: this.bodyWithSubtitle,
       tag: this.id,
       renotify: true,
+      silent: true,
       // icon: url,
       // image: url,
     });
@@ -162,6 +163,9 @@ export class SystemNotification {
       body: hasSubtitleLine ? this.body : this.bodyWithSubtitle,
       // icon: url,
       urgency: this.urgency,
+      // Звук играем сами (`kinds.sound`, выбранная мелодия). Иначе ОС добавляет
+      // свой сигнал: двойной звук, и даже когда звук в настройках выключен.
+      silent: true,
       hasReply: !!this.onReply,
       replyPlaceholder: this.replyPlaceholder,
       // Windows
@@ -246,6 +250,20 @@ export async function bubbleImageURL(count: number, icon: string): Promise<strin
   await image.decode();
   context.drawImage(image, 0, 0, kTrayIconSize, kTrayIconSize);
   drawCountBubble(context, count);
+  return canvas.toDataURL("image/png");
+}
+
+/** Цветная точка пространства для меню строки меню (PNG data URL, 24×24 для Retina). */
+export function dotImageURL(color: string): string {
+  let size = 24;
+  let canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  let context = canvas.getContext("2d");
+  context.beginPath();
+  context.arc(size / 2, size / 2, size * 0.33, 0, 2 * Math.PI);
+  context.fillStyle = color;
+  context.fill();
   return canvas.toDataURL("image/png");
 }
 

@@ -1,8 +1,9 @@
 <div
   class="mail-message-row"
+  use:hoverMessageRow={message}
   class:incoming={!displayOutgoing}
   class:outgoing={displayOutgoing}
-  aria-label={displayOutgoing ? "Исходящее письмо" : "Входящее письмо"}
+  aria-label={displayOutgoing ? $t`Outgoing message` : $t`Incoming message`}
 >
   <div class="mail-message-card">
     <MessageBubble
@@ -36,7 +37,10 @@
     {:catch ex}
       <span class="body-state" role="alert">{friendlyErrorMessage(ex)}</span>
     {:then}
-      {@html displayHtml(stripMailChatQuote($message.html), darkTheme)}
+      {#if translationAvailable}
+        <MessageTranslateBar {message} compact suggest={false} />
+      {/if}
+      {@html restrictHTMLForAppDOM(displayHtml(translatedHTML ?? bodyHTML, darkTheme))}
     {/await}
   </svelte:fragment>
   <svelte:fragment slot="menu">
@@ -47,17 +51,22 @@
 </div>
 
 <script lang="ts">
+  import { restrictHTMLForAppDOM } from "../../../logic/util/convertHTML";
   import { friendlyErrorMessage } from "../../../logic/util/friendlyError";
   import type { Message } from "../../../logic/Abstract/Message";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import { EMail } from "../../../logic/Mail/EMail";
   import { isOutgoingMail } from "./MailChatRoom";
+  import { hoverMessageRow } from "../hoveredMessage";
   import { stripMailChatQuote } from "../Message/mailChatBody";
+  import MessageTranslateBar from "../Message/MessageTranslateBar.svelte";
+  import { getMessageTranslation, getTranslationEngineSetting, isMailTranslationAvailable } from "../Message/messageTranslation";
   import MessageBubble from "../../Chat/MessageView/Message.svelte";
   import Toolbar from "./MailChatToolbar.svelte";
   import { t } from "../../../l10n/l10n";
   import { adaptEmailHtmlForDarkMode } from "../Message/emailDarkMode";
   import { getLocalStorage } from "../../Util/LocalStorage";
+  import { darkColorScheme } from "../Composer/composeDarkColors";
 
   export let message: EMail;
   export let previousMessage: Message;
@@ -73,12 +82,22 @@
   // Как в обычном просмотре: тёмно-синий текст подписи и т. п. в тёмной теме
   // осветляется, иначе он не читается на тёмном пузыре
   let themeSetting = getLocalStorage("appearance.theme", "system");
-  let systemDark = typeof window != "undefined" &&
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  $: darkTheme = $themeSetting.value == "dark" || ($themeSetting.value == "system" && systemDark);
+  // Автотема меняет системную схему без смены настройки: подписываемся на неё
+  const systemDark = darkColorScheme;
+  $: darkTheme = $themeSetting.value == "dark" || $themeSetting.value == "gray" || ($themeSetting.value == "system" && $systemDark);
   function displayHtml(html: string, dark: boolean): string {
     return dark ? adaptEmailHtmlForDarkMode(html) : html;
   }
+
+  // Перевод — вместо текста пузыря; цитата прошлых писем не переводится, её здесь нет
+  let translationEngineSetting = getTranslationEngineSetting();
+  $: translationAvailable = isMailTranslationAvailable($translationEngineSetting.value);
+  $: translation = getMessageTranslation(message);
+  $: bodyHTML = stripMailChatQuote($message.html);
+  $: if ($message.loadedBody) {
+    translation.setDisplayed("html", bodyHTML);
+  }
+  $: translatedHTML = $translation ? translation.resultFor("html", bodyHTML) : null;
 
   async function loadMailChatMessage(mail: EMail): Promise<void> {
     await mail.loadForDisplay();

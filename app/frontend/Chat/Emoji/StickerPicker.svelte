@@ -6,8 +6,8 @@
           <button
             type="button"
             class="sticker-button"
-            title={sticker.title}
-            aria-label={`Insert sticker ${sticker.title}`}
+            title={stickerTitle(sticker)}
+            aria-label={$t`Insert sticker ${stickerTitle(sticker)}`}
             on:click={() => selectSticker(sticker)}
             >
             <span class="sticker-art" style={`--sticker-bg: ${sticker.background}`}>{sticker.emoji}</span>
@@ -31,7 +31,7 @@
   import { createEventDispatcher } from "svelte";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import Scroll from "../../Shared/Scroll.svelte";
-  import { createStickerFile, filterStickers, kStickerDisplayWidth, type StickerDefinition } from "./stickers";
+  import { createStickerFile, filterStickers, kStickerDisplayWidth, stickerTitle, type StickerDefinition } from "./stickers";
   import type { GraphicSelection } from "./media";
   import { t } from "../../../l10n/l10n";
 

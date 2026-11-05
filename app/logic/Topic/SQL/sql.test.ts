@@ -33,8 +33,7 @@ test("Save and read topics from SQL database", { timeout: 10000 }, async () => {
   childTopic.name = "Child Topic";
   childTopic.parent = parentTopic;
   let para = new Paragraph(childTopic);
-  para.rawHTMLDangerous = "<p>Hello world</p>";
-  childTopic.content.add(para);
+  para.rawHTMLDangerous = "<p>Hello world</p>"; // конструктор сам добавляет абзац в тему
   childTopic.properties.add({ name: "color", value: "blue" });
   await SQLTopic.save(childTopic);
   originalAccount.topics.add(childTopic);

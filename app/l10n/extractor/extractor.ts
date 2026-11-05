@@ -3,12 +3,15 @@ import { glob } from "glob";
 import { dirname, join } from "path";
 import { cwd } from "process";
 import config from "../config";
-import { locales } from "../list";
+import { fullyTranslatedLocales, locales } from "../list";
 import { existsSync } from "fs";
 import { svelteExtract } from "./svelteExtract";
 import { tsExtract } from "./tsExtract";
 
 export const strings: any[] = [];
+
+/** `--check`: ничего не записывать, только проверить, что каталоги актуальны */
+const checkOnly = process.argv.includes("--check");
 
 await extractStrings();
 
@@ -25,7 +28,48 @@ async function extractStrings() {
     await svelteExtract(content, file);
     tsExtract(content, file);
   }
-  writeResults();
+  if (checkOnly) {
+    await checkCatalogs();
+  } else {
+    await writeResults();
+  }
+}
+
+/** Находит строки из кода, которых нет в исходном каталоге или в каталогах
+ * полностью переведённых языков. Код выхода 1, если такие строки есть. */
+async function checkCatalogs() {
+  let sourceFile = config.path.replace("**", config.sourceLocale);
+  let sourceMessages = JSON.parse((await readFile(join(cwd(), sourceFile))).toString());
+  let codeMessages = new Map<string, string>();
+  for (let message of strings) {
+    codeMessages.set(message.id, message.message);
+  }
+  let problems = 0;
+  let notExtracted = [...codeMessages].filter(([id]) => !(id in sourceMessages));
+  if (notExtracted.length) {
+    problems += notExtracted.length;
+    console.error(`${sourceFile}: ${notExtracted.length} strings from the code are missing. Run \`npm run l10n:extract\`.`);
+    for (let [id, message] of notExtracted) {
+      console.error(`  ${id}: ${message}`);
+    }
+  }
+  for (let locale of fullyTranslatedLocales) {
+    let file = config.path.replace("**", locale);
+    let messages = JSON.parse((await readFile(join(cwd(), file))).toString());
+    let untranslated = [...codeMessages].filter(([id]) => !messages[id]);
+    if (untranslated.length) {
+      problems += untranslated.length;
+      console.error(`${file}: ${untranslated.length} strings are not translated.`);
+      for (let [id, message] of untranslated) {
+        console.error(`  ${id}: ${message}`);
+      }
+    }
+  }
+  if (problems) {
+    process.exitCode = 1;
+  } else {
+    console.log(`All ${codeMessages.size} strings are extracted and translated into ${fullyTranslatedLocales.join(", ")}.`);
+  }
 }
 
 async function writeResults() {
@@ -34,10 +78,10 @@ async function writeResults() {
   let templateFile = join(dirname(sourceFile), config.templateFile);
   
   let templateJSON = formatMessageWithComment(strings, existingMessages);
-  await writeFile(join(cwd(), templateFile), templateJSON);
+  await writeFile(join(cwd(), templateFile), templateJSON + "\n");
 
   let sourceJSON = formatMessageSimple(strings, existingMessages);
-  await writeFile(join(cwd(), sourceFile), sourceJSON);
+  await writeFile(join(cwd(), sourceFile), sourceJSON + "\n");
 
   let localeFiles = locales.map((l) => config.path.replace("**", l));
   for (let file of localeFiles) {

@@ -1,4 +1,4 @@
-import { get, writable } from "svelte/store";
+import { writable } from "svelte/store";
 import { gt } from "../../l10n/l10n";
 import { availableTags, type Tag } from "../../logic/Abstract/Tag";
 import {
@@ -7,7 +7,7 @@ import {
   usableTagCombinations,
 } from "../../logic/Abstract/TagCombination";
 import type { EMail } from "../../logic/Mail/EMail";
-import { selectedMessage, selectedMessages } from "./Selected";
+import { getMailActionTargets } from "./hoveredMessage";
 import { runMailActions } from "./mailBulkActions";
 
 export type CategoryShortcutTarget =
@@ -265,7 +265,7 @@ export function mouseCategoryShortcutFromEvent(event: MouseEvent): MouseCategory
     : null;
 }
 
-/** Применяет назначение ко всем выбранным письмам или к текущему письму. */
+/** Применяет назначение к письму под курсором, иначе ко всем выбранным или к текущему письму. */
 export async function applyCategoryShortcut(target: CategoryShortcutTarget): Promise<boolean> {
   let messages = getSelectedMessages();
   if (!messages.length) {
@@ -304,14 +304,7 @@ function majorityHasTag(tag: Tag, messages: readonly EMail[]): boolean {
 }
 
 function getSelectedMessages(): EMail[] {
-  let messages = get(selectedMessages).contents.slice();
-  if (!messages.length) {
-    let message = get(selectedMessage);
-    if (message) {
-      messages = [message];
-    }
-  }
-  return messages;
+  return getMailActionTargets().messages;
 }
 
 const kKeyNames: Record<string, string> = {

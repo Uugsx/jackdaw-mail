@@ -38,6 +38,7 @@
     "icon:icns": "npx icon-gen --input build/icon.png --output build --icns --icns-name icon --icns-sizes 16,32,48,64,128,256,512"
   },
   "dependencies": {
+    "@browsermt/bergamot-translator": "0.4.9",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "adm-zip": "^0.5.16",

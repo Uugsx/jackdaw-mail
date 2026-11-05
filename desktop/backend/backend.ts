@@ -1,16 +1,23 @@
 import { HTTPServer } from './HTTPServer';
 import { HTTPConnection, type HTTPConnectionOptions } from './HTTPConnection';
+import { nativeDialogLabels } from "./nativeDialogs";
 import { NetSession } from './NetSession';
 import JPCWebSocket from '../../lib/jpc-ws';
 import * as OWA from './owa';
 import { appName, production } from '../../app/logic/build';
 import { WebContents } from './WebContents';
+import { expectedSha512ForAsset, isSha512Match, pickMacDmgAsset } from './updateAssets';
+import { applyMirrorToProvider, kMirrorStallTimeoutMs, mirrorUrlFor, resolveUpdateMirrorBase } from './updateMirror';
+import { isPublicFetchHost } from './netGuard';
+import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort } from './testProfile';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
-import { Database } from "@radically-straightforward/sqlite"; // formerly @leafac/sqlite
+import { SQLiteHost, type RemoteSQLiteDatabase } from "./sqlite/SQLiteHost";
+import { createUtilityProcessChannel } from "./sqlite/utilityProcessChannel";
+import sqliteWorkerPath from "./sqlite/worker?modulePath";
 import Zip from "adm-zip";
 import ky from 'ky';
-import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
+import { shell, nativeTheme, Notification, Tray, nativeImage, app, BrowserWindow, webContents, Menu, MenuItemConstructorOptions, clipboard, NativeImage, session, net as electronNet, desktopCapturer, type DesktopCapturerSource, systemPreferences, powerMonitor, dialog, safeStorage, type MessageBoxOptions } from "electron";
 import electronUpdater, { type UpdateCheckResult } from 'electron-updater';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
@@ -26,15 +33,26 @@ import os from "node:os";
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import https from "node:https";
 import { RunOnce } from '../../app/logic/util/flow/RunOnce';
-const { autoUpdater } = electronUpdater;
+import {
+  deleteMailTranslationModels,
+  getMailTranslationLanguages,
+  getMailTranslationModelInfo,
+  getMailTranslationModelsSize,
+  getMailTranslationProgress,
+  translateMailTexts,
+  translateMailTextsWithDeepL,
+} from "./translation";
+const { autoUpdater, CancellationToken } = electronUpdater;
 
 const kMaxMailImageBytes = 25 * 1024 * 1024;
 
 const kGhOwner = "Uugsx";
 const kGhRepo = "jackdaw-mail";
+const execFileAsync = promisify(execFile);
 
 /**
  * Electron derives `userData` from the visible application name by default.
@@ -63,6 +81,9 @@ function hasExplicitUserDataDir(): boolean {
 }
 
 function preserveLegacyUserData(): void {
+  if (isTestProfile()) {
+    return;
+  }
   let defaultUserDataDir = app.getPath("userData");
   let legacyUserDataDir = path.join(app.getPath("appData"), kLegacyUserDataDirName);
   if (hasExplicitUserDataDir() ||
@@ -73,6 +94,7 @@ function preserveLegacyUserData(): void {
   app.setPath("userData", legacyUserDataDir);
 }
 
+applyTestProfile();
 preserveLegacyUserData();
 
 let jpc: JPCWebSocket | null = null;
@@ -113,7 +135,7 @@ export async function startupBackend(jpcSecret: string) {
   }
   backendStartup = (async () => {
     let appGlobal = await createSharedAppObject();
-    jpc = await listenForJPC(appGlobal, jpcSecret, production ? 5455 : 5453);
+    jpc = await listenForJPC(appGlobal, jpcSecret, testJPCPort() ?? (production ? 5455 : 5453));
   })().finally(() => {
     backendStartup = null;
   });
@@ -124,6 +146,7 @@ export async function shutdownBackend() {
   await OWA.stopAllNotificationStreams();
   await jpc?.stopListening();
   jpc = null;
+  await sqliteHost.shutdown();
 }
 
 /** Returns a passcode with at least 32 chars. Only alpha-num-dash. */
@@ -194,6 +217,13 @@ async function createSharedAppObject() {
     isSecretEncryptionAvailable,
     encryptSecret,
     decryptSecret,
+    getMailTranslationLanguages,
+    getMailTranslationModelInfo,
+    getMailTranslationModelsSize,
+    getMailTranslationProgress,
+    translateMailTexts,
+    translateMailTextsWithDeepL,
+    deleteMailTranslationModels,
     // openFileInExternalApp,
     createIMAPFlowConnection,
     getSQLiteDatabase,
@@ -230,6 +260,8 @@ async function createSharedAppObject() {
   };
 }
 
+const kMaxMailImageRedirects = 5;
+
 /** Fetch an email image after an explicit user action, bypassing renderer CORS. */
 async function fetchMailImage(
   url: string,
@@ -250,22 +282,83 @@ async function fetchMailImage(
   if (!sourceSession) {
     return null;
   }
-  let response = await sourceSession.fetch(parsedURL.toString(), { redirect: "follow" });
-  if (!response.ok) {
+  if (!await isPublicFetchHost(parsedURL.hostname)) {
     return null;
   }
-  let contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > kMaxMailImageBytes) {
-    return null;
-  }
-  let buffer = await response.arrayBuffer();
-  if (buffer.byteLength > kMaxMailImageBytes) {
-    return null;
-  }
-  return {
-    bytes: new Uint8Array(buffer),
-    contentType: response.headers.get("content-type") ?? "",
-  };
+  return await requestMailImage(parsedURL, sourceSession);
+}
+
+/** Загрузка с проверкой каждого перенаправления: оно может вести на адрес этого компьютера.
+ * `session.fetch` с `redirect: "manual"` в Electron не сообщает адрес перенаправления, поэтому `net.request`. */
+function requestMailImage(url: URL, sourceSession: Electron.Session): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  return new Promise(resolve => {
+    let redirects = 0;
+    let settled = false;
+    let finish = (result: { bytes: Uint8Array; contentType: string } | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+    let request = electronNet.request({ url: url.toString(), session: sourceSession, redirect: "manual", useSessionCookies: true });
+    request.on("redirect", (_statusCode, _method, redirectURL) => {
+      let target: URL;
+      try {
+        target = new URL(redirectURL);
+      } catch {
+        request.abort();
+        finish(null);
+        return;
+      }
+      if (++redirects > kMaxMailImageRedirects || (target.protocol != "http:" && target.protocol != "https:")) {
+        request.abort();
+        finish(null);
+        return;
+      }
+      isPublicFetchHost(target.hostname).then(allowed => {
+        if (allowed) {
+          request.followRedirect();
+        } else {
+          request.abort();
+          finish(null);
+        }
+      }, () => {
+        request.abort();
+        finish(null);
+      });
+    });
+    request.on("response", response => {
+      let contentLength = Number(response.headers["content-length"]);
+      if (response.statusCode < 200 || response.statusCode >= 300 ||
+          (Number.isFinite(contentLength) && contentLength > kMaxMailImageBytes)) {
+        request.abort();
+        finish(null);
+        return;
+      }
+      let chunks: Buffer[] = [];
+      let received = 0;
+      response.on("data", chunk => {
+        received += chunk.length;
+        if (received > kMaxMailImageBytes) {
+          request.abort();
+          finish(null);
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        let contentType = response.headers["content-type"];
+        finish({
+          bytes: new Uint8Array(Buffer.concat(chunks)),
+          contentType: (Array.isArray(contentType) ? contentType[0] : contentType) ?? "",
+        });
+      });
+      response.on("error", () => finish(null));
+    });
+    request.on("error", () => finish(null));
+    request.on("abort", () => finish(null));
+    request.end();
+  });
 }
 
 function createType3MessageFromType2Message(WWWAuthenticate, username, password) {
@@ -478,12 +571,66 @@ function setTrayIcon(imgDataURL: string, tooltip: string, onClick: () => void) {
 
 type StatusBarMenuAction = () => void | Promise<void>;
 
+/** Пространство и его ящики в меню значка строки меню */
+interface StatusBarMenuGroup {
+  /** Пусто — единственная группа без пространства, заголовок не нужен */
+  title?: string;
+  /** Цветная точка пространства, PNG data URL */
+  iconDataURL?: string;
+  unread?: number;
+  accounts?: {
+    label: string;
+    unread?: number;
+    open?: StatusBarMenuAction;
+  }[];
+}
+
 interface StatusBarMenuActions {
   newMessage?: StatusBarMenuAction;
   fetchMail?: StatusBarMenuAction;
   openSettings?: StatusBarMenuAction;
   disableWidget?: StatusBarMenuAction;
   unreadCount?: number;
+  groups?: StatusBarMenuGroup[];
+}
+
+/** «Название — 3» или просто «Название», если непрочитанных нет */
+function withUnreadCount(label: string, unread: number | undefined): string {
+  let count = Math.max(0, Math.trunc(unread ?? 0));
+  return count ? `${label} — ${count}` : label;
+}
+
+/** Строки меню с пространствами и ящиками: видно, где непрочитанные */
+function statusBarGroupItems(groups: StatusBarMenuGroup[] | undefined): MenuItemConstructorOptions[] {
+  let items: MenuItemConstructorOptions[] = [];
+  for (let group of Array.isArray(groups) ? groups.slice(0, 20) : []) {
+    let accounts = Array.isArray(group?.accounts) ? group.accounts.slice(0, 50) : [];
+    if (!accounts.length) {
+      continue;
+    }
+    items.push({ type: "separator" });
+    if (typeof group.title == "string" && group.title) {
+      let header: MenuItemConstructorOptions = {
+        label: withUnreadCount(group.title, group.unread),
+        enabled: false,
+      };
+      if (typeof group.iconDataURL == "string" && group.iconDataURL.startsWith("data:image/png;base64,")) {
+        header.icon = nativeImage.createFromDataURL(group.iconDataURL).resize({ width: 12, height: 12 });
+      }
+      items.push(header);
+    }
+    for (let account of accounts) {
+      if (typeof account?.label != "string") {
+        continue;
+      }
+      items.push({
+        label: withUnreadCount(account.label, account.unread),
+        enabled: !!account.open,
+        click: () => runStatusBarMenuAction(account.open),
+      });
+    }
+  }
+  return items;
 }
 
 function runStatusBarMenuAction(action: StatusBarMenuAction | undefined): void {
@@ -519,6 +666,7 @@ function setStatusBarIcon(
       label: `Открыть ${appName}`,
       click: () => onClick?.(),
     },
+    ...statusBarGroupItems(menuActions.groups),
   ];
   let hasAdditionalActions = menuActions.newMessage || menuActions.fetchMail ||
     menuActions.openSettings || menuActions.disableWidget || menuActions.unreadCount !== undefined;
@@ -583,7 +731,7 @@ function newOSNotification(options: any): Notification {
 }
 
 function isOSNotificationSupported(): boolean {
-  return Notification.isSupported();
+  return !isTestProfile() && Notification.isSupported();
 }
 
 function restartApp() {
@@ -936,6 +1084,7 @@ function downloadGithubAsset(
   destPath: string,
   onProgress: (pct: number) => void,
   useAuthorization = true,
+  idleTimeoutMs = kUpdateDownloadIdleTimeoutMs,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let headers = {
@@ -945,12 +1094,12 @@ function downloadGithubAsset(
     let request = https.get(asset.url, { headers }, response => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
-        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress, false).then(resolve, reject);
+        downloadGithubAsset({ ...asset, url: response.headers.location }, destPath, onProgress, false, idleTimeoutMs).then(resolve, reject);
         return;
       }
       if (response.statusCode === 401 && useAuthorization) {
         response.resume();
-        downloadGithubAsset(asset, destPath, onProgress, false).then(resolve, reject);
+        downloadGithubAsset(asset, destPath, onProgress, false, idleTimeoutMs).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -994,7 +1143,7 @@ function downloadGithubAsset(
       response.on("aborted", () => fail(new Error("Download aborted")));
     });
     // Без таймаута обрыв сети оставлял «Загрузка N%» навсегда
-    request.setTimeout(kUpdateDownloadIdleTimeoutMs, () => {
+    request.setTimeout(idleTimeoutMs, () => {
       request.destroy(new Error("Download timed out"));
     });
     request.on("error", reject);
@@ -1026,18 +1175,26 @@ async function scheduleMacDmgInstallAndQuit(dmgPath: string): Promise<void> {
   let scriptPath = path.join(app.getPath("temp"), `jackdaw-install-${process.pid}.sh`);
   let script = `#!/bin/bash
 set -euo pipefail
-DMG=${JSON.stringify(dmgPath)}
-DEST=${JSON.stringify(destApp)}
+# Пути приходят аргументами, а не текстом скрипта: $() и кавычки в них не выполняются
+DMG="$1"
+DEST="$2"
+SCRIPT="$0"
 PID=${process.pid}
+DB_PID=${sqliteHost.processID ?? ""}
 MOUNT=$(mktemp -d /tmp/jackdaw-update.XXXXXX)
 
 while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+# Процесс базы может пережить главный ещё на время контрольной точки WAL:
+# новая версия тогда получила бы при запуске SQLITE_BUSY. Ждём не дольше 30 с.
+if [ -n "$DB_PID" ]; then
+  for _ in $(seq 150); do kill -0 "$DB_PID" 2>/dev/null || break; sleep 0.2; done
+fi
 sleep 0.5
 
 cleanup() {
   hdiutil detach "$MOUNT" -quiet 2>/dev/null || true
   rm -rf "$MOUNT"
-  rm -f ${JSON.stringify(scriptPath)}
+  rm -f "$SCRIPT"
 }
 trap cleanup EXIT
 
@@ -1066,7 +1223,7 @@ open "$DEST"
   await fsPromises.writeFile(scriptPath, script, { mode: 0o755 });
   await writePendingUpdateMarker(updateState.version);
   quittingForUpdate = true;
-  let child = spawn("/bin/bash", [scriptPath], { detached: true, stdio: "ignore" });
+  let child = spawn("/bin/bash", [scriptPath, dmgPath, destApp], { detached: true, stdio: "ignore" });
   child.unref();
 
   await Promise.race([
@@ -1076,15 +1233,31 @@ open "$DEST"
   app.exit(0);
 }
 
+/** DMG не подписан Apple: сверяем его с sha512 из `latest-mac.yml`, иначе не ставим */
+async function verifyMacDmgChecksum(dmgPath: string, assetName: string, version: string): Promise<void> {
+  let info = updateState.update?.updateInfo;
+  let expected = info && info.version.replace(/^v/, "") == version.replace(/^v/, "")
+    ? expectedSha512ForAsset(info.files, assetName)
+    : null;
+  let hash = crypto.createHash("sha512");
+  for await (let chunk of fs.createReadStream(dmgPath)) {
+    hash.update(chunk);
+  }
+  if (!isSha512Match(hash.digest("base64"), expected)) {
+    await fsPromises.rm(dmgPath, { force: true });
+    throw new Error(expected ? "Update checksum mismatch" : "No update checksum to verify the download");
+  }
+}
+
 async function downloadMacDmgUpdate(version: string | null | undefined) {
   if (!version) {
     throw new Error("No update version to download");
   }
   return macDmgDownloadRunOnce.runOnce(async () => {
     let release = await fetchReleaseByTag(version);
-    let dmgAsset = release.assets.find(asset => asset.name.endsWith(".dmg") && /jackdaw/i.test(asset.name));
+    let dmgAsset = pickMacDmgAsset(release.assets, version);
     if (!dmgAsset) {
-      throw new Error(`No .dmg found in release v${version}`);
+      throw new Error(`No .dmg for version ${version} in its release`);
     }
     let cacheDir = path.join(app.getPath("cache"), "jackdaw-updates");
     await fsPromises.mkdir(cacheDir, { recursive: true });
@@ -1092,9 +1265,35 @@ async function downloadMacDmgUpdate(version: string | null | undefined) {
     updateState.phase = "downloading";
     updateState.progress = 0;
     updateState.error = null;
-    await downloadGithubAsset(dmgAsset, dmgPath, pct => {
-      updateState.progress = pct;
-    });
+    let fromMirror = false;
+    let mirrorBase = resolveUpdateMirrorBase();
+    if (mirrorBase) {
+      // Зеркало быстрее GitHub CDN. Любая ошибка (недоступно, обрыв, не та сумма)
+      // тихо переводит на GitHub; сумма берётся из latest-mac.yml с GitHub.
+      try {
+        await downloadGithubAsset(
+          { ...dmgAsset, url: mirrorUrlFor(dmgAsset.name, mirrorBase) },
+          dmgPath,
+          pct => {
+            updateState.progress = pct;
+          },
+          false,
+          kMirrorStallTimeoutMs,
+        );
+        await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
+        fromMirror = true;
+      } catch (ex) {
+        console.warn("Update mirror failed, falling back to GitHub:", (ex as Error)?.message ?? ex);
+        await fsPromises.rm(dmgPath, { force: true }).catch(() => {});
+        updateState.progress = 0;
+      }
+    }
+    if (!fromMirror) {
+      await downloadGithubAsset(dmgAsset, dmgPath, pct => {
+        updateState.progress = pct;
+      });
+      await verifyMacDmgChecksum(dmgPath, dmgAsset.name, version);
+    }
     macDmgPendingPath = dmgPath;
     updateState.phase = "downloaded";
     updateState.progress = 100;
@@ -1129,7 +1328,8 @@ function markUpdateUnavailable(code: string) {
 }
 
 async function runUpdateCheck(check: () => Promise<UpdateCheckResult | null>): Promise<boolean> {
-  if (!hasAppUpdateConfig()) {
+  // Копия для автопроверок не обновляется
+  if (!hasAppUpdateConfig() || isTestProfile()) {
     markUpdateUnavailable("ota-not-configured");
     return false;
   }
@@ -1278,6 +1478,46 @@ export async function prepareUpdaterAuth(): Promise<boolean> {
   return ensureGhUpdateAuth();
 }
 
+/**
+ * Windows: сначала зеркало (адреса файлов подменяются в провайдере electron-updater),
+ * при ошибке или зависании без прогресса — обычная загрузка с GitHub.
+ * Контрольные суммы electron-updater берёт из latest.yml на GitHub.
+ */
+async function downloadWindowsUpdate(): Promise<void> {
+  let mirrorBase = resolveUpdateMirrorBase();
+  let provider = (autoUpdater as any).updateInfoAndProvider?.provider;
+  if (mirrorBase && provider?.resolveFiles) {
+    let restore = applyMirrorToProvider(provider, mirrorBase);
+    let token = new CancellationToken();
+    let lastProgressAt = Date.now();
+    let onProgress = () => {
+      lastProgressAt = Date.now();
+    };
+    autoUpdater.on("download-progress", onProgress);
+    let watchdog = setInterval(() => {
+      if (Date.now() - lastProgressAt > kMirrorStallTimeoutMs) {
+        token.cancel();
+      }
+    }, 2_000);
+    try {
+      await withTimeout(autoUpdater.downloadUpdate(token), kUpdateDownloadTimeoutMs, "Update download timed out");
+      return;
+    } catch (ex) {
+      console.warn("Update mirror failed, falling back to GitHub:", (ex as Error)?.message ?? ex);
+      updateState.progress = 0;
+    } finally {
+      clearInterval(watchdog);
+      autoUpdater.off("download-progress", onProgress);
+      restore();
+    }
+  }
+  await withTimeout(
+    autoUpdater.downloadUpdate(),
+    kUpdateDownloadTimeoutMs,
+    "Update download timed out",
+  );
+}
+
 export async function downloadUpdate(): Promise<boolean> {
   if (process.platform === "darwin") {
     if (!macDmgPendingPath) {
@@ -1296,11 +1536,7 @@ export async function downloadUpdate(): Promise<boolean> {
     updateState.progress = 0;
     updateState.error = null;
     try {
-      await withTimeout(
-        autoUpdater.downloadUpdate(),
-        kUpdateDownloadTimeoutMs,
-        "Update download timed out",
-      );
+      await downloadWindowsUpdate();
       updateState.phase = "downloaded";
       updateState.progress = 100;
       updateState.error = null;
@@ -1338,11 +1574,11 @@ export async function openPendingReleaseDownload() {
   await shell.openExternal(`https://github.com/${kGhOwner}/${kGhRepo}/releases`);
 }
 
-function setTheme(theme: "system" | "light" | "dark") {
-  if (!["system", "light", "dark"].includes(theme)) {
+function setTheme(theme: "system" | "light" | "dark" | "gray") {
+  if (!["system", "light", "dark", "gray"].includes(theme)) {
     throw new Error("Bad theme name " + theme);
   }
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme == "gray" ? "dark" : theme;
 }
 
 async function openExternalURL(url: string) {
@@ -1358,7 +1594,34 @@ async function openFileInNativeApp(filePath: string) {
   if (isExecutableFileType(filePath) && !await confirmOpenExecutableFile(filePath)) {
     return;
   }
+  await markAsDownloaded(filePath).catch(ex => console.warn("Could not mark file as downloaded:", ex?.message ?? ex));
   await shell.openPath(filePath);
+}
+
+/** Метка «скачано из интернета», как у браузера: macOS проверит программу из архива
+ * через Gatekeeper, Windows откроет документ Office в защищённом режиме. */
+async function markAsDownloaded(filePath: string): Promise<void> {
+  if (process.platform == "darwin") {
+    let value = `0081;${Math.floor(Date.now() / 1000).toString(16)};${appName};`;
+    await withOwnerWritable(filePath, () => execFileAsync("/usr/bin/xattr", ["-w", "com.apple.quarantine", value, filePath]));
+  } else if (process.platform == "win32") {
+    await withOwnerWritable(filePath, () => fsPromises.writeFile(`${filePath}:Zone.Identifier`, "[ZoneTransfer]\r\nZoneId=3\r\n"));
+  }
+}
+
+/** Вложения сохраняются только для чтения (0400), а метку ставит лишь владелец с правом записи */
+async function withOwnerWritable(filePath: string, action: () => Promise<unknown>): Promise<void> {
+  let mode = (await fsPromises.stat(filePath)).mode & 0o7777;
+  if (!(mode & 0o200)) {
+    await fsPromises.chmod(filePath, mode | 0o200);
+  }
+  try {
+    await action();
+  } finally {
+    if (!(mode & 0o200)) {
+      await fsPromises.chmod(filePath, mode);
+    }
+  }
 }
 
 /** Типы, которые ОС запускает как программу или скрипт, а не открывает как документ.
@@ -1371,9 +1634,10 @@ const kExecutableFileExtensions = new Set([
   "settingcontent-ms", "library-ms", "search-ms", "searchconnector-ms", "diagcab", "iso", "img", "vhd", "vhdx",
   // macOS
   "app", "command", "tool", "terminal", "pkg", "mpkg", "dmg", "workflow", "scpt", "scptd", "applescript",
-  "webloc", "inetloc", "fileloc",
+  "webloc", "inetloc", "fileloc", "mobileconfig", "shortcut", "saver", "prefpane", "kext", "action", "definition",
   // Linux и кроссплатформенные
   "sh", "bash", "zsh", "csh", "ksh", "desktop", "run", "bin", "appimage", "deb", "rpm", "jar", "py", "pl",
+  "jnlp", "wsb", "xbap", "ppkg", "mht", "mhtml", "docm", "xlsm", "pptm", "dotm", "xltm", "xlam", "ppam", "rb", "php",
 ]);
 
 function isExecutableFileType(filePath: string): boolean {
@@ -1382,24 +1646,19 @@ function isExecutableFileType(filePath: string): boolean {
 }
 
 async function confirmOpenExecutableFile(filePath: string): Promise<boolean> {
-  const russian = app.getLocale().toLowerCase().startsWith("ru");
+  // Подписи — на языке интерфейса приложения (их передаёт рендерер), иначе по языку системы
+  const labels = nativeDialogLabels();
   const kOpen = 0;
   const kShowInFolder = 1;
   const kCancel = 2;
   const options: MessageBoxOptions = {
     type: "warning",
-    buttons: russian
-      ? ["Всё равно открыть", "Показать в папке", "Отмена"]
-      : ["Open anyway", "Show in folder", "Cancel"],
+    buttons: [labels.openAnyway, labels.showInFolder, labels.cancel],
     defaultId: kCancel,
     cancelId: kCancel,
     noLink: true,
-    message: russian
-      ? `«${path.basename(filePath)}» — программа или скрипт`
-      : `"${path.basename(filePath)}" is a program or script`,
-    detail: russian
-      ? "При открытии файл запустится на этом компьютере. Открывайте его, только если ждали этот файл и доверяете отправителю."
-      : "Opening it runs it on this computer. Open it only if you expected this file and trust the sender.",
+    message: labels.executableTitle.replace("{name}", () => path.basename(filePath)),
+    detail: labels.executableDetail,
   };
   const parent = BrowserWindow.getFocusedWindow();
   const { response } = parent
@@ -1514,14 +1773,18 @@ function createIMAPFlowConnection(...args): ImapFlow {
   return new ImapFlow(...args);
 }
 
-function getSQLiteDatabase(filename: string, options: any, buffer?: Uint8Array): Database {
+/** SQLite работает в отдельном utilityProcess, чтобы запросы к базе
+ * не блокировали главный процесс (сеть, JPC, меню, окна). */
+const sqliteHost = new SQLiteHost(createUtilityProcessChannel(sqliteWorkerPath));
+
+async function getSQLiteDatabase(filename: string, options: any, buffer?: Uint8Array): Promise<RemoteSQLiteDatabase> {
   if (buffer) {
-    return new Database(Buffer.from(buffer), options);
+    return await sqliteHost.openDatabase(null, options, buffer);
   }
   if (!path.isAbsolute(filename)) {
     filename = path.join(getConfigDir(), filename);
   }
-  return new Database(filename, options);
+  return await sqliteHost.openDatabase(filename, options);
 }
 
 async function sendMailNodemailer(transport, mail) {
@@ -1596,7 +1859,14 @@ function wireWidgetWindowNavigation(win: BrowserWindow) {
   });
 }
 
+function assertWidgetURL(url: string): void {
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error("Widget URL must be http or https");
+  }
+}
+
 function createWidgetBrowserWindow(sessionID: string, url: string, title: string): BrowserWindow {
+  assertWidgetURL(url);
   let win = new BrowserWindow({
     width: 520,
     height: 760,
@@ -1608,6 +1878,7 @@ function createWidgetBrowserWindow(sessionID: string, url: string, title: string
       partition: widgetPartitionName(sessionID),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
   });
   wireWidgetWindowNavigation(win);
@@ -1620,6 +1891,7 @@ async function openWidgetSignIn(sessionID: string, url: string, title: string): 
   if (existing && !existing.isDestroyed()) {
     existing.focus();
     if (existing.webContents.getURL() !== url) {
+      assertWidgetURL(url);
       await existing.loadURL(url);
     }
     return waitForWidgetWindowClose(existing);
@@ -1636,6 +1908,7 @@ async function openWidgetPopout(sessionID: string, url: string, title: string): 
   if (existing && !existing.isDestroyed()) {
     existing.focus();
     if (existing.webContents.getURL() !== url) {
+      assertWidgetURL(url);
       await existing.loadURL(url);
     }
     return;
@@ -1948,6 +2221,11 @@ let filesDirCreated = false;
  * Mac OS: /Users/USER/Library/Jackdaw
  */
 function getFilesDir(): string {
+  let testDir = testFilesDir();
+  if (testDir) {
+    fs.mkdirSync(testDir, { recursive: true });
+    return testDir;
+  }
   let platform = os.platform();
   let dirname =
     platform == "win32" ? kAppDir :

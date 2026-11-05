@@ -1,4 +1,5 @@
 import { Event } from "../Event";
+import type { Participant } from "../Participant";
 
 export class ExchangeEvent extends Event {
   /** The time zone in which the server sent the times of this all-day event.
@@ -37,6 +38,16 @@ export class ExchangeEvent extends Event {
       return date;
     }
     return new Date(date.toLocaleDateString('lt', { timeZone: this.allDayTimezone }) + "T00:00:00");
+  }
+
+  /** Комнаты и другие ресурсы для поля Exchange `Resources`.
+   * `null` — поле не трогать: ресурсов нет и до правки не было,
+   * так обычные встречи сохраняются как раньше.
+   * Пустой массив — ресурсы убрали, поле надо очистить. */
+  protected resourcesForServer(withoutAttendees: boolean): Participant[] | null {
+    let resources = withoutAttendees ? [] : this.participants.contents.filter(p => p.isResource);
+    let hadResources = !!this.unedited?.participants.contents.some(p => p.isResource);
+    return resources.length || hadResources ? resources : null;
   }
 
   /** ActiveSync sends the exceptions of an all-day event without the time zone

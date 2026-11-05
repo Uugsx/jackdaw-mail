@@ -64,6 +64,9 @@ export function owaGetEventsRequest(eventIDs: string[]): OWARequest {
         FieldURI: "calendar:OptionalAttendees",
       }, {
         __type: "PropertyUri:#Exchange",
+        FieldURI: "calendar:Resources",
+      }, {
+        __type: "PropertyUri:#Exchange",
         FieldURI: "calendar:Recurrence",
       }, {
         __type: "PropertyUri:#Exchange",

@@ -13,7 +13,7 @@
 
   {#if video.participant}
     <hbox class="participant-name">
-      <ParticipantItem participant={video.participant} style="video" />
+      <ParticipantItem participant={video.participant} style="video" fallbackName={label} />
     </hbox>
   {/if}
 </vbox>

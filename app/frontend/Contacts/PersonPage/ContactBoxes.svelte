@@ -99,6 +99,10 @@
     </GroupBox>
   {/if}
 
+  {#if !isEditing}
+    <OrgChartBox {person} />
+  {/if}
+
   <!--
   <GroupBox classes="preferences" headerName={$t`Preferences`}>
     <Icon data={ChatIcon} size="16px" slot="icon" />
@@ -169,6 +173,7 @@
   import StreetAddressDisplay from "./StreetAddressDisplay.svelte";
   import StreetAddressEdit from "./StreetAddressEdit.svelte";
   import SameName from "./SameName.svelte";
+  import OrgChartBox from "../Directory/OrgChartBox.svelte";
   import Encryption from "./Encryption.svelte";
   import ExpanderButtons from "../../Shared/ExpanderButtons.svelte";
   import ExpanderButton from "../../Shared/ExpanderButton.svelte";

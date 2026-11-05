@@ -1,14 +1,28 @@
 <hbox class="person">
-  <PersonPicture {person} />
+  <PersonPicture {person} size={40} placeholder="initials" />
   <vbox flex class="name-box">
-    <hbox class="name">{$person.name}</hbox>
+    <hbox class="name" title={$person.name}>{$person.name}</hbox>
+    {#if email && email != $person.name?.toLowerCase()}
+      <!-- Адрес собеседника: по одному имени не понять, кому пишешь и звонишь -->
+      <hbox class="email" title={email}>{email}</hbox>
+    {/if}
+    {#if presence}
+      <hbox class="status" title={statusHint(presence)}>
+        <StatusDot status={presence} size="8px" />
+        <span>{statusLabel(presence)}</span>
+      </hbox>
+    {/if}
   </vbox>
   <hbox class="actions">
-    {#if canCall && canVideo}
+    {#if canCall && canVideo && peerStatus != "dnd"}
       <RoundButton label={$t`Video call`} icon={VideoCallIcon} classes="secondary large"
         onClick={() => startVideoCall(callTarget)} />
     {/if}
-    {#if canCall}
+    {#if canCall && peerStatus == "dnd"}
+      <!-- Сервер всё равно отклонит звонок: объясняем заранее -->
+      <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
+        disabled={statusHint(peerStatus)} />
+    {:else if canCall}
       <RoundButton label={$t`Audio call`} icon={VoiceCallIcon} classes="secondary large"
         onClick={() => startAudioCall(callTarget)} />
     {:else if callUnavailableReason}
@@ -34,11 +48,14 @@
   import { getJackdawCallClient } from "../../logic/Meet/Jackdaw/JackdawCalls";
   import { JACKDAW_CHAT_PROTOCOL, type JackdawChatAccount } from "../../logic/Chat/Jackdaw/JackdawChatAccount";
   import { callTargetEmails } from "../../logic/Meet/Jackdaw/JackdawCalls";
+  import type { JackdawUserStatus } from "../../logic/Meet/Jackdaw/JackdawCallProtocol";
   import { jackdawCallUnavailableReason } from "../Shared/callUnavailable";
   import { appGlobal } from "../../logic/app";
   import { openChatRoomFromOtherApp } from "./open";
   import ChatIcon from "lucide-svelte/icons/message-square-text";
   import PersonPicture from "../Contacts/Person/PersonPicture.svelte";
+  import StatusDot from "./Status/StatusDot.svelte";
+  import { presenceOf, statusHint, statusLabel, type PresenceState } from "./Status/statusLabels";
   import RoundButton from "../Shared/RoundButton.svelte";
   import VideoCallIcon from '../asset/icon/appBar/meet.svg?raw';
   import VoiceCallIcon from '../asset/icon/meet/callVoice.svg?raw';
@@ -58,7 +75,20 @@
   const callClient = getJackdawCallClient();
   /** Кнопки только когда звонок реально возможен; присутствие собеседника обновляется через `$callClient`. */
   $: canCall = $callClient && $callClient.presenceVersion >= 0 && canStartCall(callTarget);
-  /** Видео — только через WhatsApp: звонки между пользователями Jackdaw голосовые */
+  /** Статус собеседника в Jackdaw: «занят» или «не беспокоить» видны в шапке */
+  let peerStatus: JackdawUserStatus = "available";
+  $: peerStatus = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group)
+    ? callTargetEmails(callTarget as Person | PersonUID).map(email => callClient.statusOf(email)).find(s => s != "available") ?? "available"
+    : "available";
+  /** Что видно о собеседнике Jackdaw: в сети и его статус, или «не в сети». null — не пользователь Jackdaw или неизвестно. */
+  let presence: PresenceState | null = null;
+  $: presence = $callClient && $callClient.presenceVersion >= 0 && !(person instanceof Group) && callTarget
+    ? presenceOf(callClient, callTargetEmails(callTarget as Person | PersonUID))
+    : null;
+  $: email = !(person instanceof Group) && callTarget
+    ? callTargetEmails(callTarget as Person | PersonUID)[0] ?? null
+    : null;
+  /** Видеозвонок: через Jackdaw или WhatsApp */
   $: canVideo = canCall && canStartVideoCall(callTarget);
   /** Почему в личном чате Jackdaw сейчас нельзя позвонить (у группы контакт — `Group`, звонков в группу нет).
    * null — не чат Jackdaw или звонок возможен. */
@@ -99,7 +129,41 @@
 <style>
   .name-box {
     font-weight: bold;
-    margin: 15px;
+    margin: 12px 15px;
+    gap: 2px;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  /* Имя в одну строку: «Hayden Huel» переносилось, хотя места хватало */
+  .name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .email {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: normal;
+    font-size: 0.875em;
+    opacity: 0.75;
+    user-select: text;
+  }
+  .status {
+    align-items: center;
+    gap: 6px;
+    font-weight: normal;
+    font-size: 0.875em;
+    opacity: 0.85;
+  }
+  .person {
+    align-items: center;
+  }
+  .person > :global(.avatar) {
+    flex: none;
+    margin-inline-start: 16px;
   }
   .actions {
     align-items: center;

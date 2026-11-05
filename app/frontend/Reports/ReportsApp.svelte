@@ -15,7 +15,7 @@
   import SearchIcon from "lucide-svelte/icons/search";
   import TagsIcon from "lucide-svelte/icons/tags";
   import UsersIcon from "lucide-svelte/icons/users";
-  import { t, gt, getDateTimeLocale, getUILocale } from "../../l10n/l10n";
+  import { t, gt, getDateTimeLocale } from "../../l10n/l10n";
   import { appGlobal } from "../../logic/app";
   import {
     DEFAULT_RESPONSE_TARGET_MINUTES,
@@ -43,6 +43,9 @@
   import {
     DEFAULT_WORKING_HOURS_SCHEDULE,
     cloneWorkingHoursSchedule,
+    isValidExceptionDate,
+    normalizeWorkingDayExceptions,
+    type WorkingDayException,
     formatWorkingTime,
     isWithinWorkingHours,
     normalizeWorkingHoursSchedule,
@@ -98,6 +101,7 @@
   } from "./ReportSession";
   import { openEMailMessage } from "../Mail/open";
   import ReportPanelControls from "./ReportPanelControls.svelte";
+  import ReportMessagePanel from "./ReportMessagePanel.svelte";
   import ReportSortButton from "./ReportSortButton.svelte";
   import { openLiveSlaWidget } from "../Widgets/widgetState";
   import { createReportHTML, downloadTextFile } from "./ReportsExport";
@@ -187,6 +191,9 @@
     DEFAULT_WORKING_HOURS_SCHEDULE,
   );
   let workingHoursError: WorkingHoursValidationError | null = null;
+  let newExceptionDate = "";
+  let newExceptionKind: "off" | "short" = "off";
+  let newExceptionEnd = "14:00";
   let error: Error | null = null;
   let loading = false;
   let exportError: Error | null = null;
@@ -195,6 +202,22 @@
   let exporting: "html" | null = null;
   let responseOpenError: Error | null = null;
   let openingResponseEmailId: number | null = null;
+  type ResponseRow = ReportData["mail"]["responseTimes"][number];
+  /** Письмо, открытое в боковой панели отчёта, и таблица, из которой оно выбрано. */
+  let messagePanel: {
+    response: ResponseRow;
+    source: "details" | "outside";
+  } | null = null;
+  let messagePanelComponent: ReportMessagePanel | undefined;
+  $: messagePanelRows =
+    messagePanel?.source == "outside"
+      ? renderedOutsideWorkingHoursResponseTimes
+      : renderedResponseTimes;
+  $: messagePanelIndex = messagePanel
+    ? messagePanelRows.findIndex(
+        (row) => row.emailId == messagePanel?.response.emailId,
+      )
+    : -1;
   let selectedRhythmCategoryName = "";
   let reportRequestId = 0;
   let categoryFilter: string[] | null = null;
@@ -225,6 +248,7 @@
   let draggedPanelId: ReportDashboardSectionId | null = null;
   let fromDateInput: HTMLInputElement;
   let toDateInput: HTMLInputElement;
+  let exceptionDateInput: HTMLInputElement;
   const dashboardLayoutSetting = getLocalStorage<unknown>(
     "reports.dashboard.layout.v1",
     REPORT_DASHBOARD_DEFAULT_LAYOUT,
@@ -729,6 +753,7 @@
   }
 
   function closeReportViewer(): void {
+    messagePanel = null;
     reportViewerOpen = false;
     dashboardLayoutMode = false;
     draggedPanelId = null;
@@ -763,6 +788,10 @@
       reportViewerOpen
     ) {
       event.preventDefault();
+      if (messagePanel) {
+        closeReportMessagePanel();
+        return;
+      }
       closeReportViewer();
     }
   }
@@ -1136,6 +1165,7 @@
   function onWorkingDayEnabledChange(index: number, event: Event): void {
     const enabled = (event.currentTarget as HTMLInputElement).checked;
     workingHours = {
+      ...workingHours,
       days: workingHours.days.map((day, dayIndex) =>
         dayIndex == index ? { ...day, enabled } : day,
       ),
@@ -1155,6 +1185,7 @@
       return;
     }
     workingHours = {
+      ...workingHours,
       days: workingHours.days.map((day, dayIndex) =>
         dayIndex == index ? { ...day, [field]: minutes } : day,
       ),
@@ -1163,8 +1194,59 @@
   }
 
   function resetWorkingHoursSchedule(): void {
-    workingHours = cloneWorkingHoursSchedule(DEFAULT_WORKING_HOURS_SCHEDULE);
+    workingHours = {
+      ...cloneWorkingHoursSchedule(DEFAULT_WORKING_HOURS_SCHEDULE),
+      ...(workingHours.exceptions?.length
+        ? { exceptions: workingHours.exceptions }
+        : {}),
+    };
     persistWorkingHoursSchedule();
+  }
+
+  function setWorkingExceptions(exceptions: WorkingDayException[]): void {
+    const { exceptions: _previous, ...rest } = workingHours;
+    workingHours = {
+      ...rest,
+      ...(exceptions.length ? { exceptions } : {}),
+    };
+    persistWorkingHoursSchedule();
+  }
+
+  function addWorkingException(): void {
+    if (!isValidExceptionDate(newExceptionDate)) {
+      return;
+    }
+    const endMinutes = parseWorkingTime(newExceptionEnd);
+    if (newExceptionKind == "short" && endMinutes == null) {
+      return;
+    }
+    const item: WorkingDayException =
+      newExceptionKind == "short"
+        ? { date: newExceptionDate, kind: "short", endMinutes: endMinutes ?? 0 }
+        : { date: newExceptionDate, kind: "off" };
+    setWorkingExceptions(
+      normalizeWorkingDayExceptions([
+        ...(workingHours.exceptions ?? []),
+        item,
+      ]),
+    );
+    newExceptionDate = "";
+  }
+
+  function removeWorkingException(date: string): void {
+    setWorkingExceptions(
+      (workingHours.exceptions ?? []).filter((item) => item.date != date),
+    );
+  }
+
+  function formatExceptionDate(date: string): string {
+    const [year, month, day] = date.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
   }
 
   function onResponderModeChange(event: Event): void {
@@ -1415,6 +1497,36 @@
       : response.responderAccountName || response.accountName;
   }
 
+  function openReportMessagePanel(
+    response: ResponseRow,
+    source: "details" | "outside",
+  ): void {
+    responseOpenError = null;
+    messagePanel = { response, source };
+    void messagePanelComponent?.focusPanel();
+  }
+
+  function closeReportMessagePanel(): void {
+    messagePanel = null;
+  }
+
+  function stepReportMessagePanel(step: -1 | 1): void {
+    const next = messagePanelRows[messagePanelIndex + step];
+    if (!messagePanel || !next) return;
+    messagePanel = { ...messagePanel, response: next };
+    void tick().then(() =>
+      document
+        .querySelector(".email-link.active-message")
+        ?.scrollIntoView({ block: "nearest" }),
+    );
+  }
+
+  function openReportMessagePanelInMail(): void {
+    if (messagePanel) {
+      void openReportEmail(messagePanel.response);
+    }
+  }
+
   async function openReportEmail(
     response: ReportData["mail"]["responseTimes"][number],
   ) {
@@ -1540,19 +1652,16 @@
 
   function exportOptions() {
     return {
-      language: getUILocale().toLowerCase().startsWith("ru")
-        ? ("ru" as const)
-        : ("en" as const),
       categoryFilterLabel:
         categoryFilter == null
           ? undefined
           : `${categoryFilter.length} / ${reportCategories.length}`,
       responderColumnLabel:
-        responderAttributionMode == "category" ? "Сотрудник" : "Профиль",
+        responderAttributionMode == "category" ? $t`Employee` : $t`Profile`,
       responderMetricLabel:
         responderAttributionMode == "category"
-          ? "Подтверждённые ответы"
-          : "Отправлено",
+          ? $t`Confirmed replies`
+          : $t`Sent *=> activity report`,
       employeeCategoryNames: currentEmployeeCategoryNames(),
       rhythmCategoryNames,
       rhythmSelectedCategoryName: effectiveRhythmCategoryName,
@@ -1566,9 +1675,13 @@
   }
 
   function formatBytes(bytes: number): string {
-    const units = getDateTimeLocale().startsWith("ru")
-      ? ["Б", "КБ", "МБ", "ГБ", "ТБ"]
-      : ["B", "KB", "MB", "GB", "TB"];
+    const units = [
+      $t`B *=> bytes, short unit`,
+      $t`KB *=> kilobytes, short unit`,
+      $t`MB *=> megabytes, short unit`,
+      $t`GB *=> gigabytes, short unit`,
+      $t`TB *=> terabytes, short unit`,
+    ];
     if (!bytes) return `0 ${units[0]}`;
     const index = Math.min(
       Math.floor(Math.log(bytes) / Math.log(1024)),
@@ -2081,9 +2194,96 @@
           </div>
         {/each}
       </div>
+      <div class="working-exceptions">
+        <h4 class="working-exceptions-title">{$t`Holidays and short days`}</h4>
+        <p class="filter-help">
+          {$t`A day off is skipped entirely. On a short day work ends at the given time. These dates apply to SLA timers, highlighting and reports for this mailbox.`}
+        </p>
+        <div class="working-exception-form">
+          <label class="working-time-control">
+            <span>{$t`Date`}</span>
+            <div class="date-input-wrap">
+              <input
+                bind:this={exceptionDateInput}
+                type="date"
+                bind:value={newExceptionDate}
+                disabled={loading || mailFoldersLoading}
+                aria-label={$t`Exception date`}
+              />
+              <button
+                type="button"
+                class="date-picker-button"
+                title={$t`Open calendar`}
+                aria-label={$t`Open calendar`}
+                disabled={loading || mailFoldersLoading}
+                on:click={() => openDatePicker(exceptionDateInput)}
+              >
+                <CalendarIcon size="15px" />
+              </button>
+            </div>
+          </label>
+          <select
+            bind:value={newExceptionKind}
+            disabled={loading || mailFoldersLoading}
+            aria-label={$t`Exception type`}
+          >
+            <option value="off">{$t`Day off`}</option>
+            <option value="short">{$t`Short day`}</option>
+          </select>
+          {#if newExceptionKind == "short"}
+            <label class="working-time-control">
+              <span>{$t`End`}</span>
+              <input
+                type="time"
+                bind:value={newExceptionEnd}
+                disabled={loading || mailFoldersLoading}
+                aria-label={$t`End of workday`}
+              />
+            </label>
+          {/if}
+          <button
+            type="button"
+            class="inline-action"
+            disabled={loading ||
+              mailFoldersLoading ||
+              !isValidExceptionDate(newExceptionDate)}
+            on:click={addWorkingException}>{$t`Add`}</button
+          >
+        </div>
+        {#if workingHours.exceptions?.length}
+          <ul class="working-exception-list">
+            {#each workingHours.exceptions as item (item.date)}
+              <li class="working-exception-row">
+                <span class="working-exception-date"
+                  >{formatExceptionDate(item.date)}</span
+                >
+                <span class="working-day-off">
+                  {item.kind == "short"
+                    ? `${$t`Short day`} · ${$t`End`} ${formatWorkingTime(item.endMinutes ?? 0)}`
+                    : $t`Day off`}
+                </span>
+                <button
+                  type="button"
+                  class="inline-action"
+                  disabled={loading || mailFoldersLoading}
+                  on:click={() => removeWorkingException(item.date)}
+                  >{$t`Remove`}</button
+                >
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="filter-help">{$t`No exceptions yet.`}</p>
+        {/if}
+      </div>
       <p class="filter-help">
         {$t`The schedule is saved separately for each selected mailbox and is applied after you build the report. The device time zone is used.`}
       </p>
+      {#if selectedMailAccountId == null}
+        <p class="validation-message" role="alert">
+          {$t`Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.`}
+        </p>
+      {/if}
       {#if workingHoursError == "no-working-days"}
         <p class="validation-message" role="alert">
           {$t`Select at least one working day.`}
@@ -2125,7 +2325,7 @@
                 on:change={(event) =>
                   onCategoryCheckboxChange(category.name, event)}
               />
-              <span>{category.name}</span>
+              <span title={category.name}>{category.name}</span>
               <small>{formatNumber(category.incoming)}</small>
             </label>
           {/each}
@@ -2180,7 +2380,7 @@
                   on:change={(event) =>
                     onResponderCheckboxChange(category.name, event)}
                 />
-                <span>{category.name}</span>
+                <span title={category.name}>{category.name}</span>
                 <small>{formatNumber(category.incoming)}</small>
               </label>
             {:else}
@@ -3253,10 +3453,13 @@
                                 <button
                                   type="button"
                                   class="email-link"
-                                  disabled={openingResponseEmailId ==
-                                    response.emailId}
+                                  class:active-message={messagePanel?.source ==
+                                    "details" &&
+                                    messagePanel.response.emailId ==
+                                      response.emailId}
                                   aria-label={`${$t`Open email`}: ${response.subject}`}
-                                  on:click={() => openReportEmail(response)}
+                                  on:click={() =>
+                                    openReportMessagePanel(response, "details")}
                                 >
                                   <MailIcon size="13px" />
                                   <span>{response.subject}</span>
@@ -3463,11 +3666,14 @@
                               <button
                                 type="button"
                                 class="email-link"
-                                disabled={openingResponseEmailId ==
-                                  response.emailId}
+                                class:active-message={messagePanel?.source ==
+                                  "outside" &&
+                                  messagePanel.response.emailId ==
+                                    response.emailId}
                                 aria-label={`${$t`Open email`}: ${response.subject}`}
                                 title={`${$t`Open email`}: ${response.subject || $t`(no subject)`}`}
-                                on:click={() => openReportEmail(response)}
+                                on:click={() =>
+                                  openReportMessagePanel(response, "outside")}
                               >
                                 <MailIcon size="13px" />
                                 <span>{response.subject}</span>
@@ -3567,7 +3773,9 @@
                   <span>
                     {$t`After-hours leader`}
                     {#if topAfterHoursCategory}
-                      <strong>{topAfterHoursCategory.name}</strong>
+                      <strong title={topAfterHoursCategory.name}
+                        >{topAfterHoursCategory.name}</strong
+                      >
                       <strong
                         >{formatNumber(
                           topAfterHoursCategory.afterHours,
@@ -3607,7 +3815,9 @@
                             (selectedRhythmCategoryName = row.name)}
                         >
                           <span class="rhythm-rank-index">{index + 1}</span>
-                          <span class="rhythm-rank-name">{row.name}</span>
+                          <span class="rhythm-rank-name" title={row.name}
+                            >{row.name}</span
+                          >
                           <span class="rhythm-rank-track" aria-hidden="true"
                             ><span
                               style={`width: ${rhythmBarWidth(row.afterHours, afterHoursCategoryMax)}`}
@@ -4172,8 +4382,9 @@
                             <span class="person-name"
                               >{responder.accountName}</span
                             >
-                            {#if responder.email}<span class="person-email"
-                                >{responder.email}</span
+                            {#if responder.email}<span
+                                class="person-email"
+                                title={responder.email}>{responder.email}</span
                               >{/if}
                           </th>
                           <td class="numeric" data-label={$t`Requests`}
@@ -4370,9 +4581,7 @@
                       {#each sortedTopics as topic}
                         <tr>
                           <th scope="row" class="topic-cell"
-                            >{topic.topic === "(без темы)"
-                              ? $t`(no subject)`
-                              : topic.topic}</th
+                            >{topic.topic}</th
                           >
                           <td class="numeric">{formatNumber(topic.requests)}</td
                           >
@@ -5132,8 +5341,10 @@
                       {#each sortedChatRooms as room}
                         <tr>
                           <th scope="row"
-                            ><span>{room.roomName}</span><span
-                              class="person-email">{room.accountName}</span
+                            ><span title={room.roomName}>{room.roomName}</span
+                            ><span
+                              class="person-email"
+                              title={room.accountName}>{room.accountName}</span
                             ></th
                           >
                           <td class="numeric">{formatNumber(room.total)}</td>
@@ -5241,8 +5452,12 @@
                       {#each sortedFileDirectories as directory}
                         <tr>
                           <th scope="row"
-                            ><span>{directory.directoryName}</span><span
-                              class="person-email">{directory.accountName}</span
+                            ><span title={directory.directoryName}
+                              >{directory.directoryName}</span
+                            ><span
+                              class="person-email"
+                              title={directory.accountName}
+                              >{directory.accountName}</span
                             ></th
                           >
                           <td class="numeric"
@@ -5274,6 +5489,24 @@
           {$t`The mail archive stores the current category, not when it was assigned, so the report cannot reconstruct the exact moment a request was taken into work.`}
         </p>
       </div>
+      {#if messagePanel}
+        <ReportMessagePanel
+          bind:this={messagePanelComponent}
+          target={{
+            accountId: messagePanel.response.accountId,
+            folderId: messagePanel.response.folderId,
+            emailId: messagePanel.response.emailId,
+          }}
+          subject={messagePanel.response.subject}
+          hasPrevious={messagePanelIndex > 0}
+          hasNext={messagePanelIndex >= 0 &&
+            messagePanelIndex < messagePanelRows.length - 1}
+          on:close={closeReportMessagePanel}
+          on:previous={() => stepReportMessagePanel(-1)}
+          on:next={() => stepReportMessagePanel(1)}
+          on:openInMail={openReportMessagePanelInMail}
+        />
+      {/if}
     </div>
   {:else}
     <section class="report-ready-panel" aria-labelledby="report-ready-title">
@@ -5883,6 +6116,7 @@
 
   .working-hours-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     min-width: 0;
@@ -5923,6 +6157,48 @@
     flex: 0 0 auto;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 13px;
+  }
+
+  .working-exceptions {
+    margin-top: 12px;
+  }
+
+  .working-exceptions-title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .working-exception-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .working-exception-list {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .working-exception-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    background: var(--main-bg);
+    font-size: 12px;
+  }
+
+  .working-exception-date {
+    flex: 1 1 auto;
   }
 
   .working-day-off {
@@ -6208,6 +6484,7 @@
 
   .report-viewer-nav {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     max-width: 1440px;
     margin: 0 auto 12px;
@@ -6314,12 +6591,11 @@
 
   .report-ready-stats span {
     display: block;
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .report-ready-stats strong {
@@ -6669,12 +6945,11 @@
   }
 
   .response-metric > span {
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .response-metric strong {
@@ -6955,21 +7230,18 @@
   }
 
   .rhythm-focus-stats span {
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .rhythm-focus-stats strong {
     margin: 7px 0 3px;
-    overflow: hidden;
     color: var(--main-fg);
     font-size: 13px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: break-word;
   }
 
   .rhythm-focus-stats small {
@@ -7042,7 +7314,7 @@
   }
 
   .rhythm-overview-table thead th {
-    font-size: clamp(8px, 0.72cqw, 10px);
+    font-size: clamp(11px, 0.8cqw, 12px);
     letter-spacing: 0;
     line-height: 1.15;
     overflow-wrap: break-word;
@@ -7411,6 +7683,11 @@
     width: 18.5%;
   }
 
+  .email-link.active-message {
+    color: var(--reports-accent);
+    font-weight: 700;
+  }
+
   .email-link:hover:not(:disabled) {
     color: var(--reports-accent);
   }
@@ -7501,11 +7778,13 @@
   }
 
   /* Заголовок подстраивается под фактическую ширину таблицы. Переносим его
-     только между словами: если столбец становится уже, уменьшаем кегль, а
-     не превращаем заголовок в вертикальную колонку букв. */
+     только между словами, а не превращаем в вертикальную колонку букв.
+     Кегль не ниже 11px: 8px не читается; полное название — в подсказке. */
   .table-wrap :global(.table-sort-button) {
-    font-size: clamp(8px, 0.58cqw, 10px);
-    letter-spacing: 0.02em;
+    gap: 3px;
+    padding-inline: 2px;
+    font-size: clamp(11px, 0.8cqw, 12px);
+    letter-spacing: 0;
     overflow-wrap: normal;
     word-break: keep-all;
     hyphens: none;
@@ -8012,6 +8291,14 @@
     }
   }
 
+  /* То же по ширине самой страницы: рядом панель приложений и боковая
+     панель виджетов, поэтому окно шире, чем место под отчёт. */
+  @container reports-page (max-width: 1180px) {
+    .summary-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
   @container reports-page (max-width: 1180px) {
     .dashboard-grid {
       gap: 12px;
@@ -8030,7 +8317,8 @@
     }
   }
 
-  @container reports-page (max-width: 640px) {
+  /* Половинные блоки уже ~400px не вмещают заголовки таблиц: одна колонка. */
+  @container reports-page (max-width: 900px) {
     .dashboard-grid {
       grid-template-columns: minmax(0, 1fr);
       gap: 12px;
@@ -8207,6 +8495,74 @@
     }
   }
 
+  @container reports-page (max-width: 800px) {
+    .report-viewer {
+      padding: 24px 16px 40px;
+    }
+
+    .report-viewer-header {
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .report-viewer-header .header-actions {
+      justify-content: flex-start;
+    }
+
+    .live-control-launch {
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .live-control-launch .secondary-button {
+      margin-left: 44px;
+    }
+
+    .report-ready-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reports-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header-actions {
+      justify-content: flex-start;
+    }
+
+    .summary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .panel {
+      padding: 16px;
+    }
+
+    .panel-header,
+    .heatmap-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .legend {
+      justify-content: flex-start;
+    }
+
+    .peak-callout {
+      align-self: stretch;
+    }
+
+    .response-target-callout {
+      align-self: stretch;
+    }
+
+    .skeleton-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
   @media (max-width: 480px) {
     .summary-grid {
       grid-template-columns: repeat(2, 1fr);
@@ -8222,6 +8578,52 @@
 
     .response-metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .date-separator {
+      display: none;
+    }
+
+    .date-controls .date-field,
+    .date-controls .mail-account-control,
+    .date-controls .mail-folder-control,
+    .date-controls .response-target-control {
+      flex: 1 1 120px;
+    }
+
+    .date-controls .primary-button {
+      flex: 1 1 100%;
+      margin: 4px 0 0;
+    }
+
+    .working-hours-list {
+      grid-template-columns: 1fr;
+    }
+
+    .working-hours-row {
+      flex-wrap: wrap;
+    }
+
+    .working-day-toggle {
+      flex-basis: 100%;
+    }
+
+    .working-day-off {
+      margin-left: 0;
+    }
+  }
+
+  @container reports-page (max-width: 480px) {
+    .summary-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .summary-card:first-child {
+      grid-column: 1 / -1;
+    }
+
+    .summary-card {
+      padding: 13px;
     }
 
     .date-separator {
@@ -8276,7 +8678,7 @@
 
   .preset-list {
     display: inline-flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 0;
     margin: 14px 0;
     overflow: hidden;

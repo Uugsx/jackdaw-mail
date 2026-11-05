@@ -28,6 +28,15 @@
         </hbox>
       {/if}
 
+      {#if $identity.isDelegate || canSendFromOtherAddress(identity.account)}
+        <hbox />
+        <!-- Чужой ящик не считается моим адресом: письма с него не «исходящие» -->
+        <label class="delegate">
+          <input type="checkbox" bind:checked={identity.isDelegate} />
+          {$t`Another person's mailbox (Send As or Send on Behalf)`}
+        </label>
+      {/if}
+
       <!--
       <label for="picture">Profile picture</label>
       <img on:click={} name="picture" />
@@ -107,6 +116,7 @@
 </HeaderGroupBox>
 
 <script lang="ts">
+  import { canSendFromOtherAddress } from "../../../../logic/Mail/SendAs/SendAs";
   import type { MailIdentity } from "../../../../logic/Mail/MailIdentity";
   import SentByExplainer from "./SentByExplainer.svelte";
   import HTMLEditor from "../../../Shared/Editor/HTMLEditor.svelte";
@@ -219,6 +229,11 @@
 </script>
 
 <style>
+  .delegate {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   grid {
     grid-template-columns: max-content auto;
     gap: 8px 24px;

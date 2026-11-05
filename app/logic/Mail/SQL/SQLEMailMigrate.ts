@@ -36,8 +36,8 @@ export const rollbackReportReplyIndexes = sql`
   DROP INDEX IF EXISTS index_email_threadID_outgoing_dateSent;
 `;
 
-/** Индексы для поиска уже сохранённого письма перед вставкой (по pID в папке
- * и по Message-ID). Без них каждая вставка читала всю папку: заполнение папки
+/** Индексы для поиска уже сохранённого письма перед вставкой (по pID в папке,
+ * в том числе ветка `pID IS NULL` из BUG-203, и по Message-ID). Без них каждая вставка читала всю папку: заполнение папки
  * на десятки тысяч писем было O(n²). */
 export const createEMailLookupIndexes = sql`
   CREATE INDEX IF NOT EXISTS index_email_folderID_pID
@@ -72,3 +72,274 @@ export async function addEMailStatusColumns(database: Database): Promise<void> {
     );
   }
 }
+
+/**
+ * BUG-202: имя в `emailPerson` хранится как '' вместо NULL, а накопленные
+ * дубли адреса объединяются в строку с наименьшим id.
+ *
+ * С NULL ни поиск `name = ?`, ни `UNIQUE("emailAddress", "name")` не
+ * находили уже сохранённый адрес, и каждое письмо добавляло новую строку.
+ * Ссылки `emailPersonRel` переводятся на оставшуюся строку до удаления дублей;
+ * `personID` берётся у дубля, если у оставшейся строки его не было.
+ * Строки без адреса не трогаются: их нельзя сопоставить.
+ */
+export async function dedupeEMailPersons(database: Database): Promise<void> {
+  await database.execute(sql`
+    DROP TABLE IF EXISTS temp."emailPersonDuplicate";
+    CREATE TEMP TABLE "emailPersonDuplicate" (
+      "id" INTEGER PRIMARY KEY,
+      "canonicalID" INTEGER not null
+    );
+    INSERT INTO temp."emailPersonDuplicate" ("id", "canonicalID")
+      SELECT person.id, canonical.id
+      FROM emailPerson person
+      JOIN (
+        SELECT emailAddress, COALESCE(name, '') AS name, MIN(id) AS id
+        FROM emailPerson
+        WHERE emailAddress IS NOT NULL
+        GROUP BY emailAddress, COALESCE(name, '')
+      ) canonical
+        ON canonical.emailAddress = person.emailAddress
+        AND canonical.name = COALESCE(person.name, '')
+      WHERE person.id != canonical.id;
+    CREATE INDEX temp."index_emailPersonDuplicate_canonicalID"
+      ON "emailPersonDuplicate" ("canonicalID");
+
+    UPDATE emailPerson SET
+      personID = (
+        SELECT MAX(duplicate.personID)
+        FROM temp."emailPersonDuplicate" map
+          JOIN emailPerson duplicate ON (duplicate.id = map.id)
+        WHERE map.canonicalID = emailPerson.id
+      )
+    WHERE personID IS NULL
+      AND id IN (SELECT canonicalID FROM temp."emailPersonDuplicate");
+
+    UPDATE emailPersonRel SET
+      emailPersonID = (
+        SELECT canonicalID
+        FROM temp."emailPersonDuplicate" map
+        WHERE map.id = emailPersonRel.emailPersonID
+      )
+    WHERE emailPersonID IN (SELECT id FROM temp."emailPersonDuplicate");
+
+    DELETE FROM emailPerson
+    WHERE id IN (SELECT id FROM temp."emailPersonDuplicate");
+
+    UPDATE emailPerson SET name = '' WHERE name IS NULL;
+
+    DROP TABLE temp."emailPersonDuplicate";
+  `);
+}
+
+/**
+ * Откат dedupeEMailPersons: возвращает прежнее хранение пустого имени как NULL,
+ * с которым работает старый код. Объединённые дубли не восстанавливаются:
+ * они повторяли адрес и имя оставшейся строки и своих данных не несли.
+ */
+export const rollbackDedupeEMailPersons = sql`
+  UPDATE emailPerson SET name = NULL WHERE name = '';
+`;
+
+/**
+ * BUG-203: письма без pID из-за условия `pID = NULL` (всегда ложного)
+ * при каждом сохранении вставлялись заново. Оставляем одну строку на
+ * (папка, Message-ID): полностью загруженную, а среди равных — последнюю.
+ * Письма без Message-ID не трогаются: их нельзя сопоставить.
+ *
+ * Миграции идут с `foreign_keys = false`, поэтому получателей, вложения
+ * и метки дублей удаляем явно, а не каскадом.
+ *
+ * Отката нет: удалённые строки были копиями оставшейся, и старый код
+ * работает с базой без них так же. Откат индекса — rollbackEMailLookupIndexes.
+ */
+export const dedupeEMailsWithoutPID = sql`
+  DROP TABLE IF EXISTS temp."emailDuplicate";
+  CREATE TEMP TABLE "emailDuplicate" ("id" INTEGER PRIMARY KEY);
+  INSERT INTO temp."emailDuplicate" ("id")
+    SELECT id FROM (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (
+          PARTITION BY folderID, messageID
+          ORDER BY downloadComplete DESC, id DESC
+        ) AS rowNumber
+      FROM email
+      WHERE pID IS NULL
+        AND messageID IS NOT NULL
+        AND messageID != ''
+    )
+    WHERE rowNumber > 1;
+
+  DELETE FROM emailPersonRel WHERE emailID IN (SELECT id FROM temp."emailDuplicate");
+  DELETE FROM emailAttachment WHERE emailID IN (SELECT id FROM temp."emailDuplicate");
+  DELETE FROM emailTag WHERE emailID IN (SELECT id FROM temp."emailDuplicate");
+  DELETE FROM email WHERE id IN (SELECT id FROM temp."emailDuplicate");
+
+  DROP TABLE temp."emailDuplicate";
+`;
+
+/**
+ * «Напомнить, если не ответят»: отслеживаемые исходящие письма. Отдельная
+ * таблица без изменения `email`: создаётся мгновенно и на базе больше 1 ГБ.
+ *
+ * `messageID` — Message-ID отправленного письма, `emailID` — найденная
+ * отправленная копия (null, пока её не сохранила синхронизация; строки email
+ * пересоздаются при пересинхронизации, поэтому связь — по Message-ID).
+ * Время — unixtime в секундах, как в `email`.
+ */
+export const createFollowUpReminderTable = sql`
+  CREATE TABLE IF NOT EXISTS "followUpReminder" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    "messageID" TEXT not null,
+    "threadID" TEXT default null,
+    "emailID" INTEGER default null,
+    "subject" TEXT not null default '',
+    -- JSON-массив адресов получателей в нижнем регистре
+    "recipients" TEXT not null default '[]',
+    "sentAt" INTEGER not null,
+    "dueAt" INTEGER not null,
+    -- 'calendar' | 'working' | 'date'
+    "scheduleMode" TEXT not null default 'calendar',
+    "durationDays" INTEGER default null,
+    -- 'waiting' | 'replied' | 'cancelled'
+    "status" TEXT not null default 'waiting',
+    "notifiedAt" INTEGER default null,
+    "repliedAt" INTEGER default null,
+    "replyEmailID" INTEGER default null,
+    "createdAt" INTEGER not null,
+    UNIQUE("accountID", "messageID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_followUpReminder_status_dueAt
+  ON followUpReminder (status, dueAt);
+`;
+
+/** Откат createFollowUpReminderTable для инструментов обслуживания базы. */
+export const rollbackFollowUpReminderTable = sql`
+  DROP INDEX IF EXISTS index_followUpReminder_status_dueAt;
+  DROP TABLE IF EXISTS "followUpReminder";
+`;
+
+/**
+ * Задачи Exchange (папка «Задачи»). Отдельная таблица без изменения `email`.
+ * Сроки — день `YYYY-MM-DD` без времени, остальное время — unixtime в секундах.
+ */
+export const createExchangeTaskTable = sql`
+  CREATE TABLE IF NOT EXISTS "exchangeTask" (
+    "id" INTEGER PRIMARY KEY,
+    "accountID" INTEGER not null,
+    -- ItemId на сервере
+    "itemID" TEXT not null,
+    "changeKey" TEXT default null,
+    "subject" TEXT not null default '',
+    "notes" TEXT not null default '',
+    "startDay" TEXT default null,
+    "dueDay" TEXT default null,
+    "completedAt" INTEGER default null,
+    -- 'Low' | 'Normal' | 'High'
+    "importance" TEXT not null default 'Normal',
+    -- 'NotStarted' | 'InProgress' | 'Completed' | 'WaitingOnOthers' | 'Deferred'
+    "status" TEXT not null default 'NotStarted',
+    "lastModified" INTEGER default null,
+    UNIQUE("accountID", "itemID"),
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+`;
+
+/** Откат createExchangeTaskTable для инструментов обслуживания базы. */
+export const rollbackExchangeTaskTable = sql`
+  DROP TABLE IF EXISTS "exchangeTask";
+`;
+
+/**
+ * Очередь отправки: отмена отправки и «Отправить позже».
+ * Письмо хранится целиком (`payload` — JSON редактора с вложениями),
+ * чтобы уйти после перезапуска и вернуться в редактор без потерь.
+ * Время — unixtime в миллисекундах: задержка отмены считается секундами.
+ */
+export const createScheduledSendTable = sql`
+  CREATE TABLE IF NOT EXISTS "scheduledSend" (
+    "id" INTEGER PRIMARY KEY,
+    "queueID" TEXT not null UNIQUE,
+    "accountID" INTEGER not null,
+    -- 'undo' | 'later'
+    "kind" TEXT not null default 'later',
+    -- 'local' | 'server'
+    "mode" TEXT not null default 'local',
+    -- 'pending' | 'sending' | 'failed' | 'paused' | 'server'
+    "status" TEXT not null default 'pending',
+    "sendAt" INTEGER not null,
+    "attempts" INTEGER not null default 0,
+    "lastError" TEXT default null,
+    "subject" TEXT not null default '',
+    "recipients" TEXT not null default '[]',
+    "payload" TEXT not null,
+    -- Метка того, кто сейчас отправляет: защита от двойной отправки
+    "claim" TEXT default null,
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    FOREIGN KEY (accountID)
+      REFERENCES emailAccount (id)
+      ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS index_scheduledSend_status_sendAt
+  ON scheduledSend (status, sendAt);
+`;
+
+/** Откат createScheduledSendTable для инструментов обслуживания базы. */
+export const rollbackScheduledSendTable = sql`
+  DROP INDEX IF EXISTS index_scheduledSend_status_sendAt;
+  DROP TABLE IF EXISTS "scheduledSend";
+`;
+
+/**
+ * Шаблоны писем: тема, тело HTML и, по желанию, вложения.
+ * Шаблоны общие для всех ящиков и хранятся только локально.
+ * `attachments` — JSON-массив вложений редактора (содержимое в base64).
+ * Время — unixtime в миллисекундах, как в очереди отправки.
+ */
+export const createMailTemplateTable = sql`
+  CREATE TABLE IF NOT EXISTS "mailTemplate" (
+    "id" INTEGER PRIMARY KEY,
+    "name" TEXT not null,
+    "subject" TEXT not null default '',
+    "html" TEXT not null default '',
+    "attachments" TEXT not null default '[]',
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    "lastUsedAt" INTEGER default null
+  );
+`;
+
+/** Откат createMailTemplateTable для инструментов обслуживания базы. */
+export const rollbackMailTemplateTable = sql`
+  DROP TABLE IF EXISTS "mailTemplate";
+`;
+
+/**
+ * Личные заметки к письмам. Только локально, на сервер не уходят.
+ * Привязка по ящику и стабильному ключу письма (Message-ID, иначе `pid:<ID на сервере>`),
+ * а не по строке `email`, поэтому заметка переживает пересинхронизацию и удаление строки.
+ * Время — unixtime в миллисекундах.
+ */
+export const createMessageNoteTable = sql`
+  CREATE TABLE IF NOT EXISTS "messageNote" (
+    "accountID" TEXT not null,
+    "messageKey" TEXT not null,
+    "text" TEXT not null,
+    "createdAt" INTEGER not null,
+    "updatedAt" INTEGER not null,
+    PRIMARY KEY ("accountID", "messageKey")
+  );
+`;
+
+/** Откат createMessageNoteTable для инструментов обслуживания базы. */
+export const rollbackMessageNoteTable = sql`
+  DROP TABLE IF EXISTS "messageNote";
+`;

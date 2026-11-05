@@ -15,12 +15,18 @@ export type JackdawCallEndReason =
   | "hangup"
   | "answered-elsewhere"
   | "connection-lost"
-  | "timeout";
+  | "timeout"
+  /** У собеседника включено «Не беспокоить» */
+  | "dnd";
 
 const END_REASONS: readonly JackdawCallEndReason[] = [
   "offline", "busy", "declined", "no-answer", "cancelled", "hangup",
-  "answered-elsewhere", "connection-lost", "timeout",
+  "answered-elsewhere", "connection-lost", "timeout", "dnd",
 ];
+
+/** Статус пользователя. «Занят» — звонки проходят, «Не беспокоить» — сервер их отклоняет. */
+export type JackdawUserStatus = "available" | "busy" | "dnd";
+export const USER_STATUSES: readonly JackdawUserStatus[] = ["available", "busy", "dnd"];
 
 /** ICE-кандидат WebRTC в том виде, в каком его пересылает сервер. */
 export interface JackdawIceCandidate {
@@ -55,7 +61,10 @@ export type JackdawServerMessage =
   /** Обратное подтверждение: письмо нужно отправить с адреса `email` на `address` */
   | { type: "verify-reverse-ready"; email: string; token: string; address: string; mailSubject: string; expiresIn: number }
   | { type: "verify-reverse-pending"; email: string; token: string }
-  | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean> }
+  /** `statuses` — только у собеседников в сети со статусом, отличным от «в сети» */
+  | { type: "lookup-result"; requestId: string | null; reachable: Record<string, boolean>; statuses: Record<string, JackdawUserStatus> }
+  /** Свой статус, выбранный на этом или другом устройстве. `untilIn` — сколько секунд он ещё действует */
+  | { type: "status"; status: JackdawUserStatus; untilIn: number | null }
   | { type: "ringing"; callId: string }
   | { type: "incoming"; callId: string; from: string; fromName: string; to: string; video: boolean }
   /** Звонок принят: медиа идёт напрямую между клиентами (P2P). `iceServers` — null, если сервис их не задаёт. */
@@ -73,13 +82,41 @@ export type JackdawServerMessage =
   | { type: "chat-sent"; messageId: string; queued: number; delivered: number }
   | { type: "chat-pending"; count: number; remaining: number }
   | { type: "blob-stored"; blobId: string; index: number; complete: boolean }
-  | { type: "blob-data"; blobId: string; index: number; total: number; data: string };
+  | { type: "blob-data"; blobId: string; index: number; total: number; data: string }
+  // Присутствие в общих ящиках (call_server/presence.py): `state: "none"` снимает состояние коллеги
+  | ({ type: "presence"; mailbox: string } & JackdawPresenceEntry)
+  | { type: "presence-snapshot"; mailboxes: Record<string, JackdawPresenceEntry[]> }
+  /** Ответ на `gif-search` (call_server/gifs.py). `results` проверяет и разбирает
+   * app/frontend/Chat/Emoji/media.ts (`parseGIFResults`): здесь — только обрезка длины. */
+  | { type: "gif-results"; requestId: string | null; provider: string; hasNext: boolean; results: unknown[] };
+
+export type JackdawPresenceState = "viewing" | "replying" | "replied" | "none";
+
+/** Что коллега делает с письмом общего ящика. Письмо — только метка `tag` (см. collisionTag.ts). */
+export interface JackdawPresenceEntry {
+  tag: string;
+  /** Соединение коллеги: у одного письма может быть несколько читающих */
+  actor: string;
+  state: JackdawPresenceState;
+  name: string;
+  /** Подтверждённый личный адрес коллеги для чата, "" — неизвестен */
+  email: string;
+  /** Время по часам сервера, Unix, с */
+  at: number;
+}
 
 const EMAIL_PATTERN = /^[^@\s]{1,128}@[^@\s]{1,190}$/;
 const CALL_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 const BLOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+const PRESENCE_TAG_PATTERN = /^[0-9a-f]{64}$/;
+const PRESENCE_ACTOR_PATTERN = /^[0-9a-f]{16}$/;
+const PRESENCE_STATES: readonly JackdawPresenceState[] = ["viewing", "replying", "replied", "none"];
+/** Снимок ящика: на сервере до 16 активных состояний на соединение и до 2000 «ответил» */
+const MAX_PRESENCE_SNAPSHOT = 5000;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_TEXT = 200;
+/** Как на сервере (call_server/gifs.py, MAX_RESULTS) */
+const MAX_GIF_RESULTS = 50;
 const REVERSE_TOKEN_PATTERN = /^[a-z2-7]{16}$/;
 /** Как на сервере: подтверждение адреса не длиннее 1024 символов, не больше 20 адресов на соединение */
 const MAX_PROOF_LENGTH = 1024;
@@ -192,6 +229,15 @@ function proofMap(value: unknown): Record<string, string> {
   return result;
 }
 
+function presenceEntry(value: any): JackdawPresenceEntry | null {
+  if (!value || typeof value != "object") return null;
+  let { tag, actor, state } = value;
+  if (typeof tag != "string" || !PRESENCE_TAG_PATTERN.test(tag)) return null;
+  if (typeof actor != "string" || !PRESENCE_ACTOR_PATTERN.test(actor)) return null;
+  if (!PRESENCE_STATES.includes(state)) return null;
+  return { tag, actor, state, name: text(value.name), email: normalizeCallEmail(value.email) ?? "", at: count(value.at) };
+}
+
 /** @returns null, если сообщение не соответствует протоколу. Такие сообщения отбрасываются. */
 export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
   let data: any;
@@ -243,7 +289,19 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
           if (email) reachable[email] = value === true;
         }
       }
-      return { type: "lookup-result", requestId: optionalText(data.requestId), reachable };
+      let statuses: Record<string, JackdawUserStatus> = {};
+      if (data.statuses && typeof data.statuses == "object") {
+        for (let [key, value] of Object.entries(data.statuses)) {
+          let email = normalizeCallEmail(key);
+          if (email && USER_STATUSES.includes(value as JackdawUserStatus)) statuses[email] = value as JackdawUserStatus;
+        }
+      }
+      return { type: "lookup-result", requestId: optionalText(data.requestId), reachable, statuses };
+    }
+    case "status": {
+      if (!USER_STATUSES.includes(data.status)) return null;
+      let untilIn = typeof data.untilIn == "number" && Number.isFinite(data.untilIn) && data.untilIn >= 0 ? data.untilIn : null;
+      return { type: "status", status: data.status as JackdawUserStatus, untilIn };
     }
     case "ringing": {
       let id = callID(data.callId);
@@ -338,6 +396,30 @@ export function parseServerMessage(raw: unknown): JackdawServerMessage | null {
         ? { type: "blob-data", blobId: data.blobId, index: count(data.index), total: count(data.total), data: payload }
         : null;
     }
+    case "presence": {
+      let mailbox = normalizeCallEmail(data.mailbox);
+      let entry = presenceEntry(data);
+      return mailbox && entry ? { type: "presence", mailbox, ...entry } : null;
+    }
+    case "presence-snapshot": {
+      let mailboxes: Record<string, JackdawPresenceEntry[]> = {};
+      if (data.mailboxes && typeof data.mailboxes == "object" && !Array.isArray(data.mailboxes)) {
+        for (let [key, list] of Object.entries(data.mailboxes)) {
+          let mailbox = normalizeCallEmail(key);
+          if (!mailbox || !Array.isArray(list)) continue;
+          mailboxes[mailbox] = list.slice(0, MAX_PRESENCE_SNAPSHOT).map(presenceEntry).filter((e): e is JackdawPresenceEntry => !!e);
+        }
+      }
+      return { type: "presence-snapshot", mailboxes };
+    }
+    case "gif-results":
+      return {
+        type: "gif-results",
+        requestId: optionalText(data.requestId),
+        provider: text(data.provider),
+        hasNext: data.hasNext === true,
+        results: Array.isArray(data.results) ? data.results.slice(0, MAX_GIF_RESULTS) : [],
+      };
     default:
       return null;
   }
@@ -350,6 +432,8 @@ export function endReasonMessage(reason: JackdawCallEndReason, outgoing: boolean
       return gt`The contact is not online in Jackdaw Mail right now.`;
     case "busy":
       return gt`The contact is busy with another call.`;
+    case "dnd":
+      return outgoing ? gt`The contact asked not to be disturbed. Write them in the chat instead.` : null;
     case "declined":
       return outgoing ? gt`The contact declined the call.` : null;
     case "no-answer":
@@ -401,6 +485,8 @@ export function serverErrorMessage(code: string): string {
       return gt`The file storage limit is reached. Old files are deleted after 30 days.`;
     case "blob_not_found":
       return gt`The file is no longer available. Files are kept for 30 days.`;
+    case "presence_not_member":
+      return gt`Confirm the shared mailbox address in Settings → Calls and chat to see colleagues working on its messages.`;
     case "chat_not_registered":
     case "invalid_device":
       return gt`The chat could not be set up on this device. Reconnect and try again.`;

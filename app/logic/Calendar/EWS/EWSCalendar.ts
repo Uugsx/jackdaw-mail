@@ -4,6 +4,7 @@ import type { Participant } from "../Participant";
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { EWSEvent } from "./EWSEvent";
 import { EWSIncomingInvitation } from "./EWSIncomingInvitation";
+import { ewsGetRoomListsRequest, ewsGetRoomsRequest, parseEWSRoomLists, parseEWSRooms, type MeetingRoom } from "./MeetingRooms";
 import type { EWSAccount, EWSSubscribable } from "../../Mail/EWS/EWSAccount";
 import { getSharedPersons, ExchangePermission, deleteExchangePermissions, setExchangePermissions } from "../../Mail/EWS/ExchangePermission";
 import { EWSItemError } from "../../Mail/EWS/EWSError";
@@ -12,8 +13,12 @@ import { kMaxCount } from "../../Mail/EWS/EWSFolder";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray } from "../../util/util";
 import { Lock } from "../../util/flow/Lock";
+import { parseExchangeWorkingHours } from "../WorkingHours/CalendarWorkingHours";
+import type { WorkingHoursSchedule } from "../../Reports/WorkingHours";
 import { gt } from "../../../l10n/l10n";
 import type { ArrayColl } from "svelte-collections";
+
+const k1DayMS = 24 * 60 * 60 * 1000;
 
 export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
   readonly protocol: string = "calendar-ews";
@@ -88,6 +93,56 @@ export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
       });
     }
     return availabilities;
+  }
+
+  get canReadWorkingHours(): boolean {
+    return true;
+  }
+
+  async fetchWorkingHours(): Promise<WorkingHoursSchedule | null> {
+    let from = new Date();
+    let request = {
+      m$GetUserAvailabilityRequest: {
+        m$MailboxDataArray: {
+          t$MailboxData: [{
+            t$Email: {
+              // Общий календарь — свой ящик, иначе логин может быть не адресом (DOMAIN\\user)
+              t$Address: this.username != this.account.username ? this.username : this.account.emailAddress,
+            },
+            t$AttendeeType: "Required",
+          }],
+        },
+        t$FreeBusyViewOptions: {
+          t$TimeWindow: {
+            t$StartTime: from.toISOString(),
+            t$EndTime: new Date(from.getTime() + k1DayMS).toISOString(),
+          },
+          t$RequestedView: "FreeBusy",
+        },
+      },
+    };
+    let results = await this.account.callEWS(request);
+    return parseExchangeWorkingHours(ensureArray(results)[0]?.FreeBusyView?.WorkingHours);
+  }
+
+  get canBookRooms(): boolean {
+    return true;
+  }
+
+  async listRoomLists(): Promise<MeetingRoom[]> {
+    return parseEWSRoomLists(await this.account.callEWS(ewsGetRoomListsRequest()));
+  }
+
+  async listRooms(roomList: MeetingRoom): Promise<MeetingRoom[]> {
+    try {
+      return parseEWSRooms(await this.account.callEWS(ewsGetRoomsRequest(roomList.emailAddress)));
+    } catch (ex) {
+      // Пустой список комнат Exchange отдаёт ошибкой
+      if (ex instanceof EWSItemError && ex.type == "ErrorNameResolutionNoResults") {
+        return [];
+      }
+      throw ex;
+    }
   }
 
   async listEvents() {

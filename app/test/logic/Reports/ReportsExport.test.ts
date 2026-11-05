@@ -1,16 +1,20 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "vitest";
+import { beforeAll, expect, test } from "vitest";
 import {
   createReportHTML,
   downloadTextFile,
 } from "../../../frontend/Reports/ReportsExport";
-import {
-  exportText,
-  exportTextKeys,
-} from "../../../frontend/Reports/ReportsExportText";
 import type { ReportData } from "../../../logic/Reports/ReportsData";
 import { DEFAULT_WORKING_HOURS_SCHEDULE } from "../../../logic/Reports/WorkingHours";
 import { appGlobal } from "../../../logic/app";
+import { loadUILocale, setUILocale } from "../../../l10n/l10n";
+import { loadLanguageMessages } from "../../../l10n/messagesLoader";
+
+// Ожидания ниже написаны для русского интерфейса: тексты отчёта берутся из каталога ru.
+beforeAll(async () => {
+  await Promise.all([loadLanguageMessages("en"), loadLanguageMessages("fr")]);
+  await loadUILocale("ru");
+});
 
 function fixture(): ReportData {
   const date = new Date("2026-09-09T12:00:00Z");
@@ -409,8 +413,18 @@ test("saves desktop HTML exports in Downloads without overwriting an existing fi
   expect(secondFilename).toBe("jackdaw-report-2026-09-09 (2).html");
 });
 
+/** Собирает отчёт на другом языке интерфейса и возвращает русский, на котором идут остальные тесты. */
+function createReportHTMLIn(language: string): string {
+  setUILocale(language);
+  try {
+    return createReportHTML(fixture());
+  } finally {
+    setUILocale("ru");
+  }
+}
+
 test("builds the English report without Russian interface text", () => {
-  const html = createReportHTML(fixture(), { language: "en" });
+  const html = createReportHTMLIn("en");
   const cyrillicText = html.replace(/Никита Левченко|Письмо вне графика|Без категории/g, "");
 
   expect(html).toContain('<html lang="en">');
@@ -420,31 +434,32 @@ test("builds the English report without Russian interface text", () => {
   expect(cyrillicText).not.toMatch(/[А-Яа-яЁё]/);
 });
 
-test("keeps the Russian report as the default and restores the language", () => {
+test("builds the French report from the interface language", () => {
+  const html = createReportHTMLIn("fr");
+  const cyrillicText = html.replace(/Никита Левченко|Письмо вне графика|Без категории/g, "");
+
+  expect(html).toContain('<html lang="fr">');
+  expect(html).not.toContain("Jackdaw Mail activity report");
+  expect(cyrillicText).not.toMatch(/[А-Яа-яЁё]/);
+});
+
+test("returns to the Russian report after another interface language", () => {
   const before = createReportHTML(fixture());
-  createReportHTML(fixture(), { language: "en" });
+  createReportHTMLIn("en");
   const after = createReportHTML(fixture());
 
   expect(after).toBe(before);
   expect(after).toContain('<html lang="ru">');
 });
 
-test("fills placeholders and falls back to the Russian text", () => {
-  expect(exportText("{n} рабочих мин", "ru", { n: "5" })).toBe("5 рабочих мин");
-  expect(exportText("{n} рабочих мин", "en", { n: "5" })).toBe("5 working min");
-  expect(exportText("Неизвестная фраза", "en")).toBe("Неизвестная фраза");
-});
-
-test("has an English translation for every phrase in the export code", () => {
+test("keeps report interface text out of hardcoded Russian literals", () => {
   const source = readFileSync(
     new URL("../../../frontend/Reports/ReportsExport.ts", import.meta.url),
     "utf8",
   );
-  const used = [...source.matchAll(/\bx\("((?:[^"\\]|\\.)*)"/g)].map(
-    (match) => match[1],
+  const literals = [...source.matchAll(/"[^"\n]*"|`[^`\n]*`/g)].map(
+    (match) => match[0],
   );
-  const known = new Set(exportTextKeys());
 
-  expect(used.length).toBeGreaterThan(100);
-  expect(used.filter((phrase) => !known.has(phrase))).toEqual([]);
+  expect(literals.filter((literal) => /[А-Яа-яЁё]/.test(literal))).toEqual([]);
 });

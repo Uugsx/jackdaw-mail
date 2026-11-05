@@ -1,6 +1,6 @@
 import { ExchangeFolder } from "../EWS/ExchangeFolder";
 import { MessageFlagsPidTag } from "../EWS/ExchangeEMail";
-import { SpecialFolder, type MailTransferProgressCallback } from "../Folder";
+import { SpecialFolder, type Folder, type MailTransferProgressCallback } from "../Folder";
 import { DeleteStrategy } from "../MailAccount";
 import { computeEMailContact, type EMail } from "../EMail";
 import { getSharedPersons, ExchangePermission } from "../EWS/ExchangePermission";
@@ -11,7 +11,7 @@ import { OWACreateItemRequest } from "./Request/OWACreateItemRequest";
 import { OWADeleteItemRequest } from "./Request/OWADeleteItemRequest";
 import { OWAUpdateItemRequest } from "./Request/OWAUpdateItemRequest";
 import {
-  owaCreateNewSubFolderRequest, owaDeleteFolderRequest,
+  owaCreateNewSubFolderRequest, owaDeleteFolderRequest, owaEmptyFolderRequest,
   owaDownloadMsgsRequest, owaFindMsgsInFolderRequest, owaFindMsgsByQueryRequest,
   owaSyncFolderItemsRequest,
   owaFolderCountsRequest, owaFolderMarkAllMsgsReadRequest,
@@ -36,6 +36,10 @@ import { trackMailSync } from "../mailSyncStatus";
 const kMaxSyncPages = 200;
 /** Запас страниц сверх размера папки для полного FindItem. */
 const kMaxFindItemPagesMargin = 4;
+/** Как часто сверять список с сервером при равных счётчиках (мс). */
+const kPeriodicReconcileMs = 30 * 60 * 1000;
+/** Периодическая сверка — только для папок, обход которых умещается в разумное число страниц. */
+const kPeriodicReconcileMaxMessages = 6000;
 /** Верхний предел страниц полного FindItem (50 писем на страницу): 50 000 писем. */
 const kMaxFindItemPagesLimit = 1000;
 
@@ -44,6 +48,20 @@ const kMaxFindItemPagesLimit = 1000;
 const kDeletionGracePeriodMs = 180_000;
 /** Exchange принимает несколько ItemIds в одном запросе DeleteItem. */
 const kDeleteItemBatchSize = 50;
+
+/** Ответ DeleteItem — ошибка. «Элемент не найден» ошибкой не считается: письма
+ * уже нет на сервере (удалено в Outlook, на телефоне или прошлой очисткой), цель
+ * достигнута. Иначе такие письма оставались в корзине «призраками», а каждая
+ * следующая очистка падала на них. */
+function isDeleteItemFailure(response: any, mayBeStaleID = false): boolean {
+  // Письмо перенесли недавно без нового ItemId: «не найдено» относится к старому
+  // ID, а само письмо с новым ID на сервере осталось
+  if (response?.ResponseCode == "ErrorItemNotFound" && !mayBeStaleID) {
+    return false;
+  }
+  return response?.ResponseClass == "Error" ||
+    !!(response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
+}
 /** Exchange принимает несколько ItemIds в одном запросе MoveItem. */
 const kMoveItemBatchSize = 50;
 /** Не допускать всплеска запросов флагов, покрывая при этом видимый кеш. */
@@ -103,6 +121,17 @@ const kHistoryVerifyOverlapMs = 60 * 60_000;
 const kHistoryVerifyIntervalMs = 60_000;
 /** Страниц FindItem за один проход проверки истории (40 × 50 = 2000 заголовков). */
 const kHistoryVerifyPagesPerPass = 40;
+/** Страниц FindItem за один шаг догрузки старой истории (10 × 50 = 500 заголовков).
+ * Шаг держит `listMessagesLock`, поэтому он короткий: опрос открытой папки не ждёт. */
+const kOlderHistoryPagesPerPass = 10;
+/** Пауза между шагами догрузки старой истории: запросы идут строго по одному,
+ * а опрос папки и действия пользователя успевают пройти между шагами. */
+const kOlderHistoryContinuationDelayMs = 300;
+/** Не повторять завершённый или сорвавшийся обход старой истории чаще этого интервала. */
+const kOlderHistoryRetryMs = 5 * 60_000;
+/** Версия правил обхода старой истории, при которых записан его итог
+ * `olderHistoryCompletedGap`. Итог другой версии обход не останавливает. */
+const kOlderHistoryWalkVersion = 2;
 /** AQS-фильтр Exchange возвращает именно письма, полученные сегодня. */
 const kRecentDayQuery = "received:today";
 /** Каноническое значение boolean для AQS/EWS: Exchange ожидает `false`, а не `no`. */
@@ -120,6 +149,24 @@ function dateFromOWAListItem(item: any): Date | null {
   }
   let date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+interface MovedTwinIndex {
+  byMessageID: Map<string, OWAEMail[]>;
+  bySubjectFrom: Map<string, OWAEMail[]>;
+}
+
+function movedTwinKey(message: OWAEMail): string {
+  return (message.subject || "").trim() + "\u0000" + (message.from?.emailAddress?.toLowerCase() ?? "");
+}
+
+function pushToIndex(index: Map<string, OWAEMail[]>, key: string, message: OWAEMail): void {
+  let list = index.get(key);
+  if (list) {
+    list.push(message);
+  } else {
+    index.set(key, [message]);
+  }
 }
 
 export class OWAFolder extends ExchangeFolder {
@@ -215,6 +262,17 @@ export class OWAFolder extends ExchangeFolder {
   /** Смещение FindItem, на котором остановился прерванный по лимиту проход. */
   protected historyVerifyResumeOffset = 0;
   protected historyVerifyRunOnce = new RunOnce<ArrayColl<OWAEMail>>();
+  /** Смещение FindItem (от новых писем к старым), с которого продолжится
+   * догрузка старой истории. Хранится в БД, чтобы после перезапуска не
+   * перечитывать уже пройденные страницы десятков тысяч писем. */
+  protected olderHistoryResumeOffset = 0;
+  /** Разница «счётчик сервера − строки в кеше» после последнего полного обхода.
+   * Письма, которые GetItem не отдаёт, не должны запускать обход заново. */
+  protected olderHistoryCompletedGap: number | null = null;
+  protected olderHistoryNextAttemptAt = 0;
+  /** Explicit Logon не отдал строки папки: обход идёт в delegate-контексте */
+  protected olderHistoryViaDelegate = false;
+  protected olderHistoryPumpRunOnce = new RunOnce<void>();
 
   /** Некоторые on-prem/shared OWA не умеют десериализовать AQS FindItem. */
   protected isRecentDayQueryUnsupportedError(ex: unknown): boolean {
@@ -532,7 +590,11 @@ export class OWAFolder extends ExchangeFolder {
       break;
     //case "outbox":
     }
-    if (this.specialFolder == SpecialFolder.Normal && this.name) {
+    // Папки сетевого архива по имени не угадываем: «Входящие» архива не
+    // входящие аккаунта. Иначе архив на десятки тысяч писем попадал в
+    // уведомления, приоритетный опрос и полную дельта-синхронизацию «Входящих»,
+    // занимая общую очередь запросов при каждом запуске.
+    if (this.specialFolder == SpecialFolder.Normal && this.name && !archiveMailbox) {
       let lowerName = this.name.toLowerCase().trim();
       if (lowerName == "inbox" || lowerName == "входящие") {
         this.specialFolder = SpecialFolder.Inbox;
@@ -1741,16 +1803,203 @@ export class OWAFolder extends ExchangeFolder {
     return found;
   }
 
+  /** Сколько писем папки есть на сервере, но ещё нет в локальном кеше. */
+  protected olderHistoryGap(): number {
+    return Math.max(0, this.countTotal - this.messages.length);
+  }
+
+  /** Нужна ли догрузка старой истории: кеш отстаёт от счётчика сервера.
+   * Быстрые пути синхронизации и проверка истории читают только свежие
+   * страницы, поэтому без этого обхода большая папка (например, сетевой
+   * архив на 20 000+ писем) навсегда оставалась на первой тысяче строк. */
+  needsOlderHistorySync(): boolean {
+    if (!this.id || !this.account.isLoggedIn || this.messages.isEmpty) {
+      // Пустую папку заполняет первичная синхронизация.
+      return false;
+    }
+    if (Date.now() < this.olderHistoryNextAttemptAt) {
+      return false;
+    }
+    // Расхождение меньше страницы закрывают быстрые пути (дельта, свежая
+    // страница, unread): иначе каждое новое письмо запускало бы полный обход.
+    return this.olderHistoryGap() - (this.olderHistoryCompletedGap ?? 0) >= kMaxFetchCount;
+  }
+
+  /**
+   * Догружает в фоне заголовки, которых нет в кеше, постранично от новых
+   * писем к старым. Шаги идут строго последовательно с паузой, без шторма
+   * запросов; каждый шаг сразу добавляет строки в список и сохраняет их в БД.
+   * @param shouldContinue Останавливает обход, например, когда пользователь
+   *   ушёл из папки. Прерванный обход продолжится с сохранённого смещения.
+   */
+  syncOlderHistoryInBackground(shouldContinue: () => boolean = () => true): void {
+    if (this.olderHistoryPumpRunOnce.running || !this.needsOlderHistorySync()) {
+      return;
+    }
+    void this.olderHistoryPumpRunOnce.runOnce(async () => {
+      try {
+        while (shouldContinue() && this.account.isLoggedIn) {
+          let finished = await this.syncOlderHistoryPass();
+          if (finished) {
+            return;
+          }
+          await sleep(kOlderHistoryContinuationDelayMs / 1000);
+        }
+      } catch (ex) {
+        this.olderHistoryNextAttemptAt = Date.now() + kOlderHistoryRetryMs;
+        throw ex;
+      }
+    }).catch(ex => {
+      if (!(ex instanceof OWAError && ex.isSessionLimit)) {
+        this.account.handleBackgroundSyncError(ex);
+      }
+    });
+  }
+
+  /**
+   * Пустая или повторная страница на смещении `offset` ещё не значит, что
+   * обход дошёл до конца папки: Explicit Logon и часть Exchange обрывают
+   * выдачу раньше. Конец доказан, только когда смещение дошло до числа
+   * писем на сервере (с запасом в страницу на одновременные удаления).
+   */
+  protected olderHistoryEndedEarly(offset: number, result: any): boolean {
+    let viewTotal = Number(result?.RootFolder?.TotalItemsInView);
+    let serverTotal = Number.isFinite(viewTotal) && viewTotal > 0
+      ? Math.max(viewTotal, this.countTotal)
+      : this.countTotal;
+    return offset + kMaxFetchCount < serverTotal;
+  }
+
+  /** Один шаг догрузки старой истории.
+   * @returns true, если обход дошёл до конца папки или продолжать бессмысленно */
+  protected async syncOlderHistoryPass(): Promise<boolean> {
+    await this.readFolder();
+    let found = new ArrayColl<OWAEMail>();
+    let finished = false;
+    /** Обход действительно дошёл до конца папки, а не оборвался раньше */
+    let reachedEnd = false;
+    let lock = await this.listMessagesLock.lock();
+    try {
+      let request = this.olderHistoryViaDelegate
+        ? owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true)
+        : owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true, this.account.isDependentAccount);
+      request.Body.Paging.Offset = this.olderHistoryResumeOffset;
+      let previousSignature: string | null = null;
+      for (let page = 0; page < kOlderHistoryPagesPerPass; page++) {
+        let result = this.olderHistoryViaDelegate
+          ? await this.callFolderDelegateOWA(request)
+          : await this.callFolderSyncOWA(request);
+        let items = ensureArray(result?.RootFolder?.Items);
+        let signature = items
+          .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
+          .join("\u0000");
+        let pageRepeated = items.length > 0 && signature == previousSignature;
+        if ((!items.length || pageRepeated) && this.olderHistoryEndedEarly(request.Body.Paging.Offset, result)) {
+          if (this.account.isDependentAccount && !this.olderHistoryViaDelegate) {
+            // Explicit Logon общего ящика отдаёт пустую или одну и ту же
+            // страницу для папок его сетевого архива, хотя письма там есть.
+            // Как и listMessages(), перечитываем в delegate-контексте — тем же
+            // смещением, но с явной сортировкой от новых писем к старым.
+            this.olderHistoryViaDelegate = true;
+            let offset = request.Body.Paging.Offset;
+            request = owaFindMsgsInFolderRequest(this.id, kMaxFetchCount, true);
+            request.Body.Paging.Offset = offset;
+            previousSignature = null;
+            continue;
+          }
+          // Обход оборвался внутри папки: это не конец истории. Итог не
+          // запоминаем, иначе догрузка не запустилась бы больше никогда.
+          finished = true;
+          break;
+        }
+        if (!items.length || pageRepeated) {
+          // Конец папки (или повтор последней страницы на её конце)
+          finished = true;
+          reachedEnd = true;
+          break;
+        }
+        previousSignature = signature;
+        let missingIDs: string[] = [];
+        for (let item of items) {
+          let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "");
+          if (id && !this.deletions.has(id) && !this.getEmailByItemID(id)) {
+            missingIDs.push(id);
+          }
+        }
+        if (missingIDs.length) {
+          let loaded = await this.getNewMessageHeaders(missingIDs);
+          for (let email of loaded) {
+            // Это догрузка прошлого, а не новая почта: без уведомлений и бейджа «новые».
+            email.isNewArrived = false;
+          }
+          this.addMessagesIfAbsent(loaded);
+          found.addAll(loaded);
+        }
+        request.Body.Paging.Offset += items.length;
+        if (result?.RootFolder?.IncludesLastItemInRange === true &&
+            !this.olderHistoryEndedEarly(request.Body.Paging.Offset, result)) {
+          // Признаку внутри папки не верим (BasePoint=End ставит его рано):
+          // следующая страница сама покажет, есть ли письма дальше.
+          finished = true;
+          reachedEnd = true;
+          break;
+        }
+      }
+      if (!finished && this.olderHistoryGap() == 0) {
+        // Кеш догнал счётчик сервера: остаток папки уже загружен.
+        finished = true;
+        reachedEnd = true;
+      }
+      if (finished) {
+        this.olderHistoryNextAttemptAt = Date.now() + kOlderHistoryRetryMs;
+        if (reachedEnd) {
+          this.olderHistoryResumeOffset = 0;
+          this.olderHistoryCompletedGap = this.olderHistoryGap();
+        } else {
+          // Повтор продолжит с места обрыва, а не перечитает пройденное
+          this.olderHistoryResumeOffset = Math.max(0, request.Body.Paging.Offset - kMaxFetchCount);
+        }
+      } else {
+        // Новые письма сдвигают выдачу вниз, поэтому следующий шаг начинает
+        // на страницу раньше и перекрывает стык.
+        this.olderHistoryResumeOffset = Math.max(0, request.Body.Paging.Offset - kMaxFetchCount);
+      }
+    } finally {
+      lock.release();
+    }
+    if (found.hasItems) {
+      this.refreshMessageContacts();
+      this.notifyObservers();
+    }
+    await this.storage.saveFolderProperties(this);
+    return finished;
+  }
+
   fromExtraJSON(json: any) {
     super.fromExtraJSON(json);
     let verifiedUntil = Number(json?.historyVerifiedUntil);
     this.historyVerifiedUntil = Number.isFinite(verifiedUntil) && verifiedUntil > 0 ? verifiedUntil : null;
+    let resumeOffset = Number(json?.olderHistoryResumeOffset);
+    this.olderHistoryResumeOffset = Number.isInteger(resumeOffset) && resumeOffset > 0 ? resumeOffset : 0;
+    let completedGap = Number(json?.olderHistoryCompletedGap);
+    // Итог без версии записан обходом, который принимал обрыв выдачи
+    // (пустую страницу Explicit Logon) за конец папки: ему не верим.
+    this.olderHistoryCompletedGap = json?.olderHistoryCompletedGap != null &&
+      json?.olderHistoryWalkVersion == kOlderHistoryWalkVersion &&
+      Number.isInteger(completedGap) && completedGap >= 0 ? completedGap : null;
   }
 
   toExtraJSON(): any {
     let json = super.toExtraJSON();
     if (this.historyVerifiedUntil != null) {
       json.historyVerifiedUntil = this.historyVerifiedUntil;
+    }
+    if (this.olderHistoryResumeOffset > 0) {
+      json.olderHistoryResumeOffset = this.olderHistoryResumeOffset;
+    }
+    if (this.olderHistoryCompletedGap != null) {
+      json.olderHistoryCompletedGap = this.olderHistoryCompletedGap;
+      json.olderHistoryWalkVersion = kOlderHistoryWalkVersion;
     }
     return json;
   }
@@ -2016,9 +2265,7 @@ export class OWAFolder extends ExchangeFolder {
         let messagesToRemove: OWAEMail[] = [];
         for (let index = 0; index < batchIDs.length; index++) {
           let response = responses[index];
-          let isError = response?.ResponseClass == "Error" ||
-            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
-          if (isError) {
+          if (isDeleteItemFailure(response, this.mayHaveStaleItemID(messagesByItemID.get(batchIDs[index])))) {
             failedResponse ??= response;
             continue;
           }
@@ -2079,7 +2326,8 @@ export class OWAFolder extends ExchangeFolder {
         await this.listMessages(false, true);
       }
       if (this.countTotal > this.messages.length) {
-        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+        // Exchange отдал не все элементы: перенос части создал бы видимость очистки
+        throw new Error(gt`The folder could not be cleared completely. Please try again later.`);
       }
       messages = [...this.messages.contents];
       if (!messages.length) {
@@ -2119,6 +2367,12 @@ export class OWAFolder extends ExchangeFolder {
       await this.moveMessagesHere(messages);
       return;
     }
+    let source = messages.first.folder;
+    if (source instanceof OWAFolder) {
+      // Иначе первый устаревший GetFolder возвращал очищенной папке прежние
+      // непрочитанные, и они показывались как «новые»
+      source.noteLocalDeleteMutation(messages.length, messages.contents.filter(message => !message.isRead).length);
+    }
     await super.moveOrCopyMessagesHere("move", messages, true);
   }
 
@@ -2145,8 +2399,12 @@ export class OWAFolder extends ExchangeFolder {
       if (this.countTotal != this.messages.length) {
         await this.listMessages(false, true);
       }
-      if (this.countTotal > this.messages.length) {
-        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+      // TotalCount Exchange учитывает встречи, контакты, задачи и заметки,
+      // которых нет в списке писем, а подпапки корзины в него не входят вовсе.
+      // Такую папку очищает сам сервер, как «Очистить папку» в Outlook.
+      if (this.countTotal > this.messages.length || this.emptyDeletesSubFolders) {
+        await this.emptyFolderOnServer();
+        return;
       }
       messages = [...this.messages.contents];
     } catch (ex) {
@@ -2191,28 +2449,16 @@ export class OWAFolder extends ExchangeFolder {
       }
     };
     let completed = false;
+    // Общий ящик: как и при удалении выбранных писем, запрос идёт в контексте этого ящика
+    let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
     try {
       for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
         let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
-        let result = await this.account.callOWA(new OWADeleteItemRequest(batchIDs, {
-          DeleteType: "HardDelete",
-          // Exchange требует этот параметр для элементов календаря. Очистка
-          // почтовой папки не должна отправлять участникам отмену встречи.
-          SendMeetingCancellations: "SendToNone",
-          SuppressReadReceipts: true,
-        }));
-        let responseItems = result?.ResponseMessages?.Items
-          ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
-        let responses = responseItems ? ensureArray(responseItems) : [];
-        if (responses.length != batchIDs.length) {
-          throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
-        }
+        let responses = await this.hardDeleteItemsOnServer(batchIDs, mailbox);
         let failedResponse: any = null;
         for (let index = 0; index < batchIDs.length; index++) {
           let response = responses[index];
-          let isError = response?.ResponseClass == "Error" ||
-            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
-          if (isError) {
+          if (isDeleteItemFailure(response, this.mayHaveStaleItemID(messagesByItemID.get(batchIDs[index])))) {
             failedResponse ??= response;
             continue;
           }
@@ -2242,8 +2488,10 @@ export class OWAFolder extends ExchangeFolder {
           await removeLocally(message);
         }
       }
-      this.countTotal = 0;
-      this.countUnread = 0;
+      // По фактическому списку, а не нулём: письма, попавшие в корзину во время
+      // очистки, остаются и должны быть видны в счётчике
+      this.countTotal = this.messages.length;
+      this.countUnread = this.localUnreadCount();
       this.countNewArrived = 0;
       this.countTotalDecreased = false;
       this.dirty = false;
@@ -2262,6 +2510,151 @@ export class OWAFolder extends ExchangeFolder {
         this.dirty = true;
       }
       this.clearProgress = null;
+    }
+  }
+
+  /** Окончательно удаляет элементы пакетом DeleteItem.
+   * @returns ответ сервера по каждому ItemId, в порядке `itemIDs` */
+  protected async hardDeleteItemsOnServer(itemIDs: string[], mailbox: string | undefined): Promise<any[]> {
+    let result = await this.account.callOWA(new OWADeleteItemRequest(itemIDs, {
+      DeleteType: "HardDelete",
+      // Exchange требует этот параметр для элементов календаря. Очистка
+      // почтовой папки не должна отправлять участникам отмену встречи.
+      SendMeetingCancellations: "SendToNone",
+      SuppressReadReceipts: true,
+    }), mailbox);
+    let responseItems = result?.ResponseMessages?.Items
+      ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
+    let responses = responseItems ? ensureArray(responseItems) : [];
+    if (responses.length == 1 && itemIDs.length > 1 &&
+        responses[0]?.ResponseClass == "Success" && responses[0]?.ResponseCode == "NoError") {
+      // Некоторые серверы отвечают одним Success на весь пакет
+      responses = itemIDs.map(() => responses[0]);
+    }
+    if (responses.length != itemIDs.length) {
+      throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
+    }
+    return responses;
+  }
+
+  /** Очистка корзины удаляет и её подпапки, как «Очистить папку» в Outlook.
+   * У спама подпапки пользователя не трогаем. */
+  protected get emptyDeletesSubFolders(): boolean {
+    return this.specialFolder == SpecialFolder.Trash && this.subFolders.hasItems;
+  }
+
+  /**
+   * Очищает корзину или спам на сервере целиком: письма, встречи, контакты,
+   * задачи, заметки и (в корзине) подпапки. Сначала одной операцией
+   * EmptyFolder, а если сервер её не выполнил — пачками до конца.
+   * Локальный список очищается, только когда сервер подтвердил очистку.
+   */
+  protected async emptyFolderOnServer(): Promise<void> {
+    // Общий ящик: запрос идёт в контексте этого ящика, как и DeleteItem
+    let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
+    let deleteSubFolders = this.emptyDeletesSubFolders;
+    let messages = [...this.messages.contents];
+    let itemIDs = [...new Set(messages
+      .map(message => message.itemID)
+      .filter((itemID): itemID is string => !!itemID))];
+    let total = Math.max(this.countTotal, messages.length);
+    this.clearProgress = { phase: "deleting", completed: 0, total };
+    for (let itemID of itemIDs) {
+      this.deletions.add(itemID);
+    }
+    let emptied = false;
+    try {
+      try {
+        await this.account.callOWA(owaEmptyFolderRequest(this.id, deleteSubFolders), mailbox);
+      } catch (ex) {
+        if (!(ex instanceof OWAError) || ex.isSessionLimit) {
+          throw ex;
+        }
+        // Не каждый OWA выполняет EmptyFolder. Настоящая ошибка (например,
+        // нет прав) повторится и в пакетном удалении и дойдёт до пользователя.
+        await this.emptyFolderInBatches(mailbox, deleteSubFolders, total);
+      }
+      emptied = true;
+      for (let itemID of itemIDs) {
+        this.releaseDeletionAfterGracePeriod(itemID);
+      }
+      // Иначе устаревший GetFolder вернул бы очищенной папке прежние счётчики
+      this.noteLocalDeleteMutation(this.countTotal, this.countUnread);
+      await this.deleteMessagesLocally(messages.filter(message => this.messages.contains(message)));
+      if (deleteSubFolders) {
+        for (let subFolder of [...this.subFolders.contents]) {
+          await subFolder.deleteItLocally();
+        }
+      }
+      // По фактическому списку: письма, пришедшие после очистки, остаются
+      this.countTotal = this.messages.length;
+      this.countUnread = this.localUnreadCount();
+      this.countNewArrived = 0;
+      this.countTotalDecreased = false;
+      this.dirty = false;
+      this.clearProgress = { phase: "deleting", completed: total, total };
+      if (this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+    } finally {
+      if (!emptied) {
+        for (let itemID of itemIDs) {
+          this.deletions.delete(itemID);
+        }
+        // Часть элементов могла уже исчезнуть: следующая синхронизация сверит список
+        this.dirty = true;
+      }
+      this.clearProgress = null;
+    }
+  }
+
+  /** Запасной путь очистки без EmptyFolder. FindItem возвращает элементы любых
+   * типов, поэтому удаляем первую страницу, пока папка не опустеет. */
+  protected async emptyFolderInBatches(mailbox: string | undefined, deleteSubFolders: boolean, total: number): Promise<void> {
+    let completed = 0;
+    let previousPage = "";
+    let emptied = false;
+    for (let pass = 0; pass < this.maxFindItemPages() && !emptied; pass++) {
+      let result = await this.account.callOWA(owaFindMsgsInFolderRequest(this.id, kDeleteItemBatchSize), mailbox);
+      let itemIDs = [...new Set(ensureArray(result?.RootFolder?.Items)
+        .map(item => sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, ""))
+        .filter(Boolean))];
+      if (!itemIDs.length) {
+        emptied = true;
+        break;
+      }
+      let page = itemIDs.join("\u0000");
+      if (page == previousPage) {
+        // Сервер подтвердил удаление, но снова отдаёт те же элементы
+        break;
+      }
+      previousPage = page;
+      let responses: any[];
+      try {
+        responses = await this.hardDeleteItemsOnServer(itemIDs, mailbox);
+      } catch (ex) {
+        // Ответ на единственный элемент с ошибкой callOWA бросает сам.
+        // «Не найдено» значит, что элемента уже нет; если он всё же остался,
+        // следующая страница FindItem повторится и очистка остановится.
+        if (!(itemIDs.length == 1 && ex instanceof OWAError && ex.type == "ErrorItemNotFound")) {
+          throw ex;
+        }
+        responses = [{ ResponseClass: "Success", ResponseCode: "NoError" }];
+      }
+      let failedResponse = responses.find(response => isDeleteItemFailure(response));
+      if (failedResponse) {
+        throw new OWAError({ json: failedResponse });
+      }
+      completed += itemIDs.length;
+      this.clearProgress = { phase: "deleting", completed: Math.min(completed, total), total };
+    }
+    if (!emptied) {
+      throw new Error(gt`The folder could not be cleared completely. Please try again later.`);
+    }
+    if (deleteSubFolders) {
+      for (let subFolder of this.subFolders.contents) {
+        await (subFolder as OWAFolder).deleteItOnServer();
+      }
     }
   }
 
@@ -2525,12 +2918,25 @@ export class OWAFolder extends ExchangeFolder {
     return false;
   }
 
+  /** Время последней попытки полного обхода папки (при создании папки — момент создания). */
+  protected lastFullListAttemptAt = Date.now();
+
   /** Surplus local messages prove a server-side delete or move. */
   protected needsFullReconcile(): boolean {
     if (this.countTotalDecreased && this.messages.length <= this.countTotal) {
       this.countTotalDecreased = false;
     }
-    return this.countTotalDecreased || this.messages.length > this.countTotal;
+    return this.countTotalDecreased || this.messages.length > this.countTotal
+      || this.periodicReconcileDue();
+  }
+
+  /** Удаление на сервере при неизменном TotalCount (одно удалено, одно пришло)
+   * счётчики не выдают, а дельта могла его не получить — «призрак» жил бы вечно.
+   * Поэтому раз в полчаса папка сверяется целиком, пока обход недорогой. */
+  protected periodicReconcileDue(): boolean {
+    return this.countTotal > 0
+      && this.messages.length <= kPeriodicReconcileMaxMessages
+      && Date.now() - this.lastFullListAttemptAt > kPeriodicReconcileMs;
   }
 
   /**
@@ -2588,6 +2994,9 @@ export class OWAFolder extends ExchangeFolder {
       let pagesRead = 0;
       let paginationComplete = false;
       let validStopBefore = stopBefore && !Number.isNaN(stopBefore.getTime()) ? stopBefore : null;
+      if (!recentOnly && !validStopBefore) {
+        this.lastFullListAttemptAt = Date.now();
+      }
       let validQueryString = validStopBefore && queryString?.trim() ? queryString.trim() : null;
       let request = validQueryString
         ? owaFindMsgsByQueryRequest(this.id, validQueryString, kMaxFetchCount)
@@ -2759,6 +3168,7 @@ export class OWAFolder extends ExchangeFolder {
         }
         firstPage = false;
         let newMessageIDs: string[] = [];
+        let changedEmails: OWAEMail[] = [];
         for (let message of messagesToProcess) {
           let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
           if (!id || this.deletions.has(id)) {
@@ -2768,7 +3178,7 @@ export class OWAFolder extends ExchangeFolder {
           if (email) {
             let wasUnread = !email.isRead;
             if (email.setFlags(message, "list")) {
-              await this.persistEmailFlags(email);
+              changedEmails.push(email);
               if (wasUnread && email.isRead) {
                 this.countUnread = Math.max(0, this.countUnread - 1);
                 this.countNewArrived = Math.max(0, this.countNewArrived - 1);
@@ -2781,6 +3191,7 @@ export class OWAFolder extends ExchangeFolder {
             newMessageIDs.push(id);
           }
         }
+        await this.persistEmailFlagsAll(changedEmails);
         let newMsgsInIteration = await this.getNewMessageHeaders(newMessageIDs);
         let loadedHeaderIDs = new Set(newMsgsInIteration.contents
           .map(message => message.itemID)
@@ -2883,7 +3294,11 @@ export class OWAFolder extends ExchangeFolder {
           this.dirty = true;
         }
         this.notifyObservers();
-      } else if (firstPage && (this.countTotal > 0 || this.countUnread > 0)) {
+      } else if (firstPage && (this.countTotal > 0 ||
+          // Непрочитанных не бывает больше, чем писем: если GetFolder подтвердил
+          // 0 писем, ненулевой unread — устаревший локальный счётчик. Он не должен
+          // удерживать в списке письма, которых на сервере уже нет.
+          (this.countUnread > 0 && this.lastServerCountTotal !== 0))) {
         // The server gave us nothing for a folder it says is not empty. Taking
         // that at face value would delete the whole local copy of the folder.
         // Даже force не отменяет защиту: сначала должен прийти подтверждённый
@@ -2904,15 +3319,26 @@ export class OWAFolder extends ExchangeFolder {
         // to `allMsgs` while looping over it would skip the following entry
         // and leave that message behind in storage. Snapshot first.
         let stale = this.messages.contents.filter(email => !allMsgs.contains(email));
+        let staleToDelete: EMail[] = [];
         for (let email of stale) {
           if (this.shouldPreserveMoved(email)) {
             allMsgs.add(email);
             continue;
           }
-          await this.storage.deleteMessage(email);
+          staleToDelete.push(email);
+        }
+        if (staleToDelete.length > 1 && this.storage.deleteMessages) {
+          await this.storage.deleteMessages(staleToDelete);
+        } else {
+          for (let email of staleToDelete) {
+            await this.storage.deleteMessage(email);
+          }
         }
         allMsgs.addAll(newMsgs);
-        this.messages.replaceAll(allMsgs);
+        // Сверка читала страницы до того, как письмо удалили или перенесли
+        // (очистка корзины во время синхронизации): не возвращаем его в список.
+        // Иначе в корзине оставались тысячи «призраков» при счётчике 0.
+        this.messages.replaceAll(allMsgs.contents.filter(email => !email.isDeleted && email.folder === this));
         this.refreshMessageContacts();
         // A forced/full FindItem is authoritative, including an empty result.
         // Persist the server total so a later restart cannot resurrect headers
@@ -3002,6 +3428,7 @@ export class OWAFolder extends ExchangeFolder {
       if (pageSignature) {
         seenPageSignatures.add(pageSignature);
       }
+      let changedEmails: EMail[] = [];
       for (let message of messages) {
         let id = sanitize.nonemptystring(message?.ItemId?.Id ?? message?.ItemId, "");
         if (!id) {
@@ -3012,10 +3439,11 @@ export class OWAFolder extends ExchangeFolder {
           continue;
         }
         if (email.setFlags(message, "list")) {
-          await email.saveWritablePropsLocally();
+          changedEmails.push(email);
         }
         pendingItemIDs.delete(id);
       }
+      await this.saveMessagesWritablePropsLocally(changedEmails);
       if (!pendingItemIDs.size) {
         paginationComplete = true;
         break;
@@ -3131,6 +3559,11 @@ export class OWAFolder extends ExchangeFolder {
           }
         }
       }
+      // Сначала разбираем всю страницу, затем сохраняем её одной транзакцией
+      let unchanged: { id: string, item: any, email: OWAEMail }[] = [];
+      let changed: { id: string, item: any, email: OWAEMail }[] = [];
+      let created: { id: string, item: any, email: OWAEMail }[] = [];
+      let createdIDs = new Set<string>();
       for (let item of items) {
         try {
           let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, "");
@@ -3146,10 +3579,14 @@ export class OWAFolder extends ExchangeFolder {
               ? item
               : { ...item, IsRead: defaultIsRead };
             if (existing.setFlags(header, "full")) {
-              await this.persistEmailFlags(existing);
+              changed.push({ id, item, email: existing });
+            } else {
+              unchanged.push({ id, item, email: existing });
             }
-            this.markMetadataBackfillComplete(id, item, existing);
-            existing.contact = computeEMailContact(existing);
+            continue;
+          }
+          if (createdIDs.has(id)) {
+            // Тот же ItemId пришёл и из основного, и из запасного запроса
             continue;
           }
           let header = Object.prototype.hasOwnProperty.call(item, "IsRead") || defaultIsRead == null
@@ -3157,7 +3594,29 @@ export class OWAFolder extends ExchangeFolder {
             : { ...item, IsRead: defaultIsRead };
           let email = this.newEMail();
           email.fromJSON(header);
-          await email.saveMetadataLocally();
+          created.push({ id, item, email });
+          createdIDs.add(id);
+        } catch (ex) {
+          this.account.errorCallback(ex);
+        }
+      }
+      let persisted = new Set<OWAEMail>(await this.persistEmailFlagsAll(
+        changed.map(entry => entry.email), this.account.errorCallback));
+      for (let { id, item, email } of [...unchanged, ...changed.filter(entry => persisted.has(entry.email))]) {
+        try {
+          this.markMetadataBackfillComplete(id, item, email);
+          email.contact = computeEMailContact(email);
+        } catch (ex) {
+          this.account.errorCallback(ex);
+        }
+      }
+      let saved = new Set(await this.saveMessagesMetadataLocally(
+        created.map(entry => entry.email), this.account.errorCallback));
+      for (let { id, item, email } of created) {
+        if (!saved.has(email)) {
+          continue;
+        }
+        try {
           // Another concurrent fetch may have inserted the same pID meanwhile.
           let raced = this.getEmailByItemID(id);
           if (raced && raced !== email) {
@@ -3221,6 +3680,8 @@ export class OWAFolder extends ExchangeFolder {
       }
     }
     let missingMessages: OWAEMail[] = [];
+    /** Обновлённые письма сохраняются одной транзакцией после цикла */
+    let updated: { id: string, item: any, email: OWAEMail }[] = [];
     let changed = false;
     for (let item of items ?? []) {
       let id = sanitize.nonemptystring(item?.ItemId?.Id ?? item?.ItemId, null);
@@ -3230,8 +3691,7 @@ export class OWAFolder extends ExchangeFolder {
           let wasUnread = !email.isRead;
           let oldTagNames = email.tags.contents.map(tag => tag.name);
           email.fromJSON(item);
-          await email.saveMetadataLocally();
-          this.markMetadataBackfillComplete(id, item, email);
+          updated.push({ id, item, email });
           let newTagNames = email.tags.contents.map(tag => tag.name);
           if (oldTagNames.length != newTagNames.length ||
               oldTagNames.some((name, i) => name != newTagNames[i])) {
@@ -3264,6 +3724,18 @@ export class OWAFolder extends ExchangeFolder {
           missingMessages.push(newEmail);
         } catch (ex) {
           this.account.errorCallback(ex);
+        }
+      }
+    }
+    if (updated.length) {
+      // Категории и флаги видимой страницы — одна транзакция вместо 5–10
+      // запросов к SQLite на каждое письмо, пока держится блокировка папки.
+      let saved = new Set(await this.saveMessagesMetadataLocally(
+        updated.map(entry => entry.email),
+        ex => this.account.errorCallback(ex)));
+      for (let entry of updated) {
+        if (saved.has(entry.email)) {
+          this.markMetadataBackfillComplete(entry.id, entry.item, entry.email);
         }
       }
     }
@@ -3819,6 +4291,47 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   /**
+   * `persistEmailFlags()` для страницы писем: одна транзакция вместо
+   * 5–10 запросов на письмо. Если пакет не удался, письма сохраняются
+   * по одному, как раньше.
+   * @param onError Без него первая ошибка прерывает сохранение и
+   *   пробрасывается (как у цикла с `persistEmailFlags()`); с ним ошибка
+   *   письма передаётся в onError, а остальные письма сохраняются.
+   * @returns сохранённые письма в исходном порядке
+   */
+  protected async persistEmailFlagsAll(emails: OWAEMail[], onError?: (ex: unknown) => void): Promise<OWAEMail[]> {
+    let storage = this.storage;
+    if (emails.length > 1 && storage.saveMessagesMetadata && storage.saveMessagesWritableProps) {
+      try {
+        let unsaved = emails.filter(email => !email.dbID);
+        let saved = emails.filter(email => !!email.dbID);
+        if (unsaved.length) {
+          await storage.saveMessagesMetadata(unsaved);
+        }
+        if (saved.length) {
+          await storage.saveMessagesWritableProps(saved);
+        }
+        return emails;
+      } catch {
+        // По одному ниже: ошибка останется у своего письма
+      }
+    }
+    let persisted: OWAEMail[] = [];
+    for (let email of emails) {
+      try {
+        await this.persistEmailFlags(email);
+        persisted.push(email);
+      } catch (ex) {
+        if (!onError) {
+          throw ex;
+        }
+        onError(ex);
+      }
+    }
+    return persisted;
+  }
+
+  /**
    * Письма без категорий остаются в очереди backfill: Exchange-правила часто
    * проставляют категории через несколько секунд после доставки.
    */
@@ -3877,13 +4390,21 @@ export class OWAFolder extends ExchangeFolder {
           continue;
         }
       }
+      let changedEmails: OWAEMail[] = [];
+      let checked: { id: string, item: any, email: OWAEMail | undefined }[] = [];
       for (let id of batch) {
         let item = items.find(entry => sanitize.nonemptystring(entry?.ItemId?.Id ?? entry?.ItemId, "") == id);
         let email = this.getEmailByItemID(id);
         if (email && item && email.setFlags(item, "full")) {
-          await this.persistEmailFlags(email);
-          changed = true;
+          changedEmails.push(email);
         }
+        checked.push({ id, item, email });
+      }
+      await this.persistEmailFlagsAll(changedEmails);
+      if (changedEmails.length) {
+        changed = true;
+      }
+      for (let { id, item, email } of checked) {
         if (item && email) {
           this.markMetadataBackfillComplete(id, item, email);
         } else {
@@ -3916,68 +4437,75 @@ export class OWAFolder extends ExchangeFolder {
     assert(sourceFolder, "Need source folder");
     assert(messages.contents.every(msg => msg.folder === sourceFolder), "All messages must be from the same folder");
 
+    // Один MoveItem/CopyItem на пачку вместо запроса, перерисовки списка и
+    // записи в БД на каждое письмо: при переносе сотен писем поштучный путь
+    // загружал CPU и подвешивал интерфейс.
     let hardError: Error | null = null;
     let needItemIdFix: OWAEMail[] = [];
     let completed = 0;
-    for (let msg of messages) {
-      let owaMsg = msg as OWAEMail;
-      let oldItemID = owaMsg.itemID;
-      if (action == "move" && oldItemID) {
-        sourceFolder.deletions.add(oldItemID);
+    let allMessages = messages.contents as OWAEMail[];
+    for (let i = 0; i < allMessages.length; i += kMoveItemBatchSize) {
+      let batch = allMessages.slice(i, i + kMoveItemBatchSize);
+      let withIDs = batch.filter(msg => !!msg.itemID);
+      if (withIDs.length < batch.length) {
+        hardError ??= new OWAError({ message: gt`This was deleted on the server` });
       }
+      if (!withIDs.length) {
+        continue;
+      }
+      let itemIDs = withIDs.map(msg => msg.itemID as string);
+      if (action == "move") {
+        for (let itemID of itemIDs) {
+          sourceFolder.deletions.add(itemID);
+        }
+      }
+      let movedIDs = new Set<string>();
       try {
-        let newItemIDs = await this.moveOrCopyMessagesReturningIDs(action, new ArrayColl([owaMsg]));
-        if (action == "move") {
-          sourceFolder.messages.remove(msg);
-          sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - 1);
-          if (!msg.isRead) {
-            sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - 1);
-            this.countUnread++;
-          }
-          this.countTotal++;
-
-          let newID = oldItemID ? newItemIDs.get(oldItemID) : null;
-          owaMsg.isDeleted = false;
-          owaMsg.folder = this;
-          if (newID) {
-            owaMsg.itemID = newID;
+        let { newItemIDs, errors } = await this.moveOrCopyMessagesReturningResults(action, withIDs);
+        let succeeded: OWAEMail[] = [];
+        let notFound: OWAEMail[] = [];
+        for (let msg of withIDs) {
+          let error = errors.get(msg);
+          if (!error) {
+            succeeded.push(msg);
+          } else if (error.type == "ErrorItemNotFound" && action == "move") {
+            notFound.push(msg);
           } else {
-            needItemIdFix.push(owaMsg);
+            hardError ??= error;
           }
-          // Keep through the next FindItem reconciles so sync cannot wipe a
-          // just-restored message before Exchange returns it in the listing.
-          this.markPreservedMoved(owaMsg);
-          // A locally deleted header can retain the old completion flag even
-          // though its row and MIME body are gone. Persist it as a header-only
-          // message; its body will be downloaded when it is opened.
-          if (owaMsg.downloadComplete && !owaMsg.dbID && !owaMsg.rawText && !owaMsg.rawHTMLDangerous) {
-            owaMsg.downloadComplete = false;
+        }
+        if (action == "move") {
+          for (let msg of [...succeeded, ...notFound]) {
+            movedIDs.add(msg.itemID as string);
           }
-          await owaMsg.saveMetadataLocally();
-          this.addMessagesIfAbsent([owaMsg]);
-          this.notifyObservers();
+          try {
+            await this.applyServerMove(sourceFolder, succeeded, notFound, newItemIDs, needItemIdFix);
+          } catch (ex) {
+            hardError ??= ex instanceof Error ? ex : new Error(String(ex));
+          }
         } else {
           // Copy leaves the source message untouched and creates a separate
           // item here. Queueing it for the ItemId repair would make the twin
           // search rewrite the *source*'s ItemId to the copy's and then delete
           // the copy locally. The next sync picks the new item up normally.
-          this.countTotal++;
-          if (!msg.isRead) {
-            this.countUnread++;
-          }
+          this.countTotal += succeeded.length;
+          this.countUnread += succeeded.filter(msg => !msg.isRead).length;
         }
-        onProgress?.(++completed);
+        if (succeeded.length || notFound.length) {
+          completed += succeeded.length + notFound.length;
+          onProgress?.(completed);
+        }
       } catch (ex) {
-        if (ex instanceof OWAError && ex.type == "ErrorItemNotFound" && action == "move") {
-          sourceFolder.messages.remove(msg);
-          await msg.deleteMessageLocally().catch(() => null);
-          onProgress?.(++completed);
-        } else {
-          hardError ??= ex instanceof Error ? ex : new Error(String(ex));
-        }
+        hardError ??= ex instanceof Error ? ex : new Error(String(ex));
       } finally {
-        if (action == "move" && oldItemID && sourceFolder instanceof OWAFolder) {
-          sourceFolder.releaseDeletionAfterGracePeriod(oldItemID);
+        if (action == "move") {
+          for (let itemID of itemIDs) {
+            if (movedIDs.has(itemID) && sourceFolder instanceof OWAFolder) {
+              sourceFolder.releaseDeletionAfterGracePeriod(itemID);
+            } else {
+              sourceFolder.deletions.delete(itemID);
+            }
+          }
         }
       }
     }
@@ -3987,6 +4515,70 @@ export class OWAFolder extends ExchangeFolder {
     }
     if (hardError) {
       throw hardError;
+    }
+  }
+
+  /**
+   * Локально отражает пачку, которую Exchange уже перенёс: убирает письма из
+   * исходной папки, переносит счётчики и сохраняет метаданные одной
+   * транзакцией. Наблюдатели папок уведомляются один раз на пачку.
+   */
+  protected async applyServerMove(
+    sourceFolder: Folder,
+    moved: OWAEMail[],
+    notFound: OWAEMail[],
+    newItemIDs: Map<string, string>,
+    needItemIdFix: OWAEMail[],
+  ): Promise<void> {
+    if (!moved.length && !notFound.length) {
+      return;
+    }
+    let sourceOWAFolder = sourceFolder instanceof OWAFolder ? sourceFolder : null;
+    let saveError: unknown = null;
+    sourceOWAFolder?.beginObserverMute();
+    this.beginObserverMute();
+    try {
+      sourceFolder.messages.removeAll([...moved, ...notFound]);
+      let unreadCount = moved.filter(msg => !msg.isRead).length;
+      sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - moved.length);
+      sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - unreadCount);
+      this.countUnread += unreadCount;
+      this.countTotal += moved.length;
+
+      for (let msg of moved) {
+        let newID = newItemIDs.get(msg.itemID as string);
+        msg.isDeleted = false;
+        msg.folder = this;
+        if (newID) {
+          msg.itemID = newID;
+        } else {
+          needItemIdFix.push(msg);
+        }
+        // Keep through the next FindItem reconciles so sync cannot wipe a
+        // just-restored message before Exchange returns it in the listing.
+        this.markPreservedMoved(msg);
+        // A locally deleted header can retain the old completion flag even
+        // though its row and MIME body are gone. Persist it as a header-only
+        // message; its body will be downloaded when it is opened.
+        if (msg.downloadComplete && !msg.dbID && !msg.rawText && !msg.rawHTMLDangerous) {
+          msg.downloadComplete = false;
+        }
+      }
+      // Сервер уже перенёс письма: показываем их в целевой папке, даже если
+      // локальная запись не удалась, — следующая синхронизация её починит.
+      await this.saveMessagesMetadataLocally(moved, ex => saveError ??= ex);
+      this.addMessagesIfAbsent(moved);
+      for (let msg of notFound) {
+        await msg.deleteMessageLocally().catch(() => null);
+      }
+    } finally {
+      this.endObserverMute();
+      sourceOWAFolder?.endObserverMute();
+      sourceFolder.notifyObservers();
+      this.notifyObservers();
+    }
+    if (saveError) {
+      throw saveError;
     }
   }
 
@@ -4011,6 +4603,14 @@ export class OWAFolder extends ExchangeFolder {
     if (key) {
       this.preserveMovedUntil.set(key, Date.now() + 180_000);
     }
+  }
+
+  /** У письма может быть устаревший ItemId: его недавно перенесли без нового ID */
+  protected mayHaveStaleItemID(messages: OWAEMail[] | undefined): boolean {
+    return !!messages?.some(message => {
+      let key = String(message.dbID ?? message.itemID ?? "");
+      return !!key && (this.preserveMovedUntil.get(key) ?? 0) > Date.now();
+    });
   }
 
   protected shouldPreserveMoved(email: OWAEMail): boolean {
@@ -4043,38 +4643,74 @@ export class OWAFolder extends ExchangeFolder {
     if (!optimistic.length) {
       return;
     }
+    // Другие оптимистично перенесённые письма — не серверные двойники:
+    // письма с одинаковой темой и отправителем иначе «чинили» бы друг друга.
+    let skip = new Set<OWAEMail>(optimistic);
     // Prefer a cheap first-page FindItem over a full getNewMessages (can stall).
-    let recent = await this.listMessages(true, true);
+    let recent = this.indexMovedTwinCandidates(await this.listMessages(true, true));
+    let local = this.indexMovedTwinCandidates(this.messages);
+    let unresolved: OWAEMail[] = [];
     for (let moved of optimistic) {
-      let twin = this.findMovedTwin(moved, recent) ?? this.findMovedTwin(moved, this.messages);
-      if (twin && twin !== moved && twin.itemID) {
-        if (moved.itemID != twin.itemID) {
-          moved.itemID = twin.itemID;
-          await moved.saveMetadataLocally();
-          this.messages.remove(twin);
-          await this.storage.deleteMessage(twin).catch(() => null);
-        }
-        this.markPreservedMoved(moved);
+      let twin = this.findIndexedTwin(moved, recent, skip) ?? this.findIndexedTwin(moved, local, skip);
+      if (!twin) {
+        unresolved.push(moved);
         continue;
       }
-      // Fallback: full delta may surface Creates
-      await this.getNewMessages(true);
-      twin = this.findMovedTwin(moved, this.messages);
-      if (twin && twin !== moved && twin.itemID) {
-        moved.itemID = twin.itemID;
-        await moved.saveMetadataLocally();
-        this.messages.remove(twin);
-        await this.storage.deleteMessage(twin).catch(() => null);
-        this.markPreservedMoved(moved);
+      await this.adoptMovedTwin(moved, twin, skip);
+    }
+    if (!unresolved.length) {
+      return;
+    }
+    // Fallback: full delta may surface Creates. Один раз на все письма, а не
+    // на каждое: при массовом переносе это были сотни полных синхронизаций.
+    await this.getNewMessages(true);
+    local = this.indexMovedTwinCandidates(this.messages);
+    for (let moved of unresolved) {
+      let twin = this.findIndexedTwin(moved, local, skip);
+      if (twin) {
+        await this.adoptMovedTwin(moved, twin, skip);
       }
     }
   }
 
+  /** Переносит серверный ItemId двойника в оптимистичное письмо и убирает двойника. */
+  protected async adoptMovedTwin(moved: OWAEMail, twin: OWAEMail, skip: Set<OWAEMail>): Promise<void> {
+    skip.add(twin);
+    if (moved.itemID != twin.itemID) {
+      moved.itemID = twin.itemID;
+      await moved.saveMetadataLocally();
+      this.messages.remove(twin);
+      await this.storage.deleteMessage(twin).catch(() => null);
+    }
+    this.markPreservedMoved(moved);
+  }
+
   protected findMovedTwin(moved: OWAEMail, pool: { contents?: OWAEMail[] } | Iterable<OWAEMail>): OWAEMail | undefined {
+    return this.findIndexedTwin(moved, this.indexMovedTwinCandidates(pool), new Set());
+  }
+
+  /** Индекс кандидатов-двойников по Message-ID и по теме с отправителем. */
+  protected indexMovedTwinCandidates(pool: { contents?: OWAEMail[] } | Iterable<OWAEMail>): MovedTwinIndex {
     let list: OWAEMail[] = (pool as any).contents
       ?? (Array.isArray(pool) ? pool : [...(pool as Iterable<OWAEMail>)]);
+    let index: MovedTwinIndex = { byMessageID: new Map(), bySubjectFrom: new Map() };
+    for (let message of list) {
+      if (!message.itemID) {
+        continue;
+      }
+      if (message.id) {
+        pushToIndex(index.byMessageID, message.id, message);
+      }
+      pushToIndex(index.bySubjectFrom, movedTwinKey(message), message);
+    }
+    return index;
+  }
+
+  /** Первый подходящий двойник в порядке списка, как прежний линейный поиск. */
+  protected findIndexedTwin(moved: OWAEMail, index: MovedTwinIndex, skip: Set<OWAEMail>): OWAEMail | undefined {
+    let usable = (m: OWAEMail) => m !== moved && !skip.has(m) && !!m.itemID;
     if (moved.id) {
-      let byMid = list.find(m => m !== moved && !!m.itemID && m.id == moved.id);
+      let byMid = index.byMessageID.get(moved.id)?.find(usable);
       if (byMid) {
         return byMid;
       }
@@ -4085,14 +4721,8 @@ export class OWAFolder extends ExchangeFolder {
     if (!subject && !from) {
       return undefined;
     }
-    return list.find(m => {
-      if (m === moved || !m.itemID) {
-        return false;
-      }
-      if ((m.subject || "").trim() != subject) {
-        return false;
-      }
-      if ((m.from?.emailAddress?.toLowerCase() ?? "") != from) {
+    return index.bySubjectFrom.get(movedTwinKey(moved))?.find(m => {
+      if (!usable(m)) {
         return false;
       }
       if (sent && m.sent && Math.abs(m.sent.getTime() - sent) > 2000) {
@@ -4112,12 +4742,65 @@ export class OWAFolder extends ExchangeFolder {
    * @returns old ItemId → new ItemId, for the messages the server reported.
    */
   protected async moveOrCopyMessagesReturningIDs(action: "move" | "copy", messages: Collection<OWAEMail>): Promise<Map<string, string>> {
-    let actionVerb = sanitize.translate(action, { move: "Move", copy: "Copy" }) as "Move" | "Copy";
     let withIDs = messages.contents.filter(msg => !!msg.itemID);
     if (!withIDs.length) {
       throw new OWAError({ message: gt`This was deleted on the server` });
     }
-    let sourceAccount = messages.first.folder.account;
+    let results = await this.callMoveOrCopyItems(action, withIDs);
+    let responseItems = results?.ResponseMessages?.Items
+      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []);
+    for (let result of ensureArray(responseItems)) {
+      if (result.ResponseClass == "Error") {
+        throw new OWAError({ json: result });
+      }
+    }
+    // Without ReturnNewItemIds the map is empty — callers relocate anyway.
+    return this.extractMovedItemIds(withIDs, results);
+  }
+
+  /**
+   * Как `moveOrCopyMessagesReturningIDs()`, но ошибка одного письма не
+   * отменяет результат остальных: Exchange отвечает по элементу на каждый
+   * ItemId, и пачка может перенестись частично.
+   * @returns old ItemId → new ItemId для перенесённых писем и ошибки по письмам
+   */
+  protected async moveOrCopyMessagesReturningResults(action: "move" | "copy", withIDs: OWAEMail[]): Promise<{
+    newItemIDs: Map<string, string>,
+    errors: Map<OWAEMail, OWAError>,
+  }> {
+    let results = await this.callMoveOrCopyItems(action, withIDs);
+    let responseItems = ensureArray(results?.ResponseMessages?.Items
+      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []));
+    let newItemIDs = new Map<string, string>();
+    let errors = new Map<OWAEMail, OWAError>();
+    if (responseItems.length != withIDs.length) {
+      // Ответ не сопоставить с письмами: ошибка относится ко всей пачке.
+      let error = responseItems.find(result => result?.ResponseClass == "Error");
+      if (error) {
+        throw new OWAError({ json: error });
+      }
+      return { newItemIDs, errors };
+    }
+    let succeeded: OWAEMail[] = [];
+    let succeededResults: any[] = [];
+    responseItems.forEach((result, index) => {
+      if (result?.ResponseClass == "Error") {
+        errors.set(withIDs[index], new OWAError({ json: result }));
+      } else {
+        succeeded.push(withIDs[index]);
+        succeededResults.push(result);
+      }
+    });
+    if (succeeded.length) {
+      newItemIDs = this.extractMovedItemIds(succeeded, { ResponseMessages: { Items: succeededResults } });
+    }
+    return { newItemIDs, errors };
+  }
+
+  /** Один запрос MoveItem/CopyItem с откатом, если сервер не умеет ReturnNewItemIds. */
+  protected async callMoveOrCopyItems(action: "move" | "copy", withIDs: OWAEMail[]): Promise<any> {
+    let actionVerb = sanitize.translate(action, { move: "Move", copy: "Copy" }) as "Move" | "Copy";
+    let sourceAccount = withIDs[0].folder.account;
     let results: any;
     if (sourceAccount.supportsReturnNewItemIds) {
       try {
@@ -4136,15 +4819,7 @@ export class OWAFolder extends ExchangeFolder {
       results = await sourceAccount.callOWA(
         owaMoveOrCopyMsgsIntoFolderRequest(actionVerb, this.id, withIDs, false));
     }
-    let responseItems = results?.ResponseMessages?.Items
-      ?? (results?.ResponseClass || results?.ResponseCode ? [results] : []);
-    for (let result of ensureArray(responseItems)) {
-      if (result.ResponseClass == "Error") {
-        throw new OWAError({ json: result });
-      }
-    }
-    // Without ReturnNewItemIds the map is empty — callers relocate anyway.
-    return this.extractMovedItemIds(withIDs, results);
+    return results;
   }
 
   protected extractMovedItemIds(withIDs: OWAEMail[], results: any): Map<string, string> {

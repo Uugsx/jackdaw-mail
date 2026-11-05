@@ -2,6 +2,7 @@ import { appGlobal } from "../../logic/app";
 import { MailAccount } from "../../logic/Mail/MailAccount";
 import type { PendingResponseRequest } from "../../logic/Reports/ResponseReminder";
 import { openEMailMessage } from "./open";
+import { gt } from "../../l10n/l10n";
 
 /** Открывает письмо из живого SLA-контроля, даже если оно ещё не загружено в список. */
 export async function openPendingResponseMessage(
@@ -13,14 +14,14 @@ export async function openPendingResponseMessage(
       String(item.dbID) == String(candidate.accountId),
   );
   if (!(account instanceof MailAccount)) {
-    throw new Error("Почтовый ящик для этого запроса недоступен.");
+    throw new Error(gt`The mailbox for this request is not available.`);
   }
   await account.readFromDB();
   const folder = account.findFolder(
     (item) => String(item.dbID) == String(candidate.folderId),
   );
   if (!folder) {
-    throw new Error("Папка для этого запроса недоступна.");
+    throw new Error(gt`The folder for this request is not available.`);
   }
   let email = folder.messages.find(
     (item) => String(item.dbID) == String(candidate.emailId),
@@ -37,4 +38,44 @@ export async function openPendingResponseMessage(
     folder.messages.add(email);
   }
   await openEMailMessage(email);
+}
+
+/** Находит письмо по идентификаторам из отчёта и читает его из базы, не открывая вкладку «Почта». */
+export async function loadReportMessage(
+  candidate: Pick<PendingResponseRequest, "accountId" | "folderId" | "emailId">,
+): Promise<EMail> {
+  const account = appGlobal.emailAccounts.find(
+    (item) =>
+      item instanceof MailAccount &&
+      String(item.dbID) == String(candidate.accountId),
+  );
+  if (!(account instanceof MailAccount)) {
+    throw new Error(gt`The mailbox for this message is not available.`);
+  }
+  await account.readFromDB();
+  // Письмо могли переместить в другую папку: читаем его по идентификатору,
+  // а папка нужна только как владелец объекта.
+  const folder =
+    account.findFolder(
+      (item) => String(item.dbID) == String(candidate.folderId),
+    ) ?? account.inbox;
+  if (!folder) {
+    throw new Error(gt`The folder for this message is not available.`);
+  }
+  let email = folder.messages.find(
+    (item) => String(item.dbID) == String(candidate.emailId),
+  );
+  if (!email) {
+    email = folder.newEMail();
+    email.dbID = candidate.emailId;
+    try {
+      await email.storage.readMessage(email);
+    } catch (ex) {
+      throw new Error(
+        gt`This message was deleted or moved and can no longer be opened.`,
+        { cause: ex },
+      );
+    }
+  }
+  return email;
 }

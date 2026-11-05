@@ -25,7 +25,7 @@
     "header.github": "GitHub",
     "header.download": "Download",
     "hero.title": "An Exchange and OWA mail client that counts response time in working minutes",
-    "hero.lead": "For every unanswered message, Jackdaw Mail shows how much working time has passed and when the reply is due, and it builds a response-time report for any period. Mail is downloaded straight from your server and stays on your computer.",
+    "hero.lead": "For every unanswered message, Jackdaw Mail shows how much working time has passed and when the reply is due, and it builds a response-time report for any period. You can call colleagues who use Jackdaw Mail or message them in an encrypted chat, right from an email. Mail is downloaded straight from your server and stays on your computer.",
     "hero.download": "Download Jackdaw Mail",
     "hero.allBuilds": "All builds on GitHub",
     "hero.free": "free for one mailbox",
@@ -73,13 +73,25 @@
     "features.related.title": "Related messages",
     "features.related.text": "A button in the message header finds messages with the same case number, from the same conversation or with a similar subject. The search runs only when you click it, so opening a message stays fast.",
     "features.mail.title": "Mail",
-    "features.mail.text": "Folders, search, quick filters, categories and tags, flags, archive, undo for delete, keyboard shortcuts for categories and a customizable toolbar.",
+    "features.mail.text": "Folders, search and saved searches, rules, quick filters, categories and tags, flags, archive, undo for delete, notifications set per folder, keyboard shortcuts that act on the message under the mouse pointer (can be turned off in settings) without changing the selection, a customisable toolbar. Emptying Exchange Deleted Items also removes meetings, contacts, tasks, notes and subfolders. PGP and S/MIME encryption if you have keys.",
+    "features.exchange.title": "Exchange features",
+    "features.exchange.text": "Out-of-office replies with a schedule and a separate text for external senders, server-side inbox rules, tasks and flags with due dates, notes, server search across the mailbox, distribution list members, manager and direct reports from the directory, sending on behalf of a shared mailbox or a manager. All of this is stored on the Exchange server, so Outlook shows it too.",
+    "features.sending.title": "Sending",
+    "features.sending.text": "Undo send for a few seconds and “Send later”, message templates, @mentions, voting buttons, replies to read-receipt requests. A large file can go as a link from Nextcloud or openCloud.",
+    "features.inbox.title": "Inbox triage",
+    "features.inbox.text": "Snooze a message until a set time, pin it to the top of the list, Focused and Other tabs, clean-up of messages fully quoted in later replies, multi-step Quick Steps, safe and blocked sender lists, “Report phishing”. PDF, Word and Excel attachments open for preview inside the app: zoom, rotate and copy images, search and print PDFs.",
     "features.calendar.title": "Calendar and contacts",
-    "features.calendar.text": "Events, invitations and reminders; personal address books, groups and the organization's global address list.",
+    "features.calendar.text": "Events, invitations and reminders; “Propose new time”, working hours, Exchange room booking and printing a day, week or month. Personal address books, groups and the organization's global address list.",
     "features.calls.title": "Calls and chat · Pro",
-    "features.calls.text": "Audio calls and end-to-end encrypted chat between Jackdaw Mail users by email address. Voice goes directly between computers; chat text and files are encrypted on the device. You confirm your address with an emailed code or by sending a reply from your own mailbox, so company mail works too.",
+    "features.calls.text": "End-to-end encrypted audio and video calls with screen sharing, and chat between Jackdaw Mail users, by email address. One-to-one chats and groups of up to 50 people; the group creator can rename it and change who is in it. Replies with quotes, editing and deleting for everyone, reactions, GIFs; you can see whether a message was delivered and read, and which members are online. Up to 10 files of 25 MB per message. Chat opens in the sidebar next to your mail; the sidebar splits into two parts and remembers the open chat. You can send a message or an event to a chat. The “Do not disturb” status declines calls and mutes notifications. Calls go directly between computers, or through our relay when the network does not allow that; the relay cannot decrypt the call. You confirm your address once for all devices on your licence, with an emailed code or by sending a reply from your own mailbox.",
+    "features.archive.title": "Large mailboxes and online archive",
+    "features.archive.text": "Shared mailboxes and the Exchange online archive with tens of thousands of messages. Older messages load in the background in batches without getting in your way. Moving, deleting and undoing the deletion of hundreds of messages happens in batches.",
+    "features.languages.title": "43 languages",
+    "features.languages.text": "The interface is fully translated into 43 languages, including English, Russian, French, German, Spanish, Ukrainian, Chinese and Japanese. Arabic, Hebrew, Persian and Urdu are shown right to left.",
+    "features.security.title": "Passwords and security",
+    "features.security.text": "Passwords and sign-in tokens are encrypted with the system keychain: Keychain on macOS and DPAPI on Windows. Sign-in and network errors are explained in plain words, with what to do next. Updates are verified before they are installed; remote email content is isolated from the app, and opened attachments are marked by the system as downloaded from the internet. Our servers limit confirmation-code guessing and bulk requests.",
     "features.protocols.title": "Protocols",
-    "features.protocols.text": "Exchange via OWA, EWS and ActiveSync; IMAP; calendars and contacts via CalDAV and CardDAV. Microsoft Graph and JMAP are experimental.",
+    "features.protocols.text": "Exchange via OWA, EWS and ActiveSync, including shared mailboxes and the online archive; IMAP; calendars and contacts via CalDAV and CardDAV. Sign in with Microsoft, Google, Yahoo, AOL, Fastmail and Mail.ru. Microsoft Graph and JMAP are in testing.",
     "data.title": "Where your data goes",
     "data.aside": "The app's network connections, apart from your own actions such as opening links",
     "data.header.host": "Destination",
@@ -110,7 +122,13 @@
     "data.verify.what": "A short email from your mailbox, to confirm the address",
     "data.verify.when": "Only if you choose “Confirm by email”",
     "data.stun.what": "Your IP address, to connect the call directly. The other person also sees your IP address",
-    "data.stun.when": "During a Jackdaw audio call",
+    "data.stun.when": "During a Jackdaw call",
+    "data.turn.label": "(call relay)",
+    "data.turn.what": "Your IP address and the encrypted voice and video. The server passes them on to the other person and cannot decrypt it",
+    "data.turn.when": "Only when the call cannot connect directly",
+    "data.gif.label": "(GIFs in chat)",
+    "data.gif.what": "Your IP address when GIF images load. The search query goes to KLIPY through our server, with a hash instead of your licence key",
+    "data.gif.when": "Only when you search for or send a GIF in Jackdaw chat",
     "data.feedback.label": "(feedback)",
     "data.feedback.what": "Your message, a reply address (if you give one), app version, platform and language (if you allow it), and an anonymised device fingerprint. A bug report becomes a GitHub issue without your address",
     "data.feedback.when": "Only when you send feedback",
@@ -126,6 +144,7 @@
     "plans.row.schedule": "Working hours per weekday",
     "plans.row.reports": "Reports and HTML export",
     "plans.row.signatures": "HTML signatures",
+    "plans.row.calls": "Jackdaw calls and chat",
     "plans.yes": "yes",
     "plans.no": "no",
     "plans.accounts.free": "one",
@@ -138,11 +157,15 @@
     "plans.yearly.note": "$6.67 a month, a third less than paying monthly.",
     "plans.checkout": "Buy a key",
     "plans.trialNote": "You can try Pro free for 7 days. The trial starts inside the app and needs no card. While it runs, the app needs internet access because the trial is checked online.",
-    "plans.paymentNote": "Payment is handled by Lemon Squeezy, and the key is sent to the email used for the purchase. Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
+    "plans.paymentNote": "Payment is handled by Paddle. The key appears on this page as soon as the payment is confirmed, so save it somewhere safe. Jackdaw Mail never sees your card details. When a subscription ends, your connected accounts stay; only the Pro features switch off.",
     "billing.unavailable": "The purchase link is not configured yet.",
     "billing.storeUnavailable": "The payment store is not connected yet.",
     "billing.checking": "Checking the payment store…",
     "billing.network": "The payment status is temporarily unavailable.",
+    "purchase.title": "Jackdaw Pro key",
+    "purchase.copy": "Copy",
+    "purchase.hint": "Paste the key into Jackdaw Mail: Settings → Jackdaw Pro. Save it: you will need it to connect another device.",
+    "purchase.close": "Done",
     "downloads.title": "Download",
     "downloads.aside": "Builds are published on GitHub.",
     "downloads.header.system": "System",
@@ -162,9 +185,9 @@
     "faq.q2": "Does reading a message reset the deadline?",
     "faq.a2": "No. Reading a message or assigning a category with an employee's name shows who picked it up, but the deadline is still counted from when the message arrived.",
     "faq.q3": "Where are my passwords and mail stored?",
-    "faq.a3": "On your computer, in the app's data folder. Passwords and mail are never sent to Jackdaw servers.",
+    "faq.a3": "Mail stays on your computer, in the app's data folder. Passwords and sign-in tokens are also encrypted with the system keychain: Keychain on macOS and DPAPI on Windows. Passwords and mail are never sent to Jackdaw servers.",
     "faq.q4": "What happens when Pro ends?",
-    "faq.a4": "Mail keeps working and your connected accounts stay. You cannot add a new account, and reports, the unanswered queue and HTML signatures switch off until you renew.",
+    "faq.a4": "Mail keeps working and your connected accounts stay. You cannot add a new account, and reports, the unanswered queue, HTML signatures, and Jackdaw calls and chat switch off until you renew.",
     "faq.q5": "How does the app update?",
     "faq.a5": "The app checks GitHub for new versions and tells you when one is available. On macOS the update downloads automatically, on Windows when you click the button. Installation starts after you confirm, then the app restarts. Your settings and mail are kept.",
     "footer.copyright": "© 2026 Jackdaw Mail",
@@ -175,6 +198,7 @@
     "footer.license": "License",
     "footer.terms": "Terms of Use",
     "footer.privacy": "Privacy Policy",
+    "footer.refund": "Refund Policy",
     "footer.author": "Author: @Uugsx",
     "footer.credit": "Based on open-source work by Ben Bucksch, Beonex GmbH and other contributors."
   };
@@ -191,6 +215,15 @@
     "billing.available": "Откроется защищённая страница покупки.",
     "billing.unavailableTitle": "Ссылка на покупку ещё не настроена.",
     "billing.availableTitle": "Откроется защищённая страница покупки.",
+    "billing.paddleAvailable": "Оплата откроется в защищённом окне Paddle.",
+    "billing.paddleSandbox": "Тестовая среда Paddle Sandbox: настоящие деньги не списываются.",
+    "purchase.waiting": "Оплата получена. Ждём подтверждения от Paddle и выпускаем ключ…",
+    "purchase.ready": "Ключ готов.",
+    "purchase.copied": "Ключ скопирован.",
+    "purchase.timeout": "Подтверждение оплаты задерживается. Обновите страницу через минуту — ключ появится здесь же.",
+    "purchase.failed": "Не удалось открыть оплату. Обновите страницу и попробуйте ещё раз.",
+    "purchase.revoked": "Эта покупка отменена или возвращена, ключ неактивен.",
+    "purchase.expired": "Срок получения ключа на этой странице истёк. Напишите в поддержку, чтобы получить ключ.",
     "downloads.hero.mac": "Скачать для macOS",
     "downloads.hero.windows": "Скачать для Windows",
     "downloads.hero.other": "Перейти к загрузкам",
@@ -211,6 +244,15 @@
     "billing.storeUnavailable": "The payment store is not connected yet.",
     "billing.checking": "Checking the payment store…",
     "billing.network": "The payment status is temporarily unavailable.",
+    "billing.paddleAvailable": "Payment opens in a secure Paddle window.",
+    "billing.paddleSandbox": "Paddle Sandbox test environment: no real money is charged.",
+    "purchase.waiting": "Payment received. Waiting for Paddle to confirm it and issuing your key…",
+    "purchase.ready": "Your key is ready.",
+    "purchase.copied": "Key copied.",
+    "purchase.timeout": "Payment confirmation is taking longer than usual. Reload the page in a minute and the key will appear here.",
+    "purchase.failed": "The payment window could not be opened. Reload the page and try again.",
+    "purchase.revoked": "This purchase was cancelled or refunded, so the key is inactive.",
+    "purchase.expired": "The key can no longer be collected on this page. Contact support to receive it.",
     "downloads.hero.mac": "Download for macOS",
     "downloads.hero.windows": "Download for Windows",
     "downloads.hero.other": "Go to downloads",
@@ -392,6 +434,33 @@
     : '';
   const ownBillingHosts = new Set(['jackdaw-mail.pro', 'www.jackdaw-mail.pro', 'license.jackdaw-mail.pro']);
   const billingStates = [];
+  const paddleSiteConfig = window.JACKDAW_BILLING_CONFIG && window.JACKDAW_BILLING_CONFIG.paddle
+    ? window.JACKDAW_BILLING_CONFIG.paddle
+    : null;
+  // Окружение Paddle задаёт префикс клиентского токена: test_ для Sandbox, live_ для Live.
+  const PADDLE_TOKEN_PREFIXES = { sandbox: 'test_', production: 'live_' };
+  const PADDLE_TOKEN_RE = /^(?:test|live)_[A-Za-z0-9_]{8,128}$/;
+  const PADDLE_PRICE_RE = /^pri_[a-z0-9]{26}$/;
+  const PADDLE_TRANSACTION_RE = /^txn_[a-z0-9]{26}$/;
+  const PADDLE_SCRIPT_HOST = 'cdn.paddle.com';
+  const CLAIM_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+  const LICENSE_KEY_RE = /^JACKDAW-PRO-(?:[A-Z0-9]{4}-){3}[A-Z0-9]{4}$/;
+  const PURCHASE_STORAGE_KEY = 'jackdaw-paddle-purchase';
+  const PURCHASE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+  const CLAIM_POLL_INTERVAL_MS = 3000;
+  const CLAIM_POLL_ATTEMPTS = 40;
+  const purchaseResult = document.getElementById('purchase-result');
+  const purchaseMessage = document.getElementById('purchase-result-message');
+  const purchaseKeyRow = document.getElementById('purchase-key-row');
+  const purchaseKey = document.getElementById('purchase-key');
+  const purchaseKeyHint = document.getElementById('purchase-key-hint');
+  const purchaseCopy = document.getElementById('purchase-key-copy');
+  const purchaseClose = document.getElementById('purchase-result-close');
+  let paddleLoading = null;
+  let paddleCheckout = null;
+  let currentPurchase = null;
+  let purchaseMessageKey = '';
+  let purchaseFinal = false;
 
   function validCheckoutURL(value) {
     if (typeof value !== 'string' || !value.trim()) return null;
@@ -410,10 +479,12 @@
   }
 
   function updateBillingCopy() {
-    billingStates.forEach(({ link, status, state }) => {
-      const available = state === 'available';
+    billingStates.forEach(({ link, status, state, mode }) => {
+      const paddleStatusKey = paddleCheckout && paddleCheckout.environment === 'sandbox'
+        ? 'billing.paddleSandbox'
+        : 'billing.paddleAvailable';
       const statusKey = state === 'available'
-        ? 'billing.available'
+        ? (mode === 'paddle' ? paddleStatusKey : 'billing.available')
         : state === 'checking'
           ? 'billing.checking'
           : state === 'store-unavailable'
@@ -421,7 +492,9 @@
             : state === 'network-error'
               ? 'billing.network'
               : 'billing.unavailable';
-      const titleKey = state === 'available' ? 'billing.availableTitle' : statusKey;
+      const titleKey = state === 'available'
+        ? (mode === 'paddle' ? 'billing.paddleAvailable' : 'billing.availableTitle')
+        : statusKey;
       link.setAttribute('title', getLocalized(titleKey));
       if (status) {
         status.textContent = getLocalized(statusKey);
@@ -439,7 +512,14 @@
   function linkState(item, available) {
     const { link, checkoutURL } = item;
     link.classList.toggle('is-unavailable', !available);
-    if (available) {
+    if (available && item.mode === 'paddle') {
+      // Paddle.js открывает checkout поверх страницы, переход по ссылке не нужен.
+      link.setAttribute('href', '#plans');
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+      link.removeAttribute('aria-disabled');
+      link.removeAttribute('tabindex');
+    } else if (available) {
       link.setAttribute('href', checkoutURL);
       link.setAttribute('target', '_blank');
       link.setAttribute('rel', 'noopener noreferrer');
@@ -482,6 +562,21 @@
       });
       const config = await response.json().catch(() => null);
       if (!response.ok || !config || typeof config.checkout !== 'object') throw new Error('billing-config');
+      const paddle = resolvePaddleConfig(config.paddle);
+      if (paddle) {
+        await loadPaddle(paddle);
+        pending.forEach((item) => {
+          item.mode = 'paddle';
+          setBillingState(item, 'available');
+        });
+        openRequestedCheckout();
+        return;
+      }
+      if (config.paddle && config.paddle.configured === true) {
+        // Сервер настроен на другое окружение или другие цены: webhook не выдал бы ключ.
+        pending.forEach((item) => setBillingState(item, 'unavailable'));
+        return;
+      }
       pending.forEach((item) => {
         const configured = config.checkout?.[item.plan]?.configured === true;
         setBillingState(item, configured ? 'available' : 'store-unavailable');
@@ -493,6 +588,257 @@
     }
   }
 
+  function resolvePaddleConfig(serverConfig) {
+    if (!paddleSiteConfig || !serverConfig || serverConfig.configured !== true) return null;
+    // Окружение и цены задаёт сервер (license.env), переход Sandbox → Live не требует правки сайта.
+    // Если в billing-config.js они всё же закреплены, они должны совпасть с серверными.
+    const environment = serverConfig.environment;
+    const expectedPrefix = PADDLE_TOKEN_PREFIXES[environment];
+    const token = serverConfig.clientToken;
+    const serverPrices = serverConfig.prices || {};
+    const pinnedPrices = paddleSiteConfig.prices || null;
+    if (!expectedPrefix) return null;
+    if (paddleSiteConfig.environment && paddleSiteConfig.environment !== environment) return null;
+    if (typeof token !== 'string' || !PADDLE_TOKEN_RE.test(token) || !token.startsWith(expectedPrefix)) return null;
+    const prices = {};
+    const pricesMatch = ['monthly', 'yearly'].every((plan) => {
+      prices[plan] = serverPrices[plan];
+      return PADDLE_PRICE_RE.test(prices[plan] || '')
+        && (!pinnedPrices || !pinnedPrices[plan] || pinnedPrices[plan] === prices[plan]);
+    });
+    if (!pricesMatch || prices.monthly === prices.yearly) return null;
+    let scriptUrl;
+    try {
+      scriptUrl = new URL(paddleSiteConfig.scriptUrl);
+    } catch (_error) {
+      return null;
+    }
+    if (scriptUrl.protocol !== 'https:' || scriptUrl.hostname !== PADDLE_SCRIPT_HOST) return null;
+    return {
+      environment,
+      token,
+      prices: { monthly: prices.monthly, yearly: prices.yearly },
+      scriptUrl: scriptUrl.toString(),
+    };
+  }
+
+  function loadPaddle(paddle) {
+    if (paddleLoading) return paddleLoading;
+    paddleLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = paddle.scriptUrl;
+      script.async = true;
+      script.onload = () => {
+        const Paddle = window.Paddle;
+        if (!Paddle || !Paddle.Checkout || !Paddle.Environment || typeof Paddle.Initialize !== 'function') {
+          reject(new Error('paddle-unavailable'));
+          return;
+        }
+        try {
+          // Paddle.Initialize допускается только один раз на странице.
+          if (paddle.environment === 'sandbox') Paddle.Environment.set('sandbox');
+          Paddle.Initialize({ token: paddle.token, eventCallback: handlePaddleEvent });
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        paddleCheckout = paddle;
+        resolve(paddle);
+      };
+      script.onerror = () => reject(new Error('paddle-unavailable'));
+      document.head.appendChild(script);
+    });
+    return paddleLoading;
+  }
+
+  function createClaimToken() {
+    if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') return null;
+    const bytes = window.crypto.getRandomValues(new Uint8Array(32));
+    let binary = '';
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function savePurchase(purchase) {
+    currentPurchase = purchase;
+    try {
+      localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify(purchase));
+    } catch (_error) {
+      // Без хранилища ключ всё равно выдаётся в этой вкладке.
+    }
+  }
+
+  function forgetPurchase() {
+    currentPurchase = null;
+    try {
+      localStorage.removeItem(PURCHASE_STORAGE_KEY);
+    } catch (_error) {
+      // Удалять нечего, если хранилище недоступно.
+    }
+  }
+
+  function readPurchase() {
+    try {
+      const purchase = JSON.parse(localStorage.getItem(PURCHASE_STORAGE_KEY) || 'null');
+      if (!purchase || !CLAIM_TOKEN_RE.test(purchase.claimToken || '')) return null;
+      if (typeof purchase.startedAt !== 'number' || Date.now() - purchase.startedAt > PURCHASE_MAX_AGE_MS) return null;
+      return purchase;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function showPurchaseMessage(messageKey) {
+    if (!purchaseResult || !purchaseMessage) return;
+    purchaseMessageKey = messageKey;
+    purchaseMessage.textContent = getLocalized(messageKey);
+    purchaseResult.hidden = false;
+  }
+
+  function showPurchaseKey(licenseKey) {
+    if (!purchaseKey || !purchaseKeyRow) return;
+    purchaseKey.textContent = licenseKey;
+    purchaseKeyRow.hidden = false;
+    if (purchaseKeyHint) purchaseKeyHint.hidden = false;
+    purchaseFinal = true;
+    showPurchaseMessage('purchase.ready');
+  }
+
+  function finishPurchase(messageKey) {
+    purchaseFinal = true;
+    forgetPurchase();
+    showPurchaseMessage(messageKey);
+  }
+
+  async function claimPurchaseKey(purchase, attempt) {
+    const apiURL = validBillingAPIURL(billingApiBaseUrl);
+    if (!apiURL || currentPurchase !== purchase) return;
+    let status = 0;
+    let payload = null;
+    try {
+      const response = await fetch(`${apiURL}/v1/paddle/claim`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ transactionId: purchase.transactionId, claimToken: purchase.claimToken }),
+      });
+      status = response.status;
+      payload = await response.json().catch(() => null);
+    } catch (_error) {
+      status = 0;
+    }
+    if (currentPurchase !== purchase) return;
+    if (status === 200 && payload && LICENSE_KEY_RE.test(payload.licenseKey || '')) {
+      showPurchaseKey(payload.licenseKey);
+      return;
+    }
+    if (status === 403) {
+      finishPurchase('purchase.revoked');
+      return;
+    }
+    if (status === 410) {
+      finishPurchase('purchase.expired');
+      return;
+    }
+    // Webhook Paddle может прийти позже события checkout.completed: ждём и повторяем.
+    if (attempt + 1 >= CLAIM_POLL_ATTEMPTS) {
+      showPurchaseMessage('purchase.timeout');
+      return;
+    }
+    window.setTimeout(() => {
+      void claimPurchaseKey(purchase, attempt + 1);
+    }, CLAIM_POLL_INTERVAL_MS);
+  }
+
+  function startPurchaseClaim(purchase) {
+    purchaseFinal = false;
+    if (purchaseKeyRow) purchaseKeyRow.hidden = true;
+    if (purchaseKeyHint) purchaseKeyHint.hidden = true;
+    showPurchaseMessage('purchase.waiting');
+    void claimPurchaseKey(purchase, 0);
+  }
+
+  function handlePaddleEvent(event) {
+    if (!event || !currentPurchase) return;
+    if (event.name === 'checkout.completed') {
+      const transactionId = event.data && event.data.transaction_id;
+      if (typeof transactionId !== 'string' || !PADDLE_TRANSACTION_RE.test(transactionId)) return;
+      const purchase = { ...currentPurchase, transactionId };
+      savePurchase(purchase);
+      startPurchaseClaim(purchase);
+    } else if (event.name === 'checkout.closed' && !currentPurchase.transactionId) {
+      forgetPurchase();
+    }
+  }
+
+  function openPaddleCheckout(plan) {
+    const priceId = paddleCheckout && paddleCheckout.prices[plan];
+    const claimToken = createClaimToken();
+    if (!priceId || !claimToken || !window.Paddle) {
+      showPurchaseMessage('purchase.failed');
+      return;
+    }
+    savePurchase({ claimToken, plan, transactionId: null, startedAt: Date.now() });
+    try {
+      window.Paddle.Checkout.open({
+        items: [{ priceId, quantity: 1 }],
+        // Токен только связывает оплату с этой вкладкой. Ключ выдаёт сервер
+        // после подписанного webhook, а не по данным из браузера.
+        customData: { jackdaw_claim: claimToken },
+        settings: {
+          displayMode: 'overlay',
+          theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+          locale: currentLanguage,
+          allowLogout: true,
+        },
+      });
+    } catch (_error) {
+      forgetPurchase();
+      showPurchaseMessage('purchase.failed');
+    }
+  }
+
+  function openRequestedCheckout() {
+    // Ссылки /buy/{plan} из приложения ведут сюда с ?checkout=monthly|yearly.
+    let requestedPlan = null;
+    try {
+      const url = new URL(window.location.href);
+      requestedPlan = url.searchParams.get('checkout');
+      if (requestedPlan) {
+        url.searchParams.delete('checkout');
+        window.history.replaceState(null, '', url.toString());
+      }
+    } catch (_error) {
+      requestedPlan = null;
+    }
+    if (requestedPlan === 'monthly' || requestedPlan === 'yearly') {
+      openPaddleCheckout(requestedPlan);
+    }
+  }
+
+  purchaseCopy?.addEventListener('click', async () => {
+    const licenseKey = purchaseKey ? purchaseKey.textContent || '' : '';
+    if (!licenseKey) return;
+    try {
+      await navigator.clipboard.writeText(licenseKey);
+      showPurchaseMessage('purchase.copied');
+    } catch (_error) {
+      // Без доступа к буферу обмена выделяем ключ, чтобы его скопировали вручную.
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(purchaseKey);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+  });
+
+  purchaseClose?.addEventListener('click', () => {
+    if (purchaseFinal) forgetPurchase();
+    if (purchaseResult) purchaseResult.hidden = true;
+  });
+
   billingCheckoutLinks.forEach((link) => {
     const plan = link.getAttribute('data-billing-plan');
     const checkoutURL = validCheckoutURL(billingCheckout[plan]);
@@ -500,16 +846,33 @@
     const state = checkoutURL
       ? (new URL(checkoutURL).hostname.endsWith('.lemonsqueezy.com') ? 'available' : 'checking')
       : 'unavailable';
-    const item = { link, status, plan, checkoutURL, state };
+    const item = { link, status, plan, checkoutURL, state, mode: 'link' };
     billingStates.push(item);
     linkState(item, state === 'available');
     link.addEventListener('click', (event) => {
-      if (item.state !== 'available') event.preventDefault();
+      if (item.state !== 'available') {
+        event.preventDefault();
+      } else if (item.mode === 'paddle') {
+        event.preventDefault();
+        openPaddleCheckout(plan);
+      }
     });
   });
   updateBillingCopy();
   void resolveOwnCheckoutAvailability();
   languageListeners.push(updateBillingCopy);
+  languageListeners.push(() => {
+    if (purchaseMessageKey && purchaseMessage) purchaseMessage.textContent = getLocalized(purchaseMessageKey);
+  });
+
+  // Покупка, начатая до перезагрузки страницы, продолжает ждать ключ.
+  const resumedPurchase = readPurchase();
+  if (resumedPurchase && PADDLE_TRANSACTION_RE.test(resumedPurchase.transactionId || '')) {
+    currentPurchase = resumedPurchase;
+    startPurchaseClaim(resumedPurchase);
+  } else {
+    forgetPurchase();
+  }
 
   // 2. Showcase Tab Switcher
   const tabs = document.querySelectorAll('.showcase-tab');

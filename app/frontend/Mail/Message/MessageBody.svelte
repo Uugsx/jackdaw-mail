@@ -1,30 +1,37 @@
 <vbox flex class="message-body" style:zoom={plaintextZoom} style:width={plaintextZoomWidth}>
   {#if !$message.loadedBody}
-    {#await loadMessageBody()}
-      {#await sleep(1)}
-        <hbox></hbox>
-      {:then}
-        {$t`Loading...`}
+    {#key loadAttempt}
+      {#await loadMessageBody()}
+        {#await sleep(1)}
+          <hbox></hbox>
+        {:then}
+          {$t`Loading...`}
+        {/await}
+      {:catch ex}
+        <ErrorMessage {ex} onRetry={retryLoad} />
       {/await}
-    {:catch ex}
-      <ErrorMessage {ex} />
-    {/await}
+    {/key}
   {:else if mode == DisplayMode.HTML}
-    <HTMLDisplay html={$message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />
+    <HTMLDisplay html={translatedHTML ?? $message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />
   {:else if mode == DisplayMode.HTMLWithExternal}
-    <HTMLDisplay html={$message.html} allowExternalImages={true} allowImageOpen {zoom} on:zoomwheel />
+    <HTMLDisplay html={translatedHTML ?? $message.html} allowExternalImages={true} allowImageOpen {zoom} on:zoomwheel />
   {:else if mode == DisplayMode.Plaintext}
-    <PlaintextDisplay plaintext={$message.text} />
+    <PlaintextDisplay plaintext={translatedText ?? $message.text} />
     <!--<HTMLDisplay html={convertTextToHTML($message.text)} />-->
   {:else if mode == DisplayMode.Source}
-    {#await message.loadMIME()}
-      {$t`Loading...`}
-    {:then}
-      <PlaintextDisplay plaintext={getSource($message)} />
-    {/await}
+    {#key loadAttempt}
+      {#await message.loadMIME()}
+        {$t`Loading...`}
+      {:then}
+        <PlaintextDisplay plaintext={getSource($message)} />
+      {:catch ex}
+        <!-- Без этого при ошибке загрузки висело «Загрузка…» навсегда -->
+        <ErrorMessage {ex} onRetry={retryLoad} />
+      {/await}
+    {/key}
   {:else if mode == DisplayMode.Thread}
     <!-- Thread view unfinished; show HTML until implemented -->
-    <HTMLDisplay html={$message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />
+    <HTMLDisplay html={translatedHTML ?? $message.html} allowExternalImages={false} allowImageOpen {zoom} on:zoomwheel />
   {:else}
     {$t`Unknown display mode`}
   {/if}
@@ -37,6 +44,7 @@
   import ErrorMessage from "../../Shared/ErrorMessageInline.svelte";
   import { sleep } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
+  import { getMessageTranslation } from "./messageTranslation";
   import {
     getMessageContentRenderingSetting,
     normalizeMessageContentRendering,
@@ -53,6 +61,26 @@
   $: message.loadExternalImages = mode == DisplayMode.HTMLWithExternal;
   $: plaintextZoom = mode == DisplayMode.Plaintext || mode == DisplayMode.Source ? zoom / 100 : undefined;
   $: plaintextZoomWidth = plaintextZoom && plaintextZoom != 1 ? `calc(100% / ${plaintextZoom})` : undefined;
+
+  // Перевод показывается на месте текста; оригинал не меняется
+  $: translation = getMessageTranslation(message);
+  $: translationKind = mode == DisplayMode.Plaintext ? "text" as const : "html" as const;
+  $: translationSource = !$message.loadedBody || mode == DisplayMode.Source ? null
+    : translationKind == "text" ? $message.text ?? "" : $message.html;
+  $: if (translationSource != null) {
+    translation.setDisplayed(translationKind, translationSource);
+  }
+  $: translatedResult = $translation && translationSource != null
+    ? translation.resultFor(translationKind, translationSource)
+    : null;
+  $: translatedHTML = translationKind == "html" ? translatedResult : null;
+  $: translatedText = translationKind == "text" ? translatedResult : null;
+
+  /** Повтор после сбоя: `{#key}` запускает загрузку заново */
+  let loadAttempt = 0;
+  function retryLoad() {
+    loadAttempt++;
+  }
 
   async function loadMessageBody(): Promise<void> {
     // The account can become available between component creation and the

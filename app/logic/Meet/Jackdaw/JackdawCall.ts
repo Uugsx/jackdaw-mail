@@ -30,15 +30,39 @@ const RECONNECT_TIMEOUT_MS = 30_000;
 /** Как часто звонящий повторяет перезапуск ICE, пока связь не восстановилась:
  * первая попытка могла уйти, пока новая сеть ещё не поднялась. */
 const ICE_RESTART_RETRY_MS = 8_000;
+/** Как часто проверять, идут ли кадры видео собеседника */
+const REMOTE_VIDEO_CHECK_MS = 1_000;
+/** Сколько без новых кадров считать, что собеседник выключил камеру или показ экрана.
+ * Отключённая дорожка (`replaceTrack(null)`) не всегда вызывает `mute` у получателя. */
+const REMOTE_VIDEO_STALL_MS = 2_500;
+/** Неподвижный экран кодируется редкими кадрами: показ экрана прячем только после долгой тишины */
+const REMOTE_SCREEN_STALL_MS = 10_000;
 
-/** Звонки Jackdaw ↔ Jackdaw: только голос, 1:1. Медиа идёт напрямую между клиентами (P2P WebRTC),
+/** Видеоканалы соединения по порядку: первый — камера, второй — показ экрана */
+function videoTransceivers(peerConnection: RTCPeerConnection): RTCRtpTransceiver[] {
+  return peerConnection.getTransceivers().filter(t => t.receiver.track?.kind == "video");
+}
+
+/** Видео собеседника и признаки, идут ли его кадры */
+interface RemoteVideo {
+  video: VideoStream;
+  receiver?: RTCRtpReceiver;
+  show(): void;
+  hide(): void;
+  frames: number;
+  lastFrameAt: number;
+  stallMS: number;
+}
+
+
+/** Звонки Jackdaw ↔ Jackdaw 1:1: голос, камера и показ экрана. Медиа идёт напрямую между клиентами (P2P WebRTC),
  * сигналинг — через `JackdawCallClient`.
  * Аккаунт не сохраняется и не показывается в списке аккаунтов: он есть у каждого пользователя Pro. */
 export class JackdawCallAccount extends MeetAccount {
   readonly protocol: string = "jackdaw-call";
-  canVideo = false;
+  canVideo = true;
   canAudio = true;
-  canScreenShare = false;
+  canScreenShare = true;
   canMultipleParticipants = false;
   canCreateURL = false;
 
@@ -72,6 +96,12 @@ export function setJackdawCallEndedHandler(handler: (call: JackdawCall, message:
   onJackdawCallEnded = handler;
 }
 
+/** Вызывается после любого завершения звонка: например, чтобы записать его в историю чата. */
+export let onJackdawCallFinished: (call: JackdawCall) => void = () => {};
+export function setJackdawCallFinishedHandler(handler: (call: JackdawCall) => void): void {
+  onJackdawCallFinished = handler;
+}
+
 /** Предупреждение во время разговора, которое не завершает звонок: например, отключился микрофон. */
 export let onJackdawCallWarning: (call: JackdawCall, message: string) => void = () => {};
 export function setJackdawCallWarningHandler(handler: (call: JackdawCall, message: string) => void): void {
@@ -95,8 +125,11 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   /** Адрес собеседника в Jackdaw */
   remoteEmail: string;
   outgoing = false;
+  /** Видеозвонок: камера включается при ответе. В голосовом её можно включить в разговоре. */
   hasVideo = false;
-  readonly voiceOnly = true;
+  canAddVideo = true;
+  /** Ни у кого нет видео: интерфейс показывает вид голосового звонка */
+  voiceOnly = true;
   @notifyChangedProperty
   endReason: JackdawCallEndReason | null = null;
   /** Звонок уже закончен на сервере: при `hangup()` ничего не отправляем */
@@ -106,6 +139,13 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   protected peerConnection: RTCPeerConnection | null = null;
   /** Аудиоканал соединения. У звонящего создаётся сразу, у вызываемого — из предложения SDP. */
   protected audioTransceiver: RTCRtpTransceiver | null = null;
+  /** Каналы камеры и показа экрана. Заводятся сразу: включение камеры в разговоре — замена дорожки
+   * без повторного согласования. Старые версии получают видео и просто его не показывают. */
+  protected cameraTransceiver: RTCRtpTransceiver | null = null;
+  protected screenTransceiver: RTCRtpTransceiver | null = null;
+  /** Видео собеседника, в том числе скрытые, пока кадры не идут */
+  protected remoteVideos: RemoteVideo[] = [];
+  protected remoteVideoTimer: ReturnType<typeof setInterval> | null = null;
   /** Кандидаты ICE, пришедшие до описания сессии собеседника */
   protected pendingCandidates: JackdawIceCandidate[] = [];
   protected connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,18 +183,20 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   }
 
   /** Готовит исходящий звонок. Звонить начнёт `call()` после подтверждения в интерфейсе.
-   * Звонки Jackdaw — только голосовые, поэтому `_video` не используется. */
-  prepareOutgoing(email: string, name: string, _video = false, person?: Person | null): void {
+   * @param video видеозвонок: камера включается сразу */
+  prepareOutgoing(email: string, name: string, video = false, person?: Person | null): void {
     this.outgoing = true;
+    this.hasVideo = video;
     this.remoteEmail = email;
     this.title = name || email;
     this.addRemotePlaceholder(email, name, person);
     this.state = MeetingState.OutgoingCallConfirm;
   }
 
-  /** Входящий звонок от сервиса. Видеозвонок от старой версии принимается как голосовой. */
+  /** Входящий звонок от сервиса. На видеозвонок отвечаем с камерой. */
   prepareIncoming(message: Extract<JackdawServerMessage, { type: "incoming" }>, person?: Person | null): void {
     this.outgoing = false;
+    this.hasVideo = message.video;
     this.callID = message.callId;
     this.id = message.callId;
     this.remoteEmail = message.from;
@@ -187,7 +229,9 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
   }
 
   protected missedCallMessage(): string {
-    return gt`Missed call from ${this.remoteLabel}`;
+    return this.endReason == "busy"
+      ? gt`${this.remoteLabel} called while you were in another call`
+      : gt`Missed call from ${this.remoteLabel}`;
   }
 
   protected addRemotePlaceholder(email: string, name: string, person?: Person | null): void {
@@ -209,7 +253,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     await super.call(); // → OutgoingCall
     this.client.register(this);
     try {
-      this.client.send({ type: "invite", callId: this.callID, to: this.remoteEmail, video: false });
+      this.client.send({ type: "invite", callId: this.callID, to: this.remoteEmail, video: this.hasVideo });
     } catch (ex) {
       this.client.unregister(this);
       await this.endLocally();
@@ -354,7 +398,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
     this.peerConnection = peerConnection;
     peerConnection.onicecandidate = event => this.sendCandidate(event.candidate);
-    peerConnection.ontrack = event => this.addRemoteTrack(event.track);
+    peerConnection.ontrack = event => this.addRemoteTrack(event.track, event.transceiver);
     peerConnection.onconnectionstatechange = () => this.connectionStateChanged(peerConnection);
     peerConnection.oniceconnectionstatechange = () => this.iceConnectionStateChanged(peerConnection);
     this.clearRingTimer();
@@ -375,8 +419,10 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
 
     if (this.outgoing) {
       this.audioTransceiver = peerConnection.addTransceiver("audio", { direction: "sendrecv" });
+      this.cameraTransceiver = peerConnection.addTransceiver("video", { direction: "sendrecv" });
+      this.screenTransceiver = peerConnection.addTransceiver("video", { direction: "sendrecv" });
       this.runMediaStep(async () => {
-        await this.attachLocalAudio();
+        await this.attachLocalMedia();
         await peerConnection.setLocalDescription(await peerConnection.createOffer());
         this.sendSignal({ kind: "offer", sdp: peerConnection.localDescription?.sdp });
       });
@@ -405,10 +451,18 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     } else if (message.kind == "offer" && !this.outgoing) {
       await peerConnection.setRemoteDescription({ type: "offer", sdp: message.sdp });
       this.audioTransceiver = peerConnection.getTransceivers().find(t => t.receiver.track?.kind == "audio") ?? null;
-      if (this.audioTransceiver) {
-        this.audioTransceiver.direction = "sendrecv";
+      // Звонящий старой версии видео не предлагает: тогда каналов камеры и экрана нет
+      [this.cameraTransceiver = null, this.screenTransceiver = null] = videoTransceivers(peerConnection);
+      if (!this.cameraTransceiver && this.canAddVideo) {
+        this.canAddVideo = false;
+        this.notifyObservers();
       }
-      await this.attachLocalAudio();
+      for (let transceiver of [this.audioTransceiver, this.cameraTransceiver, this.screenTransceiver]) {
+        if (transceiver) {
+          transceiver.direction = "sendrecv";
+        }
+      }
+      await this.attachLocalMedia();
       await peerConnection.setLocalDescription(await peerConnection.createAnswer());
       this.sendSignal({ kind: "answer", sdp: peerConnection.localDescription?.sdp });
       await this.addPendingCandidates(peerConnection);
@@ -484,7 +538,128 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
   }
 
-  protected addRemoteTrack(track: MediaStreamTrack): void {
+  /** Звук и видео на нашей стороне: микрофон, камера, показ экрана */
+  protected async attachLocalMedia(): Promise<void> {
+    await this.attachLocalAudio();
+    await this.attachLocalVideo();
+  }
+
+  protected async attachLocalVideo(): Promise<void> {
+    if (this.peerConnection?.connectionState == "closed") {
+      return;
+    }
+    let camera = this.mediaDeviceStreams.cameraMicStream?.getVideoTracks()[0] ?? null;
+    let screen = this.mediaDeviceStreams.screenStream?.getVideoTracks()[0] ?? null;
+    for (let [transceiver, track] of [[this.cameraTransceiver, camera], [this.screenTransceiver, screen]] as const) {
+      let sender = transceiver?.sender;
+      if (sender && sender.track != track) {
+        await sender.replaceTrack(track);
+      }
+    }
+    this.updateVoiceOnly();
+  }
+
+  /** Вид голосового звонка, пока ни у кого нет видео */
+  protected updateVoiceOnly(): void {
+    let voiceOnly = !this.videos.contents.some(v => v.hasVideo || v.isScreenShare);
+    if (voiceOnly != this.voiceOnly) {
+      this.voiceOnly = voiceOnly;
+      this.notifyObservers();
+    }
+  }
+
+  /** Видео собеседника показывается, пока идут кадры: выключенная камера перестаёт слать их, и дорожка затихает */
+  protected addRemoteVideo(track: MediaStreamTrack, transceiver?: RTCRtpTransceiver): void {
+    if (this.remoteVideos.some(v => v.video.stream.getTracks().includes(track))) {
+      return;
+    }
+    let isScreen = !!transceiver && !!this.peerConnection && videoTransceivers(this.peerConnection).indexOf(transceiver) == 1;
+    let remote = this.remoteParticipant;
+    let video = new VideoStream(new MediaStream([track]), remote ?? undefined);
+    video.hasVideo = true;
+    video.isScreenShare = isScreen;
+    let show = () => {
+      if (this.state == MeetingState.Ended || this.videos.contents.includes(video)) {
+        return;
+      }
+      this.videos.add(video);
+      if (remote && !isScreen) {
+        remote.cameraOn = true;
+      }
+      this.updateVoiceOnly();
+    };
+    let hide = () => {
+      if (!this.videos.contents.includes(video)) {
+        return;
+      }
+      this.videos.remove(video);
+      if (remote && !isScreen) {
+        remote.cameraOn = false;
+      }
+      this.updateVoiceOnly();
+    };
+    this.remoteVideos.push({
+      video, receiver: transceiver?.receiver, show, hide, frames: 0, lastFrameAt: Date.now(),
+      stallMS: isScreen ? REMOTE_SCREEN_STALL_MS : REMOTE_VIDEO_STALL_MS,
+    });
+    track.addEventListener?.("unmute", show);
+    track.addEventListener?.("mute", hide);
+    track.addEventListener?.("ended", hide);
+    if (!track.muted) {
+      show();
+    }
+    this.watchRemoteVideo();
+  }
+
+  protected watchRemoteVideo(): void {
+    if (this.remoteVideoTimer) {
+      return;
+    }
+    this.remoteVideoTimer = setInterval(() => {
+      this.checkRemoteVideo().catch(() => {
+        // Статистика недоступна: остаются события mute/unmute.
+      });
+    }, REMOTE_VIDEO_CHECK_MS);
+  }
+
+  protected unwatchRemoteVideo(): void {
+    if (this.remoteVideoTimer) {
+      clearInterval(this.remoteVideoTimer);
+      this.remoteVideoTimer = null;
+    }
+  }
+
+  /** Показывает видео собеседника, пока приходят новые кадры, и прячет, когда они перестали приходить */
+  protected async checkRemoteVideo(): Promise<void> {
+    for (let remote of [...this.remoteVideos]) {
+      if (!remote.receiver?.getStats) {
+        continue;
+      }
+      let frames = 0;
+      (await remote.receiver.getStats()).forEach(report => {
+        if (report.type == "inbound-rtp") {
+          frames = Math.max(frames, report.framesDecoded ?? report.framesReceived ?? 0);
+        }
+      });
+      if (!this.remoteVideos.includes(remote)) {
+        continue;
+      }
+      let now = Date.now();
+      if (frames > remote.frames) {
+        remote.frames = frames;
+        remote.lastFrameAt = now;
+        remote.show();
+      } else if (now - remote.lastFrameAt >= remote.stallMS) {
+        remote.hide();
+      }
+    }
+  }
+
+  protected addRemoteTrack(track: MediaStreamTrack, transceiver?: RTCRtpTransceiver): void {
+    if (track.kind == "video") {
+      this.addRemoteVideo(track, transceiver);
+      return;
+    }
     if (track.kind != "audio" || this.videos.find(v => !v.isMe && v.stream.getTracks().includes(track))) {
       return;
     }
@@ -641,10 +816,13 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     this.clearReconnectTimers();
     this.reconnecting = false;
     this.unwatchDeviceChanges();
+    this.unwatchRemoteVideo();
     this.pendingCandidates = [];
     let peerConnection = this.peerConnection;
     this.peerConnection = null;
     this.audioTransceiver = null;
+    this.cameraTransceiver = null;
+    this.screenTransceiver = null;
     if (peerConnection) {
       peerConnection.onicecandidate = null;
       peerConnection.ontrack = null;
@@ -652,13 +830,14 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       peerConnection.oniceconnectionstatechange = null;
       peerConnection.close();
     }
-    let remoteStreams = this.videos.contents.filter(v => !v.isMe);
+    let remoteStreams = [...new Set([...this.videos.contents.filter(v => !v.isMe), ...this.remoteVideos.map(v => v.video)])];
     for (let video of remoteStreams) {
       for (let track of video.stream.getTracks()) {
         track.stop();
       }
     }
-    this.videos.removeAll(remoteStreams);
+    this.videos.removeAll(remoteStreams.filter(v => this.videos.contents.includes(v)));
+    this.remoteVideos = [];
   }
 
   async startCameraMic(mediaStream: MediaStream): Promise<void> {
@@ -667,7 +846,17 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
       // Гарнитуру отключили: дорожка заканчивается навсегда, собеседник перестал бы нас слышать.
       track.addEventListener?.("ended", () => this.localAudioEnded(track));
     }
-    await this.attachLocalAudio();
+    await this.attachLocalMedia();
+  }
+
+  async startScreenShare(mediaStream: MediaStream): Promise<void> {
+    await super.startScreenShare(mediaStream);
+    await this.attachLocalVideo();
+  }
+
+  async stopScreenShare(oldStream?: MediaStream): Promise<void> {
+    await super.stopScreenShare(oldStream);
+    await this.attachLocalVideo();
   }
 
   protected watchDeviceChanges(): void {
@@ -720,7 +909,7 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
 
   async stopCameraMic(oldStream?: MediaStream): Promise<void> {
     await super.stopCameraMic(oldStream);
-    await this.attachLocalAudio();
+    await this.attachLocalMedia();
   }
 
   // --- запрещённые для этого вида звонка действия ----------------------
@@ -784,6 +973,11 @@ export class JackdawCall extends VideoConfMeeting implements JackdawCallSignalTa
     }
     this.closeMedia();
     await super.hangup();
+    try {
+      onJackdawCallFinished(this);
+    } catch (ex) {
+      console.error(ex);
+    }
     // Микрофон не должен остаться включённым, когда собеседник положил трубку.
     await this.mediaDeviceStreams.setCameraMicOn(false, false).catch(() => {
       // Устройство уже освобождено или недоступно: звонок всё равно закончен.

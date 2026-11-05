@@ -4,6 +4,15 @@
     on:pointerenter={() => hovering = true}
     on:pointerleave={() => hovering = false}
     >
+    <!-- Нерабочее время: сверху и снизу от рабочей части ячейки -->
+    {#if offHours}
+      {#if offHours.top > 0}
+        <div class="off-hours" style="top: 0; height: {offHours.top * 100}%" aria-hidden="true" />
+      {/if}
+      {#if offHours.bottom > 0}
+        <div class="off-hours" style="bottom: 0; height: {offHours.bottom * 100}%" aria-hidden="true" />
+      {/if}
+    {/if}
     {#if $displayEvents?.hasItems}
       {#each $displayEvents.each as event (event.id)}
         <EventContainer {event} {start} {end} {conflicts}>
@@ -37,6 +46,8 @@
   import Clickable from "../../Shared/Clickable.svelte";
   import { ArrayColl, Collection } from "svelte-collections";
   import EventContent from "./EventContent.svelte";
+  import { calendarWorkingHours } from "../workingHours";
+  import { workingSpanInCell, type CalendarWorkingHours } from "../../../logic/Calendar/WorkingHours/CalendarWorkingHours";
   import { createEventDispatcher } from 'svelte';
   const dispatchEvent = createEventDispatcher<{ celldblclick: { start: Date, end: Date, mouseEvent: MouseEvent } }>();
 
@@ -56,6 +67,15 @@
     displayOverlayEvents = overlayEvents
       ?.filterObservable(ev => ev.startTime < end && ev.endTime > start && !ev.allDay)
       ?? new ArrayColl<Event>();
+  }
+
+  $: offHours = offHoursIn(start, end, $calendarWorkingHours);
+  function offHoursIn(start: Date, end: Date, settings: CalendarWorkingHours): { top: number, bottom: number } | null {
+    if (!settings.highlight || !start || !end) {
+      return null;
+    }
+    let span = workingSpanInCell(start, end, settings);
+    return span ? { top: span.from, bottom: 1 - span.to } : { top: 1, bottom: 0 };
   }
 
   $: conflicts = overlayEvents
@@ -86,5 +106,13 @@
   }
   .events :global(.event) {
     z-index: 1;
+  }
+  .off-hours {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* От цвета текста: заметно и в светлой, и в тёмной теме */
+    background-color: var(--calendar-off-hours-bg, color-mix(in srgb, var(--fg) 7%, transparent));
+    pointer-events: none;
   }
 </style>

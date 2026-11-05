@@ -1,7 +1,6 @@
 import { ArrayColl } from "svelte-collections";
-import { gt } from "../../l10n/l10n";
 import type { MailAccount } from "../../logic/Mail/MailAccount";
-import { SpecialFolder, type Folder } from "../../logic/Mail/Folder";
+import type { Folder } from "../../logic/Mail/Folder";
 import type { EMail } from "../../logic/Mail/EMail";
 import { throwFirstBulkActionError, uniqueMailMessages } from "./mailBulkActions";
 
@@ -52,13 +51,7 @@ function getArchiveFolder(
   if (existing) {
     return existing;
   }
-  let archive = account.findSpecialFolder(SpecialFolder.Archive);
-  let folderPromise = archive
-    ? Promise.resolve(archive)
-    : account.inbox.createSubFolder(gt`Archive`).then(folder => {
-      folder.specialFolder = SpecialFolder.Archive;
-      return folder;
-    });
+  let folderPromise = account.getOrCreateArchiveFolder();
   archiveByAccount.set(account, folderPromise);
   return folderPromise;
 }

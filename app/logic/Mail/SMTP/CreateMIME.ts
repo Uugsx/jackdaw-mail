@@ -31,6 +31,10 @@ export class CreateMIME {
     let iCal = email.event ? await getICal(email.event, email.iCalMethod) : null;
     // <https://nodemailer.com/message/>
     return {
+      // Без него nodemailer придумывал новый ID при каждой сборке: у получателя,
+      // в «Отправленных» и локально были разные ID, рвались цепочки, а старые
+      // копии черновика не находились и не удалялись
+      messageId: CreateMIME.getMessageIDHeader(email.messageID),
       subject: email.subject,
       inReplyTo: email.inReplyTo,
       from: CreateMIME.getRecipient(email.from),
@@ -54,6 +58,15 @@ export class CreateMIME {
       disableFileAccess: true,
       disableUrlAccess: true,
     };
+  }
+
+  /** `<local@domain>` или undefined, если ID не похож на Message-ID (тогда его создаст nodemailer) */
+  static getMessageIDHeader(messageID: string | null | undefined): string | undefined {
+    let id = messageID?.trim().replace(/^<|>$/g, "");
+    if (!id || !/^[^\s<>@]+@[^\s<>@]+$/.test(id)) {
+      return undefined;
+    }
+    return `<${id}>`;
   }
 
   protected static getRecipients(recipients: ArrayColl<PersonUID>): NMAddress[] {

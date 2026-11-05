@@ -33,3 +33,47 @@ test("пересчитывает unread-счётчик общей папки п�
   secondInbox.countNewArrived = 2;
   expect(allInbox.countNewArrived).toBe(2);
 });
+
+function twoInboxes() {
+  let accounts = new ArrayColl<MailAccount>();
+  let allAccounts = new AllAccounts(accounts);
+  let inboxes = [new MailAccount(), new MailAccount()].map(account => {
+    let inbox = new Folder(account);
+    inbox.specialFolder = SpecialFolder.Inbox;
+    account.rootFolders.add(inbox);
+    accounts.add(account);
+    return inbox;
+  });
+  return { allInbox: allAccounts.getSpecialFolder(SpecialFolder.Inbox), inboxes };
+}
+
+test("«Отметить всё прочитанным» в общей папке выполняется в каждом ящике", async () => {
+  let { allInbox, inboxes } = twoInboxes();
+  let calls: Folder[] = [];
+  for (let inbox of inboxes) {
+    inbox.markAllRead = async () => {
+      calls.push(inbox);
+    };
+  }
+  await allInbox.markAllRead();
+  expect(calls).toEqual(inboxes);
+});
+
+test("ошибка одного ящика не отменяет отметку в другом и показывается", async () => {
+  let { allInbox, inboxes } = twoInboxes();
+  let done: Folder[] = [];
+  inboxes[0].markAllUnread = async () => {
+    throw new Error("offline");
+  };
+  inboxes[1].markAllUnread = async () => {
+    done.push(inboxes[1]);
+  };
+  await expect(allInbox.markAllUnread()).rejects.toThrow("offline");
+  expect(done).toEqual([inboxes[1]]);
+});
+
+test("общую папку нельзя переименовать или удалить", () => {
+  let { allInbox } = twoInboxes();
+  expect(allInbox.disableRename()).toBeTruthy();
+  expect(allInbox.disableDelete()).toBeTruthy();
+});

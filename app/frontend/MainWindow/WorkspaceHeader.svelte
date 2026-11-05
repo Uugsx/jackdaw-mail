@@ -15,6 +15,9 @@
     {#if $selectedWorkspace}
       <span class="dot" aria-hidden="true" />
       <span class="label">{$selectedWorkspace.name}</span>
+      {#if selectedUnread}
+        <span class="count" aria-label={$t`${selectedUnread} unread`}>{selectedUnread}</span>
+      {/if}
     {:else}
       <WorkspaceIcon size="12px" aria-hidden="true" />
     {/if}
@@ -39,10 +42,17 @@
   import WorkspaceIcon from 'lucide-svelte/icons/circle';
   import { t } from "../../l10n/l10n";
   import { tick } from "svelte";
+  import { appGlobal } from "../../logic/app";
+  import { mailUnreadEpoch } from "../Mail/mailUnreadCounts";
+  import { workspaceUnreadCount } from "../../logic/Mail/MailUnreadBadge";
 
   export let selectedApp: JackdawApp;
 
   let workspaceE: HTMLButtonElement;
+  $: selectedUnread = unreadAtEpoch($mailUnreadEpoch, $selectedWorkspace);
+  function unreadAtEpoch(_epoch: number, workspace: typeof $selectedWorkspace): number {
+    return workspace ? workspaceUnreadCount(appGlobal.emailAccounts.contents, workspace) : 0;
+  }
   let workspaceDropdown;
   let showWorkspaceDropdown: boolean = false;
   async function onWorkspaceToggle(event: Event) {
@@ -84,6 +94,19 @@
   .workspace:hover {
     background-color: var(--hover-bg);
     color: var(--hover-fg);
+  }
+
+  .count {
+    margin-inline-start: 8px;
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
 
   .dot {

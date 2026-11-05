@@ -1,5 +1,6 @@
 import { Message } from "../Abstract/Message";
 import { SpecialFolder, type Folder } from "./Folder";
+import { applySenderLists } from "./Junk/SenderLists";
 import { ComposeActions } from "./ComposeActions";
 import { Attachment, ContentDisposition } from "../Abstract/Attachment";
 import type { Tag } from "../Abstract/Tag";
@@ -10,6 +11,8 @@ import { RawFilesAttachment } from "./Store/RawFilesAttachment";
 import { EMailProcessorList, ProcessingStartOn } from "./EMailProcessor";
 import type { ExtraData } from "./ExtraData";
 import type { SMLData } from "./SML/SMLData";
+import type { FollowUpChoice } from "./FollowUp/FollowUpReminder";
+import { flagDaysForChoice, type DayString, type FlagDueChoice, type MailFlagState } from "./Tasks/ExchangeTask";
 import type { PublicKey } from "./Encryption/PublicKey";
 import { Event } from "../Calendar/Event";
 import { InvitationMessage, type iCalMethod } from "../Calendar/Invitation/InvitationStatus";
@@ -24,6 +27,7 @@ import { notifyChangedProperty } from "../util/Observable";
 import { gt } from "../../l10n/l10n";
 import { Collection, ArrayColl, MapColl, SetColl } from "svelte-collections";
 import PostalMIME, { type Email as MIME } from "postal-mime";
+import { parseNotificationAddresses } from "./ReadReceipt/notificationAddress";
 
 export type MailImportanceLevel = "high" | "normal" | "low";
 
@@ -32,6 +36,10 @@ export class EMail extends Message {
   from = new PersonUID();
   @notifyChangedProperty
   replyTo: PersonUID | null = null;
+  /** Кто фактически отправил (`Sender:` / Exchange PR_SENDER), если это не `from`:
+   * «Помощник от имени Руководителя». null — отправил сам `from`. */
+  @notifyChangedProperty
+  sender: PersonUID | null = null;
   readonly to = new ArrayColl<PersonUID>();
   readonly cc = new ArrayColl<PersonUID>();
   readonly bcc = new ArrayColl<PersonUID>();
@@ -69,12 +77,29 @@ export class EMail extends Message {
   importanceLevel: MailImportanceLevel = "normal";
   /** Пользователь удалил подпись в редакторе: при отправке её не возвращаем. */
   signatureRemovedByUser = false;
+  /** For composer/send only: «Напомнить, если не ответят». Not persisted. */
+  @notifyChangedProperty
+  followUpReminder: FollowUpChoice | null = null;
+  /** Флажок «К исполнению»: начало и срок, день `YYYY-MM-DD`. null — без срока. */
+  @notifyChangedProperty
+  flagStartDay: DayString | null = null;
+  @notifyChangedProperty
+  flagDueDay: DayString | null = null;
+  /** Флажок отмечен выполненным (Exchange FlagStatus=Complete). `isStarred` тогда false. */
+  @notifyChangedProperty
+  flagCompletedAt: Date | null = null;
   /** Request a read receipt when sending (OWA/EWS + MDN header). */
   @notifyChangedProperty
   requestReadReceipt = false;
   /** Request a delivery receipt when sending (OWA/EWS + Return-Receipt-To header). */
   @notifyChangedProperty
   requestDeliveryReceipt = false;
+  /** Отправитель просит уведомление о прочтении сюда (`Disposition-Notification-To`) */
+  @notifyChangedProperty
+  readReceiptTo: PersonUID | null = null;
+  /** На запрос о прочтении уже ответили или отказались (IMAP `$MDNSent`) */
+  @notifyChangedProperty
+  readReceiptHandled = false;
   /** The user started writing this message, but didn't send it yet */
   @notifyChangedProperty
   isDraft = false;
@@ -283,6 +308,67 @@ export class EMail extends Message {
     this.isImportant = isImportant;
   }
 
+  /** Простой флажок без срока: снятие убирает срок, установка — отметку о выполнении */
+  async markStarred(starred = true) {
+    this.flagStartDay = null;
+    this.flagDueDay = null;
+    this.flagCompletedAt = null;
+    await super.markStarred(starred);
+  }
+
+  get flagState(): MailFlagState {
+    return {
+      flagged: this.isStarred,
+      startDay: this.flagStartDay,
+      dueDay: this.flagDueDay,
+      completedAt: this.flagCompletedAt,
+    };
+  }
+
+  /** Только в памяти, без сервера и базы */
+  applyFlagState(flag: MailFlagState) {
+    this.isStarred = flag.flagged;
+    this.flagStartDay = flag.flagged ? flag.startDay : null;
+    this.flagDueDay = flag.flagged ? flag.dueDay : null;
+    this.flagCompletedAt = flag.flagged ? null : flag.completedAt;
+  }
+
+  /** Ставит флажок со сроком, как «К исполнению» в Outlook */
+  async setFlagDue(choice: FlagDueChoice, now = new Date()) {
+    let { startDay, dueDay } = flagDaysForChoice(choice, now);
+    await this.updateFlag({ flagged: true, startDay, dueDay, completedAt: null });
+  }
+
+  async markFlagComplete(now = new Date()) {
+    await this.updateFlag({ flagged: false, startDay: null, dueDay: null, completedAt: now });
+  }
+
+  async clearFlag() {
+    await this.updateFlag({ flagged: false, startDay: null, dueDay: null, completedAt: null });
+  }
+
+  /** Меняет флажок сразу в списке, затем на сервере; при ошибке сервера возвращает прежний */
+  async updateFlag(flag: MailFlagState) {
+    let previous = this.flagState;
+    this.applyFlagState(flag);
+    try {
+      await this.pushFlagState(flag);
+    } catch (ex) {
+      this.applyFlagState(previous);
+      throw ex;
+    }
+    // Базовый pushFlagState() идёт через markStarred(), а тот снимает срок
+    this.applyFlagState(flag);
+    if (this.dbID) {
+      await this.saveWritablePropsLocally().catch(() => null);
+    }
+  }
+
+  /** Протоколы без сроков флажка (IMAP и др.) хранят срок только у себя, на сервер уходит сам флажок */
+  protected async pushFlagState(flag: MailFlagState) {
+    await this.markStarred(flag.flagged);
+  }
+
   async markDraft(isDraft = true) {
     this.isDraft = isDraft;
     if (this.dbID) {
@@ -291,12 +377,7 @@ export class EMail extends Message {
   }
 
   async moveToArchive() {
-    let account = this.folder.account;
-    let archive = account.findSpecialFolder(SpecialFolder.Archive);
-    if (!archive) {
-      archive = await account.inbox.createSubFolder(gt`Archive`);
-      archive.specialFolder = SpecialFolder.Archive; // TODO set on server
-    }
+    let archive = await this.folder.account.getOrCreateArchiveFolder();
     await archive.moveMessageHere(this);
   }
 
@@ -452,6 +533,9 @@ export class EMail extends Message {
             sanitize.nonemptylabel(parsedSender?.name, null))
         : kDummyPerson;
     }
+    this.sender ??= differentSender(this.from, mail.from?.address ? mail.sender : null);
+    let notificationHeader = mail.headers.find(h => h.key.toLowerCase() == "disposition-notification-to");
+    this.readReceiptTo ??= parseNotificationAddresses(notificationHeader?.value)[0] ?? null;
     setPersons(this.to, mail.to);
     setPersons(this.cc, mail.cc);
     setPersons(this.bcc, mail.bcc);
@@ -586,6 +670,12 @@ export class EMail extends Message {
     await contentSaves.wait();
     this.downloadComplete = true;
     await this.saveWritablePropsLocally(); // save downloadComplete = true
+    // Локальные списки надёжных/заблокированных отправителей (IMAP и др., не Exchange)
+    try {
+      await applySenderLists(this);
+    } catch (ex) {
+      console.error(ex);
+    }
   }
 
   protected async isDownloadCompleteDoublecheck(): Promise<boolean> {
@@ -767,6 +857,7 @@ export class EMail extends Message {
     other.identity = this.identity;
     other.from = this.from;
     other.replyTo = this.replyTo;
+    other.sender = this.sender;
     other.to.replaceAll(this.to);
     other.cc.replaceAll(this.cc);
     // </copied>
@@ -926,6 +1017,15 @@ export function computeEMailContact(email: EMail): PersonUID {
     return findOrCreatePersonUID(account.emailAddress, account.name);
   }
   return email.outgoing ? email.to.first : email.from;
+}
+
+/** `Sender:` только если он не совпадает с `From:`, иначе null */
+export function differentSender(from: PersonUID | null | undefined, sender: { address?: string, name?: string } | null | undefined): PersonUID | null {
+  let address = sanitize.emailAddress(sender?.address, null);
+  if (!address || !from?.emailAddress || address.toLowerCase() == from.emailAddress.toLowerCase()) {
+    return null;
+  }
+  return findOrCreatePersonUID(address, sanitize.nonemptylabel(sender?.name, null));
 }
 
 export function setPersons(targetList: ArrayColl<PersonUID>, personList: { address: string, name: string }[]): void {

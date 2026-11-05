@@ -1,5 +1,6 @@
 import { SearchEMail, msgHasSearchTerm } from "../Store/SearchEMail";
 import type { EMail } from "../EMail";
+import { mentionsMe } from "../Mentions/Mentions";
 import { assert } from "../../util/util";
 import { ArrayColl } from "svelte-collections";
 
@@ -19,6 +20,7 @@ export class QuickSearchEMail extends SearchEMail {
       (this.isReplied === null || msg.isReplied === this.isReplied) &&
       (this.isImportant === null || msg.isImportant === this.isImportant) &&
       (this.hasAttachment === null || msg.hasVisibleAttachments === this.hasAttachment) &&
+      (this.mentionsMe === null || mentionsMe(msg) === this.mentionsMe) &&
       (!searchTerms.length || searchTerms.every(term => msgHasSearchTerm(msg, term)))
     ) as ArrayColl<EMail>;
   }
@@ -30,6 +32,7 @@ export class QuickSearchEMail extends SearchEMail {
       this.isReplied !== null ||
       this.isImportant !== null ||
       this.hasAttachment !== null ||
+      this.mentionsMe !== null ||
       !!this.bodyText;
   }
 
@@ -40,6 +43,7 @@ export class QuickSearchEMail extends SearchEMail {
     this.isReplied = null;
     this.isImportant = null;
     this.hasAttachment = null;
+    this.mentionsMe = null;
     this.bodyText = null;
   }
 }

@@ -43,7 +43,6 @@ jobs:
       if: github.event_name == 'push' || inputs.release_type == 'release'
       env: &build_env
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        JACKDAW_GH_UPDATE_TOKEN: ${{ secrets.JACKDAW_GH_UPDATE_TOKEN }}
         SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         # For Sentry source maps. Otherwise, vite build is out of memory
         NODE_OPTIONS: '--max-old-space-size=32768'

@@ -11,7 +11,7 @@
       {#each days as day}
         <vbox class="day-header header">
           <slot name="day-header" {day}>
-            <vbox class="date-day">
+            <vbox class="date-day" title={day.toLocaleDateString(getDateTimeLocale(), { weekday: "long", day: "numeric", month: "long" })}>
               <hbox class="date">{day.toLocaleDateString(getDateTimeLocale(), { day: "numeric" })}</hbox>
               <hbox class="weekday">{day.toLocaleDateString(getDateTimeLocale(), { weekday: appGlobal.isSmall ? "short" : "long" })}</hbox>
             </vbox>
@@ -176,11 +176,20 @@
     margin: 0px -1px -2px 0px;
     opacity: 85%;
   }
+  /* В узкой колонке день недели сжимается с многоточием, а не распирает
+     сетку за край панели; полная дата — в подсказке заголовка дня. */
   .weekday {
+    display: block;
+    min-width: 0;
     margin-block-start: -4px;
     margin-block-end: 4px;
     max-height: 1.3em;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .date-day {
+    min-width: 0;
   }
   @container (max-height: 1000px)  {
     .day-header .date-day {
@@ -193,6 +202,7 @@
     .day-header .weekday {
       font-size: 90%;
       align-items: center;
+      align-self: center;
       flex: 1 0 0;
       margin-block-start: 1px;
       margin-inline-start: 8px;

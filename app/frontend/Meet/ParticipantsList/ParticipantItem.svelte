@@ -1,6 +1,6 @@
 <hbox class="participant {style}" class:speaking={$participant.isSpeaking}>
   <hbox class="name">
-    {participant?.name?.substring(0, 50) ?? ""}
+    {(participant?.name || fallbackName)?.substring(0, 50) ?? ""}
   </hbox>
   {#if $participant.handUp}
     <Button plain
@@ -33,6 +33,8 @@
    * "list" = Part of ParticipantsList, e.g. the non-video participants at the bottom */
   export let style: "video" | "list";
   export let userIsModerator = false;
+  /** Подпись, если у участника нет имени — например «Вы» на своей плитке. in, optional */
+  export let fallbackName: string = null;
 
   function toggleMic(participant: MeetingParticipant) {
     assert(userIsModerator, $t`You are not a moderator`);

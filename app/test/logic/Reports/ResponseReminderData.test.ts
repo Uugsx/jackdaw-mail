@@ -550,4 +550,87 @@ describe("ResponseReminderData", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test("прочитано / непрочитано не снимает письмо с контроля, ответ и удаление снимают", async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), "response-reminder-"));
+    const database = new InProcessSQLiteDatabase(path.join(tempDir, "mail.db"));
+    const now = new Date("2026-10-20T12:00:00.000Z");
+    const receivedAt = seconds("2026-10-20T09:00:00.000Z");
+    const pendingIds = async (folderId: number | null = null) =>
+      (
+        await loadPendingResponseRequests(1, null, now, database, folderId)
+      ).map((request) => request.emailId);
+    const setRead = (id: number, isRead: number) =>
+      database.run(sql`UPDATE email SET isRead = ${isRead} WHERE id = ${id}`);
+    try {
+      await database.migrate(mailDatabaseSchema, createReportReplyIndexes);
+      database.run(sql`
+        INSERT INTO emailAccount (id, idStr, protocol)
+        VALUES (1, ${"account-1"}, ${"imap"})
+      `);
+      database.run(sql`
+        INSERT INTO folder (id, accountID, name, path, specialUse)
+        VALUES
+          (101, 1, ${"Inbox"}, ${"INBOX"}, ${"inbox"}),
+          (102, 1, ${"Sent"}, ${"Sent"}, ${"sent"}),
+          (103, 1, ${"Trash"}, ${"Trash"}, ${"trash"}),
+          (104, 1, ${"Projects"}, ${"Projects"}, ${null})
+      `);
+      for (const id of [1, 2, 3, 4, 5]) {
+        insertEmail(database, {
+          id,
+          folderID: 101,
+          messageID: `<request-${id}>`,
+          parentMsgID: null,
+          threadID: `<thread-${id}>`,
+          date: receivedAt + id,
+          outgoing: 0,
+          isReplied: 0,
+          subject: `Overdue request ${id}`,
+        });
+      }
+      expect(await pendingIds()).toEqual([1, 2, 3, 4, 5]);
+
+      // Просроченное письмо открыли, затем снова пометили непрочитанным.
+      setRead(1, 1);
+      expect(await pendingIds()).toEqual([1, 2, 3, 4, 5]);
+      setRead(1, 0);
+      const [afterUnread] = await loadPendingResponseRequests(
+        1,
+        null,
+        now,
+        database,
+      );
+      expect(afterUnread).toMatchObject({
+        emailId: 1,
+        isRead: false,
+        receivedAt: new Date((receivedAt + 1) * 1000),
+      });
+
+      // Ответ: флаг сервера или копия в «Отправленных».
+      database.run(sql`UPDATE email SET isReplied = 1 WHERE id = 2`);
+      insertEmail(database, {
+        id: 30,
+        folderID: 102,
+        messageID: "<reply-3>",
+        parentMsgID: "<request-3>",
+        threadID: "<thread-3>",
+        date: receivedAt + 600,
+        outgoing: 1,
+        isReplied: 0,
+        subject: "Re: Overdue request 3",
+      });
+      // Удаление: перенос в корзину и удаление из базы.
+      database.run(sql`UPDATE email SET folderID = 103 WHERE id = 4`);
+      database.run(sql`DELETE FROM email WHERE id = 5`);
+      expect(await pendingIds()).toEqual([1]);
+
+      // Перенос из контролируемой папки снимает письмо с её очереди.
+      database.run(sql`UPDATE email SET folderID = 104 WHERE id = 1`);
+      expect(await pendingIds(101)).toEqual([]);
+    } finally {
+      database.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

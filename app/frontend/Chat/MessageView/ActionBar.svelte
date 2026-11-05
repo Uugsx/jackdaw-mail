@@ -90,6 +90,8 @@
   import ButtonMenu from "../../Shared/Menu/ButtonMenu.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import { gt, t } from "../../../l10n/l10n";
+  import { replyingTo } from "../replyState";
+  import { askConfirm } from "../../Shared/askConfirm";
 
   export let message: Message;
 
@@ -99,7 +101,12 @@
   }
   /** Протокол не умеет удалять у собеседников: говорим об этом и спрашиваем */
   async function onDeleteLocalOnly() {
-    if (!confirm($t`Delete this message only for yourself? The other participants will still see it.`)) {
+    let confirmed = await askConfirm({
+      title: $t`Delete this message only for yourself?`,
+      message: $t`The other participants will still see it.`,
+      confirmLabel: $t`Delete for myself`,
+    });
+    if (!confirmed) {
       return;
     }
     await message.deleteMessage();
@@ -112,12 +119,11 @@
     assert(message instanceof ChatMessage, "Cannot get back emails");
     message.to.draftMessage = await message.createEdit();
   }
-  async function onReply() {
-    /*let previousText = message.to.draftMessage.html;
-    message.to.draftMessage = await message.reply();
-    if (previousText) {
-      message.to.draftMessage.html += previousText;
-    }*/
+  /** Ответ на сообщение чата: редактор показывает цитату, отправка добавит ссылку на него */
+  function onReply() {
+    if (message instanceof ChatMessage) {
+      replyingTo.set(message);
+    }
   }
   async function onForward() {
   }
@@ -134,5 +140,7 @@
 <style>
   .bar {
     border-radius: 10px;
+    align-items: center;
+    gap: 2px;
   }
 </style>

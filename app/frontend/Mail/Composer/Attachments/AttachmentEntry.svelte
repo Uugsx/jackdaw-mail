@@ -1,4 +1,5 @@
-<hbox class="attachment">
+<hbox class="attachment" role="button" tabindex="0" title={$t`Preview`}
+  on:click={onOpen} on:keydown={onKeydown}>
   <hbox class="icon">
     <FileIcon {ext} localFilePath={$attachment.filename} size={32} />
   </hbox>
@@ -11,7 +12,7 @@
         {$t`${Math.ceil($attachment.size / 1024)} KB`}
       </hbox>
       <hbox flex />
-      <hbox class="buttons">
+      <hbox class="buttons" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
         <Button plain icon={DeleteIcon} iconSize="16px" iconOnly
           label={$t`Delete this attachment`} onClick={onDelete} />
         <!--<Button plain icon={ChevronDownIcon} iconSize="16px" iconOnly />-->
@@ -28,12 +29,32 @@
   import { Collection } from "svelte-collections";
   import { t } from "../../../../l10n/l10n";
   import { createEventDispatcher } from "svelte";
+  import { previewAttachment } from "../../Attachments/attachmentPreview";
+  import { showError } from "../../../Util/error";
 
   export let attachment: Attachment;
   export let attachments: Collection<Attachment>;
   const dispatchEvent = createEventDispatcher<{ remove: Attachment }>();
 
   $: ext = attachment.filename.split(".").pop();
+
+  /** Файл ещё не отправлен: просмотр берёт байты из `File` или с диска, на сервер ничего не уходит.
+   * Листаем по всем видимым вложениям письма. */
+  async function onOpen() {
+    try {
+      let gallery = attachments.contents.filter(other => other == attachment || !other.hidden);
+      await previewAttachment(attachment, gallery, true);
+    } catch (ex) {
+      showError(ex);
+    }
+  }
+
+  function onKeydown(event: KeyboardEvent) {
+    if (event.target == event.currentTarget && (event.key == "Enter" || event.key == " ")) {
+      event.preventDefault();
+      void onOpen();
+    }
+  }
 
   function onDelete() {
     attachments.remove(attachment);
@@ -43,12 +64,17 @@
 
 <style>
   .attachment {
+    cursor: pointer;
     background-color: var(--leftbar-bg);
     color: var(--leftbar-fg);
     box-shadow: -1px 0px 5px 0.5px rgb(0, 0, 0, 10%);
     border-radius: 5px;
     margin: 4px 6px 4px 12px;
     padding: 4px;
+  }
+  .attachment:focus-visible {
+    outline: 2px solid var(--selected-bg, currentColor);
+    outline-offset: 1px;
   }
   .icon {
     color: lightgray;

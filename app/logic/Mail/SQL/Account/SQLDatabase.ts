@@ -2,6 +2,7 @@ import sql, { type Database } from "../../../../../lib/rs-sqlite/index";
 import { accountsDatabaseSchema } from "./createDatabase";
 import { migrateToAccountsDB } from "./SQLAccountsMigrate";
 import { getSQLiteDatabase } from "../../../util/backend-wrapper";
+import { openDatabaseOnce } from "../../../util/openDatabaseOnce";
 
 let accountsDatabase: Database;
 
@@ -10,15 +11,23 @@ let accountsDatabase: Database;
 // https://github.com/radically-straightforward/radically-straightforward/tree/main/sqlite
 // https://www.sqlite.org/lang.html
 
+const openAccountsDatabase = openDatabaseOnce(async () => {
+  await migrateToAccountsDB();
+  return await getSQLiteDatabase("account.db");
+}, async database => {
+  await database.migrate(accountsDatabaseSchema);
+  await database.pragma('foreign_keys = true');
+  // Режим журнала не меняем: migrate() уже перевёл базу в WAL. Раньше здесь
+  // база при каждом запуске возвращалась в DELETE, а переход из WAL берёт
+  // эксклюзивную блокировку без ожидания: если файл открыт ещё где-то
+  // (процесс базы прошлой версии, отдельное окно), запуск падал с SQLITE_BUSY.
+});
+
 export async function getDatabase(): Promise<Database> {
   if (accountsDatabase) {
     return accountsDatabase;
   }
-  await migrateToAccountsDB();
-  accountsDatabase = await getSQLiteDatabase("account.db");
-  await accountsDatabase.migrate(accountsDatabaseSchema);
-  await accountsDatabase.pragma('foreign_keys = true');
-  await accountsDatabase.pragma('journal_mode = DELETE');
+  accountsDatabase = await openAccountsDatabase();
   return accountsDatabase;
 }
 

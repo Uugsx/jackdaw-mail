@@ -76,6 +76,15 @@
     width: 30px;
     height: 30px;
   }
+  /* Свёрнутая панель уже кнопки на 4px: значок у края обрезался панелью (overflow: hidden) */
+  .app-button.icon-only .badge {
+    top: -3px;
+    inset-inline-end: -1px;
+    min-width: 14px;
+    min-height: 14px;
+    padding: 0 3px;
+    line-height: 14px;
+  }
   .app-button:hover {
     transform: translateY(var(--button-motion-lift));
   }
@@ -164,6 +173,14 @@
     letter-spacing: 0;
     line-height: 1.15;
     justify-content: center;
+  }
+  /* Подпись приходит вложенным hbox: многоточие рисуется только у блочного элемента. */
+  .label > :global(*) {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   @media (prefers-reduced-motion: reduce) {
     .app-button,

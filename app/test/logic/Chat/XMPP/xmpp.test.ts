@@ -73,7 +73,7 @@ test.skipIf(!Database)("Login, roster, message history, send, live message, then
   expect(account.roster.length).toBe(2);
   let alicePerson = account.getExistingPerson(kAlice);
   expect(alicePerson?.name).toBe("Alice Test");
-  expect(appGlobal.personalAddressbook.persons.find(p => p.name == "Alice Test")).toBeTruthy();
+  expect(account.roster.contents.map(p => p.name)).toContain("Alice Test"); // контакты чата — в roster, не в адресной книге
   let aliceChat = account.getExistingChat(kAlice) as XMPP1to1Chat;
   let bobChat = account.getExistingChat(kBob) as XMPP1to1Chat;
   expect(aliceChat).toBeTruthy();

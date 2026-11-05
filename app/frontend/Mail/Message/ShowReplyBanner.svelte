@@ -14,12 +14,14 @@
   import type { EMail } from "../../../logic/Mail/EMail";
   import { findReplyToMessage } from "../../../logic/Mail/findReplyToMessage";
   import { openEMailMessage } from "../open";
+  import { getOpenMessageHandler } from "../openMessageContext";
   import Button from "../../Shared/Button.svelte";
   import ReplyIcon from "lucide-svelte/icons/reply";
   import { t } from "../../../l10n/l10n";
 
   export let message: EMail;
 
+  const openHere = getOpenMessageHandler();
   let replyMessage: EMail | undefined;
   let lookupKey = "";
 
@@ -41,6 +43,10 @@
 
   function showReply() {
     if (replyMessage) {
+      if (openHere) {
+        openHere(replyMessage);
+        return;
+      }
       void openEMailMessage(replyMessage);
     }
   }

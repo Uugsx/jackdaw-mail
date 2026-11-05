@@ -20,6 +20,9 @@
               <ExpanderButton bind:expanded={showReminder} label={$t`Reminder`} icon={ReminderIcon} on:expand={expandReminder} />
               <ExpanderButton bind:expanded={showParticipants} label={$t`Invite`} icon={ParticipantsIcon} on:expand={expandParticipants} />
               <ExpanderButton bind:expanded={showLocation} label={$t`Location`} icon={LocationIcon} on:expand={expandLocation} />
+              {#if canBookRooms}
+                <ExpanderButton bind:expanded={roomsOpen} label={$t`Room *=> Meeting room in the office, booked for a meeting`} icon={RoomIcon} />
+              {/if}
               <ExpanderButton bind:expanded={onlineMeetingOpen} label={$t`Online meeting`} icon={OnlineMeetingIcon} on:expand={expandOnlineMeeting} />
               <ExpanderButton bind:expanded={showDescription} label={$t`Description`} icon={DescriptionIcon} on:expand={expandDescription} />
               <ExpanderButton bind:expanded={showAttachments} label={$t`Attachment`} icon={AttachmentIcon} on:expand={() => catchErrors(expandAttachments)} />
@@ -43,6 +46,13 @@
           {#if showParticipants}
             <Section label={$t`Invite`} icon={ParticipantsIcon}>
               <ParticipantsBox {event} />
+            </Section>
+          {/if}
+          {#if canBookRooms && roomsOpen}
+            <Section label={$t`Room *=> Meeting room in the office, booked for a meeting`} icon={RoomIcon}>
+              <SectionTitle label={$t`Room *=> Meeting room in the office, booked for a meeting`}>
+                <RoomBox {event} />
+              </SectionTitle>
             </Section>
           {/if}
           {#if showLocation}
@@ -103,6 +113,7 @@
   import ParticipantsBox from './ParticipantsBox.svelte';
   import LocationBox from './LocationBox.svelte';
   import OnlineMeetingBox from './OnlineMeetingBox.svelte';
+  import RoomBox from './RoomBox.svelte';
   import DescriptionBox from './DescriptionBox.svelte';
   import EventInDayView from "../DisplayEvent/EventInDayView.svelte";
   import AttachmentsPane from "../../Mail/Composer/Attachments/AttachmentsPane.svelte";
@@ -120,6 +131,7 @@
   import ParticipantsIcon from "lucide-svelte/icons/users-round";
   import OnlineMeetingIcon from "lucide-svelte/icons/video";
   import LocationIcon from "lucide-svelte/icons/map-pin";
+  import RoomIcon from "lucide-svelte/icons/door-open";
   import DescriptionIcon from "lucide-svelte/icons/notebook-pen";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
   import { catchErrors } from "../../Util/error";
@@ -132,6 +144,9 @@
   $: showReminder = !!$event.alarm;
   $: showParticipants = $event.participants.hasItems;
   $: showLocation = !!$event.location;
+  $: canBookRooms = !!$event.calendar?.canBookRooms;
+  let roomsOpen = false;
+  $: if ($event.participants.some(p => p.isResource)) roomsOpen = true;
   let onlineMeetingOpen = false;
   let participantsError: string | null = null;
   $: if ($event.isOnline) onlineMeetingOpen = true;

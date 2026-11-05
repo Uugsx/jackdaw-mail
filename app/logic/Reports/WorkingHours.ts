@@ -15,8 +15,22 @@ export interface WorkingDaySchedule {
   endMinutes: number;
 }
 
+/**
+ * Исключение календаря на конкретную дату: праздник (`off`) или
+ * сокращённый день (`short`) с собственным временем окончания.
+ */
+export interface WorkingDayException {
+  /** Локальная дата в формате YYYY-MM-DD. */
+  date: string;
+  kind: "off" | "short";
+  /** Для `short`: конец рабочего интервала в минутах от полуночи. */
+  endMinutes?: number;
+}
+
 export interface WorkingHoursSchedule {
   days: WorkingDaySchedule[];
+  /** Необязательный календарь исключений; без него расчёт прежний. */
+  exceptions?: WorkingDayException[];
 }
 
 export type WorkingHoursValidationError = "invalid" | "no-working-days";
@@ -53,7 +67,55 @@ export function cloneWorkingHoursSchedule(
 ): WorkingHoursSchedule {
   return {
     days: schedule.days.map((day) => ({ ...day })),
+    ...(schedule.exceptions
+      ? { exceptions: schedule.exceptions.map((item) => ({ ...item })) }
+      : {}),
   };
+}
+
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Проверяет строку YYYY-MM-DD как существующую календарную дату. */
+export function isValidExceptionDate(value: unknown): value is string {
+  const match = typeof value == "string" ? ISO_DATE_PATTERN.exec(value) : null;
+  if (!match) {
+    return false;
+  }
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const check = new Date(year, month - 1, day);
+  return (
+    check.getFullYear() == year &&
+    check.getMonth() == month - 1 &&
+    check.getDate() == day
+  );
+}
+
+export function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Убирает повреждённые и повторные исключения, сортирует по дате. */
+export function normalizeWorkingDayExceptions(
+  value: unknown,
+): WorkingDayException[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const byDate = new Map<string, WorkingDayException>();
+  for (const item of value) {
+    if (!isRecord(item) || !isValidExceptionDate(item.date)) {
+      continue;
+    }
+    if (item.kind == "off") {
+      byDate.set(item.date, { date: item.date, kind: "off" });
+    } else if (item.kind == "short") {
+      const endMinutes = Number(item.endMinutes);
+      if (isValidTimeMinutes(endMinutes) && endMinutes > 0) {
+        byDate.set(item.date, { date: item.date, kind: "short", endMinutes });
+      }
+    }
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Нормализует настройки, в том числе старые или повреждённые данные кеша. */
@@ -64,10 +126,14 @@ export function normalizeWorkingHoursSchedule(
   const fallbackDays = normalizedFallbackDays(fallback);
   const sourceDays =
     isRecord(value) && Array.isArray(value.days) ? value.days : [];
+  const exceptions = normalizeWorkingDayExceptions(
+    isRecord(value) ? value.exceptions : undefined,
+  );
   return {
     days: Array.from({ length: DAYS_PER_WEEK }, (_, index) =>
       normalizeDay(sourceDays[index], fallbackDays[index]),
     ),
+    ...(exceptions.length ? { exceptions } : {}),
   };
 }
 
@@ -119,28 +185,78 @@ export function formatWorkingTime(minutes: number): string {
   return `${String(hours).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-/** Проверяет, находится ли локальный момент внутри рабочего интервала. */
+/** День недели (понедельник = 0) и минуты от полуночи.
+ * Без `timeZone` — местное время устройства, иначе — в этом часовом поясе IANA. */
+export function weekdayAndMinutes(
+  date: Date,
+  timeZone?: string | null,
+): { weekday: number; minutes: number } {
+  if (!timeZone) {
+    return {
+      weekday: localWeekday(date),
+      minutes:
+        date.getHours() * MINUTES_PER_HOUR +
+        date.getMinutes() +
+        date.getSeconds() / 60 +
+        date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND),
+    };
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type == type)?.value ?? "";
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return {
+    weekday: Math.max(0, weekdays.indexOf(value("weekday"))),
+    minutes:
+      (Number(value("hour")) % 24) * MINUTES_PER_HOUR +
+      Number(value("minute")) +
+      Number(value("second")) / 60 +
+      date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND),
+  };
+}
+
+/** Проверяет, находится ли момент внутри рабочего интервала.
+ * @param timeZone часовой пояс графика; по умолчанию местное время */
 export function isWithinWorkingHours(
   date: Date,
   schedule: WorkingHoursSchedule = DEFAULT_WORKING_HOURS_SCHEDULE,
+  timeZone?: string | null,
 ): boolean {
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
     return false;
   }
   const normalized = normalizeWorkingHoursSchedule(schedule);
-  const day = normalized.days[localWeekday(date)];
+  const { weekday, minutes: minutesSinceMidnight } = weekdayAndMinutes(date, timeZone);
+  const baseDay = normalized.days[weekday];
+  const day = baseDay
+    ? withException(baseDay, normalized, zonedDateKey(date, timeZone))
+    : null;
   if (!day?.enabled || day.startMinutes >= day.endMinutes) {
     return false;
   }
-  const minutesSinceMidnight =
-    date.getHours() * MINUTES_PER_HOUR +
-    date.getMinutes() +
-    date.getSeconds() / 60 +
-    date.getMilliseconds() / (60 * MILLISECONDS_PER_SECOND);
   return (
     minutesSinceMidnight >= day.startMinutes &&
     minutesSinceMidnight < day.endMinutes
   );
+}
+
+/** Ключ даты YYYY-MM-DD в часовом поясе графика (по умолчанию местном). */
+function zonedDateKey(date: Date, timeZone?: string | null): string {
+  if (!timeZone) {
+    return localDateKey(date);
+  }
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 /** Считает только рабочие секунды между двумя локальными моментами. */
@@ -158,8 +274,8 @@ export function workingSecondsBetween(
   let cursor = new Date(start);
   while (cursor < end) {
     const dayStart = startOfLocalDay(cursor);
-    const day = normalized.days[localWeekday(cursor)];
-    if (day?.enabled && day.startMinutes < day.endMinutes) {
+    const day = effectiveDay(normalized, dayStart);
+    if (day) {
       const windowStart = atLocalMinutes(dayStart, day.startMinutes);
       const windowEnd = atLocalMinutes(dayStart, day.endMinutes);
       const overlapStart = Math.max(start.getTime(), windowStart.getTime());
@@ -195,8 +311,8 @@ export function addWorkingSeconds(
   let cursor = new Date(start);
   for (let dayOffset = 0; dayOffset <= MAX_SEARCH_DAYS; dayOffset++) {
     const dayStart = startOfLocalDay(cursor);
-    const day = normalized.days[localWeekday(dayStart)];
-    if (day?.enabled && day.startMinutes < day.endMinutes) {
+    const day = effectiveDay(normalized, dayStart);
+    if (day) {
       const windowStart = atLocalMinutes(dayStart, day.startMinutes);
       const windowEnd = atLocalMinutes(dayStart, day.endMinutes);
       const candidateStart = new Date(
@@ -214,6 +330,41 @@ export function addWorkingSeconds(
     cursor = nextLocalDay(dayStart);
   }
   return null;
+}
+
+/** Рабочее окно даты с учётом исключений; null — день нерабочий. */
+function effectiveDay(
+  schedule: WorkingHoursSchedule,
+  date: Date,
+): WorkingDaySchedule | null {
+  const day = schedule.days[localWeekday(date)];
+  if (!day?.enabled || day.startMinutes >= day.endMinutes) {
+    return null;
+  }
+  const result = withException(day, schedule, localDateKey(date));
+  return result.enabled ? result : null;
+}
+
+/** Применяет исключение календаря к рабочему дню; нерабочий день — enabled: false. */
+function withException(
+  day: WorkingDaySchedule,
+  schedule: WorkingHoursSchedule,
+  dateKey: string,
+): WorkingDaySchedule {
+  if (!day.enabled || day.startMinutes >= day.endMinutes) {
+    return day;
+  }
+  const exception = schedule.exceptions?.find((item) => item.date == dateKey);
+  if (!exception) {
+    return day;
+  }
+  if (exception.kind == "off") {
+    return { ...day, enabled: false };
+  }
+  const endMinutes = Math.min(day.endMinutes, exception.endMinutes ?? 0);
+  return endMinutes > day.startMinutes
+    ? { ...day, endMinutes }
+    : { ...day, enabled: false };
 }
 
 function normalizedFallbackDays(

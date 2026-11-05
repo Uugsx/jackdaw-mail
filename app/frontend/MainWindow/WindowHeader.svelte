@@ -144,31 +144,31 @@
     min-width: 0;
   }
 
+  /* Поле поиска в тон заголовку: без градиента цвета пространства, который давал красные и прочие пятна.
+     Цвет пространства и так виден у его названия слева. */
   .window-header :global(.search) {
     margin: 4px 8px;
-    outline: 1px solid color-mix(in srgb, var(--windowheader-fg) 10%, transparent);
-    border: none;
+    border: 1px solid color-mix(in srgb, var(--windowheader-fg) 14%, transparent);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 120ms ease, background-color 120ms ease;
   }
   .window-header :global(.search:not(.has-search)) {
-    background-color: var(--windowheader-bg);
+    background-color: color-mix(in srgb, var(--windowheader-fg) 5%, var(--windowheader-bg));
   }
-  .window-header :global(.search :has(input:focus)) {
-    background-color: var(--inverted-bg);
+  .window-header :global(.search:hover) {
+    border-color: color-mix(in srgb, var(--windowheader-fg) 24%, transparent);
+  }
+  .window-header :global(.search:has(input:focus)) {
+    background-color: var(--main-bg);
+    border-color: var(--input-focus, var(--selected-border));
   }
   .window-header :global(.search:not(.has-search) input) {
     background-color: transparent;
     color: var(--windowheader-fg);
   }
-
-  .search-box {
-    --gradient-direction: 135deg;
-    background-image: linear-gradient(var(--gradient-direction), var(--windowheader-bg) 10%, var(--workspace-color) 85%);
-  }
-  :global([dir="rtl"]) .search-box {
-    --gradient-direction: 225deg;
-  }
-  .right {
-    background-color: var(--workspace-color);
+  .window-header :global(.search:has(input:focus) input) {
+    color: var(--main-fg);
   }
 
   /* Styles for Mac */

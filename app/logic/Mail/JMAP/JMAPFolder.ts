@@ -11,11 +11,16 @@ import { Semaphore } from "../../util/flow/Semaphore";
 import { PromiseAllDone } from "../../util/flow/PromiseAllDone";
 import { retryOnTransientError } from "../../util/netUtil";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
-import { NotImplemented, assert } from "../../util/util";
+import { assert } from "../../util/util";
 import { ArrayColl, SetColl, Collection } from "svelte-collections";
 import { Buffer } from "buffer";
 import { gt } from "../../../l10n/l10n";
 import { trackMailSync } from "../mailSyncStatus";
+
+/** Сколько ID писем запрашивать за раз для «Отметить всё» */
+const kSeenQueryLimit = 500;
+/** Сколько писем менять одним `Email/set`: у серверов есть лимит maxObjectsInSet */
+const kSeenSetBatch = 200;
 
 export class JMAPFolder extends Folder {
   // id: JMAP ID
@@ -195,9 +200,12 @@ export class JMAPFolder extends Folder {
         let removed = this.findMovedAway(changedResponse.list, folder); // catches deletes e.g. from Inbox, which we read anyways
         let addedThisFolder = addedByFolder.get(folder.id);
         let changedThisFolder = changedByFolder.get(folder.id);
+        // Окончательное удаление в другом клиенте бывает в любой папке (Shift+Del
+        // во Входящих), а поиск по уже загруженным письмам ничего не стоит
         if (!(addedThisFolder || changedThisFolder ||
               removed.hasItems ||
-              changes.destroyed?.length && [SpecialFolder.Trash, SpecialFolder.Spam].includes(folder.specialFolder))) {
+              changes.destroyed?.length && (folder.haveReadFolder ||
+                [SpecialFolder.Trash, SpecialFolder.Spam].includes(folder.specialFolder)))) {
           continue;
         }
         /** To avoid reading all messages of all folders, we handle
@@ -241,6 +249,9 @@ export class JMAPFolder extends Folder {
         lock.release();
         // Новые письма со следующих страниц изменений тоже нужно вернуть (уведомления)
         newMessagesOfThisFolder.addAll(await this.fetchChangedMessagesForAllFolders());
+      } else if (changes.created?.length || changes.updated?.length || changes.destroyed?.length) {
+        await this.account.refreshFolderCounts()
+          .catch(this.account.errorCallback);
       }
       return newMessagesOfThisFolder;
     } finally {
@@ -477,10 +488,14 @@ export class JMAPFolder extends Folder {
         [`mailboxIds/${sourceFolderID}`]: action == "copy" ? true : null,
       };
     }
-    await this.account.makeSingleCall("Email/set", {
+    let response = await this.account.makeSingleCall("Email/set", {
       accountId: this.account.accountID,
       update: updates,
-    });
+    }) as TJMAPChangeResponse<TJMAPEMailHeaders>;
+    // Отказ по отдельному письму (папка только для чтения и т.п.) приходит в
+    // `notUpdated` с HTTP 200: без проверки письмо удалялось локально, а на
+    // сервере оставалось, и `Email/changes` его больше не возвращал
+    checkChangeError(response);
 
     // Счётчики countTotal источника и цели уже меняет Folder.moveOrCopyMessagesHere()
     if (action == "move") {
@@ -495,15 +510,20 @@ export class JMAPFolder extends Folder {
 
   async moveFolderHere(folder: JMAPFolder) {
     await super.moveFolderHere(folder);
-    await this.account.makeSingleCall("Mailbox/set", {
+    let response = await this.account.makeSingleCall("Mailbox/set", {
       accountId: this.account.accountID,
       update: {
         [folder.id]: {
           parentId: this.id,
         },
       },
-    });
-    await this.account.listFolders();
+    }) as TJMAPChangeResponse<TJMAPFolder>;
+    try {
+      checkChangeError(response);
+    } finally {
+      // Дерево по серверу: при отказе папка возвращается на прежнее место
+      await this.account.listFolders();
+    }
   }
 
   async createSubFolder(name: string): Promise<JMAPFolder> {
@@ -528,57 +548,73 @@ export class JMAPFolder extends Folder {
   }
 
   async rename(newName: string): Promise<void> {
-    await super.rename(newName);
-    await this.account.makeSingleCall("Mailbox/set", {
+    // Сначала сервер: при отказе локальное имя не должно расходиться с сервером
+    let response = await this.account.makeSingleCall("Mailbox/set", {
       accountId: this.account.accountID,
       update: {
         [this.id]: {
           name: newName,
         },
       },
-    });
+    }) as TJMAPChangeResponse<TJMAPFolder>;
+    checkChangeError(response);
+    await super.rename(newName);
   }
 
   /** Warning: Also deletes all messages in the folder, also on the server */
   protected async deleteItOnServer(): Promise<void> {
-    await this.account.makeSingleCall("Mailbox/set", {
+    let response = await this.account.makeSingleCall("Mailbox/set", {
       accountId: this.account.accountID,
       destroy: [this.id],
-    });
+      // Без этого сервер отказывает в удалении непустой папки (RFC 8621, mailboxHasEmail),
+      // и папка «воскресала» при следующем запуске
+      onDestroyRemoveEmails: true,
+    }) as TJMAPChangeResponse<TJMAPFolder>;
+    checkChangeError(response);
     console.log("JMAP folder deleted", this.name, this.id);
   }
 
+  /* Базовая реализация меняла только локальные флаги: сервер и другие клиенты
+   * видели письма непрочитанными, а `Email/changes` их уже не возвращал. */
   async markAllRead(): Promise<void> {
+    await this.setSeenOnServer(true);
     await super.markAllRead();
-    throw new NotImplemented();
-    await this.account.makeCombinedCall([
-      [
-        "Email/query", {
-          accountId: this.account.accountID,
-          filter: {
-            inMailbox: this.id,
-          },
-        },
-        "list",
-      ], [
-        "Email/set", {
-          accountId: this.account.accountID,
-          update: {
-            "#ids": {
-              name: "Email/query",
-              path: "/ids",
-              resultOf: "list",
-            },
-            idFromResultTODO: {
-              keywords: {
-                ["$seen"]: true,
-              }
-            }
-          }
-        },
-        "markRead",
-      ],
-    ]);
+  }
+
+  async markAllUnread(): Promise<void> {
+    await this.setSeenOnServer(false);
+    await super.markAllUnread();
+  }
+
+  /** Ставит или снимает `$seen` у всех писем папки, где он ещё другой */
+  protected async setSeenOnServer(seen: boolean): Promise<void> {
+    let ids: string[] = [];
+    for (let position = 0; ; position += kSeenQueryLimit) {
+      let query = await this.account.makeSingleCall("Email/query", {
+        accountId: this.account.accountID,
+        filter: seen
+          ? { inMailbox: this.id, notKeyword: "$seen" }
+          : { inMailbox: this.id, hasKeyword: "$seen" },
+        position,
+        limit: kSeenQueryLimit,
+      }) as { ids?: string[] };
+      let page = query.ids ?? [];
+      ids.push(...page);
+      if (page.length < kSeenQueryLimit) {
+        break;
+      }
+    }
+    for (let i = 0; i < ids.length; i += kSeenSetBatch) {
+      let update: Record<string, Record<string, boolean | null>> = {};
+      for (let id of ids.slice(i, i + kSeenSetBatch)) {
+        update[id] = { "keywords/$seen": seen ? true : null };
+      }
+      let response = await this.account.makeSingleCall("Email/set", {
+        accountId: this.account.accountID,
+        update,
+      }) as TJMAPChangeResponse<TJMAPEMailHeaders>;
+      checkChangeError(response);
+    }
   }
 
   /** @param specialUse From RFC 6154, e.g. `\Sent`

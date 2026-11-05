@@ -83,7 +83,31 @@ function readCheckoutURL(variableName: string): string | null {
   return isLemonSqueezyURL || isJackdawLicenseURL ? value : null;
 }
 
+/**
+ * Тестовая сборка для автопроверок интерфейса (`VITE_JACKDAW_UI_TEST=1` при сборке): сервисы лицензий
+ * и звонков запущены на этом же компьютере (desktop/scripts/ui-test/). В выпусках флаг не задан,
+ * и разрешены только адреса из allowlist ниже.
+ */
+export const UI_TEST_BUILD = import.meta.env.VITE_JACKDAW_UI_TEST == "1";
+
+/** Адрес из настроек сборки, если это тестовая сборка и адрес на этом компьютере */
+function readUITestLocalURL(variableName: string, protocol: string): string | null {
+  let value = UI_TEST_BUILD ? import.meta.env[variableName]?.trim() : null;
+  if (!value) return null;
+  try {
+    let url = new URL(value);
+    return url.protocol == protocol && url.hostname == "127.0.0.1" ? value.replace(/\/$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Сервис звонков тестовой сборки; null — обычный, рядом с сервисом лицензий */
+export const UI_TEST_CALLS_URL = readUITestLocalURL("VITE_JACKDAW_UI_TEST_CALLS_URL", "ws:");
+
 function readLicenseAPIURL(): string | null {
+  let testURL = readUITestLocalURL("VITE_BILLING_LICENSE_API_URL", "http:");
+  if (testURL) return testURL;
   let value = readPublicHTTPSURL("VITE_BILLING_LICENSE_API_URL");
   if (!value) return null;
   try {

@@ -1,5 +1,6 @@
 import { SpecialFolder, type Folder } from "./Folder";
 import type { MailAccount } from "./MailAccount";
+import type { Workspace } from "../Abstract/Workspace";
 
 /** Inbox folder for badge display — searches the full tree, not only rootFolders. */
 export function findInboxFolder(account: MailAccount): Folder | null {
@@ -42,4 +43,51 @@ export function totalUnreadFromAccounts(accounts: Iterable<MailAccount>): number
     total += inbox.countUnread;
   }
   return total;
+}
+
+/** Непрочитанные во «Входящих» одного ящика (0 — ящик без «Входящих»). */
+export function inboxUnreadCount(account: MailAccount): number {
+  return findInboxFolder(account)?.countUnread ?? 0;
+}
+
+/** Непрочитанные ящиков пространства; `null` — все ящики. */
+export function workspaceUnreadCount(accounts: Iterable<MailAccount>, workspace: Workspace | null): number {
+  let total = 0;
+  for (let account of accounts) {
+    if (account.protocol === "all" || (workspace && account.workspace !== workspace)) {
+      continue;
+    }
+    total += inboxUnreadCount(account);
+  }
+  return total;
+}
+
+export type UnreadWorkspaceGroup = {
+  /** `null` — ящики без пространства */
+  workspace: Workspace | null;
+  unread: number;
+  accounts: { account: MailAccount; unread: number }[];
+};
+
+/** Ящики и их непрочитанные по пространствам: в порядке пространств,
+ * ящики без пространства — последней группой. Пустые группы пропускаются. */
+export function unreadByWorkspace(accounts: Iterable<MailAccount>, workspaces: Iterable<Workspace>): UnreadWorkspaceGroup[] {
+  let mailAccounts = [...accounts].filter(account => account.protocol !== "all");
+  let known = [...workspaces];
+  let groups: UnreadWorkspaceGroup[] = [];
+  for (let workspace of [...known, null]) {
+    let members = mailAccounts.filter(account => workspace
+      ? account.workspace === workspace
+      : !account.workspace || !known.includes(account.workspace));
+    if (!members.length) {
+      continue;
+    }
+    let entries = members.map(account => ({ account, unread: inboxUnreadCount(account) }));
+    groups.push({
+      workspace,
+      unread: entries.reduce((sum, entry) => sum + entry.unread, 0),
+      accounts: entries,
+    });
+  }
+  return groups;
 }

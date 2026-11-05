@@ -11,7 +11,7 @@
           tooltip={$t`Show this calendar`}
           on:change={event => shownCalendars.show(calendar, event.detail)}
           />
-        <hbox class="name" flex>{calendar.name}</hbox>
+        <hbox class="name" flex title={calendar.name}>{calendar.name}</hbox>
         <RoundButton
           label={$t`New event in ${calendar.name}`}
           icon={AddIcon}
@@ -64,7 +64,10 @@
     box-shadow: none;
   }
   .name {
-    align-items: center;
+    /* Блочный, иначе многоточие у flex-контейнера не рисуется. */
+    display: block;
+    min-width: 0;
+    align-self: center;
     margin: 0px 8px;
     overflow: hidden;
     white-space: nowrap;

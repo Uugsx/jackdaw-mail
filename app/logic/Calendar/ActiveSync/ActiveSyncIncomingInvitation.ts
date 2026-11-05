@@ -34,6 +34,11 @@ export class ActiveSyncIncomingInvitation extends IncomingInvitation {
     await this.calendar.listEvents(); // Exchange will have created a calendar item if there wasn't one already
   }
 
+  /** MeetingResponse 16.x умеет ProposedStartTime, но сервер для проверки нет */
+  get canProposeNewTime(): boolean {
+    return false;
+  }
+
   async updateCancelled() {
     await this.updateFromOtherInvitationMessage();
   }

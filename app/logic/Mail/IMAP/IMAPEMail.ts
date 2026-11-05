@@ -119,6 +119,8 @@ export class IMAPEMail extends EMail {
     this.isImportant ||= flags.has("$Important"); // RFC 8457
     this.isDraft = flags.has("\\Draft");
     this.isSpam = flags.has("$Junk");
+    // RFC 3503: на запрос о прочтении уже ответили (здесь или в другой программе)
+    this.readReceiptHandled ||= flags.has("$MDNSent");
 
     for (let customTag of flags) {
       if (customTag.startsWith("\\") || customTag.startsWith("$") ||
@@ -152,6 +154,9 @@ export class IMAPEMail extends EMail {
     }
     if (message.isSpam) {
       flags.push("$Junk");
+    }
+    if (message.readReceiptHandled) {
+      flags.push("$MDNSent");
     }
     for (let tag of message.tags) {
       flags.push(tag.name);
@@ -233,10 +238,24 @@ export class IMAPEMail extends EMail {
         ![SpecialFolder.Trash, SpecialFolder.Spam].includes(this.folder.specialFolder)) {
       assert(this.folder.account.findSpecialFolder(SpecialFolder.Trash), gt`Trash folder is not set. Cannot delete the email. Please go to folder properties and set Use As: Trash.`);
     }
-    await super.deleteMessage(strategy);
+    // Защищаем UID ещё до локального удаления: иначе фоновая синхронизация,
+    // идущая в этот момент, успевает вернуть письмо в список
+    let uid = this.uid;
+    if (uid) {
+      this.folder.deletions.add(uid);
+    }
+    try {
+      await super.deleteMessage(strategy);
+    } catch (ex) {
+      if (uid) {
+        this.folder.releaseDeletion(uid, false);
+      }
+      throw ex;
+    }
   }
 
   async deleteMessageOnServer(strategy = this.folder.account.deleteStrategy) {
+    let serverConfirmed = false;
     try {
       if (!this.uid) {
         return;
@@ -264,8 +283,12 @@ export class IMAPEMail extends EMail {
       } else {
         throw new NotReached("Unknown delete strategy");
       }
+      // С флагом \Deleted письмо остаётся в папке на сервере — защищать нечего
+      serverConfirmed = strategy != DeleteStrategy.Flag;
     } finally {
-      this.folder.deletions.delete(this.uid);
+      if (this.uid) {
+        this.folder.releaseDeletion(this.uid, serverConfirmed);
+      }
     }
   }
 }

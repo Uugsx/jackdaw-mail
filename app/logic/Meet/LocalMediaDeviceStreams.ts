@@ -123,7 +123,8 @@ export class LocalMediaDeviceStreams extends MediaDeviceStreams {
     } catch (ex) {
       // If the selected device is gone or busy, then re-try with other device.
       // Without this, on Firefox, we cannot even list devices and the user cannot choose another.
-      if (!(this.isDeviceStartError(ex) && (cameraDevice || micDevice))) {
+      // Без камеры (NotFoundError) звонок продолжается только со звуком.
+      if (!(this.isDeviceStartError(ex) && (cameraDevice || micDevice || cameraOn))) {
         throw await this.getDeviceStartErrorMessage(ex, cameraOn);
       }
       let anyDevice = this.streamParams(cameraOn);
@@ -131,6 +132,7 @@ export class LocalMediaDeviceStreams extends MediaDeviceStreams {
         { video: setup.video, audio: anyDevice.audio }, // mic broken, keep camera
         { video: anyDevice.video, audio: setup.audio }, // camera broken, keep mic
         { video: anyDevice.video, audio: anyDevice.audio }, // both broken
+        { video: false, audio: anyDevice.audio }, // no camera at all: audio only
       ] as MediaStreamConstraints[];
       for (let retry of retries) {
         try {
@@ -148,16 +150,22 @@ export class LocalMediaDeviceStreams extends MediaDeviceStreams {
     // Save the actual device used, e.g. after a fallback above
     this._cameraDevice = this.cameraMicStream.getVideoTracks()[0]?.getSettings()?.deviceId ?? cameraDevice;
     this._micDevice = this.cameraMicStream.getAudioTracks()[0]?.getSettings()?.deviceId ?? micDevice;
-    this._cameraOn = cameraOn;
+    this._cameraOn = cameraOn && this.cameraMicStream.getVideoTracks().length > 0;
     this._micOn = true; // We started the mic unconditionally
     if (!micOn) {
       this.enableAudio(false); // mute
     }
   }
   protected isDeviceStartError(ex: Error): boolean {
-    return ex?.name == "NotReadableError" || ex?.name == "AbortError" || ex?.name == "OverconstrainedError";
+    return ex?.name == "NotReadableError" || ex?.name == "AbortError" || ex?.name == "OverconstrainedError" ||
+      ex?.name == "NotFoundError";
   }
   protected async getDeviceStartErrorMessage(ex: Error, cameraOn: boolean): Promise<Error> {
+    if (ex?.name == "NotFoundError") {
+      return exMessage(ex, cameraOn
+        ? gt`No camera or microphone was found. Connect a microphone, or check that Windows or macOS allows Jackdaw to use it.`
+        : gt`No microphone was found. Connect a microphone, or check that Windows or macOS allows Jackdaw to use it.`);
+    }
     if (ex?.name == "OverconstrainedError") {
       return exMessage(ex, gt`The selected camera or microphone is disconnected. Please chose another device.`);
     }

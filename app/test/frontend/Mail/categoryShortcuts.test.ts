@@ -18,6 +18,7 @@ import {
 import { Tag, availableTags } from "../../../logic/Abstract/Tag";
 import { TagCombination, tagCombinations } from "../../../logic/Abstract/TagCombination";
 import { selectedMessage, selectedMessages } from "../../../frontend/Mail/Selected";
+import { hoverRow } from "./hoverRow";
 
 const tagTarget = { type: "tag" as const, id: "__category-shortcut-test__" };
 const combinationTarget = {
@@ -183,6 +184,40 @@ describe("category shortcuts", () => {
       tagCombinations.remove(combination);
       availableTags.remove(firstTag);
       availableTags.remove(secondTag);
+    }
+  });
+
+  test("ставит категорию письму под курсором, а не выделенному", async () => {
+    let tag = new Tag();
+    tag.name = tagTarget.id;
+    availableTags.add(tag);
+    let makeMessage = () => ({
+      tags: new ArrayColl<Tag>(),
+      addTags: vi.fn(async () => undefined),
+      removeTags: vi.fn(async () => undefined),
+    });
+    let selected = makeMessage();
+    let hovered = makeMessage();
+    let previousMessage = get(selectedMessage);
+    let previousMessages = get(selectedMessages);
+    selectedMessage.set(selected as any);
+    selectedMessages.set(new ArrayColl([selected as any]));
+    let hover = hoverRow(hovered as any);
+
+    try {
+      await expect(applyCategoryShortcut(tagTarget)).resolves.toBe(true);
+      expect(hovered.addTags).toHaveBeenCalledWith([tag]);
+      expect(selected.addTags).not.toHaveBeenCalled();
+      expect(get(selectedMessage)).toBe(selected);
+
+      hover.leave();
+      await expect(applyCategoryShortcut(tagTarget)).resolves.toBe(true);
+      expect(selected.addTags).toHaveBeenCalledWith([tag]);
+    } finally {
+      hover.leave();
+      selectedMessage.set(previousMessage);
+      selectedMessages.set(previousMessages);
+      availableTags.remove(tag);
     }
   });
 });

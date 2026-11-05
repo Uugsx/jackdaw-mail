@@ -38,7 +38,6 @@
   import {
     getResponseReminderStateSnapshot,
     getResponseReminderSlaStartAt,
-    isResponseReminderRequestSuppressed,
     responseReminderMailEpoch,
   } from "../Mail/ResponseReminderWatcher";
   import {
@@ -202,25 +201,18 @@
         return;
       }
       const reminderState = getResponseReminderStateSnapshot();
-      requests = nextRequests
-        .filter(
-          (request) =>
-            !isResponseReminderRequestSuppressed(
-              request,
-              excludedCategoryNames,
-              reminderState,
-            ),
-        )
-        .map((request) => ({
-          ...request,
-          slaStartedAt: getResponseReminderSlaStartAt(
-            request,
-            refreshNow,
-            workingHours,
-            excludedCategoryNames,
-            reminderState,
-          ),
-        }));
+      // Прочитано / непрочитано не снимает письмо с контроля: из очереди
+      // его убирают только ответ, перенос в другую папку или удаление.
+      requests = nextRequests.map((request) => ({
+        ...request,
+        slaStartedAt: getResponseReminderSlaStartAt(
+          request,
+          refreshNow,
+          workingHours,
+          excludedCategoryNames,
+          reminderState,
+        ),
+      }));
       lastUpdatedAt = new Date();
     } catch (ex) {
       if (requestId === refreshRequestId) {
@@ -258,10 +250,13 @@
     restoreArchivedResponseRequest(`${entry.accountId}:${entry.emailId}`);
   }
 
+  // Состояние передаётся явно: иначе разметка не видит зависимости от liveSort,
+  // и стрелка активной колонки не обновляется после клика.
   function liveSortDirection(
+    sort: ReportSortState<LiveResponseSortColumn> | null,
     column: LiveResponseSortColumn,
   ): "asc" | "desc" | null {
-    return liveSort?.column === column ? liveSort.direction : null;
+    return sort?.column === column ? sort.direction : null;
   }
 
   function restoreLiveSortState(
@@ -429,33 +424,39 @@
             aria-label={$t`Sort messages`}
           >
             <ReportSortButton
+              announceDirection
               label={$t`Status`}
-              direction={liveSortDirection("status")}
+              direction={liveSortDirection(liveSort, "status")}
               on:sort={() => onLiveSort("status")}
             />
             <ReportSortButton
+              announceDirection
               label={$t`Received`}
-              direction={liveSortDirection("received")}
+              direction={liveSortDirection(liveSort, "received")}
               on:sort={() => onLiveSort("received")}
             />
             <ReportSortButton
+              announceDirection
               label={$t`SLA deadline`}
-              direction={liveSortDirection("deadline")}
+              direction={liveSortDirection(liveSort, "deadline")}
               on:sort={() => onLiveSort("deadline")}
             />
             <ReportSortButton
+              announceDirection
               label={$t`Response time`}
-              direction={liveSortDirection("elapsed")}
+              direction={liveSortDirection(liveSort, "elapsed")}
               on:sort={() => onLiveSort("elapsed")}
             />
             <ReportSortButton
+              announceDirection
               label={$t`Assigned to`}
-              direction={liveSortDirection("assignee")}
+              direction={liveSortDirection(liveSort, "assignee")}
               on:sort={() => onLiveSort("assignee")}
             />
             <ReportSortButton
+              announceDirection
               label={$t`Subject`}
-              direction={liveSortDirection("subject")}
+              direction={liveSortDirection(liveSort, "subject")}
               on:sort={() => onLiveSort("subject")}
             />
           </div>
@@ -616,6 +617,7 @@
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
+    container: live-response / inline-size;
     margin-top: 14px;
     padding: 18px;
     border: 1px solid var(--border);
@@ -730,12 +732,11 @@
 
   .live-summary span {
     margin-top: 5px;
-    overflow: hidden;
     color: color-mix(in srgb, var(--main-fg) 64%, transparent);
     font-size: 12px;
     font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.3;
+    overflow-wrap: break-word;
   }
 
   .live-number,
@@ -745,8 +746,9 @@
 
   .live-sort-bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px 8px;
     min-width: 0;
     max-width: 100%;
     padding: 5px 7px;
@@ -765,14 +767,16 @@
   .live-sort-controls {
     display: flex;
     flex: 1 1 auto;
+    flex-wrap: wrap;
     min-width: 0;
     max-width: 100%;
-    gap: 2px;
-    overflow-x: auto;
+    gap: 4px 2px;
   }
 
   .live-sort-controls :global(.table-sort-button) {
+    flex: 0 1 auto;
     width: auto;
+    max-width: 100%;
     min-height: 25px;
     margin: 0;
     padding: 3px 6px;
@@ -781,8 +785,20 @@
     white-space: nowrap;
   }
 
+  /* text-wrap: balance у подписи кнопки иначе переносит «Дедлайн SLA» в две строки. */
+  .live-sort-controls :global(.table-sort-button > span:first-child) {
+    white-space: nowrap;
+  }
+
+  .live-sort-controls :global(.table-sort-button.is-active) {
+    border-color: color-mix(in srgb, var(--reports-accent) 42%, var(--border));
+    color: var(--main-fg);
+    font-weight: 700;
+  }
+
   .live-queue-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 8px;
     min-width: 0;
@@ -1322,5 +1338,45 @@
     font-size: 12px;
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  /*
+   * Ширина панели, а не окна: в правой боковой панели окно широкое, а места
+   * мало. Блок стоит последним, чтобы перекрыть плоскую подачу выше.
+   */
+  @container live-response (max-width: 520px) {
+    .live-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 10px;
+    }
+
+    .live-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+
+    .live-row-timer {
+      justify-items: start;
+      text-align: left;
+    }
+
+    .live-status {
+      white-space: normal;
+    }
+  }
+
+  @container live-response (max-width: 420px) {
+    .live-control-header {
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .live-sort-label {
+      flex-basis: 100%;
+    }
+
+    .tracking-archive-row {
+      align-items: flex-start;
+      flex-direction: column;
+    }
   }
 </style>

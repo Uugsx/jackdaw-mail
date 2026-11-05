@@ -1,13 +1,14 @@
 <button type="button" class="mail-list-topic-separator"
   aria-expanded={!collapsed}
-  aria-label={`${prefix}: ${displayLabel} (${countLabel})`}
+  aria-label={`${prefix ? prefix + ": " : ""}${displayLabel} (${countLabel})`}
+  title={`${prefix ? prefix + ": " : ""}${displayLabel}`}
   on:click|stopPropagation={() => dispatch("toggle")}
   >
   <span class="chevron" class:collapsed>
     <ChevronDownIcon size="15px" strokeWidth={2} aria-hidden="true" />
   </span>
   <span class="label">
-    <span class="prefix">{prefix}:</span> {displayLabel}
+    {#if prefix}<span class="prefix">{prefix}:</span>{/if} {displayLabel}
   </span>
   <span class="count">({countLabel})</span>
 </button>
@@ -17,7 +18,8 @@
   import { createEventDispatcher } from "svelte";
   import { t, plural } from "../../../l10n/l10n";
 
-  export let prefix: string;
+  /** Пусто — без «Префикс:», например у группы «Закреплённые» */
+  export let prefix: string | null;
   export let label: string;
   export let count: number;
   export let collapsed = false;

@@ -1,7 +1,7 @@
 <button type="button" class="quick-folder" class:selected={selected}
   aria-pressed={selected}
   title={displayLabel}
-  on:click={() => dispatch("select", folder)}
+  on:click={() => { tasksViewOpen.set(false); notesViewOpen.set(false); dispatch("select", folder); }}
   on:contextmenu={contextMenu.onContextMenu}>
   <FolderIcon {folder} size="14px" />
   <span class="label">{displayLabel}</span>
@@ -45,6 +45,8 @@
 </ContextMenu>
 
 <script lang="ts">
+  import { tasksViewOpen } from "../Tasks/tasksStore";
+  import { notesViewOpen } from "../Notes/notesStore";
   import { SpecialFolder, type Folder } from "../../../logic/Mail/Folder";
   import { specialFolderNames } from "../../../logic/Mail/Folder";
   import FolderIcon from "./FolderIcon.svelte";
@@ -81,13 +83,16 @@
   let contextMenu: ContextMenu;
 
   $: _folder = $folder;
-  $: folderLabel = folder.specialFolder == SpecialFolder.Normal
-    ? folder.name
-    : specialFolderNames[folder.specialFolder] ?? folder.name;
+  // Через `$folder`: иначе Svelte пересчитывает выражение только при смене самой
+  // папки, и бейдж (например, Корзины после «Очистить папку») стоял до клика
+  // по другой папке
+  $: folderLabel = $folder.specialFolder == SpecialFolder.Normal
+    ? $folder.name
+    : specialFolderNames[$folder.specialFolder] ?? $folder.name;
   $: displayLabel = showAccountLabel && accountLabel
     ? `${folderLabel} — ${accountLabel}`
     : folderLabel;
-  $: count = folder.countUnread || folder.countNewArrived;
+  $: count = $folder.countUnread || $folder.countNewArrived;
 
   function removeFromFavorites(): void {
     if (removableFromFavorites) {
