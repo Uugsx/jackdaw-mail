@@ -200,6 +200,8 @@
     "footer.privacy": "Privacy Policy",
     "footer.refund": "Refund Policy",
     "footer.author": "Author: @Uugsx",
+    "footer.operator": "Operator: Nikita Galkin.",
+    "footer.support": "Support:",
     "footer.credit": "Based on open-source work by Ben Bucksch, Beonex GmbH and other contributors."
   };
 
