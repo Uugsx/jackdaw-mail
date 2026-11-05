@@ -36,19 +36,7 @@
   <img src="docs/screenshots/shot-calendar.jpg" alt="Календарь Jackdaw Mail" width="920">
 </p>
 
-Отчёты открываются внутри Jackdaw Mail как полноценная рабочая страница: графики, таблицы и сортировка доступны до сохранения копии в HTML, а письма из таблиц открываются в боковой панели прямо в отчёте. Живой контроль SLA можно держать в правой боковой панели рядом с открытым письмом.
-
-Все данные на превью ниже синтетические: используются только вымышленные имена, темы и адрес `demo.example`. Реальные почтовые аккаунты, адреса и содержимое писем в репозиторий не добавляются.
-
-<p align="center">
-  <img src="docs/screenshots/reports-demo.svg" alt="Демонстрационный интерактивный отчёт Jackdaw Mail" width="920">
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/sla-control-demo.svg" alt="Демонстрационный живой контроль SLA в правой боковой панели Jackdaw Mail" width="920">
-</p>
-
-<p align="center"><sub>Демонстрационные экраны · synthetic demo data</sub></p>
+<sub>Данные на снимках вымышленные: имена, темы и адрес `demo.example`.</sub>
 
 ## Русский
 
@@ -201,6 +189,23 @@ lib/        — общие библиотеки (JPC protocol)
 
 This repository contains the **Electron** desktop client, the **Capacitor** mobile shell and the **Svelte + TypeScript** UI. Maintained by **[uugsx](https://github.com/Uugsx)**.
 
+### Why it matters
+
+- **See what is on fire** — a queue of unanswered emails in working minutes: how long ago, when it is due, how much is left.
+- **Honest response times** — reports count working hours only, so nights and weekends do not skew the numbers.
+- **One window** — mail, calendar, meetings, calls and encrypted chat with colleagues.
+- **Your data stays yours** — mail loads straight from your server and is stored on your computer.
+
+<p align="center">
+  <img src="docs/screenshots/shot-mail-open-en.jpg" alt="Jackdaw Mail: message list and an open message" width="920">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/shot-calendar-en.jpg" alt="Jackdaw Mail calendar" width="920">
+</p>
+
+<sub>All data in the screenshots is fictional: names, subjects and the `demo.example` address.</sub>
+
 ### Native Android client
 
 The standalone native Android client for Jackdaw Mail is developed by **[SpliffRa](https://github.com/SpliffRa)**. **[Download the latest Android release](https://github.com/SpliffRa/jackdaw-mail-android/releases/latest)** from the releases page; the source code and build instructions are available in the **[jackdaw-mail-android](https://github.com/SpliffRa/jackdaw-mail-android)** repository. It is a Kotlin and Jetpack Compose application related to the Jackdaw Mail concept.
@@ -237,8 +242,8 @@ Before an account is connected, the available features depend on its protocol, p
 | **Composer** | Floating window, HTML/plain text, formatting, Pro signatures with links and images, quoting, attachments and inline images, drag-and-drop, drafts, read receipts and PGP/S/MIME UI; undo send and “Send later” (server-side for EWS, local queue otherwise), templates, @mentions, voting buttons, large files sent as a Nextcloud/openCloud link | ready; depends on keys and server; Pro |
 | **Related messages** | On-demand button in the message header; exact duplicates, conversation links, case/customer identifiers, same subject and similar text; collapsible groups and open-message navigation | ready, local index |
 | **Workspaces** | Context filtering for “All/Work/…” and restoration of the last selected workspace | ready |
-| **UI & performance** | Reworked layouts, ribbon, unified text fields and dropdowns (including the separate message and draft windows), message zoom, horizontal overflow handling, virtualized fast lists and protection against duplicate keyboard shortcut actions | готово на desktop |
-| **Reports & SLA** | Interactive charts and tables, sorting, mailbox/folder/category filters, per-day working hours, responder attribution, live control, reminders, tracking archive and HTML export | готово, Pro |
+| **UI & performance** | Reworked layouts, ribbon, unified text fields and dropdowns (including the separate message and draft windows), message zoom, horizontal overflow handling, virtualized fast lists and protection against duplicate keyboard shortcut actions | ready on desktop |
+| **Reports & SLA** | Interactive charts and tables, sorting, mailbox/folder/category filters, per-day working hours, responder attribution, live control, reminders, tracking archive and HTML export | ready, Pro |
 | **Calendar** | Local and server calendars, day/week/month views, events, invitations, attachments, reminders and online meetings; “Propose new time”, working hours (loaded from Exchange or set manually), Exchange room booking, printing day/week/month | ready; depends on the protocol |
 | **Contacts** | Personal address books, GAL, groups, search, contact history, PGP/S/MIME keys; EWS, OWA, ActiveSync, CardDAV and JMAP | ready; depends on the protocol |
 | **Files** | Local storage, WebDAV, Nextcloud and OpenCloud; directories, tags, search, table/gallery views, upload, download and preview | ready; depends on the server |
@@ -246,7 +251,7 @@ Before an account is connected, the available features depend on its protocol, p
 | **Meet** | Audio/video, participants, microphone/camera, screen sharing and invitations; LiveKit, M3, SIP and WhatsApp backends. **Jackdaw calls** between app users — audio, video and screen sharing, direct (P2P WebRTC), no media server; call history and an “Online / Busy / Do not disturb” status shared across devices | depends on the backend, proprietary; Jackdaw calls — Pro |
 | **Web Apps** | Catalog and personal list of embedded web apps, launch beside mail and persisted app selection | ready; depends on the catalog |
 | **Topics** | Tree and graph of work topics with nested subtopics | depends on the workspace |
-| **Desktop / mobile** | Electron for macOS, Windows and Linux; Capacitor for iOS and Android; desktop OTA updates | desktop готово, mobile в работе |
+| **Desktop / mobile** | Electron for macOS, Windows and Linux; Capacitor for iOS and Android; desktop OTA updates | desktop ready, mobile in progress |
 
 #### On-demand related-message search
 
@@ -268,7 +273,7 @@ Reports are generated and reviewed inside the app first. HTML is an optional sav
 - **Live queue:** unanswered mail appears in the right sidebar next to the open message. Each item shows status, elapsed time, deadline, and remaining time.
 - **SLA start:** the target is anchored to the message's received time and counts only working minutes. Reading the message or assigning an employee category identifies who took it into work but never resets the target.
 - **Reminders:** configure working-minute checkpoints such as 10, 20 and 25; each reminder is shown once until the request receives a reply and opens the relevant message.
-- **Queue rules:** exclude categories such as “Переписка (мы в копии)”, choose whether uncategorized messages are included, sort the queue, and archive stale requests with restore support.
+- **Queue rules:** exclude categories such as “Correspondence (we are in CC)”, choose whether uncategorized messages are included, sort the queue, and archive stale requests with restore support.
 
 Live-control settings are persisted per mailbox. The queue refreshes immediately after a message or category change, with a periodic safety check as a fallback.
 
