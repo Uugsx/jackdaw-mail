@@ -3368,5 +3368,8 @@
   "31/meG": "Ainda não há exceções.",
   "q4lXaH": "Dia reduzido",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Cancelar assinatura",
+  "6WZ99x": "Assinatura ativa. Próxima cobrança: {0}",
+  "sKIJT1": "Assinatura cancelada. O acesso continua até {0}"
 }

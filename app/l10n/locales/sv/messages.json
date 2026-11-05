@@ -3368,5 +3368,8 @@
   "31/meG": "Inga undantag ännu.",
   "q4lXaH": "Förkortad dag",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Avsluta prenumeration",
+  "6WZ99x": "Prenumerationen är aktiv. Nästa debitering: {0}",
+  "sKIJT1": "Prenumerationen är avslutad. Åtkomst gäller till {0}"
 }

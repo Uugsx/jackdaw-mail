@@ -33,6 +33,13 @@ export interface ProEntitlementPayload {
   trialStartedAt?: string;
 }
 
+export interface ProSubscriptionInfo {
+  paidThrough: string | null;
+  autoRenew: boolean;
+  nextBilledAt: string | null;
+  cancelUrl: string | null;
+}
+
 export interface ProEntitlementState {
   status: ProEntitlementStatus;
   plan: string | null;
@@ -41,6 +48,7 @@ export interface ProEntitlementState {
   keyLast4: string | null;
   message: string | null;
   lastValidatedAt: string | null;
+  subscription?: ProSubscriptionInfo | null;
 }
 
 interface StoredEntitlement {
@@ -49,6 +57,7 @@ interface StoredEntitlement {
   payload: ProEntitlementPayload;
   signature: string;
   keyLast4?: string;
+  subscription?: ProSubscriptionInfo | null;
   validatedAt: string;
 }
 
@@ -384,6 +393,7 @@ function stateFromPayload(
   message: string | null = null,
   lastValidatedAt = new Date().toISOString(),
   comparisonTimeMs?: number,
+  subscription: ProSubscriptionInfo | null = null,
 ): ProEntitlementState {
   let validUntil = payload.validUntil;
   let trustedNow = comparisonTimeMs ?? (payload.serverNow && Number.isFinite(Date.parse(payload.serverNow))
@@ -398,6 +408,7 @@ function stateFromPayload(
       keyLast4,
       message: gt`The Pro license has expired.`,
       lastValidatedAt,
+      subscription,
     };
   }
   return {
@@ -410,6 +421,7 @@ function stateFromPayload(
     keyLast4,
     message,
     lastValidatedAt,
+    subscription,
   };
 }
 
@@ -477,12 +489,25 @@ interface EntitlementResponse {
   payload: ProEntitlementPayload;
   signature: string;
   keyLast4?: string;
+  subscription: ProSubscriptionInfo | null;
+}
+
+function parseSubscription(license: Record<string, unknown> | undefined): ProSubscriptionInfo | null {
+  if (!license || typeof license.autoRenew != "boolean") return null;
+  let text = (value: unknown) => typeof value == "string" && value ? value : null;
+  let cancelUrl = text(license.cancelUrl);
+  return {
+    paidThrough: text(license.paidThrough),
+    autoRenew: license.autoRenew,
+    nextBilledAt: text(license.nextBilledAt),
+    cancelUrl: cancelUrl && cancelUrl.startsWith("https://") ? cancelUrl : null,
+  };
 }
 
 async function parseEntitlementResponse(response: Response): Promise<EntitlementResponse> {
   let body = await response.json().catch(() => null) as {
     entitlement?: { payload?: ProEntitlementPayload; signature?: string };
-    license?: { keyLast4?: string };
+    license?: { keyLast4?: string } & Record<string, unknown>;
     error?: string;
   } | null;
   if (!response.ok || !body?.entitlement?.payload || !body.entitlement.signature) {
@@ -498,6 +523,7 @@ async function parseEntitlementResponse(response: Response): Promise<Entitlement
     payload: body.entitlement.payload,
     signature: body.entitlement.signature,
     keyLast4: body.license?.keyLast4,
+    subscription: parseSubscription(body.license),
   };
 }
 
@@ -592,6 +618,7 @@ function cachedStateWhileChecking(): ProEntitlementState | null {
           null,
           stored.validatedAt,
           Date.now(),
+          stored.subscription ?? null,
         );
       }
     }
@@ -633,9 +660,10 @@ export async function activateProLicense(licenseKey: string, deviceName = getDev
     payload: response.payload,
     signature: response.signature,
     keyLast4: response.keyLast4 ?? normalized.slice(-4),
+    subscription: response.subscription,
     validatedAt,
   });
-  let state = stateFromPayload(response.payload, response.keyLast4 ?? normalized.slice(-4));
+  let state = stateFromPayload(response.payload, response.keyLast4 ?? normalized.slice(-4), response.payload.status, null, undefined, undefined, response.subscription);
   proEntitlement.setValue(state);
   return state;
 }
@@ -696,9 +724,10 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
         payload: response.payload,
         signature: response.signature,
         keyLast4: storedIsTrial ? undefined : response.keyLast4 ?? stored.keyLast4,
+        subscription: storedIsTrial ? null : response.subscription,
         validatedAt,
       });
-      let state = stateFromPayload(response.payload, storedIsTrial ? null : response.keyLast4 ?? stored.keyLast4 ?? stored.licenseKey.slice(-4));
+      let state = stateFromPayload(response.payload, storedIsTrial ? null : response.keyLast4 ?? stored.keyLast4 ?? stored.licenseKey.slice(-4), response.payload.status, null, undefined, undefined, storedIsTrial ? null : response.subscription);
       proEntitlement.setValue(state);
       return state;
     } catch (error) {
@@ -757,6 +786,7 @@ export async function refreshProEntitlement(): Promise<ProEntitlementState> {
         gt`The license service is temporarily unavailable. The last verified entitlement is being used.`,
         stored.validatedAt,
         Date.now(),
+        stored.subscription ?? null,
       );
       if (Number.isFinite(cachedDate) && Date.now() - cachedDate <= OFFLINE_GRACE_MS && cachedState.status != "expired") {
         proEntitlement.setValue(cachedState);

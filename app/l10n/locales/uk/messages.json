@@ -3368,5 +3368,8 @@
   "31/meG": "Винятків поки немає.",
   "q4lXaH": "Скорочений день",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Скасувати підписку",
+  "6WZ99x": "Підписка активна. Наступне списання: {0}",
+  "sKIJT1": "Підписку скасовано. Доступ діє до {0}"
 }

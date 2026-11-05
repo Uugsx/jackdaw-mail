@@ -38,6 +38,22 @@
           {#if state.keyLast4}
             <p class="key-preview">{$t`License ending in ••••${state.keyLast4}`}</p>
           {/if}
+          {#if state.subscription}
+            <p class="subscription-info">
+              {#if state.subscription.autoRenew}
+                {$t`Subscription is active. Next charge: ${formatDate(state.subscription.nextBilledAt ?? state.subscription.paidThrough ?? state.validUntil ?? "")}`}
+              {:else}
+                {$t`Subscription is canceled. Access continues until ${formatDate(state.validUntil ?? "")}`}
+              {/if}
+            </p>
+            {#if state.subscription.autoRenew && state.subscription.cancelUrl}
+              <Button
+                label={$t`Cancel subscription`}
+                classes="cancel-subscription"
+                onClick={cancelSubscription}
+                />
+            {/if}
+          {/if}
           {#if state.lastValidatedAt}
             <p class="validation-time">{$t`Last checked: ${formatDate(state.lastValidatedAt)}`}</p>
           {/if}
@@ -381,6 +397,13 @@
     }
   }
 
+  async function cancelSubscription() {
+    let url = state.subscription?.cancelUrl;
+    if (url?.startsWith("https://")) {
+      await openExternalURL(url);
+    }
+  }
+
   async function openPlans(): Promise<void> {
     await openExternalURL(BILLING_PLANS_URL);
   }
@@ -437,6 +460,7 @@
   }
 
   .key-preview,
+  .subscription-info,
   .validation-time,
   .help-text,
   .purchase-note {

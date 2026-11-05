@@ -3368,5 +3368,8 @@
   "31/meG": "இன்னும் விதிவிலக்குகள் இல்லை.",
   "q4lXaH": "குறுகிய நாள்",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "சந்தாவை ரத்து செய்",
+  "6WZ99x": "சந்தா செயலில் உள்ளது. அடுத்த கட்டணம்: {0}",
+  "sKIJT1": "சந்தா ரத்து செய்யப்பட்டது. {0} வரை அணுகல் தொடரும்"
 }

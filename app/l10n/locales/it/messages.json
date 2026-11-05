@@ -3368,5 +3368,8 @@
   "31/meG": "Nessuna eccezione per ora.",
   "q4lXaH": "Giorno ridotto",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Annulla abbonamento",
+  "6WZ99x": "Abbonamento attivo. Prossimo addebito: {0}",
+  "sKIJT1": "Abbonamento annullato. L’accesso continua fino al {0}"
 }

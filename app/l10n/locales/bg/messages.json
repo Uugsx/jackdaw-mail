@@ -3368,5 +3368,8 @@
   "31/meG": "Все още няма изключения.",
   "q4lXaH": "Съкратен ден",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Отказ от абонамента",
+  "6WZ99x": "Абонаментът е активен. Следващо плащане: {0}",
+  "sKIJT1": "Абонаментът е отказан. Достъпът важи до {0}"
 }

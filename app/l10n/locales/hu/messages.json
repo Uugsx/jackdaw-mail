@@ -3368,5 +3368,8 @@
   "31/meG": "Még nincs kivétel.",
   "q4lXaH": "Rövidített nap",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Előfizetés lemondása",
+  "6WZ99x": "Az előfizetés aktív. Következő terhelés: {0}",
+  "sKIJT1": "Az előfizetés lemondva. A hozzáférés eddig tart: {0}"
 }

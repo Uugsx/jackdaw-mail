@@ -3368,5 +3368,8 @@
   "31/meG": "No exceptions yet.",
   "q4lXaH": "Short day",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Cancel subscription",
+  "6WZ99x": "Subscription is active. Next charge: {0}",
+  "sKIJT1": "Subscription is canceled. Access continues until {0}"
 }

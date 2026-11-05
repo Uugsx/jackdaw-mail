@@ -3368,5 +3368,8 @@
   "31/meG": "Izņēmumu vēl nav.",
   "q4lXaH": "Saīsināta diena",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Atcelt abonementu",
+  "6WZ99x": "Abonements ir aktīvs. Nākamais maksājums: {0}",
+  "sKIJT1": "Abonements atcelts. Piekļuve ir spēkā līdz {0}"
 }

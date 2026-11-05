@@ -3368,5 +3368,8 @@
   "31/meG": "ยังไม่มีข้อยกเว้น",
   "q4lXaH": "วันทำงานสั้น",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "ยกเลิกการสมัครสมาชิก",
+  "6WZ99x": "การสมัครสมาชิกใช้งานอยู่ ตัดเงินครั้งถัดไป: {0}",
+  "sKIJT1": "ยกเลิกการสมัครสมาชิกแล้ว ใช้งานได้ถึง {0}"
 }

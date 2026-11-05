@@ -3368,5 +3368,8 @@
   "31/meG": "Ingen undtagelser endnu.",
   "q4lXaH": "Forkortet dag",
   "qS5//Q": "Gray",
-  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA."
+  "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
+  "fHXMPy": "Opsig abonnement",
+  "6WZ99x": "Abonnementet er aktivt. Næste betaling: {0}",
+  "sKIJT1": "Abonnementet er opsagt. Adgang gælder til {0}"
 }
