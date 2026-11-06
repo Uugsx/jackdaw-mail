@@ -73,8 +73,34 @@
     filteredEvents = events.filterObservable(ev => ev.startTime && ev.startTime < filterEnd && filterStart < ev.endTime);
   }
 
+  /** Тачпад и колесо шлют десятки событий за жест: копим сдвиг и листаем
+   * не чаще одного месяца за паузу, иначе календарь улетает на годы. */
+  const kWheelStepPx = 100;
+  const kWheelLinePx = 40;
+  const kWheelPausePx = 400;
+  const kWheelCooldownMS = 350;
+  let wheelAccumulated = 0;
+  let wheelLockedUntil = 0;
   function onScrollWheel(event: WheelEvent) {
-    const upDown = event.deltaY > 0 ? 1 : -1;
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      return;
+    }
+    let delta = event.deltaY * (event.deltaMode == 1 ? kWheelLinePx : event.deltaMode == 2 ? kWheelPausePx : 1);
+    let now = Date.now();
+    if (now < wheelLockedUntil) {
+      wheelAccumulated = 0;
+      return;
+    }
+    if (wheelAccumulated * delta < 0) {
+      wheelAccumulated = 0;
+    }
+    wheelAccumulated += delta;
+    if (Math.abs(wheelAccumulated) < kWheelStepPx) {
+      return;
+    }
+    const upDown = wheelAccumulated > 0 ? 1 : -1;
+    wheelAccumulated = 0;
+    wheelLockedUntil = now + kWheelCooldownMS;
     start.setDate(start.getDate() + showDays * upDown);
     start = start;
   }

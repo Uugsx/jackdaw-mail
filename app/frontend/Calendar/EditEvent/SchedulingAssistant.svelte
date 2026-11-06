@@ -85,6 +85,7 @@
   import ChevronLeftIcon from "lucide-svelte/icons/chevron-left";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import SearchIcon from "lucide-svelte/icons/search";
+  import { appGlobal } from "../../../logic/app";
   import { getDateTimeLocale, t } from "../../../l10n/l10n";
 
   /** Приглашённые, чью занятость показываем */
@@ -160,11 +161,15 @@
     let from = day;
     let to = addDays(day, kWindowDays);
     try {
-      let result = await calendar.arePersonsFree(persons, from, to);
+      let result = await fetchAvailability(persons, from, to);
       if (id != requestId) {
         return;
       }
-      data = persons.map(p => result.find(r => r.participant.emailAddress == p.emailAddress) ?? { participant: p });
+      data = persons.map(p => result.find(r => r.participant.emailAddress == p.emailAddress && r.availability) ?? { participant: p });
+      // Свои адреса — по своим календарям: локальный календарь сервера не имеет
+      data = data.map(item => item.availability || !isMyAddress(item.participant.emailAddress)
+        ? item
+        : { participant: item.participant, availability: ownAvailability(from, to) });
       loadedFrom = from;
       loadedTo = to;
     } catch (ex) {
@@ -179,6 +184,37 @@
         loading = false;
       }
     }
+  }
+
+  /** Занятость с сервера календаря события; кого он не знает (локальный календарь,
+   * CalDAV) — спрашиваем у календарей Exchange, они отдают занятость коллег. */
+  async function fetchAvailability(persons: Participant[], from: Date, to: Date): Promise<Availability[]> {
+    let result: Availability[] = await calendar.arePersonsFree(persons, from, to);
+    let exchangeCalendars = appGlobal.calendars.contents.filter(cal => cal != calendar && cal.canReadWorkingHours);
+    for (let other of exchangeCalendars) {
+      let unknown = persons.filter(p => !result.some(r => r.participant.emailAddress == p.emailAddress && r.availability));
+      if (!unknown.length) {
+        break;
+      }
+      try {
+        result = result.concat(await other.arePersonsFree(unknown, from, to));
+      } catch (ex) {
+        // Чужой сервер недоступен — остаёмся с тем, что уже знаем
+      }
+    }
+    return result;
+  }
+
+  function isMyAddress(emailAddress: string): boolean {
+    return appGlobal.emailAccounts.contents.some(acc => acc.isMyEMailAddress(emailAddress));
+  }
+
+  /** Своя занятость из всех подключённых календарей, без редактируемого события */
+  function ownAvailability(from: Date, to: Date): Interval[] {
+    return appGlobal.calendarEvents.contents
+      .filter(ev => ev.startTime && ev.endTime && ev.startTime < to && from < ev.endTime &&
+        ev.freeBusyStatus != "Free" && !ev.isSameUID(event))
+      .map(ev => ({ from: ev.startTime, to: ev.endTime, free: false }));
   }
 
   function shiftDay(delta: number) {
