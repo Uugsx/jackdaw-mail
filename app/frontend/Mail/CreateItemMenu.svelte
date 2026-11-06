@@ -45,7 +45,9 @@
   // иначе «Встреча» и «Контакт» остаются неактивными до перезахода в раздел.
   const calendars = appGlobal.calendars;
   const addressbooks = appGlobal.addressbooks;
-  $: calendar = $selectedCalendar ?? $calendars.first;
+  // Встреча из почты — в календаре выбранного ящика (Exchange отправит приглашение
+  // сам, от рабочего адреса), а не в первом по списку локальном календаре.
+  $: calendar = $calendars.find(cal => cal.mainAccount == account) ?? $selectedCalendar ?? $calendars.first;
   $: addressbook = $addressbooks.first;
 
   function newMail(): void {
