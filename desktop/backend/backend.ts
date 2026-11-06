@@ -2131,16 +2131,34 @@ function platform(): string {
 }
 
 /**
- * Включает safeStorage на macOS. Пока сборки подписаны ad-hoc (identity '-'),
- * доступ к Keychain-элементу «Jackdaw Mail Safe Storage» привязан к cdhash,
- * который меняется в каждой сборке, поэтому после OTA-обновления macOS спрашивает
- * разрешение на Keychain. Включать только после перехода на подпись Developer ID.
+ * safeStorage на macOS включается, только если приложение подписано сертификатом
+ * (свой сертификат из CI или Developer ID). Доступ к Keychain-элементу
+ * «Jackdaw Mail Safe Storage» macOS привязывает к требованию подписи (designated requirement).
+ * У ad-hoc-подписи (identity '-') оно — cdhash, который меняется в каждой сборке, и после
+ * каждого OTA-обновления macOS спрашивала бы разрешение на Keychain. У сертификата требование
+ * («certificate leaf = H"…"») одинаково во всех сборках, подписанных им.
  */
-const kMacSafeStorageEnabled = false;
+let macCertificateSigned: Promise<boolean> | null = null;
+
+function isMacCertificateSigned(): Promise<boolean> {
+  macCertificateSigned ??= (async () => {
+    try {
+      // …/Jackdaw Mail.app/Contents/MacOS/Jackdaw Mail → …/Jackdaw Mail.app
+      let bundle = path.resolve(path.dirname(process.execPath), "..", "..");
+      let { stdout, stderr } = await execFileAsync("/usr/bin/codesign", ["-d", "-r-", bundle], { timeout: 10000 });
+      let requirement = `${stdout}\n${stderr}`;
+      return /designated => .*certificate leaf/.test(requirement) && !/designated => cdhash/.test(requirement);
+    } catch (ex) {
+      console.error("Could not read the code signature of the app", ex);
+      return false;
+    }
+  })();
+  return macCertificateSigned;
+}
 
 /** Можно ли шифровать секреты средствами ОС (Keychain / DPAPI / libsecret / kwallet) */
-function isSecretEncryptionAvailable(): boolean {
-  if (process.platform == "darwin" && !kMacSafeStorageEnabled) {
+async function isSecretEncryptionAvailable(): Promise<boolean> {
+  if (process.platform == "darwin" && !await isMacCertificateSigned()) {
     return false;
   }
   if (!safeStorage.isEncryptionAvailable()) {
@@ -2154,16 +2172,16 @@ function isSecretEncryptionAvailable(): boolean {
 }
 
 /** @returns base64 шифртекста. Бросает исключение, если шифрование недоступно */
-function encryptSecret(plaintext: string): string {
-  if (!isSecretEncryptionAvailable()) {
+async function encryptSecret(plaintext: string): Promise<string> {
+  if (!await isSecretEncryptionAvailable()) {
     throw new Error("OS secret encryption is not available");
   }
   return safeStorage.encryptString(plaintext).toString("base64");
 }
 
 /** @param encryptedBase64 результат encryptSecret(). Бросает исключение при ошибке (например, отказ в доступе к Keychain) */
-function decryptSecret(encryptedBase64: string): string {
-  if (!isSecretEncryptionAvailable()) {
+async function decryptSecret(encryptedBase64: string): Promise<string> {
+  if (!await isSecretEncryptionAvailable()) {
     throw new Error("OS secret encryption is not available");
   }
   return safeStorage.decryptString(Buffer.from(encryptedBase64, "base64"));
