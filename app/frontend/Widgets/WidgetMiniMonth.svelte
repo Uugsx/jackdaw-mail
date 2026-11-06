@@ -80,7 +80,7 @@
 
   $: weekdayLabels = kAllWeekdays.map(day => weekdayLabel(day, "narrow"));
   $: visibleDays = expanded ? buildMonthGrid(visibleMonth) : buildCompactGrid(visibleMonth);
-  $: eventDayStamps = buildEventDayStamps([...shownCalendarEvents], visibleDays);
+  $: eventDayStamps = buildEventDayStamps([...$shownCalendarEvents], visibleDays);
   $: monthTitle = visibleMonth.toLocaleDateString(getDateTimeLocale(), { month: "long", year: "numeric" });
 
   function startOfMonth(date: Date): Date {

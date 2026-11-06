@@ -85,19 +85,70 @@
 
     <section id="showcase" class="showcase container" aria-labelledby="showcase-heading">
       <h2 id="showcase-heading" class="visually-hidden" data-i18n="showcase.heading">Экраны программы</h2>
-      <div class="showcase-tabs" data-i18n="showcase.tablist" data-i18n-attr="aria-label" role="tablist" aria-label="Экраны программы">
-        <button id="showcase-tab-mail" class="showcase-tab active" type="button" role="tab" aria-selected="true" aria-controls="tab-mail" tabindex="0" data-target="tab-mail" data-i18n="showcase.mail.tab">Почта</button>
-        <button id="showcase-tab-calendar" class="showcase-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-calendar" tabindex="-1" data-target="tab-calendar" data-i18n="showcase.calendar.tab">Календарь</button>
-      </div>
-
-      <div id="tab-mail" class="showcase-panel active" role="tabpanel" aria-labelledby="showcase-tab-mail" tabindex="0">
-        <img src="assets/shot-mail-open.jpg" data-language-image data-image-ru="assets/shot-mail-open.jpg" data-image-en="assets/shot-mail-open-en.jpg" width="1800" height="1007" data-i18n="showcase.mail.imageAlt" data-i18n-attr="alt" alt="Jackdaw Mail: список писем и открытое письмо" class="showcase-img">
-        <p class="showcase-caption" data-i18n="showcase.mail.caption">Папки, список и открытое письмо в одном окне. Тёмная и светлая темы. Данные на экране вымышленные.</p>
-      </div>
-
-      <div id="tab-calendar" class="showcase-panel" role="tabpanel" aria-labelledby="showcase-tab-calendar" tabindex="0" hidden>
-        <img src="assets/shot-calendar.jpg" data-language-image data-image-ru="assets/shot-calendar.jpg" data-image-en="assets/shot-calendar-en.jpg" width="1800" height="1007" data-i18n="showcase.calendar.imageAlt" data-i18n-attr="alt" alt="Календарь Jackdaw Mail: неделя со встречами" class="showcase-img">
-        <p class="showcase-caption" data-i18n="showcase.calendar.caption">Календарь Exchange рядом с почтой: события, приглашения и ответы на них. Данные на экране вымышленные.</p>
+      <div class="carousel" role="region" aria-roledescription="карусель" data-i18n="showcase.carousel" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-heading">
+        <div class="carousel-tabs" role="tablist" data-i18n="showcase.tablist" data-i18n-attr="aria-label" aria-label="Экраны программы">
+          <button id="showcase-tab-mail" class="carousel-tab active" type="button" role="tab" aria-selected="true" aria-controls="slide-mail" tabindex="0" data-index="0" data-i18n="showcase.mail.tab">Почта</button>
+          <button id="showcase-tab-sla" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-sla" tabindex="-1" data-index="1" data-i18n="showcase.sla.tab">Контроль SLA</button>
+          <button id="showcase-tab-report" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-report" tabindex="-1" data-index="2" data-i18n="showcase.report.tab">Отчёты</button>
+          <button id="showcase-tab-calendar" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-calendar" tabindex="-1" data-index="3" data-i18n="showcase.calendar.tab">Календарь</button>
+          <button id="showcase-tab-meeting" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-meeting" tabindex="-1" data-index="4" data-i18n="showcase.meeting.tab">Встречи</button>
+          <button id="showcase-tab-contacts" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-contacts" tabindex="-1" data-index="5" data-i18n="showcase.contacts.tab">Контакты</button>
+          <button id="showcase-tab-chat" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-chat" tabindex="-1" data-index="6" data-i18n="showcase.chat.tab">Чат</button>
+          <button id="showcase-tab-dark" class="carousel-tab" type="button" role="tab" aria-selected="false" aria-controls="slide-dark" tabindex="-1" data-index="7" data-i18n="showcase.dark.tab">Тёмная тема</button>
+        </div>
+        <div class="carousel-viewport">
+          <div class="carousel-track">
+          <figure id="slide-mail" class="carousel-slide active" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-mail">
+            <img src="assets/shot-mail.jpg" data-language-image data-image-ru="assets/shot-mail.jpg" data-image-en="assets/shot-mail-en.jpg" width="1800" height="1007" loading="eager" decoding="async" data-i18n="showcase.mail.imageAlt" data-i18n-attr="alt" alt="Jackdaw Mail: входящие, открытое письмо и календарь дня" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">01 / 08</span> <span data-i18n="showcase.mail.caption">Входящие, открытое письмо и встречи на сегодня в одном окне — без браузера и вкладок.</span></figcaption>
+          </figure>
+          <figure id="slide-sla" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-sla" aria-hidden="true" inert>
+            <img src="assets/shot-sla.jpg" data-language-image data-image-ru="assets/shot-sla.jpg" data-image-en="assets/shot-sla-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.sla.imageAlt" data-i18n-attr="alt" alt="Живой контроль ответов: письма без ответа и просроченные" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">02 / 08</span> <span data-i18n="showcase.sla.caption">Живой контроль ответов: сколько писем ждут, что уже просрочено и сколько рабочих минут осталось по каждому.</span></figcaption>
+          </figure>
+          <figure id="slide-report" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-report" aria-hidden="true" inert>
+            <img src="assets/shot-report.jpg" data-language-image data-image-ru="assets/shot-report.jpg" data-image-en="assets/shot-report-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.report.imageAlt" data-i18n-attr="alt" alt="Подробный отчёт: скорость ответа, доля отвеченных, активность по дням" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">03 / 08</span> <span data-i18n="showcase.report.caption">Отчёт за любой период: доля отвеченных писем, скорость первого ответа и нагрузка по дням. Сохраняется в HTML.</span></figcaption>
+          </figure>
+          <figure id="slide-calendar" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-calendar" aria-hidden="true" inert>
+            <img src="assets/shot-calendar.jpg" data-language-image data-image-ru="assets/shot-calendar.jpg" data-image-en="assets/shot-calendar-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.calendar.imageAlt" data-i18n-attr="alt" alt="Календарь: рабочая неделя со встречами" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">04 / 08</span> <span data-i18n="showcase.calendar.caption">Рабочая неделя со встречами, переговорными и ссылками на онлайн-совещания рядом с почтой.</span></figcaption>
+          </figure>
+          <figure id="slide-meeting" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-meeting" aria-hidden="true" inert>
+            <img src="assets/shot-meeting.jpg" data-language-image data-image-ru="assets/shot-meeting.jpg" data-image-en="assets/shot-meeting-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.meeting.imageAlt" data-i18n-attr="alt" alt="Форма встречи с планировщиком занятости участников" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">05 / 08</span> <span data-i18n="showcase.meeting.caption">Планировщик показывает занятость участников и предупреждает о пересечениях до отправки приглашения.</span></figcaption>
+          </figure>
+          <figure id="slide-contacts" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-contacts" aria-hidden="true" inert>
+            <img src="assets/shot-contacts.jpg" data-language-image data-image-ru="assets/shot-contacts.jpg" data-image-en="assets/shot-contacts-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.contacts.imageAlt" data-i18n-attr="alt" alt="Карточка контакта с историей писем и встреч" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">06 / 08</span> <span data-i18n="showcase.contacts.caption">Карточка человека: все письма и встречи с ним на одной ленте, телефон и должность под рукой.</span></figcaption>
+          </figure>
+          <figure id="slide-chat" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-chat" aria-hidden="true" inert>
+            <img src="assets/shot-chat.jpg" data-language-image data-image-ru="assets/shot-chat.jpg" data-image-en="assets/shot-chat-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.chat.imageAlt" data-i18n-attr="alt" alt="Чат с коллегой рядом с открытым письмом" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">07 / 08</span> <span data-i18n="showcase.chat.caption">Зашифрованный чат с коллегами прямо рядом с письмом — не нужно переключаться в мессенджер.</span></figcaption>
+          </figure>
+          <figure id="slide-dark" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-dark" aria-hidden="true" inert>
+            <img src="assets/shot-dark.jpg" data-language-image data-image-ru="assets/shot-dark.jpg" data-image-en="assets/shot-dark-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.dark.imageAlt" data-i18n-attr="alt" alt="Jackdaw Mail в тёмной теме" class="showcase-img">
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">08 / 08</span> <span data-i18n="showcase.dark.caption">Тёмная тема для работы вечером. Светлая и системная — в настройках.</span></figcaption>
+          </figure>
+          </div>
+          <button class="carousel-arrow carousel-prev" type="button" data-i18n="showcase.prev" data-i18n-attr="aria-label" aria-label="Предыдущий экран">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <button class="carousel-arrow carousel-next" type="button" data-i18n="showcase.next" data-i18n-attr="aria-label" aria-label="Следующий экран">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div class="carousel-dots">
+          <button class="carousel-dot active" type="button" tabindex="-1" aria-hidden="true" data-index="0"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="1"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="2"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="3"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="4"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="5"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="6"></button>
+          <button class="carousel-dot" type="button" tabindex="-1" aria-hidden="true" data-index="7"></button>
+        </div>
+        <p class="carousel-note" data-i18n="showcase.note">Люди, компании и данные на экранах вымышленные.</p>
       </div>
     </section>
 

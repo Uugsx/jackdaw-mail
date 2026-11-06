@@ -247,7 +247,7 @@ export class FakeMailAccount extends MailAccount {
   }
 }
 
-class FakeFolder extends Folder {
+export class FakeFolder extends Folder {
   declare account: FakeMailAccount;
   setFakeName(name: string) {
     this.name = name;
@@ -303,7 +303,7 @@ class FakeFolder extends Folder {
   }
 }
 
-class FakeEMail extends EMail {
+export class FakeEMail extends EMail {
   setFake(person: Person, pUID: PersonUID, meUID: PersonUID, lastReadTime: Date, emailNr: number) {
     this.loadedBody = true;
     this.id = emailNr + '@' + this.folder.account.emailAddress;
@@ -407,7 +407,7 @@ export class FakeChatAccount extends ChatAccount {
   }
 }
 
-class FakeChat extends ChatRoom {
+export class FakeChat extends ChatRoom {
   constructor(account: FakeChatAccount) {
     super(account);
   }
@@ -565,7 +565,7 @@ export function fakeFile(parentDir: Directory): File {
 
 let avatarFiles = {} as Record<string, ArrayColl<string>>;
 const kFallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%23d9e2ec'/%3E%3Ccircle cx='32' cy='25' r='12' fill='%235b7083'/%3E%3Cpath d='M12 58c2-13 10-20 20-20s18 7 20 20' fill='%235b7083'/%3E%3C/svg%3E";
-async function readAvatarList() {
+export async function readAvatarList() {
   const rootURL = "https://avatar.jackdaw.app";
   for (let listName of ["man", "woman"]) {
     avatarFiles[listName] = new ArrayColl<string>();
@@ -584,7 +584,7 @@ async function readAvatarList() {
   console.log(avatarFiles);
 }
 
-function avatar(male: boolean): string {
+export function avatar(male: boolean): string {
   let listName = male ? "man" : "woman";
   let list = avatarFiles[listName];
   if (!list) {

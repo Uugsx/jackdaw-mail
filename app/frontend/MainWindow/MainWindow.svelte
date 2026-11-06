@@ -299,7 +299,15 @@
     // #if [!WEBMAIL]
     if (isDemoMode()) {
       const { testDataOn } = await import("../../logic/testData");
-      await testDataOn();
+      const { unlockProForDemo } = await import("../../logic/Billing/ProEntitlement");
+      unlockProForDemo();
+      const { isShowcaseRequested, showcaseDataOn } = await import("../../logic/showcaseData");
+      if (isShowcaseRequested()) {
+        // Витрина для снимков экрана: правдоподобные данные на языке интерфейса
+        await showcaseDataOn();
+      } else {
+        await testDataOn();
+      }
       $selectedAccount = appGlobal.emailAccounts.first;
       return;
     }

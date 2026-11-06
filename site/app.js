@@ -42,12 +42,35 @@
     "benefits.4.t": "Mail is downloaded straight from your server and stays on your computer.",
     "showcase.heading": "App screens",
     "showcase.tablist": "App screens",
+    "showcase.carousel": "carousel",
+    "showcase.slide": "slide",
+    "showcase.prev": "Previous screen",
+    "showcase.next": "Next screen",
+    "showcase.note": "People, companies and data on screen are made up.",
     "showcase.mail.tab": "Mail",
-    "showcase.mail.imageAlt": "Jackdaw Mail: message list and an open message",
-    "showcase.mail.caption": "Folders, list and the open message in one window. Dark and light themes. The data on screen is made up.",
+    "showcase.mail.imageAlt": "Jackdaw Mail: inbox, an open message and today's calendar",
+    "showcase.mail.caption": "Inbox, the open message and today's meetings in one window — no browser, no tabs.",
+    "showcase.sla.tab": "SLA control",
+    "showcase.sla.imageAlt": "Live response control: unanswered and overdue messages",
+    "showcase.sla.caption": "Live response control: how many messages are waiting, which are overdue and how many working minutes are left on each.",
+    "showcase.report.tab": "Reports",
+    "showcase.report.imageAlt": "Detailed report: response speed, answered share, daily activity",
+    "showcase.report.caption": "A report for any period: share of answered mail, first-response time and daily workload. Saves to HTML.",
     "showcase.calendar.tab": "Calendar",
-    "showcase.calendar.imageAlt": "Jackdaw Mail calendar: a week with meetings",
-    "showcase.calendar.caption": "Your Exchange calendar next to your mail: events, invitations and replies. The data on screen is made up.",
+    "showcase.calendar.imageAlt": "Calendar: a work week with meetings",
+    "showcase.calendar.caption": "Your work week with meetings, rooms and online-meeting links right next to your mail.",
+    "showcase.meeting.tab": "Meetings",
+    "showcase.meeting.imageAlt": "Meeting form with the attendee availability planner",
+    "showcase.meeting.caption": "The planner shows attendee availability and flags conflicts before you send the invitation.",
+    "showcase.contacts.tab": "Contacts",
+    "showcase.contacts.imageAlt": "Contact card with the history of messages and meetings",
+    "showcase.contacts.caption": "A person's card: every message and meeting with them on one timeline, phone and role at hand.",
+    "showcase.chat.tab": "Chat",
+    "showcase.chat.imageAlt": "Chat with a colleague next to an open message",
+    "showcase.chat.caption": "Encrypted chat with colleagues right next to the message — no switching to a messenger.",
+    "showcase.dark.tab": "Dark theme",
+    "showcase.dark.imageAlt": "Jackdaw Mail in the dark theme",
+    "showcase.dark.caption": "A dark theme for evening work. Light and system themes are in settings.",
     "sla.title": "How the reply deadline is counted",
     "sla.aside": "An example with the default settings and reminders turned on",
     "sla.intro": "The timer runs only during working hours. By default that is Monday to Friday, 09:00 to 18:00, and the reply target is 30 working minutes. Reminders are turned on in settings and by default arrive at minutes 10, 20 and 25. Hours are set separately for each weekday.",
@@ -886,46 +909,97 @@
     forgetPurchase();
   }
 
-  // 2. Showcase Tab Switcher
-  const tabs = document.querySelectorAll('.showcase-tab');
-  const panels = document.querySelectorAll('.showcase-panel');
+  // 2. Showcase carousel: вкладки-названия, стрелки, точки, ←/→ и свайп. Без автопрокрутки.
+  const carousel = document.querySelector('.carousel');
+  if (carousel) {
+    const tabs = Array.from(carousel.querySelectorAll('.carousel-tab'));
+    const slides = Array.from(carousel.querySelectorAll('.carousel-slide'));
+    const dots = Array.from(carousel.querySelectorAll('.carousel-dot'));
+    const track = carousel.querySelector('.carousel-track');
+    const viewport = carousel.querySelector('.carousel-viewport');
+    const tabList = carousel.querySelector('.carousel-tabs');
+    const SWIPE_MIN_PX = 40;
+    let current = 0;
 
-  function activateTab(tab, moveFocus = false) {
-    const targetId = tab.getAttribute('data-target');
-    const targetPanel = targetId ? document.getElementById(targetId) : null;
-    if (!targetPanel) return;
+    function loadSlideImage(index) {
+      const image = slides[index]?.querySelector('img');
+      if (image && image.loading === 'lazy') image.loading = 'eager';
+    }
 
-    tabs.forEach((currentTab) => {
-      const isActive = currentTab === tab;
-      currentTab.classList.toggle('active', isActive);
-      currentTab.setAttribute('aria-selected', String(isActive));
-      currentTab.setAttribute('tabindex', isActive ? '0' : '-1');
-    });
-    panels.forEach((panel) => {
-      const isActive = panel === targetPanel;
-      panel.classList.toggle('active', isActive);
-      panel.hidden = !isActive;
-    });
-    if (moveFocus) tab.focus();
-  }
+    function showSlide(index, moveFocus = false) {
+      const count = slides.length;
+      current = (index + count) % count;
+      track.style.transform = `translateX(${-current * 100}%)`;
+      slides.forEach((slide, i) => {
+        const isActive = i === current;
+        slide.classList.toggle('active', isActive);
+        slide.toggleAttribute('inert', !isActive);
+        if (isActive) slide.removeAttribute('aria-hidden');
+        else slide.setAttribute('aria-hidden', 'true');
+      });
+      tabs.forEach((tab, i) => {
+        const isActive = i === current;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === current));
+      // Соседние снимки грузим заранее, чтобы при листании не было пустого кадра
+      loadSlideImage(current);
+      loadSlideImage((current + 1) % count);
+      loadSlideImage((current - 1 + count) % count);
+      const activeTab = tabs[current];
+      if (activeTab && tabList) {
+        const left = activeTab.offsetLeft - (tabList.clientWidth - activeTab.offsetWidth) / 2;
+        tabList.scrollTo({ left, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      }
+      if (moveFocus) activeTab?.focus();
+    }
 
-  tabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => {
-      activateTab(tab);
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => showSlide(index));
+      tab.addEventListener('keydown', (event) => {
+        let next = null;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = tabs.length - 1;
+        if (next === null) return;
+        event.preventDefault();
+        showSlide(next, true);
+      });
     });
-    tab.addEventListener('keydown', (event) => {
-      let nextIndex = index;
-      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
-      if (event.key === 'Home') nextIndex = 0;
-      if (event.key === 'End') nextIndex = tabs.length - 1;
-      if (nextIndex === index) return;
+    dots.forEach((dot, index) => dot.addEventListener('click', () => showSlide(index)));
+    carousel.querySelector('.carousel-prev')?.addEventListener('click', () => showSlide(current - 1));
+    carousel.querySelector('.carousel-next')?.addEventListener('click', () => showSlide(current + 1));
+
+    carousel.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select')) return;
       event.preventDefault();
-      activateTab(tabs[nextIndex], true);
+      const moveFocus = event.target instanceof HTMLElement && event.target.classList.contains('carousel-tab');
+      showSlide(current + (event.key === 'ArrowRight' ? 1 : -1), moveFocus);
     });
-  });
-  const initiallyActiveTab = document.querySelector('.showcase-tab.active');
-  if (initiallyActiveTab) activateTab(initiallyActiveTab);
+
+    let swipeStartX = null;
+    let swipeStartY = null;
+    viewport.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse') return;
+      swipeStartX = event.clientX;
+      swipeStartY = event.clientY;
+    });
+    viewport.addEventListener('pointerup', (event) => {
+      if (swipeStartX === null) return;
+      const dx = event.clientX - swipeStartX;
+      const dy = event.clientY - swipeStartY;
+      swipeStartX = swipeStartY = null;
+      if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy)) return;
+      showSlide(current + (dx < 0 ? 1 : -1));
+    });
+    viewport.addEventListener('pointercancel', () => {
+      swipeStartX = swipeStartY = null;
+    });
+
+    showSlide(0);
+  }
 
   // 3. Platform Detection for Download Buttons
   function detectOS() {

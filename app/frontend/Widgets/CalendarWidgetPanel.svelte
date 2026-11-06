@@ -1,5 +1,5 @@
 <vbox flex class="calendar-widget">
-  {#if appGlobal.calendars.isEmpty}
+  {#if $calendars.isEmpty}
     <vbox flex class="setup-empty">
       <JackdawChaseLoader compact idle />
       <p class="setup-title font-smallest">{$t`Connect a calendar account`}</p>
@@ -72,6 +72,9 @@
   import { getDurationString, getToday } from "../Util/date";
   import { tick } from "svelte";
 
+  /** Календари могут появиться после первой отрисовки панели (демо, медленный старт) */
+  const calendars = appGlobal.calendars;
+
   interface AgendaDayGroup {
     date: Date;
     weekday: string;
@@ -97,7 +100,7 @@
   }
 
   $: agendaRange = getAgendaRange(visibleMonth);
-  $: agendaDays = buildAgendaDays([...shownCalendarEvents], agendaRange.start, agendaRange.count);
+  $: agendaDays = buildAgendaDays([...$shownCalendarEvents], agendaRange.start, agendaRange.count);
   $: $selectedDate, scrollToSelectedDay($selectedDate);
 
   function startOfMonth(date: Date): Date {
