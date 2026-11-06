@@ -84,7 +84,7 @@ jobs:
           echo "APP_VERSION=v$VERSION" >> $GITHUB_ENV
 
       - name: Upload to GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         if: inputs.release_type != 'test'
         with:
           tag_name: ${{ env.APP_VERSION }}
@@ -93,7 +93,7 @@ jobs:
           files: ${{ env.IPA_FILE_PATH }}
 
       - name: Upload app to TestFlight
-        uses: apple-actions/upload-testflight-build@v5
+        uses: apple-actions/upload-testflight-build@665328adbecbc3ad929d3da710696d928b8a7ba9 # v5
         with:
           app-path: ${{ env.IPA_FILE_PATH }}
           issuer-id: ${{ secrets.IOS_APPSTORE_API_ISSUER }}
