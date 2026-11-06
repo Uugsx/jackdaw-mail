@@ -89,6 +89,10 @@ electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
+  # Код приложения — только из app.asar, и Electron сверяет его хеш с записанным при сборке:
+  # подложенная рядом папка app/ или подменённый app.asar не запустятся с правами приложения.
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
 extraMetadata:
   productName: Jackdaw Mail
 electronUpdaterCompatibility: ">=2.16"
