@@ -35,8 +35,11 @@
         <hbox class="who"></hbox>
         <hbox class="track hours">
           {#each hourMarks as mark}
-            <span class="hour" class:last={mark.pos >= 100} style="inset-inline-start: {mark.pos}%">{mark.label}</span>
+            <span class="hour" class:last={mark.pos >= 100} class:covered={isUnderSelectionLabel(mark.pos, selection)} style="inset-inline-start: {mark.pos}%">{mark.label}</span>
           {/each}
+          {#if selection}
+            <span class="selection-time" class:conflict={conflicts.length > 0} style="inset-inline-start: {selection.left + selection.width / 2}%">{timeLabel(start)}–{timeLabel(end)}</span>
+          {/if}
         </hbox>
       </hbox>
       {#each rows as row (row.key)}
@@ -46,9 +49,15 @@
           </hbox>
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
           <hbox class="track" class:unknown={row.unknown} on:click={ev => onTrackClick(ev)} title={row.unknown ? $t`No availability data` : row.summary}>
+            {#each offHours as block}
+              <span class="off-hours" style="inset-inline-start: {block.left}%; width: {block.width}%"></span>
+            {/each}
             {#each hourMarks as mark}
               <span class="gridline" style="inset-inline-start: {mark.pos}%"></span>
             {/each}
+            {#if selection}
+              <span class="pick" class:conflict={conflicts.length > 0} style="inset-inline-start: {selection.left}%; width: {selection.width}%"></span>
+            {/if}
             {#each row.busy as block}
               <span class="busy" class:tentative={block.tentative} style="inset-inline-start: {block.left}%; width: {block.width}%"></span>
             {/each}
@@ -58,11 +67,6 @@
           </hbox>
         </hbox>
       {/each}
-      {#if selection}
-        <span class="selection" class:conflict={conflicts.length > 0} style="inset-inline-start: calc(var(--who-width) + (100% - var(--who-width)) * {selection.left / 100}); width: calc((100% - var(--who-width)) * {selection.width / 100})">
-          <span class="selection-time">{timeLabel(start)}–{timeLabel(end)}</span>
-        </span>
-      {/if}
     </vbox>
     <hbox class="legend">
       <span class="key"><i class="swatch free"></i>{$t`Free`}</span>
@@ -96,8 +100,8 @@
   export let event: Event;
 
   /** Показываемый диапазон дня, часы. Расширяется, чтобы встреча вне 07–21 была видна. */
-  const kDefaultFromHour = 7;
-  const kDefaultToHour = 21;
+  const kDefaultFromHour = 0;
+  const kDefaultToHour = 24;
   const kSearchFromHour = 9;
   const kSearchToHour = 18;
   const kStepMinutes = 30;
@@ -255,11 +259,27 @@
     return { left, width: Math.max(right - left, 0.5) };
   }
 
+  /** Нерабочие часы приглушены, как в Outlook */
+  $: offHours = [
+    clipBlock(new Date(day.getTime() + kFromHour * 3600000), new Date(day.getTime() + kSearchFromHour * 3600000), kFromHour, kSpan),
+    clipBlock(new Date(day.getTime() + kSearchToHour * 3600000), new Date(day.getTime() + kToHour * 3600000), kFromHour, kSpan),
+  ].filter(b => !!b);
+
   const kHourStep = 2;
   $: hourMarks = Array.from({ length: Math.floor((kToHour - kFromHour) / kHourStep) + 1 }, (_, i) => {
     let hour = kFromHour + i * kHourStep;
     return { pos: toPercent((hour - kFromHour) * 60, kSpan), label: String(hour).padStart(2, "0") };
   });
+
+  /** Подпись часа под плашкой выбранного времени не показываем, чтобы не слипались */
+  function isUnderSelectionLabel(pos: number, sel: { left: number, width: number } | null): boolean {
+    if (!sel) {
+      return false;
+    }
+    let center = sel.left + sel.width / 2;
+    return Math.abs(pos - center) < kSelectionLabelHalfWidthPercent;
+  }
+  const kSelectionLabelHalfWidthPercent = 9;
 
   function timeLabel(date: Date): string {
     return date.toLocaleTimeString(getDateTimeLocale(), { hour: "2-digit", minute: "2-digit" });
@@ -344,7 +364,7 @@
 <style>
   .assistant {
     --who-width: 120px;
-    --track-height: 28px;
+    --track-height: 32px;
     /* Цвета темы программы: занято — акцент ссылок, свободно — фон окна */
     --busy: var(--link-fg);
     --free: var(--main-bg);
@@ -484,8 +504,8 @@
     position: absolute;
     top: 4px;
     bottom: 4px;
-    background: color-mix(in srgb, var(--busy) 80%, var(--main-bg));
-    border-radius: 3px;
+    background: color-mix(in srgb, var(--busy) 55%, var(--main-bg));
+    border-radius: 4px;
     pointer-events: none;
   }
   .track .busy.tentative {
@@ -509,36 +529,47 @@
     opacity: 0.7;
     pointer-events: none;
   }
-  .rows > .selection {
+  /* Нерабочие часы и выбранное время рисуются внутри дорожки теми же процентами,
+     что и занятость, — поэтому совпадают с подписями часов */
+  .off-hours {
     position: absolute;
     top: 0;
     bottom: 0;
-    background: color-mix(in srgb, var(--pick) 12%, transparent);
-    border-inline: 2px solid var(--pick);
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
     pointer-events: none;
   }
-  .rows > .selection.conflict {
-    border-color: var(--danger-fg);
-    background: color-mix(in srgb, var(--danger-fg) 10%, transparent);
+  .pick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in srgb, var(--selected-bg) 22%, transparent);
+    box-shadow: inset 1px 0 0 var(--pick), inset -1px 0 0 var(--pick);
+    pointer-events: none;
+  }
+  .pick.conflict {
+    box-shadow: inset 1px 0 0 var(--danger-fg), inset -1px 0 0 var(--danger-fg);
+  }
+  .hour.covered {
+    visibility: hidden;
   }
   /* Выбранное время видно прямо на шкале, как в Outlook */
   .selection-time {
     position: absolute;
     top: 2px;
-    inset-inline-start: 50%;
     transform: translateX(-50%);
+    z-index: 1;
     padding: 1px 6px;
     border-radius: 4px;
-    background: var(--pick);
-    color: var(--selected-hover-fg);
+    background: var(--inverted-bg);
+    color: var(--inverted-fg);
     font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .selection.conflict .selection-time {
+  .selection-time.conflict {
     background: var(--danger-fg);
-    color: var(--main-bg);
+    color: var(--inverted-fg);
   }
   .legend {
     flex-wrap: wrap;
@@ -562,7 +593,7 @@
     background: var(--free);
   }
   .swatch.busy {
-    background: color-mix(in srgb, var(--busy) 80%, var(--main-bg));
+    background: color-mix(in srgb, var(--busy) 55%, var(--main-bg));
   }
   .swatch.tentative {
     background: repeating-linear-gradient(135deg,
@@ -575,7 +606,7 @@
       transparent 3px 6px);
   }
   .swatch.selection {
-    background: color-mix(in srgb, var(--pick) 25%, transparent);
+    background: color-mix(in srgb, var(--selected-bg) 22%, var(--main-bg));
     border-color: var(--pick);
   }
   .message {

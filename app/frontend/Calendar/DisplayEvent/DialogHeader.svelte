@@ -60,6 +60,7 @@
         </hbox>
       </hbox>-->
       <hbox class="account-name">
+        <span class="calendar-dot" style="background: {event.calendar?.color}" aria-hidden="true"></span>
         {event.calendar?.name}
       </hbox>
       <hbox flex class="spacer" />
@@ -188,14 +189,17 @@
 </script>
 
 <style>
+  /* Шапка в цветах программы; цвет календаря — полоса снизу и точка у названия,
+     а не заливка на всю ширину */
   .header {
     height: 48px;
-    color: white;
+    color: var(--headerbar-fg);
     margin-block-end: 8px;
     flex: none;
   }
   .title-background {
-    background: var(--header-color);
+    background: var(--headerbar-bg);
+    border-block-end: 3px solid var(--header-color);
     /* background image, in the account color
     background:
       linear-gradient(var(--header-color), var(--header-color)),
@@ -206,10 +210,19 @@
   }
   /*  background-image: url("../../asset/header-background.jpeg");*/
   .buttons :global(button) {
-    color: white;
+    color: inherit;
+  }
+  .calendar-dot {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-inline-end: 8px;
+    margin-block-end: 0.3em;
+    align-self: end;
   }
   .buttons :global(button.right) {
-    border-color: white;
+    border-color: currentColor;
   }
   .buttons :global(.save-or-close path) {
     stroke-width: 3px;
@@ -257,7 +270,7 @@
     margin-inline-start: 8px;
   }
   .buttons :global(button.delete) {
-    background-color: lightsalmon;
+    color: var(--danger-fg);
   }
   .buttons :global(.menu .menuitem),
   .buttons :global(.menu .label) {
