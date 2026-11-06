@@ -74,6 +74,7 @@ export class OWACalendar extends ExchangeCalendar {
           from: new Date(event.Start + "Z"),
           to: new Date(event.End + "Z"),
           free: event.FreeBusyType == "Free",
+          tentative: event.FreeBusyType == "Tentative",
         })),
       });
     }

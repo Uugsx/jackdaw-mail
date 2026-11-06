@@ -2,12 +2,12 @@
   <grid class="time" class:isMultipleDays class:allDay={$event.allDay}>
     <!--{$t`When`} {$t`Start`} import ClockMainIcon from "lucide-svelte/icons/clock-8"; -->
     <hbox class="date-input start" title={$t`Start date`}>
-      <DateInput date={event.startTime}
+      <DateInput date={$event.startTime}
         on:change={ev => onStartTimeChanged(ev.detail)} />
     </hbox>
     <hbox class="time-input start" title={$t`Start time`}>
       {#if !$event.allDay}
-        <TimeInput time={event.startTime}
+        <TimeInput time={$event.startTime}
           on:change={ev => onStartTimeChanged(ev.detail)} />
         {#if !showTimezone}
           <hbox class="buttons">
@@ -27,7 +27,8 @@
 
     <hbox class="date-input end" title={$t`End date`}>
       {#if isMultipleDays}
-        <DateInput bind:date={event.endTime}
+        <DateInput date={$event.endTime}
+          on:change={ev => onEndTimeChanged(ev.detail)}
           min={$event.startTime}
           deltaInDays={$event.allDay ? -1 : null} />
       <!--
@@ -47,7 +48,8 @@
     </hbox>
     <hbox class="time-input end" title={$t`End time`}>
       {#if !$event.allDay}
-        <TimeInput bind:time={event.endTime} />
+        <TimeInput time={$event.endTime}
+          on:change={ev => onEndTimeChanged(ev.detail)} />
       {/if}
       <!--
       <hbox class="buttons">
@@ -189,6 +191,11 @@
       }
     }
     event.notifyObservers();
+  }
+
+  /** Поля читают $event: время, выбранное в планировщике, сразу видно в форме */
+  function onEndTimeChanged(newTime: Date) {
+    event.endTime = newTime;
   }
 
   function onStartTimeChanged(newTime: Date) {
