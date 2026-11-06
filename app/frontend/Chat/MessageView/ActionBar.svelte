@@ -63,7 +63,7 @@
       padding="4px"
       />
   {/if}
-  {#if !(message instanceof ChatMessage) || message.canForward}
+  {#if message instanceof ChatMessage && message.canForward}
     <RoundButton
       label={$t`Forward *=> Send this message to somebody else`}
       icon={ForwardIcon}

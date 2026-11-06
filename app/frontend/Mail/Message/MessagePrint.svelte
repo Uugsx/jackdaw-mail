@@ -6,11 +6,9 @@
 
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
-  import { openExternalURL } from "../../../logic/util/os-integration";
   import HTMLDisplay from "./HTMLDisplay.svelte";
   import { sleep } from "../../../logic/util/util";
   import { tick } from "svelte";
-  import { t } from "../../../l10n/l10n";
 
   export let message: EMail;
 
@@ -18,7 +16,6 @@
   let on = false;
 
   export async function print() {
-    await showWarning();
     let webview = await loadWebView();
     await webview.print(options());
     await sleep(200); // If we close the webview, the Print dialog stays open, but then doesn't actually print
@@ -34,15 +31,6 @@
     return {
       header: message.subject,
     };
-  }
-
-  async function showWarning() {
-    if (Math.random() > 0.02) {
-      return;
-    }
-    alert($t`Save the trees!`);
-    const kVideoURL = "https://youtube.com/embed/jEI-0PjE3-g?start=22";
-    await openExternalURL(kVideoURL);
   }
 
   let gotWebView: (webview: any) => void;

@@ -4,7 +4,7 @@
  * Платёжные реквизиты и ключи подписи лицензий должны храниться на сервере
  * биллинга. Десктопный клиент получает от него только подписанное право доступа.
  */
-export const BILLING_PROVIDER = "Lemon Squeezy";
+export const BILLING_PROVIDER = "Paddle";
 export const BILLING_SITE_URL = "https://jackdaw-mail.pro";
 export const BILLING_PLANS_URL = `${BILLING_SITE_URL}#plans`;
 export const BILLING_LICENSE_API_DEFAULT_URL = "https://license.jackdaw-mail.pro";
@@ -13,7 +13,7 @@ export const BILLING_CHECKOUT_DEFAULT_URLS: Readonly<Record<BillingPlan, string>
   yearly: `${BILLING_LICENSE_API_DEFAULT_URL}/buy/yearly`,
 });
 
-/** Публичные цены Pro в валюте магазина Lemon Squeezy. */
+/** Публичные цены Pro в валюте магазина (Paddle). */
 export const BILLING_PRICES: Readonly<Record<BillingPlan, string>> = Object.freeze({
   monthly: "$9.99 / month",
   yearly: "$79.99 / year",

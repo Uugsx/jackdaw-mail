@@ -224,7 +224,6 @@
   <MenuItem
     onClick={print}
     label={$t`Print`}
-    tooltip={$t`Put ink on dead trees which were artificially made white. Save the trees!`}
     icon={PrintIcon} />
 {/if}
 <MenuItem
