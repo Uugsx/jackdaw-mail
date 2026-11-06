@@ -1,30 +1,20 @@
 <!--
-  Явное согласие на обработку персональных данных перед отправкой их
-  на серверы Jackdaw. Снятая галочка — отзыв согласия.
+  Уведомление об обработке данных рядом с действием, которое отправляет их
+  на серверы Jackdaw (GDPR ст. 13). Основание — договор, отдельное согласие не нужно.
 -->
-<hbox class="privacy-consent">
-  <Checkbox
-    checked={accepted}
-    allowIndetermined={false}
-    label={$t`I agree to the processing of my personal data`}
-    {disabled}
-    on:change={ev => setPrivacyConsent(!!ev.detail)}
-    />
-  <a href={kPrivacyPolicyURL} class="policy-link" on:click|preventDefault={openPolicy}>{$t`Privacy Policy`}</a>
-</hbox>
+<p class="privacy-notice font-small" class:disabled>
+  {$t`Data is processed under the`}
+  <a href={kPrivacyPolicyURL} on:click|preventDefault={openPolicy}>{$t`Privacy Policy`}</a>
+</p>
 
 <script lang="ts">
   import { t } from "../../l10n/l10n";
   import { openExternalURL } from "../../logic/util/os-integration";
-  import Checkbox from "./Checkbox.svelte";
-  import { getPrivacyConsentSetting, hasPrivacyConsent, kPrivacyPolicyURL, setPrivacyConsent } from "./privacyConsent";
+  import { kPrivacyPolicyURL } from "./privacyConsent";
 
   export let disabled = false;
-  /** Только для чтения: дано ли согласие на текущую редакцию политики */
-  export let accepted = false;
-
-  const consent = getPrivacyConsentSetting();
-  $: accepted = hasPrivacyConsent($consent.value);
+  /** Для совместимости с формами: отправка не зависит от отдельного согласия */
+  export let accepted = true;
 
   async function openPolicy() {
     await openExternalURL(kPrivacyPolicyURL);
@@ -32,19 +22,16 @@
 </script>
 
 <style>
-  .privacy-consent {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 12px;
+  .privacy-notice {
+    margin: 4px 0;
+    opacity: 0.8;
   }
-  .policy-link {
+  .disabled {
+    opacity: 0.5;
+  }
+  a {
     color: var(--link-fg);
     text-decoration: underline;
     text-underline-offset: 2px;
-  }
-  .policy-link:focus-visible {
-    outline: 2px solid var(--link-fg);
-    outline-offset: 2px;
-    border-radius: 2px;
   }
 </style>
