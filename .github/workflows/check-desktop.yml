@@ -34,6 +34,13 @@ jobs:
         working-directory: desktop
       - run: npm install
         working-directory: desktop/backend
+      # Lock-файлов нет, поэтому каждая сборка берёт свежие версии зависимостей:
+      # проверяем подписи реестра npm, чтобы подменённый пакет не попал в выпуск.
+      - name: Подписи пакетов npm
+        run: |
+          for dir in app lib desktop desktop/backend; do
+            (cd "$dir" && npm audit signatures)
+          done
       - name: Тестовая конфигурация OAuth
         run: cp OAuth2Secrets.local.example.ts OAuth2Secrets.user.ts
         working-directory: app/logic/Auth
