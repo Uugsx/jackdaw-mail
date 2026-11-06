@@ -32,13 +32,6 @@
     <hbox class="import">
       <hbox class="label">{$t`Import from`}</hbox>
       <hbox class="buttons">
-        <hbox bind:this={appsButton}>
-          <Button
-            label={$t`App`}
-            icon={AppIcon}
-            onClick={onImportFromApps}
-            />
-        </hbox>
         <Button
           label={$t`File`}
           icon={FileIcon}
@@ -72,12 +65,6 @@
 
 <FileSelector {acceptFileTypes} bind:this={fileSelector} />
 
-<Menu bind:isMenuOpen={isAppsMenuOpen} anchor={appsButton}>
-  <MenuItem label="Thunderbird" onClick={onImportFromThunderbird} />
-  <MenuItem label="Outlook" onClick={onImportFromOutlook} />
-  <MenuItem label="Apple Mail" onClick={onImportFromAppleMail} />
-  <MenuItem label="GnuPG" onClick={onImportFromGnuPG} />
-</Menu>
 
 <script lang="ts">
   import { PublicKey } from "../../../../logic/Mail/Encryption/PublicKey";
@@ -87,13 +74,10 @@
   import { MailIdentity } from "../../../../logic/Mail/MailIdentity";
   import { importPrivateKey, readKeyFile } from "../../../../logic/Mail/Encryption/KeyUtils";
   import FileSelector from "../../../Mail/Composer/Attachments/FileSelector.svelte";
-  import Menu from "../../../Shared/Menu/Menu.svelte";
-  import MenuItem from "../../../Shared/Menu/MenuItem.svelte";
   import RoundButton from "../../../Shared/RoundButton.svelte";
   import Button from "../../../Shared/Button.svelte";
   import PlusIcon from "lucide-svelte/icons/plus";
   import FileIcon from "lucide-svelte/icons/file-lock";
-  import AppIcon from "lucide-svelte/icons/app-window";
   import CloseIcon from "lucide-svelte/icons/x";
   import { assert } from "../../../../logic/util/util";
   import { gt, t } from "../../../../l10n/l10n";
@@ -133,23 +117,6 @@
     await identity.account.save();
   }
 
-  let isAppsMenuOpen = false;
-  let appsButton: HTMLElement;
-  async function onImportFromApps() {
-    isAppsMenuOpen = true;
-  }
-  async function onImportFromThunderbird() {
-    isOpen = false;
-  }
-  async function onImportFromGnuPG() {
-    isOpen = false;
-  }
-  async function onImportFromOutlook() {
-    isOpen = false;
-  }
-  async function onImportFromAppleMail() {
-    isOpen = false;
-  }
 
   async function onCreateNewPGP() {
     assert(!identity.isCatchAll, gt`Cannot create keys for catch-all email addresses. Please create an identity with a specific email address.`);

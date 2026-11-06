@@ -2,7 +2,7 @@
 
 ## Delivered asset
 
-`docs/lemonsqueezy/jackdaw-mail-demo.mp4`
+`docs/archive/lemonsqueezy/jackdaw-mail-demo.mp4`
 
 The video is a silent 43-second high-definition product walkthrough (1080p, 30 FPS) captured from the real Jackdaw Mail desktop application with smooth cursor motion and tactile interaction animations. It shows the working mail interface, an opened message, the composer with autocomplete and typing, the calendar and the contacts view. The recording uses an isolated temporary profile with synthetic data and does not expose a real mailbox, address, password, license key or customer data.
 

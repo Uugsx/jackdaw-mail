@@ -73,6 +73,10 @@
             <th scope="row">Technical error reports</th>
             <td>Production errors may be sent to the Jackdaw Mail error-reporting endpoint with technical information such as an error message, stack trace, app version and environment details. The application is designed not to include mail bodies, passwords or account names in these reports.</td>
           </tr>
+          <tr>
+            <th scope="row">Application updates</th>
+            <td>The app asks GitHub whether a new version exists. The installer is downloaded from the Jackdaw Mail update mirror at jackdaw-mail.pro, or from GitHub if the mirror is unavailable; its checksum always comes from GitHub. The mirror sees the IP address and the requested file name, like any web server.</td>
+          </tr>
         </tbody>
       </table>
 
@@ -140,6 +144,7 @@
           <li><strong>Лицензия и пробный период</strong> — хеш лицензионного ключа и его последние символы, хеш идентификатора устройства, имя устройства, даты активации, тариф, срок действия, идентификатор заказа у платёжного провайдера. Цель — выдача и проверка доступа к Jackdaw Pro, защита от злоупотреблений.</li>
           <li><strong>Звонки и чат</strong> — подтверждённые адреса электронной почты, отображаемое имя, статус присутствия, служебные данные установления соединения, зашифрованные сообщения и файлы чата до доставки. Цель — связать пользователей Jackdaw Mail по адресу почты.</li>
           <li><strong>Обратная связь</strong> — текст сообщения, адрес для ответа (если указан), версия программы, платформа, язык и хеш устройства (если пользователь разрешил их приложить). Цель — ответ пользователю и исправление ошибок.</li>
+          <li><strong>Обновления</strong> — программа узнаёт о новой версии на GitHub, а установщик скачивает с зеркала обновлений на jackdaw-mail.pro (если оно недоступно — с GitHub); зеркало, как любой веб-сервер, видит IP-адрес и имя скачиваемого файла;</li>
           <li><strong>Оплата</strong> — платёжные данные обрабатывает Paddle (ранее — Lemon Squeezy) как продавец по своей политике; оператору передаются только сведения о подписке и заказе.</li>
         </ul>
 

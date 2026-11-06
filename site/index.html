@@ -128,7 +128,7 @@
           </figure>
           <figure id="slide-dark" class="carousel-slide" role="tabpanel" aria-roledescription="слайд" data-i18n="showcase.slide" data-i18n-attr="aria-roledescription" aria-labelledby="showcase-tab-dark" aria-hidden="true" inert>
             <img src="assets/shot-dark.jpg" data-language-image data-image-ru="assets/shot-dark.jpg" data-image-en="assets/shot-dark-en.jpg" width="1800" height="1007" loading="lazy" decoding="async" data-i18n="showcase.dark.imageAlt" data-i18n-attr="alt" alt="Jackdaw Mail в тёмной теме" class="showcase-img">
-            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">08 / 08</span> <span data-i18n="showcase.dark.caption">Тёмная тема для работы вечером. Светлая и системная — в настройках.</span></figcaption>
+            <figcaption class="showcase-caption"><span class="carousel-count" aria-hidden="true">08 / 08</span> <span data-i18n="showcase.dark.caption">Тёмная тема для работы вечером. Светлая, серая и системная — в настройках.</span></figcaption>
           </figure>
           </div>
           <button class="carousel-arrow carousel-prev" type="button" data-i18n="showcase.prev" data-i18n-attr="aria-label" aria-label="Предыдущий экран">
@@ -203,7 +203,7 @@
 
           <p class="note" data-i18n="sla.reply">Ответом считается первое отправленное письмо в этой переписке. Если его нет на компьютере, время ответа берётся из отметки «отвечено» на сервере. Прочтение письма или назначение категории показывает, кто взял его в работу, но срок не сбрасывает.</p>
           <p class="note" data-i18n="sla.offHours">Если письмо пришло в нерабочее время, отсчёт начнётся с началом рабочего дня. Если кто-то взял такое письмо в работу раньше, срок идёт от этого момента без пауз.</p>
-          <p class="note" data-i18n="sla.limits">Праздники и обеденный перерыв пока не учитываются: в графике один рабочий интервал на день.</p>
+          <p class="note" data-i18n="sla.limits">Праздники и сокращённые дни задаются в отчётах, в разделе «Праздники и сокращённые дни». Обеденный перерыв пока не учитывается: в графике один рабочий интервал на день.</p>
         </div>
       </div>
     </section>
@@ -249,7 +249,7 @@
           </div>
           <div class="feature-row">
             <dt data-i18n="features.security.title">Пароли и безопасность</dt>
-            <dd data-i18n="features.security.text">Пароли и токены входа шифруются системным хранилищем: Связкой ключей в macOS и DPAPI в Windows. Ошибки входа и сети объясняются понятными словами и подсказывают, что сделать. Обновления проверяются перед установкой; внешнее содержимое писем изолировано от программы, а открытые вложения система помечает как скачанные из интернета. Наши серверы ограничивают подбор кодов подтверждения и массовые запросы.</dd>
+            <dd data-i18n="features.security.text">В Windows пароли и токены входа шифруются системным хранилищем DPAPI. В macOS Связка ключей будет использоваться после перехода на сборку, заверенную Apple. Ошибки входа и сети объясняются понятными словами и подсказывают, что сделать. Обновления проверяются перед установкой; внешнее содержимое писем изолировано от программы, а открытые вложения система помечает как скачанные из интернета. Наши серверы ограничивают подбор кодов подтверждения и массовые запросы.</dd>
           </div>
           <div class="feature-row">
             <dt data-i18n="features.related.title">Связанные письма</dt>
@@ -361,8 +361,8 @@
                   <td data-i18n="data.errors.when">Когда в программе происходит ошибка</td>
                 </tr>
                 <tr>
-                  <th scope="row"><code>github.com</code></th>
-                  <td data-i18n="data.updates.what">Запрос новой версии и загрузка обновления</td>
+                  <th scope="row"><code>github.com</code>, <code>jackdaw-mail.pro</code></th>
+                  <td data-i18n="data.updates.what">Запрос новой версии на GitHub; установщик скачивается с нашего зеркала, а если оно недоступно — с GitHub. Контрольная сумма всегда берётся с GitHub</td>
                   <td data-i18n="data.updates.when">При проверке обновлений</td>
                 </tr>
                 <tr>
@@ -542,7 +542,7 @@
           </details>
           <details class="faq-item">
             <summary class="faq-question"><span data-i18n="faq.q3">Где хранятся пароли и почта?</span></summary>
-            <div class="faq-answer" data-i18n="faq.a3">Почта — на вашем компьютере, в папке данных программы. Пароли и токены входа дополнительно зашифрованы системным хранилищем: Связкой ключей в macOS и DPAPI в Windows. На серверы Jackdaw пароли и письма не отправляются.</div>
+            <div class="faq-answer" data-i18n="faq.a3">Почта — на вашем компьютере, в папке данных программы. В Windows пароли и токены входа дополнительно зашифрованы системным хранилищем DPAPI; в macOS Связка ключей будет использоваться после перехода на сборку, заверенную Apple. На серверы Jackdaw пароли и письма не отправляются.</div>
           </details>
           <details class="faq-item">
             <summary class="faq-question"><span data-i18n="faq.q4">Что будет, когда закончится Pro?</span></summary>
