@@ -41,7 +41,7 @@
     "@browsermt/bergamot-translator": "0.4.9",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "better-sqlite3": "^12.8.0",
     "bufferutil": "^4.1.0",
     "electron-updater": "^6.3.3",
