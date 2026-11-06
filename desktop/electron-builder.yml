@@ -25,6 +25,8 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+# Переподпись Mac-сборки своим сертификатом, если CI передал JACKDAW_MAC_SIGN_IDENTITY
+afterSign: build/sign-mac-own-certificate.cjs
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   # Словарь, а не список: иначе ключи не попадают в Info.plist и macOS

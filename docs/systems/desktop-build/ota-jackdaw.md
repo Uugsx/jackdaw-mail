@@ -79,7 +79,7 @@ Example after a Windows-only fix:
 - Both `needs: prepare` only — **parallel is OK** after `prepare` creates the shell release
 - Both run `app/build/jackdaw-brand.sh` with the **same** `OTA_BUILD_SUFFIX`
 - Publish scripts:
-  - Mac: `desktop` → `yarn run build:publish:prerelease:mac` (ad-hoc sign: `-c.mac.identity=-`, `-c.mac.notarize=false`)
+  - Mac: `desktop` → `yarn run build:publish:prerelease:mac` (`-c.mac.identity=-`, `-c.mac.notarize=false`; if `JACKDAW_MAC_SIGN_P12` is set, the `afterSign` hook re-signs the app with our own certificate — see «Подпись Mac своим сертификатом»)
   - Win: `desktop` → `yarn run build:publish:prerelease:win`
 
 ### Job `carry-forward` (ubuntu, platform-only dispatch only)
@@ -125,6 +125,7 @@ GitHub CDN у части пользователей отдаёт 0,4–0,55 МБ
 | Secret | Used for |
 |--------|----------|
 | `GITHUB_TOKEN` | CI publish (Actions `contents: write`) |
+| `JACKDAW_MAC_SIGN_P12`, `JACKDAW_MAC_SIGN_P12_PASSWORD` | Свой сертификат подписи Mac (base64 p12 и пароль). Создаёт `desktop/scripts/mac-signing/create-self-signed-cert.sh` |
 | `JACKDAW_GH_UPDATE_TOKEN` | **Не используется** с 2026-10-25: CI его в сборку не передаёт. Секрет можно удалить |
 
 Токен GitHub в установщик не кладётся: всё, что лежит внутри DMG/EXE, может прочитать любой,
@@ -132,6 +133,24 @@ GitHub CDN у части пользователей отдаёт 0,4–0,55 МБ
 `gh-update-token.txt` (предупреждение в логе CI — ожидаемо), и в сборку он не попадает.
 
 ---
+
+## Подпись Mac своим сертификатом
+
+Сертификат не от Apple: Gatekeeper при первой установке предупреждает так же, как с ad-hoc.
+Зато требование подписи (designated requirement) одинаково во всех сборках:
+`identifier "app.jackdaw.client" and certificate leaf = H"…"` вместо `cdhash H"…"`, который меняется каждой сборкой.
+Связка ключей привязывает доступ к этому требованию, поэтому пароли и токены OAuth хранятся
+в Связке (`safeStorage`) без запроса после каждого обновления.
+
+- CI: шаг «Сертификат подписи Mac» импортирует p12 во временную связку и выставляет
+  `JACKDAW_MAC_SIGN_IDENTITY` / `JACKDAW_MAC_SIGN_KEYCHAIN`; хук `desktop/build/sign-mac-own-certificate.cjs`
+  (`afterSign`) переподписывает `.app` до DMG/zip/pkg. Без секрета — ad-hoc, как раньше.
+- Приложение само проверяет свою подпись (`isMacCertificateSigned` в `backend.ts`): Связка ключей
+  включается только при подписи сертификатом. Ad-hoc-сборки (в том числе локальные `--dir`) хранят пароли по-старому.
+- Старые пароли перешифровываются при чтении (`isLegacyEncrypted`).
+- **Сертификат не терять и не менять без нужды.** Новый сертификат или переход на Developer ID —
+  другая подпись: каждый пользователь Mac один раз увидит запрос Связки ключей. Копия — `~/Documents/Jackdaw-signing/` у владельца.
+- Уведомления на Electron ≥ 42 этот сертификат не чинит: UNNotification требует Team ID (Developer ID).
 
 ## Files inside a release build
 
