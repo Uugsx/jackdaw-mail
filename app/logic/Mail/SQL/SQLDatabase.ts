@@ -87,6 +87,21 @@ export async function makeTestDatabase(): Promise<Database> {
   return mailDatabase;
 }
 
+/**
+ * Витрина демо-режима: отчёты и живой SLA читают письма из базы, поэтому
+ * показательные письма пишутся в отдельный файл, который пересоздаётся при каждом
+ * запуске. Обычная mail.db не открывается и не меняется.
+ */
+export async function useShowcaseDatabase(): Promise<Database> {
+  mailDatabase = await getSQLiteDatabase("showcase-mail.db");
+  await deleteDatabase();
+  mailDatabase = await getSQLiteDatabase("showcase-mail.db");
+  await mailDatabase.migrate(...mailDatabaseMigrations);
+  await mailDatabase.pragma("foreign_keys = true");
+  await mailDatabase.pragma("journal_mode = WAL");
+  return mailDatabase;
+}
+
 export async function deleteDatabase(): Promise<void> {
   let tables = (await mailDatabase.all(
     sql`SELECT name FROM sqlite_schema WHERE type='table'`,

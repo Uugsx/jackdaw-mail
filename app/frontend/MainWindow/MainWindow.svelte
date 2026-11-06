@@ -301,7 +301,13 @@
       const { testDataOn } = await import("../../logic/testData");
       const { unlockProForDemo } = await import("../../logic/Billing/ProEntitlement");
       unlockProForDemo();
-      await testDataOn();
+      const { isShowcaseRequested, showcaseDataOn } = await import("../../logic/showcaseData");
+      if (isShowcaseRequested()) {
+        // Витрина для снимков экрана: правдоподобные данные на языке интерфейса
+        await showcaseDataOn();
+      } else {
+        await testDataOn();
+      }
       $selectedAccount = appGlobal.emailAccounts.first;
       return;
     }

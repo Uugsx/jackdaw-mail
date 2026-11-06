@@ -36,6 +36,16 @@ export async function makeTestDatabase(): Promise<Database> {
   return chatDatabase;
 }
 
+/** Витрина демо-режима: отдельный файл, обычная chat.db не меняется. См. Mail/SQL/SQLDatabase.ts */
+export async function useShowcaseDatabase(): Promise<Database> {
+  chatDatabase = await getSQLiteDatabase("showcase-chat.db");
+  await deleteDatabase();
+  chatDatabase = await getSQLiteDatabase("showcase-chat.db");
+  await chatDatabase.migrate(chatDatabaseSchema);
+  await chatDatabase.pragma('foreign_keys = true');
+  return chatDatabase;
+}
+
 export async function deleteDatabase(): Promise<void> {
   let tables = await chatDatabase.all(sql`SELECT name FROM sqlite_schema WHERE type='table'`) as any[];
   for (let row of tables) {
