@@ -32,7 +32,7 @@ jobs:
         java-version: '21'
 
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v6
+      uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       with:
         cache-provider: basic
 
@@ -47,8 +47,10 @@ jobs:
     - run: cd mobile/backend; yarn install
 
     - run: |
-        mkdir -p ${{ github.workspace }}/private_keys/
-        echo '${{ secrets.KEYSTORE }}' | base64 --decode > ${{ github.workspace }}/private_keys/key.jks
+        mkdir -p "$GITHUB_WORKSPACE/private_keys/"
+        printf '%s' "$KEYSTORE" | base64 --decode > "$GITHUB_WORKSPACE/private_keys/key.jks"
+      env:
+        KEYSTORE: ${{ secrets.KEYSTORE }}
 
     - run: cd mobile; yarn build:android
       env:
@@ -78,7 +80,7 @@ jobs:
         echo "APP_VERSION=v$VERSION" >> $GITHUB_ENV
 
     - name: Upload to GitHub release
-      uses: softprops/action-gh-release@v3
+      uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
       if: inputs.release_type != 'test'
       with:
         tag_name: ${{ env.APP_VERSION }}
