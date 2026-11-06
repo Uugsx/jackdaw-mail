@@ -245,3 +245,10 @@ td {
     transition-duration: 0.01ms !important;
   }
 }
+
+.legal-translation {
+  margin-top: 64px;
+  padding-top: 32px;
+  border-top: 1px solid currentColor;
+  border-top-color: color-mix(in srgb, currentColor 20%, transparent);
+}

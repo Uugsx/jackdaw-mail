@@ -14,12 +14,14 @@
   } from "../../logic/Billing/ProEntitlement";
   import { openExternalURL } from "../../logic/util/os-integration";
   import Button from "./Button.svelte";
+  import PrivacyConsent from "./PrivacyConsent.svelte";
 
   export let feature: ProFeatureKey;
   export let compact = false;
 
   let retrying = false;
   let startingTrial = false;
+  let consented = false;
   let trialMessage: string | null = null;
   $: state = $proEntitlement.value;
   // hasProFeature читает хранилище внутри функции, поэтому зависимость от
@@ -59,7 +61,7 @@
   }
 
   async function startTrial(): Promise<void> {
-    if (startingTrial) return;
+    if (startingTrial || !consented) return;
     trialMessage = null;
     startingTrial = true;
     try {
@@ -90,12 +92,15 @@
     {#if state.message || trialMessage}
       <p class="state-message" role="status">{trialMessage ?? state.message}</p>
     {/if}
+    {#if state.status == "not-activated"}
+      <PrivacyConsent bind:accepted={consented} disabled={startingTrial} />
+    {/if}
     <div class="gate-actions">
       {#if state.status == "not-activated"}
         <Button
           label={startingTrial ? $t`Starting 7-day trial…` : $t`Try Pro free for 7 days`}
           classes={compact ? "filled" : "filled large"}
-          disabled={startingTrial}
+          disabled={startingTrial || !consented}
           onClick={startTrial}
           />
       {/if}
