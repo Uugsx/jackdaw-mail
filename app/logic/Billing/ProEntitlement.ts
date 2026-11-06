@@ -569,7 +569,16 @@ async function requestTrialEntitlement(path: string, deviceName: string): Promis
   }
 }
 
+/** Демо-режим (`--jackdaw-demo`): вымышленные ящики без реальных данных, все модули
+ * Pro открыты для показа и снимков экрана. Реальные учётные записи в демо не подключаются. */
+let demoProUnlocked = false;
+export function unlockProForDemo(): void {
+  demoProUnlocked = true;
+  proEntitlement.notifyObservers();
+}
+
 export function hasProFeature(feature: ProFeatureKey): boolean {
+  if (demoProUnlocked) return true;
   let state = proEntitlement.value;
   if (state.status == "checking") {
     // Первые секунды после запуска и в отдельных окнах ответ сервера ещё не пришёл.

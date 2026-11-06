@@ -299,6 +299,8 @@
     // #if [!WEBMAIL]
     if (isDemoMode()) {
       const { testDataOn } = await import("../../logic/testData");
+      const { unlockProForDemo } = await import("../../logic/Billing/ProEntitlement");
+      unlockProForDemo();
       await testDataOn();
       $selectedAccount = appGlobal.emailAccounts.first;
       return;
