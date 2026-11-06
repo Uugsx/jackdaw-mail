@@ -36,14 +36,17 @@
   import { selectedPerson } from "../Contacts/Person/Selected";
   import { goTo } from "../AppsBar/selectedApp";
   import { URLPart } from "../Util/util";
-  import { get } from "svelte/store";
   import { assert } from "../../logic/util/util";
   import { gt, t } from "../../l10n/l10n";
 
   export let account: MailAccount;
 
-  $: calendar = get(selectedCalendar) ?? appGlobal.calendars.first;
-  $: addressbook = appGlobal.addressbooks.first;
+  // Календари и адресные книги загружаются после запуска: подписываемся на списки,
+  // иначе «Встреча» и «Контакт» остаются неактивными до перезахода в раздел.
+  const calendars = appGlobal.calendars;
+  const addressbooks = appGlobal.addressbooks;
+  $: calendar = $selectedCalendar ?? $calendars.first;
+  $: addressbook = $addressbooks.first;
 
   function newMail(): void {
     assert(account, gt`Please select a mail account first`);
