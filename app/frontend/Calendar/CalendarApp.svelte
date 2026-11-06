@@ -44,7 +44,9 @@
   import Splitter from "../Shared/Splitter.svelte";
   import { getLocalStorage } from "../Util/LocalStorage";
 
-  $: if (!$selectedCalendar) { $selectedCalendar = appGlobal.calendars.first; }
+  // Календари могут загрузиться позже открытия раздела — выбираем первый, когда появится
+  const calendars = appGlobal.calendars;
+  $: if (!$selectedCalendar) { $selectedCalendar = $calendars.first; }
 
   let dateIntervalSetting = getLocalStorage("calendar.view", 2 as DateInterval);
 </script>
