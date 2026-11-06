@@ -89,6 +89,7 @@ export class EWSCalendar extends ExchangeCalendar implements EWSSubscribable {
           from: sanitize.date(sanitize.nonemptystring(event.StartTime) + "Z"),
           to: sanitize.date(sanitize.nonemptystring(event.EndTime) + "Z"),
           free: event.BusyType == "Free",
+          tentative: event.BusyType == "Tentative",
         })),
       });
     }

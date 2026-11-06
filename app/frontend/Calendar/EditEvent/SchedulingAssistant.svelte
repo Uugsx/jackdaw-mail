@@ -35,7 +35,7 @@
         <hbox class="who"></hbox>
         <hbox class="track hours">
           {#each hourMarks as mark}
-            <span class="hour" style="inset-inline-start: {mark.pos}%">{mark.label}</span>
+            <span class="hour" class:last={mark.pos >= 100} style="inset-inline-start: {mark.pos}%">{mark.label}</span>
           {/each}
         </hbox>
       </hbox>
@@ -50,7 +50,7 @@
               <span class="gridline" style="inset-inline-start: {mark.pos}%"></span>
             {/each}
             {#each row.busy as block}
-              <span class="busy" style="inset-inline-start: {block.left}%; width: {block.width}%"></span>
+              <span class="busy" class:tentative={block.tentative} style="inset-inline-start: {block.left}%; width: {block.width}%"></span>
             {/each}
             {#if row.unknown}
               <span class="unknown-label">{$t`No data`}</span>
@@ -59,12 +59,15 @@
         </hbox>
       {/each}
       {#if selection}
-        <span class="selection" style="inset-inline-start: calc(var(--who-width) + (100% - var(--who-width)) * {selection.left / 100}); width: calc((100% - var(--who-width)) * {selection.width / 100})"></span>
+        <span class="selection" class:conflict={conflicts.length > 0} style="inset-inline-start: calc(var(--who-width) + (100% - var(--who-width)) * {selection.left / 100}); width: calc((100% - var(--who-width)) * {selection.width / 100})">
+          <span class="selection-time">{timeLabel(start)}–{timeLabel(end)}</span>
+        </span>
       {/if}
     </vbox>
     <hbox class="legend">
       <span class="key"><i class="swatch free"></i>{$t`Free`}</span>
       <span class="key"><i class="swatch busy"></i>{$t`Busy`}</span>
+      <span class="key"><i class="swatch tentative"></i>{$t`Tentative`}</span>
       <span class="key"><i class="swatch unknown"></i>{$t`No data`}</span>
       <span class="key"><i class="swatch selection"></i>{$t`Meeting time`}</span>
     </hbox>
@@ -101,7 +104,8 @@
   const kWindowDays = 7;
   const kSearchDays = 14;
 
-  type Interval = { from: Date, to: Date, free: boolean };
+  /** tentative — «предварительно»: показываем штриховкой, как Outlook */
+  type Interval = { from: Date, to: Date, free: boolean, tentative?: boolean };
   type Availability = { participant: Participant, availability?: Interval[] };
 
   $: list = $participants;
@@ -214,7 +218,7 @@
     return appGlobal.calendarEvents.contents
       .filter(ev => ev.startTime && ev.endTime && ev.startTime < to && from < ev.endTime &&
         ev.freeBusyStatus != "Free" && !ev.isSameUID(event))
-      .map(ev => ({ from: ev.startTime, to: ev.endTime, free: false }));
+      .map(ev => ({ from: ev.startTime, to: ev.endTime, free: false, tentative: ev.freeBusyStatus == "Tentative" }));
   }
 
   function shiftDay(delta: number) {
@@ -266,8 +270,8 @@
     let unknown = !item.availability;
     let busyIntervals = (item.availability ?? []).filter(i => !i.free);
     let blocks = busyIntervals
-      .map(i => clipBlock(i.from, i.to, kFromHour, kSpan))
-      .filter(b => !!b);
+      .map(i => ({ ...clipBlock(i.from, i.to, kFromHour, kSpan), tentative: !!i.tentative, visible: !!clipBlock(i.from, i.to, kFromHour, kSpan) }))
+      .filter(b => b.visible);
     let todays = busyIntervals.filter(i => i.to > day && i.from < addDays(day, 1));
     let summary = unknown ? "" : todays.length
       ? name + ": " + $t`Busy` + " " + todays.map(i => timeLabel(i.from) + "–" + timeLabel(i.to)).join(", ")
@@ -341,8 +345,10 @@
   .assistant {
     --who-width: 120px;
     --track-height: 28px;
-    --busy: #e5484d;
-    --free: #3fa66a;
+    /* Цвета темы программы: занято — акцент ссылок, свободно — фон окна */
+    --busy: var(--link-fg);
+    --free: var(--main-bg);
+    --pick: var(--selected-hover-bg);
     position: relative;
     gap: 8px;
     min-width: 0;
@@ -440,7 +446,10 @@
     flex: 1 1 0;
     min-width: 0;
     cursor: pointer;
-    background: color-mix(in srgb, var(--free) 14%, transparent);
+    background: var(--free);
+  }
+  .track:not(.hours):hover {
+    background: color-mix(in srgb, var(--hover-bg) 45%, var(--free));
   }
   .hours-row {
     min-height: 22px;
@@ -456,6 +465,11 @@
     font-size: 11px;
     opacity: 0.6;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* Последняя подпись у правого края — прижимаем внутрь, иначе «21» обрезается */
+  .hour.last {
+    transform: translateX(-100%);
   }
   .gridline {
     position: absolute;
@@ -470,9 +484,15 @@
     position: absolute;
     top: 4px;
     bottom: 4px;
-    background: var(--busy);
+    background: color-mix(in srgb, var(--busy) 80%, var(--main-bg));
     border-radius: 3px;
     pointer-events: none;
+  }
+  .track .busy.tentative {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--busy) 70%, transparent) 0 3px,
+      color-mix(in srgb, var(--busy) 15%, transparent) 3px 7px);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--busy) 70%, transparent);
   }
   .track.unknown {
     background: repeating-linear-gradient(135deg,
@@ -493,9 +513,32 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    background: color-mix(in srgb, var(--main-fg, #0078d4) 14%, transparent);
-    border-inline: 2px solid var(--main-fg, #0078d4);
+    background: color-mix(in srgb, var(--pick) 12%, transparent);
+    border-inline: 2px solid var(--pick);
     pointer-events: none;
+  }
+  .rows > .selection.conflict {
+    border-color: var(--danger-fg);
+    background: color-mix(in srgb, var(--danger-fg) 10%, transparent);
+  }
+  /* Выбранное время видно прямо на шкале, как в Outlook */
+  .selection-time {
+    position: absolute;
+    top: 2px;
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--pick);
+    color: var(--selected-hover-fg);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .selection.conflict .selection-time {
+    background: var(--danger-fg);
+    color: var(--main-bg);
   }
   .legend {
     flex-wrap: wrap;
@@ -516,10 +559,15 @@
     border: 1px solid var(--border);
   }
   .swatch.free {
-    background: color-mix(in srgb, var(--free) 30%, transparent);
+    background: var(--free);
   }
   .swatch.busy {
-    background: var(--busy);
+    background: color-mix(in srgb, var(--busy) 80%, var(--main-bg));
+  }
+  .swatch.tentative {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--busy) 70%, transparent) 0 2px,
+      color-mix(in srgb, var(--busy) 15%, transparent) 2px 4px);
   }
   .swatch.unknown {
     background: repeating-linear-gradient(135deg,
@@ -527,8 +575,8 @@
       transparent 3px 6px);
   }
   .swatch.selection {
-    background: color-mix(in srgb, var(--main-fg, #0078d4) 25%, transparent);
-    border-color: var(--main-fg, #0078d4);
+    background: color-mix(in srgb, var(--pick) 25%, transparent);
+    border-color: var(--pick);
   }
   .message {
     align-items: center;
@@ -538,10 +586,11 @@
     line-height: 1.4;
   }
   .message.conflict {
-    color: var(--busy);
+    color: var(--danger-fg);
   }
   .message.ok {
-    color: var(--free);
+    color: inherit;
+    opacity: 0.75;
   }
   .message.hint {
     opacity: 0.7;
