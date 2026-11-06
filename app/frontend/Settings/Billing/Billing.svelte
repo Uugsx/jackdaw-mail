@@ -78,13 +78,14 @@
             label={activating ? $t`Activating…` : $t`Activate`}
             icon={KeyRoundIcon}
             classes="filled activation-button"
-            disabled={!licenseKey.trim() || activating}
+            disabled={!licenseKey.trim() || activating || !consented}
             onClick={activate}
             />
         </div>
         <p id="license-help" class="help-text">
           {$t`Paste the key from your purchase email or from your administrator. The app sends only the key and device ID to the license service; mail data stays local.`}
         </p>
+        <PrivacyConsent bind:accepted={consented} disabled={activating} />
         <div class="access-actions">
           <Button
             label={refreshing ? $t`Checking…` : $t`Check access`}
@@ -160,11 +161,12 @@
         <div>
           <strong>{$t`Try Jackdaw Pro free for 7 days`}</strong>
           <p>{$t`No card is required. The trial is tied to this device, checked online and cannot be restarted by changing the computer date.`}</p>
+          <PrivacyConsent bind:accepted={consented} disabled={startingTrial} />
         </div>
         <Button
           label={startingTrial ? $t`Starting trial…` : trialChecking ? $t`Checking trial…` : trialAvailable ? $t`Start 7-day trial` : $t`Trial unavailable`}
           classes="filled trial-action"
-          disabled={startingTrial || trialChecking || !trialAvailable}
+          disabled={startingTrial || trialChecking || !trialAvailable || !consented}
           onClick={startTrial}
           />
       </div>
@@ -178,6 +180,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
+  import PrivacyConsent from "../../Shared/PrivacyConsent.svelte";
   import CheckIcon from "lucide-svelte/icons/check";
   import ExternalLinkIcon from "lucide-svelte/icons/external-link";
   import KeyRoundIcon from "lucide-svelte/icons/key-round";
@@ -211,6 +214,7 @@
   const checkoutURLs = BILLING_CHECKOUT_URLS;
   let licenseKey = "";
   let activating = false;
+  let consented = false;
   let refreshing = false;
   let feedbackMessage: string | null = null;
   let feedbackKind: "error" | "success" | null = null;
@@ -331,7 +335,7 @@
   }
 
   async function activate(): Promise<void> {
-    if (!licenseKey.trim() || activating) return;
+    if (!licenseKey.trim() || activating || !consented) return;
     activating = true;
     feedbackMessage = null;
     feedbackKind = null;
@@ -365,7 +369,7 @@
   }
 
   async function startTrial(): Promise<void> {
-    if (startingTrial || trialChecking || !trialAvailable) return;
+    if (startingTrial || trialChecking || !trialAvailable || !consented) return;
     startingTrial = true;
     feedbackMessage = null;
     feedbackKind = null;

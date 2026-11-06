@@ -35,6 +35,9 @@
     <p class="intro">
       {$t`Other Jackdaw Mail users can call you and write to you in Jackdaw chat on a confirmed address. We send a code to the address to make sure it is yours.`}
     </p>
+    {#if $emailAccounts.length}
+      <PrivacyConsent bind:accepted={consented} />
+    {/if}
     {#if !$emailAccounts.length}
       <p class="empty">{$t`Add a mail account first. Its address can then be confirmed for calls.`}</p>
     {:else}
@@ -72,14 +75,14 @@
                     label={waitingForMail ? $t`Waiting for the email…` : $t`Confirm by email`}
                     tooltip={$t`Jackdaw sends a short email from this address to the Jackdaw server. Use this if the code does not arrive, for example with company mail.`}
                     classes="secondary"
-                    disabled={!$client.isOnline || busy || waitingForMail}
+                    disabled={!$client.isOnline || busy || waitingForMail || !consented}
                     onClick={() => confirmByMail(address)}
                     />
                 {/if}
                 <Button
                   label={codeSent ? $t`Send again` : $t`Confirm`}
                   classes={codeSent ? "secondary" : "filled"}
-                  disabled={!$client.isOnline || busy}
+                  disabled={!$client.isOnline || busy || !consented}
                   onClick={() => sendCode(address)}
                   />
               {/if}
@@ -202,6 +205,7 @@
   import { mailAccountForAddress, sendReverseVerificationMail } from "../../../logic/Meet/Jackdaw/ReverseVerification";
   import { onDestroy } from "svelte";
   import Button from "../../Shared/Button.svelte";
+  import PrivacyConsent from "../../Shared/PrivacyConsent.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
   import CollisionSettings from "../../Mail/Collision/CollisionSettings.svelte";
@@ -219,6 +223,7 @@
   let codes: Record<string, string> = {};
   /** Адреса, по которым сейчас идёт запрос к серверу */
   let busyAddresses: string[] = [];
+  let consented = false;
   /** Адрес → сообщение под ним */
   let feedbacks: Record<string, { text: string, kind: "error" | "success" }> = {};
   /** Адрес → обратное подтверждение в ожидании письма */
@@ -286,7 +291,7 @@
   }
 
   async function sendCode(address: string) {
-    if (busyAddresses.includes(address)) return;
+    if (!consented || busyAddresses.includes(address)) return;
     setBusy(address, true);
     clearFeedback(address);
     try {
@@ -319,7 +324,7 @@
 
   async function confirmByMail(address: string) {
     let account = mailAccountForAddress(address);
-    if (!account || busyAddresses.includes(address)) return;
+    if (!account || !consented || busyAddresses.includes(address)) return;
     setBusy(address, true);
     clearFeedback(address);
     try {

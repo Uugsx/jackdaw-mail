@@ -92,6 +92,8 @@
         {$t`Bug reports also become a task for the developers: the description, app version and platform, without your email address.`}
       </p>
 
+      <PrivacyConsent bind:accepted={consented} disabled={sending} />
+
       {#if error}
         <p class="error" role="alert">{error}</p>
       {/if}
@@ -101,7 +103,7 @@
           label={sending ? $t`Sending…` : $t`Send`}
           icon={SendIcon}
           classes="filled"
-          disabled={sending || messageTooShort}
+          disabled={sending || messageTooShort || !consented}
           onClick={submit}
           />
       </hbox>
@@ -122,6 +124,7 @@
   import { appGlobal } from "../../../logic/app";
   import Button from "../../Shared/Button.svelte";
   import Checkbox from "../../Shared/Checkbox.svelte";
+  import PrivacyConsent from "../../Shared/PrivacyConsent.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import PageHeader from "../Shared/PageHeader.svelte";
   import BugIcon from "lucide-svelte/icons/bug";
@@ -144,6 +147,7 @@
   let includeDiagnostics = true;
   let website = "";
   let sending = false;
+  let consented = false;
   let touched = false;
   let error: string | null = null;
   let sentID: string | null = null;
@@ -168,6 +172,7 @@
   }
 
   async function submit() {
+    if (!consented) return;
     touched = true;
     if (sending || messageTooShort || emailInvalid) {
       return;
