@@ -72,7 +72,7 @@
     "pkce-challenge": "^5.0.1",
     "postal-mime": "^2.7.3",
     "pretty-bytes": "^7.1.0",
-    "psl": "https://github.com/lupomontero/psl",
+    "psl": "git+https://github.com/lupomontero/psl.git#2a3d53f3ba63c6e503da54b835a8dcac681668cd",
     "qrcode": "^1.5.4",
     "sip.js": "^0.21.2",
     "stanza": "^12.21.0",
