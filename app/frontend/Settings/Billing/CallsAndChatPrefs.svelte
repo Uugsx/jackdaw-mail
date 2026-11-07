@@ -27,7 +27,15 @@
       <input id="call-volume" type="range" min="0" max="1" step="0.05" bind:value={$volumeSetting.value} />
       <span class="value">{Math.round(Number($volumeSetting.value) * 100)} %</span>
     </label>
-    <p class="hint">{$t`The ringtone and the other person's voice play on the speaker chosen in Meet → Devices.`}</p>
+    <label class="row" for="call-loudspeaker">
+      <span class="name">{$t`Loudspeaker`}</span>
+      <select id="call-loudspeaker" value={selectedLoudspeaker} on:change={onLoudspeakerChange}>
+        <option value="">{$t`Default`}</option>
+        {#each loudspeakers as speaker, i (speaker.deviceId)}
+          <option value={speaker.deviceId}>{speaker.label || `${$t`Loudspeaker`} ${i + 1}`}</option>
+        {/each}
+      </select>
+    </label>
   </vbox>
 </HeaderGroupBox>
 
@@ -48,8 +56,9 @@
 
 <script lang="ts">
   /** Статус, звуки звонка и уведомления чата Jackdaw */
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { callRingtoneLabel, callRingtones, callRingtoneSetting, callVolumeSetting, playIncomingRingtone, type CallSoundHandle } from "../../Meet/callSounds";
+  import { selectedLoudspeakerSetting } from "../../Meet/Setup/selectedDevices";
   import { notificationVolumeSetting, playNotificationSound } from "../../Shared/NotificationSound";
   import MyStatusButton from "../../Chat/Status/MyStatusButton.svelte";
   import ChatNotifications from "../Chat/Notifications.svelte";
@@ -94,7 +103,37 @@
     togglePreview();
   }
 
-  onDestroy(stopPreview);
+  /** Динамик для мелодии и голоса собеседника. Раньше его нельзя было выбрать нигде:
+   * подсказка отправляла в «Встречи → Устройства», а этого раздела в настройках нет. */
+  const loudspeakerSetting = selectedLoudspeakerSetting;
+  let loudspeakers: MediaDeviceInfo[] = [];
+  // Выбранный динамик отключили — показываем «По умолчанию», звук и так пойдёт туда
+  $: selectedLoudspeaker = loudspeakers.some(d => d.deviceId == $loudspeakerSetting.value)
+    ? $loudspeakerSetting.value
+    : "";
+
+  async function loadLoudspeakers() {
+    let devices = await navigator.mediaDevices?.enumerateDevices() ?? [];
+    loudspeakers = devices.filter(d => d.kind == "audiooutput" && d.deviceId && d.deviceId != "default");
+  }
+
+  function onLoudspeakerChange(event: Event) {
+    let deviceID = (event.currentTarget as HTMLSelectElement).value;
+    loudspeakerSetting.value = deviceID || null;
+    if (previewing) {
+      restartPreview();
+    }
+  }
+
+  onMount(() => {
+    void loadLoudspeakers();
+    navigator.mediaDevices?.addEventListener("devicechange", loadLoudspeakers);
+  });
+
+  onDestroy(() => {
+    stopPreview();
+    navigator.mediaDevices?.removeEventListener("devicechange", loadLoudspeakers);
+  });
 </script>
 
 <style>
