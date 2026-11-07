@@ -3317,5 +3317,21 @@
   "+yS86e": "No event selected",
   "gf0K68": "Select an event in the calendar, or create a new one.",
   "OIwTpG": "No contact selected",
-  "bZDRCm": "Select a contact from the list, or add a new one with the + button."
+  "bZDRCm": "Select a contact from the list, or add a new one with the + button.",
+  "0GSAKF": "OTA updates require a GitHub release build. Download the installer from GitHub Releases — local dev builds (version ending in -dev) do not update.",
+  "yzHKvG": "No meeting account",
+  "luTdba": "No more meetings today",
+  "4jf9Wv": "No meetings in the last 14 days",
+  "xhZeZF": "Nothing to retry",
+  "lVfMQu": "Previous day",
+  "5tQWiI": "Next day",
+  "pa2lnT": "Find a free time",
+  "4webIY": "No availability data",
+  "plhHQt": "No data",
+  "45vQPc": "Meeting time",
+  "uCH0bq": "Everyone is free at this time",
+  "yXghNw": "This server does not share availability of other people",
+  "INBWTk": "Could not load availability",
+  "q43/J6": "Busy at this time",
+  "RQFlGI": "No common free time found in the next days"
 }

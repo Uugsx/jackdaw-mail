@@ -15,9 +15,9 @@
   <HeaderGroupBox>
     <hbox slot="header">{$t`Your Pro access`}</hbox>
     <div class="access-layout">
-      <div class="access-summary" class:enabled={hasAccess}>
+      <div class="access-summary" class:enabled={statusActive}>
         <div class="status-mark" aria-hidden="true">
-          {#if hasAccess}
+          {#if statusActive}
             <CheckIcon size="22px" />
           {:else}
             <LockKeyholeIcon size="22px" />
@@ -110,6 +110,23 @@
         {/if}
       </div>
     </div>
+    <!-- Пробный период — сразу под статусом, а не под тарифами: новичку он нужен первым.
+      В демо модули Pro открыты, но статус «не активирована» — блок показывается как у новичка. -->
+    {#if state.status == "not-activated"}
+      <div class="trial-panel">
+        <div>
+          <strong>{$t`Try Jackdaw Pro free for 7 days`}</strong>
+          <p>{$t`No card is required. The trial is tied to this device, checked online and cannot be restarted by changing the computer date.`}</p>
+          <PrivacyConsent bind:accepted={consented} disabled={startingTrial} />
+        </div>
+        <Button
+          label={startingTrial ? $t`Starting trial…` : trialChecking ? $t`Checking trial…` : trialAvailable ? $t`Start 7-day trial` : $t`Trial unavailable`}
+          classes="filled trial-action"
+          disabled={startingTrial || trialChecking || !trialAvailable || !consented}
+          onClick={startTrial}
+          />
+      </div>
+    {/if}
   </HeaderGroupBox>
 
   <HeaderGroupBox>
@@ -156,21 +173,6 @@
           />
       </article>
     </div>
-    {#if !hasAccess && state.status == "not-activated"}
-      <div class="trial-panel">
-        <div>
-          <strong>{$t`Try Jackdaw Pro free for 7 days`}</strong>
-          <p>{$t`No card is required. The trial is tied to this device, checked online and cannot be restarted by changing the computer date.`}</p>
-          <PrivacyConsent bind:accepted={consented} disabled={startingTrial} />
-        </div>
-        <Button
-          label={startingTrial ? $t`Starting trial…` : trialChecking ? $t`Checking trial…` : trialAvailable ? $t`Start 7-day trial` : $t`Trial unavailable`}
-          classes="filled trial-action"
-          disabled={startingTrial || trialChecking || !trialAvailable || !consented}
-          onClick={startTrial}
-          />
-      </div>
-    {/if}
     <p class="purchase-note">{$t`The purchase page issues a license key. No email account sign-in is required; the key is the entitlement for this app.`}</p>
     {#if !checkoutChecking && (!isCheckoutAvailable("monthly") || !isCheckoutAvailable("yearly"))}
       <p class="purchase-note unavailable" role="status">{$t`The payment store is not connected yet. Administrator-issued license keys can still be activated above.`}</p>
@@ -200,7 +202,6 @@
     activateProLicense,
     deactivateProLicense,
     getProEntitlementErrorMessage,
-    hasProFeature,
     proEntitlement,
     refreshProEntitlement,
     startProTrial,
@@ -225,8 +226,10 @@
   let startingTrial = false;
 
   $: state = $proEntitlement.value;
-  $: hasAccess = !!state && (hasProFeature("reports") || hasProFeature("live-sla"));
   $: statusLabel = getStatusLabel(state.status);
+  /** Значок и цвет — по статусу лицензии. Доступ к модулям в демо открыт и при «Pro не активирована»,
+   * и рядом с этой надписью стояла зелёная галочка. */
+  $: statusActive = state.status == "active" || state.status == "trial" || state.status == "offline";
 
   const proFeatures = [
     {
