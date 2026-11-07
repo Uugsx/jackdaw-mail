@@ -20,6 +20,7 @@ Jackdaw Mail — почтовый клиент для Mac и Windows
 ждёт каждое письмо и когда наступит срок ответа. Отчёты по скорости ответов
 за любой период.
 
+• Новые письма приходят сразу — без проверки по расписанию
 • Exchange (OWA, EWS, ActiveSync) с общими ящиками и архивом, Gmail, IMAP
 • Календарь, контакты, бронирование переговорных
 • Звонки и зашифрованный чат с коллегами прямо из письма
@@ -39,6 +40,7 @@ Jackdaw Mail — a desktop email client for Mac and Windows
 It shows unanswered mail, not just unread: how many working minutes each email
 has been waiting and when the reply is due. Plus reply-speed reports.
 
+• New mail arrives instantly, no polling schedule
 • Exchange (OWA, EWS, ActiveSync) with shared mailboxes, Gmail, IMAP
 • Calendar, contacts, room booking
 • Calls and end-to-end encrypted chat with colleagues, right from an email

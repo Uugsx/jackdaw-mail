@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <title data-i18n="page.title">Jackdaw Mail — почтовый клиент для Mac и Windows вместо Outlook: Exchange, Gmail, IMAP</title>
-  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Почтовый клиент для Exchange (OWA, EWS), Gmail и IMAP на Mac и Windows. Почта, календарь, звонки и чат в одном окне, контроль срока ответа в рабочих минутах. Бесплатно для одного ящика, Pro можно попробовать 7 дней без карты.">
+  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Почтовый клиент для Exchange (OWA, EWS), Gmail и IMAP на Mac и Windows. Новые письма приходят сразу, без проверки по расписанию. Почта, календарь, звонки и чат в одном окне, контроль срока ответа в рабочих минутах. Бесплатно для одного ящика, Pro можно попробовать 7 дней без карты.">
   <link rel="canonical" href="https://jackdaw-mail.pro/">
 
   <!-- Open Graph / Social -->
@@ -13,7 +13,7 @@
   <meta property="og:site_name" content="Jackdaw Mail">
   <meta property="og:url" content="https://jackdaw-mail.pro/">
   <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — почтовый клиент вместо Outlook для Mac и Windows">
-  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Exchange, Gmail и IMAP, календарь, звонки и чат в одном окне. Очередь неотвеченных писем и отчёты по скорости ответов в рабочих минутах.">
+  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Новые письма приходят сразу. Exchange, Gmail и IMAP, календарь, звонки и чат в одном окне. Очередь неотвеченных писем и отчёты по скорости ответов в рабочих минутах.">
   <meta property="og:image" content="https://jackdaw-mail.pro/assets/shot-mail-en.jpg">
   <meta property="og:image:width" content="1800">
   <meta property="og:image:height" content="1007">
@@ -100,7 +100,7 @@
   <main>
     <section class="hero container" aria-labelledby="hero-title">
       <h1 id="hero-title" class="hero-title" data-i18n="hero.title">Ни одно важное письмо не останется без ответа</h1>
-      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail — почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах. Он показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Коллегам с Jackdaw Mail можно позвонить или написать в зашифрованный чат прямо из письма. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</p>
+      <p class="hero-lead" data-i18n="hero.lead">Jackdaw Mail — почтовый клиент для Exchange и OWA, который считает время ответа в рабочих минутах. Он показывает по каждому неотвеченному письму, сколько рабочего времени уже прошло и когда наступит срок ответа, и строит отчёт по скорости ответов за любой период. Коллегам с Jackdaw Mail можно позвонить или написать в зашифрованный чат прямо из письма. Почта загружается напрямую с вашего сервера и хранится на вашем компьютере, а новое письмо появляется в момент доставки на сервер — без проверки по расписанию.</p>
 
       <div class="hero-actions">
         <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary">
@@ -189,6 +189,7 @@
     <section id="benefits" class="section container" aria-labelledby="benefits-title">
       <h2 id="benefits-title" class="section-title" data-i18n="benefits.title">Зачем он нужен</h2>
       <ul class="benefits">
+        <li><strong data-i18n="benefits.instant.h">Письма приходят сразу</strong><span data-i18n="benefits.instant.t">Сервер Exchange сам сообщает о новом письме, для Gmail и IMAP работает IMAP IDLE. Письмо появляется в момент доставки, а не при следующей проверке по расписанию.</span></li>
         <li><strong data-i18n="benefits.1.h">Видно, что горит</strong><span data-i18n="benefits.1.t">Очередь неотвеченных писем с рабочими минутами: сколько прошло, когда срок, сколько осталось.</span></li>
         <li><strong data-i18n="benefits.2.h">Честная скорость ответов</strong><span data-i18n="benefits.2.t">Отчёт считает только рабочее время: ночь и выходные не портят статистику.</span></li>
         <li><strong data-i18n="benefits.3.h">Всё в одном окне</strong><span data-i18n="benefits.3.t">Почта, календарь, встречи, звонки и зашифрованный чат с коллегами.</span></li>
@@ -478,6 +479,13 @@
                   <td data-i18n="compare.accounts.outlook">да</td>
                   <td data-i18n="compare.accounts.thunderbird">да</td>
                   <td data-i18n="compare.accounts.spark">да</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.push.row">Как приходят новые письма</th>
+                  <td data-i18n="compare.push.jackdaw">сразу и напрямую от вашего сервера: уведомления Exchange (EWS, OWA) и IMAP IDLE, в том числе для Gmail</td>
+                  <td data-i18n="compare.push.outlook">push для ящиков Microsoft; Gmail и IMAP в новом Outlook для Windows — через облако Microsoft</td>
+                  <td data-i18n="compare.push.thunderbird">IMAP IDLE</td>
+                  <td data-i18n="compare.push.spark">push через серверы Readdle</td>
                 </tr>
                 <tr>
                   <th scope="row" data-i18n="compare.storage.row">Где проходит почта</th>

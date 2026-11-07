@@ -20,7 +20,7 @@
 
 **Description (≤500):**
 
-> Jackdaw Mail is a desktop email client for Exchange (OWA, EWS, ActiveSync), Gmail and IMAP on macOS and Windows. Mail, calendar, contacts, calls and encrypted chat live in one window. Its signature feature: it counts reply time in working minutes, keeps a queue of unanswered emails and builds reply-speed reports, so a team can see what is overdue. Mail goes straight from your server to your computer. Free for one mailbox; Pro unlocks more accounts, the queue, reports, calls and chat.
+> Jackdaw Mail is a desktop email client for Exchange (OWA, EWS, ActiveSync), Gmail and IMAP on macOS and Windows. New mail arrives instantly via Exchange push and IMAP IDLE. Mail, calendar, contacts, calls and encrypted chat live in one window. It counts reply time in working minutes, keeps a queue of unanswered emails and builds reply-speed reports. Mail goes straight from your server to your computer. Free for one mailbox; Pro unlocks more accounts, the queue, reports, calls and chat.
 
 **Gallery (порядок):** снимки уже есть в `site/assets/` (английские — с суффиксом `-en`, разрешение 1800×1007, а Product Hunt рекомендует 1270×760 — можно загрузить как есть, он масштабирует):
 1. `shot-mail-en.jpg` — почта
@@ -42,6 +42,7 @@
 > Most email clients show you *unread* mail. Teams that answer customers need to see *unanswered* mail. Jackdaw Mail counts reply time in **working minutes** — nights and weekends don't count — keeps a queue of unanswered emails next to the open message, and builds reports on how fast each mailbox replies.
 >
 > Around that is a full desktop client:
+> - New mail shows up the moment it reaches your server: Exchange push notifications and IMAP IDLE (Gmail too), not a polling schedule
 > - Exchange via OWA, EWS and ActiveSync, including shared mailboxes and the online archive; Gmail, IMAP, CalDAV/CardDAV
 > - Calendar with room booking, out-of-office, server-side rules
 > - Audio/video calls and end-to-end encrypted chat between Jackdaw users, right from an email

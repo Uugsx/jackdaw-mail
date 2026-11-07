@@ -29,7 +29,8 @@ you need to see *unanswered* mail. Jackdaw counts reply time in working minutes
 (nights and weekends don't count), shows a queue of emails waiting for a reply,
 and builds reports on reply speed.
 
-It also does Exchange (OWA/EWS/ActiveSync with shared mailboxes), Gmail and IMAP,
+New mail shows up instantly (Exchange push notifications, IMAP IDLE for Gmail
+and IMAP). It also does Exchange (OWA/EWS/ActiveSync with shared mailboxes), Gmail and IMAP,
 calendar, and calls + end-to-end encrypted chat between Jackdaw users.
 
 - Free for one mailbox, Pro is $9.99/mo or $79.99/yr, 7-day trial without a card
@@ -51,6 +52,7 @@ Bucksch, Beonex GmbH and contributors.
 
 Things that might matter to this sub:
 - mail goes directly from your server to your machine, stored in local SQLite
+- new mail arrives via Exchange push notifications and IMAP IDLE, no polling timer
 - every network connection the app makes is documented in one table:
   https://jackdaw-mail.pro/#data
 - Exchange via OWA/EWS/ActiveSync, IMAP, CalDAV/CardDAV, PGP and S/MIME
@@ -77,6 +79,7 @@ and Windows.
 Why you might care on a Mac:
 - Exchange with shared mailboxes, online archive, out-of-office, server rules
   and room booking — the stuff Apple Mail and Thunderbird don't fully cover
+- New mail arrives instantly (Exchange push, IMAP IDLE for Gmail/IMAP)
 - Passwords in Keychain, mail stored locally
 - Unanswered-mail queue with reply deadlines in working minutes, and reports
 - Calls and encrypted chat with colleagues who also use Jackdaw
@@ -95,7 +98,8 @@ https://jackdaw-mail.pro/?ref=reddit
 ```
 Disclosure: I'm the developer of Jackdaw Mail, so take this with that in mind.
 If you're on on-prem Exchange, it talks OWA/EWS/ActiveSync directly (shared
-mailboxes, archive, out-of-office, server rules, room booking) and keeps mail
+mailboxes, archive, out-of-office, server rules, room booking), gets new mail
+through Exchange push notifications instead of a polling timer, and keeps mail
 local instead of syncing it through a cloud. Mac and Windows, free for one
 mailbox. For Microsoft 365 our Graph support is still in test mode, so I
 wouldn't recommend it there yet.
