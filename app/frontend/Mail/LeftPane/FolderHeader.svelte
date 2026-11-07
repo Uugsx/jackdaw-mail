@@ -8,7 +8,7 @@
   {:else if searchMessages}
     <hbox class="folder-name">{$t`Search results`}</hbox>
   {:else if folder}
-    <hbox class="folder-name" title={folder.name}>{folder.name}</hbox>
+    <hbox class="folder-name" title={folder.name}>{folderLabel}</hbox>
   {/if}
   <hbox flex />
   {#if searchMessages && !$mailSearchInProgress && $mailServerSearch}
@@ -51,7 +51,7 @@
 </hbox>
 
 <script lang="ts">
-  import type { Folder } from '../../../logic/Mail/Folder';
+  import { type Folder, SpecialFolder, specialFolderNames } from '../../../logic/Mail/Folder';
   import type { EMail } from '../../../logic/Mail/EMail';
   import FolderMsgCount from './FolderMsgCount.svelte';
   import Button from '../../Shared/Button.svelte';
@@ -64,6 +64,11 @@
   import AlertIcon from "lucide-svelte/icons/circle-alert";
   import { t } from '../../../l10n/l10n';
   import type { ArrayColl } from 'svelte-collections';
+
+  /** Как в дереве папок: «Входящие», а не имя с сервера «Inbox» / «INBOX» */
+  $: folderLabel = !folder?.specialFolder || folder.specialFolder == SpecialFolder.Normal || folder.specialFolder == SpecialFolder.Search
+    ? folder?.name
+    : specialFolderNames[folder.specialFolder] ?? folder.name;
 
   export let folder: Folder;
   export let searchMessages: ArrayColl<EMail> | null; /** in */
