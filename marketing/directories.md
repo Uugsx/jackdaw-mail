@@ -31,7 +31,7 @@
 
 ## Short description (EN, ≤160)
 
-`Desktop email client for Exchange, Gmail and IMAP on Mac and Windows. Reply deadlines in working minutes, reports, calendar, calls and encrypted chat.`
+`Desktop email client for Exchange, Gmail and IMAP on Mac and Windows. Instant new mail, reply deadlines in working minutes, reports, calls and chat.`
 
 ## Long description (EN)
 
@@ -45,6 +45,8 @@ next to the open message, sends reminders before the deadline, and builds
 reply-speed reports by mailbox or by person, exportable as one HTML file.
 
 Features:
+- New mail arrives instantly: Exchange push notifications and IMAP IDLE
+  (Gmail too) instead of a polling schedule
 - Exchange: shared mailboxes, large online archives, out-of-office, server
   rules, tasks, notes, room booking, send-as
 - Gmail, IMAP, CalDAV and CardDAV; sign-in with Microsoft, Google, Yahoo,
@@ -75,6 +77,9 @@ Jackdaw Mail — почтовый клиент для Exchange (OWA, EWS, Active
 письмо ждёт ответа, показывает очередь неотвеченных рядом с открытым письмом,
 напоминает до срока и строит отчёты по скорости ответов по ящикам и
 сотрудникам с сохранением в HTML.
+
+Новые письма приходят сразу: уведомления Exchange и IMAP IDLE вместо проверки
+по расписанию.
 
 Также: общие ящики и сетевой архив Exchange, автоответ, правила на сервере,
 бронирование переговорных; календарь и контакты; звонки и зашифрованный чат

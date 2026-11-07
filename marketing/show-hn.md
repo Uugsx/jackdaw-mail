@@ -29,6 +29,9 @@ first sent message in the thread; if it's not on this machine, it falls back
 to the server's "answered" flag.
 
 Other things that may be interesting:
+- New mail arrives when the server gets it, not on a timer: EWS/OWA
+  streaming notifications for Exchange, IMAP IDLE on the inbox for IMAP and
+  Gmail (with a 5-minute safety check).
 - Exchange via OWA, EWS and ActiveSync, including shared mailboxes and large
   online archives that load in the background; IMAP; CalDAV/CardDAV.
 - Mail goes directly between your server and your machine and is stored in

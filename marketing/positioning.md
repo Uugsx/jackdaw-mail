@@ -10,6 +10,7 @@
 
 ## Обещание одной строкой
 
+- Второе обещание: EN *New mail arrives the moment it hits the server.* / RU *Новое письмо появляется в момент доставки на сервер.*
 - EN: *A desktop email client for Exchange, Gmail and IMAP that makes sure no important email goes unanswered.*
 - RU: *Почтовый клиент для Exchange, Gmail и IMAP, с которым ни одно важное письмо не останется без ответа.*
 
@@ -20,6 +21,8 @@
 - 140 символов (RU): `Почтовый клиент для Exchange, Gmail и IMAP на Mac и Windows. Считает срок ответа в рабочих минутах. Звонки, чат, календарь. Открытый код.`
 
 ## Факты, которые можно говорить (проверены по сайту и коду)
+
+- **Новые письма приходят сразу.** Exchange через EWS/OWA — потоковые уведомления: сервер сам сообщает о новом письме. IMAP и Gmail — IMAP IDLE на «Входящих» плюс страховочная проверка раз в 5 минут. Формулировка: «письмо появляется в момент доставки на сервер, без проверки по расписанию». Не распространять на тип аккаунта Microsoft Graph (там опрос раз в 10 минут) и не называть цифры задержек у конкурентов.
 
 - macOS 12+ (Apple Silicon и Intel), Windows 10/11 64-бит. Linux, iOS, Android — пока нет готовых сборок.
 - Exchange через OWA, EWS и ActiveSync, общие ящики, сетевой архив на десятки тысяч писем; IMAP; CalDAV/CardDAV; вход через Microsoft, Google, Yahoo, AOL, Fastmail, Mail.ru. Microsoft Graph и JMAP — в тестовом режиме.
