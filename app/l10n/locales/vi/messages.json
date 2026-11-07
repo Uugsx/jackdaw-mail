@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Hủy đăng ký",
   "6WZ99x": "Gói đăng ký đang hoạt động. Lần thanh toán tiếp theo: {0}",
-  "sKIJT1": "Đã hủy đăng ký. Quyền truy cập còn đến {0}"
+  "sKIJT1": "Đã hủy đăng ký. Quyền truy cập còn đến {0}",
+  "+yS86e": "Chưa chọn sự kiện",
+  "gf0K68": "Chọn một sự kiện trong lịch hoặc tạo sự kiện mới.",
+  "OIwTpG": "Chưa chọn liên hệ",
+  "bZDRCm": "Chọn một liên hệ trong danh sách hoặc thêm liên hệ mới bằng nút +."
 }

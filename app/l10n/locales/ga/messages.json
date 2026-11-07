@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Cealaigh síntiús",
   "6WZ99x": "Tá an síntiús gníomhach. An chéad muirear eile: {0}",
-  "sKIJT1": "Cealaíodh an síntiús. Leanann rochtain go dtí {0}"
+  "sKIJT1": "Cealaíodh an síntiús. Leanann rochtain go dtí {0}",
+  "+yS86e": "Níl aon imeacht roghnaithe",
+  "gf0K68": "Roghnaigh imeacht san fhéilire, nó cruthaigh ceann nua.",
+  "OIwTpG": "Níl aon teagmháil roghnaithe",
+  "bZDRCm": "Roghnaigh teagmháil ón liosta, nó cuir ceann nua leis an gcnaipe +."
 }

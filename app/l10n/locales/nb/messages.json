@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Avslutt abonnement",
   "6WZ99x": "Abonnementet er aktivt. Neste belastning: {0}",
-  "sKIJT1": "Abonnementet er avsluttet. Tilgang gjelder til {0}"
+  "sKIJT1": "Abonnementet er avsluttet. Tilgang gjelder til {0}",
+  "+yS86e": "Ingen hendelse valgt",
+  "gf0K68": "Velg en hendelse i kalenderen, eller opprett en ny.",
+  "OIwTpG": "Ingen kontakt valgt",
+  "bZDRCm": "Velg en kontakt i listen, eller legg til en ny med knappen +."
 }

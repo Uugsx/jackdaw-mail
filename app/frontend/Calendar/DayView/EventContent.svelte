@@ -1,7 +1,7 @@
 <Clickable onClick={onSelect} onDoubleClick={onOpen}>
   <hbox class="event font-small" flex
     title={eventAsText}>
-    {#if showTime}
+    {#if (showTime && !textInNextHour) || startsJustBefore}
       <!--{event.startTime.toLocaleTimeString(getDateTimeLocale(), { hour: "numeric", minute: "numeric" })}-->
       <hbox class="time">{startTime}</hbox>
     {:else if forceShowText}
@@ -31,7 +31,15 @@
      event.title +
      (event.participants.isEmpty ? "" : "\n" + event.participants.getIndexRange(0, 4).map(person => person.name).join(", "));
   $: showTime = start <= $event.startTime && event.startTime < end || start.getHours() == 0;
-  $: showTitle = showTime || forceShowText;
+  /** Событие началось в последние минуты прошлого часа (например, в 18:54): там от него видна
+   * полоска в несколько пикселей, название в неё не помещается. Показываем время и название в этом часе. */
+  const kShortStartMs = 20 * 60 * 1000;
+  $: startsJustBefore = !showTime && $event.startTime < start &&
+    start.getTime() - $event.startTime.getTime() <= kShortStartMs;
+  /** В часе начала от такого события только полоска — текст переносится в следующий час */
+  $: textInNextHour = showTime && $event.startTime > start &&
+    end.getTime() - $event.startTime.getTime() <= kShortStartMs && $event.endTime > end;
+  $: showTitle = (showTime && !textInNextHour) || forceShowText || startsJustBefore;
 
   function onSelect(ev: MouseEvent) {
     $selectedEvent = event;

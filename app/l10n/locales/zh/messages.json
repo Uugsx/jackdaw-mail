@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "取消订阅",
   "6WZ99x": "订阅有效。下次扣款：{0}",
-  "sKIJT1": "订阅已取消。访问权限持续到 {0}"
+  "sKIJT1": "订阅已取消。访问权限持续到 {0}",
+  "+yS86e": "未选择事件",
+  "gf0K68": "请在日历中选择一个事件，或新建一个。",
+  "OIwTpG": "未选择联系人",
+  "bZDRCm": "请从列表中选择联系人，或用 + 按钮添加新联系人。"
 }

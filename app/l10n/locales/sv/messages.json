@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Avsluta prenumeration",
   "6WZ99x": "Prenumerationen är aktiv. Nästa debitering: {0}",
-  "sKIJT1": "Prenumerationen är avslutad. Åtkomst gäller till {0}"
+  "sKIJT1": "Prenumerationen är avslutad. Åtkomst gäller till {0}",
+  "+yS86e": "Ingen händelse vald",
+  "gf0K68": "Välj en händelse i kalendern eller skapa en ny.",
+  "OIwTpG": "Ingen kontakt vald",
+  "bZDRCm": "Välj en kontakt i listan eller lägg till en ny med knappen +."
 }

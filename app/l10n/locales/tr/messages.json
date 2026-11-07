@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Aboneliği iptal et",
   "6WZ99x": "Abonelik etkin. Sonraki tahsilat: {0}",
-  "sKIJT1": "Abonelik iptal edildi. Erişim {0} tarihine kadar sürer"
+  "sKIJT1": "Abonelik iptal edildi. Erişim {0} tarihine kadar sürer",
+  "+yS86e": "Etkinlik seçilmedi",
+  "gf0K68": "Takvimde bir etkinlik seçin veya yeni bir tane oluşturun.",
+  "OIwTpG": "Kişi seçilmedi",
+  "bZDRCm": "Listeden bir kişi seçin veya + düğmesiyle yeni bir kişi ekleyin."
 }

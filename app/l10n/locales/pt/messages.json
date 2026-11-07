@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Cancelar assinatura",
   "6WZ99x": "Assinatura ativa. Próxima cobrança: {0}",
-  "sKIJT1": "Assinatura cancelada. O acesso continua até {0}"
+  "sKIJT1": "Assinatura cancelada. O acesso continua até {0}",
+  "+yS86e": "Nenhum evento selecionado",
+  "gf0K68": "Selecione um evento no calendário ou crie um novo.",
+  "OIwTpG": "Nenhum contato selecionado",
+  "bZDRCm": "Selecione um contato na lista ou adicione um novo com o botão +."
 }

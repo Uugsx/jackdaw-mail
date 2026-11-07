@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Atšaukti prenumeratą",
   "6WZ99x": "Prenumerata aktyvi. Kitas mokėjimas: {0}",
-  "sKIJT1": "Prenumerata atšaukta. Prieiga galioja iki {0}"
+  "sKIJT1": "Prenumerata atšaukta. Prieiga galioja iki {0}",
+  "+yS86e": "Įvykis nepasirinktas",
+  "gf0K68": "Pasirinkite įvykį kalendoriuje arba sukurkite naują.",
+  "OIwTpG": "Kontaktas nepasirinktas",
+  "bZDRCm": "Pasirinkite kontaktą sąraše arba pridėkite naują mygtuku +."
 }

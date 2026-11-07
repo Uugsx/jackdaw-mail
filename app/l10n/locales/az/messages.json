@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Abunəliyi ləğv et",
   "6WZ99x": "Abunəlik aktivdir. Növbəti ödəniş: {0}",
-  "sKIJT1": "Abunəlik ləğv edilib. Giriş {0} tarixinədək davam edir"
+  "sKIJT1": "Abunəlik ləğv edilib. Giriş {0} tarixinədək davam edir",
+  "+yS86e": "Tədbir seçilməyib",
+  "gf0K68": "Təqvimdə tədbir seçin və ya yenisini yaradın.",
+  "OIwTpG": "Kontakt seçilməyib",
+  "bZDRCm": "Siyahıdan kontakt seçin və ya + düyməsi ilə yenisini əlavə edin."
 }

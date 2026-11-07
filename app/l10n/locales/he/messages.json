@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "ביטול מנוי",
   "6WZ99x": "המנוי פעיל. החיוב הבא: {0}",
-  "sKIJT1": "המנוי בוטל. הגישה נמשכת עד {0}"
+  "sKIJT1": "המנוי בוטל. הגישה נמשכת עד {0}",
+  "+yS86e": "לא נבחר אירוע",
+  "gf0K68": "בחרו אירוע בלוח השנה או צרו אירוע חדש.",
+  "OIwTpG": "לא נבחר איש קשר",
+  "bZDRCm": "בחרו איש קשר מהרשימה או הוסיפו חדש בלחצן +."
 }

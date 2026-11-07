@@ -3371,5 +3371,9 @@
   "6WYHX4": "Seleccione arriba un buzón: sin él, el horario y las excepciones no se guardan ni afectan al SLA.",
   "fHXMPy": "Cancelar suscripción",
   "6WZ99x": "Suscripción activa. Próximo cargo: {0}",
-  "sKIJT1": "Suscripción cancelada. El acceso continúa hasta el {0}"
+  "sKIJT1": "Suscripción cancelada. El acceso continúa hasta el {0}",
+  "+yS86e": "Ningún evento seleccionado",
+  "gf0K68": "Selecciona un evento en el calendario o crea uno nuevo.",
+  "OIwTpG": "Ningún contacto seleccionado",
+  "bZDRCm": "Selecciona un contacto de la lista o añade uno nuevo con el botón +."
 }

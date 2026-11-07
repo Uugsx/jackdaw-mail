@@ -9,6 +9,10 @@
       <Scroll>
         <PersonDetails person={$selectedPerson} />
       </Scroll>
+    {:else}
+      <EmptySelection
+        title={$t`No contact selected`}
+        subtitle={$t`Select a contact from the list, or add a new one with the + button.`} />
     {/if}
   </vbox>
 </Splitter>
@@ -27,6 +31,8 @@
   import PersonsActionToolbar from "./PersonsActionToolbar.svelte";
   import Scroll from "../Shared/Scroll.svelte";
   import Splitter from "../Shared/Splitter.svelte";
+  import EmptySelection from "../Shared/EmptySelection.svelte";
+  import { t } from "../../l10n/l10n";
   import type { ArrayColl, Collection } from "svelte-collections";
 
   let selectedAddressbook: Addressbook | null = null; /** null = show all */

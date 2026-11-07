@@ -3373,5 +3373,9 @@
   "6WYHX4": "Sélectionnez une boîte mail ci-dessus : sans elle, le planning et les exceptions ne sont pas enregistrés et n’affectent pas le SLA.",
   "fHXMPy": "Annuler l’abonnement",
   "6WZ99x": "Abonnement actif. Prochain prélèvement : {0}",
-  "sKIJT1": "Abonnement annulé. L’accès reste valable jusqu’au {0}"
+  "sKIJT1": "Abonnement annulé. L’accès reste valable jusqu’au {0}",
+  "+yS86e": "Aucun événement sélectionné",
+  "gf0K68": "Sélectionnez un événement dans le calendrier ou créez-en un nouveau.",
+  "OIwTpG": "Aucun contact sélectionné",
+  "bZDRCm": "Sélectionnez un contact dans la liste ou ajoutez-en un avec le bouton +."
 }

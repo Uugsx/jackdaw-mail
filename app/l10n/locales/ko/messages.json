@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "구독 취소",
   "6WZ99x": "구독이 활성 상태입니다. 다음 결제: {0}",
-  "sKIJT1": "구독이 취소되었습니다. {0}까지 이용할 수 있습니다"
+  "sKIJT1": "구독이 취소되었습니다. {0}까지 이용할 수 있습니다",
+  "+yS86e": "선택된 일정이 없습니다",
+  "gf0K68": "캘린더에서 일정을 선택하거나 새 일정을 만드세요.",
+  "OIwTpG": "선택된 연락처가 없습니다",
+  "bZDRCm": "목록에서 연락처를 선택하거나 + 버튼으로 새 연락처를 추가하세요."
 }

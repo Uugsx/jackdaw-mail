@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Nuligi abonon",
   "6WZ99x": "Abono estas aktiva. Venonta pago: {0}",
-  "sKIJT1": "Abono nuligita. Aliro daŭras ĝis {0}"
+  "sKIJT1": "Abono nuligita. Aliro daŭras ĝis {0}",
+  "+yS86e": "Neniu evento elektita",
+  "gf0K68": "Elektu eventon en la kalendaro aŭ kreu novan.",
+  "OIwTpG": "Neniu kontakto elektita",
+  "bZDRCm": "Elektu kontakton el la listo aŭ aldonu novan per la butono +."
 }

@@ -3313,5 +3313,9 @@
   "6WZ99x": "Subscription is active. Next charge: {0}",
   "sKIJT1": "Subscription is canceled. Access continues until {0}",
   "LcET2C": "Privacy Policy",
-  "7bBVUo": "Data is processed under the"
+  "7bBVUo": "Data is processed under the",
+  "+yS86e": "No event selected",
+  "gf0K68": "Select an event in the calendar, or create a new one.",
+  "OIwTpG": "No contact selected",
+  "bZDRCm": "Select a contact from the list, or add a new one with the + button."
 }

@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Zrušiť predplatné",
   "6WZ99x": "Predplatné je aktívne. Ďalšia platba: {0}",
-  "sKIJT1": "Predplatné je zrušené. Prístup platí do {0}"
+  "sKIJT1": "Predplatné je zrušené. Prístup platí do {0}",
+  "+yS86e": "Nie je vybraná žiadna udalosť",
+  "gf0K68": "Vyberte udalosť v kalendári alebo vytvorte novú.",
+  "OIwTpG": "Nie je vybraný žiadny kontakt",
+  "bZDRCm": "Vyberte kontakt zo zoznamu alebo pridajte nový tlačidlom +."
 }
