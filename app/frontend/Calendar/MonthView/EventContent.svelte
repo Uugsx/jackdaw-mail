@@ -24,7 +24,8 @@
 
   $: startTime = $event.startTime.toLocaleString(getDateTimeLocale(), {
     hour: "numeric",
-    minute: $event.startTime.getMinutes() != 0 ? "2-digit" : undefined,
+    // Всегда с минутами: «11» без «:00» в 24-часовом формате читается как число, а не время
+    minute: "2-digit",
   });
   $: eventAsText = ($event.allDay ? "" : `${startTime} – ${getDurationString(event.endTime.getTime() - event.startTime.getTime())}\n`) +
      event.title +
