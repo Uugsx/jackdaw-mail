@@ -173,6 +173,8 @@
               </span>
             {/if}
           </span>
+        {:else if isChatGPT(widget)}
+          <ChatGPTIcon size="17px" />
         {:else}
           <span class="rail-letter" aria-hidden="true">{widgetInitial(widget.name)}</span>
         {/if}
@@ -269,6 +271,7 @@
     type WidgetEntry,
   } from "./widgetState";
   import PlusIcon from "lucide-svelte/icons/plus";
+  import ChatGPTIcon from "./ChatGPTIcon.svelte";
   import PanelRightOpenIcon from "lucide-svelte/icons/panel-right-open";
   import PanelRightCloseIcon from "lucide-svelte/icons/panel-right-close";
   import ExternalLinkIcon from "lucide-svelte/icons/external-link";
@@ -450,6 +453,19 @@
 
   function toggleAddWidget() {
     addOpen = !addOpen;
+  }
+
+  /** Сайт ChatGPT — его значок вместо буквы «C» */
+  function isChatGPT(widget: WidgetEntry): boolean {
+    if (widget.kind != "web" || !widget.url) {
+      return false;
+    }
+    try {
+      let host = new URL(widget.url).hostname;
+      return host == "chatgpt.com" || host.endsWith(".chatgpt.com") || host == "chat.openai.com";
+    } catch {
+      return false;
+    }
   }
 
   function widgetInitial(name: string): string {
