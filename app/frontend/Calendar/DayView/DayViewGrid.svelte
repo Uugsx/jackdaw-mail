@@ -47,6 +47,7 @@
   import { getToday, getWeekStart } from "../../Util/date";
   import { getDateTimeLocale } from "../../../l10n/l10n";
   import type { Collection } from "svelte-collections";
+  import { tick } from "svelte";
 
   export let start: Date;
   export let events: Collection<Event>;
@@ -73,7 +74,13 @@
   $: focusHour = focusNow && start.toDateString() == new Date().toDateString()
     ? new Date().getHours()
     : defaultFocusHour;
-  $: if (scrollE) scrollE.scrollTo((focusHour - 0.5) * pxPerHour);
+  $: if (scrollE) void scrollToFocus(focusHour, pxPerHour);
+  /** Прокрутка — после того, как шкала получила новую высоту. Без `tick()` высота ещё старая (0),
+   * браузер обрезал прокрутку до нуля, и мини-шкала в форме встречи стояла на 00:00, а не у времени события. */
+  async function scrollToFocus(hour: number, px: number) {
+    await tick();
+    scrollE?.scrollTo((hour - 0.5) * px);
+  }
 
   let startTimes: Date[] = [];
   $: start, setStartTimes();
