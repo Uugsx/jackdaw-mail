@@ -214,7 +214,7 @@
   const checkoutURLs = BILLING_CHECKOUT_URLS;
   let licenseKey = "";
   let activating = false;
-  let consented = false;
+  let consented = true;
   let refreshing = false;
   let feedbackMessage: string | null = null;
   let feedbackKind: "error" | "success" | null = null;

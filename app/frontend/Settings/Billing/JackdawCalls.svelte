@@ -223,7 +223,7 @@
   let codes: Record<string, string> = {};
   /** Адреса, по которым сейчас идёт запрос к серверу */
   let busyAddresses: string[] = [];
-  let consented = false;
+  let consented = true;
   /** Адрес → сообщение под ним */
   let feedbacks: Record<string, { text: string, kind: "error" | "success" }> = {};
   /** Адрес → обратное подтверждение в ожидании письма */
