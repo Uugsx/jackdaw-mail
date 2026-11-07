@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "サブスクリプションを解約",
   "6WZ99x": "サブスクリプションは有効です。次回の請求日：{0}",
-  "sKIJT1": "サブスクリプションは解約済みです。{0} までご利用いただけます"
+  "sKIJT1": "サブスクリプションは解約済みです。{0} までご利用いただけます",
+  "+yS86e": "予定が選択されていません",
+  "gf0K68": "カレンダーで予定を選択するか、新しい予定を作成してください。",
+  "OIwTpG": "連絡先が選択されていません",
+  "bZDRCm": "一覧から連絡先を選択するか、+ ボタンで新しい連絡先を追加してください。"
 }

@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Előfizetés lemondása",
   "6WZ99x": "Az előfizetés aktív. Következő terhelés: {0}",
-  "sKIJT1": "Az előfizetés lemondva. A hozzáférés eddig tart: {0}"
+  "sKIJT1": "Az előfizetés lemondva. A hozzáférés eddig tart: {0}",
+  "+yS86e": "Nincs kijelölt esemény",
+  "gf0K68": "Válasszon eseményt a naptárban, vagy hozzon létre újat.",
+  "OIwTpG": "Nincs kijelölt névjegy",
+  "bZDRCm": "Válasszon névjegyet a listából, vagy adjon hozzá újat a + gombbal."
 }

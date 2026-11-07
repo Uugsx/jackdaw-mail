@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Peruuta tilaus",
   "6WZ99x": "Tilaus on aktiivinen. Seuraava veloitus: {0}",
-  "sKIJT1": "Tilaus on peruttu. Käyttöoikeus jatkuu {0} asti"
+  "sKIJT1": "Tilaus on peruttu. Käyttöoikeus jatkuu {0} asti",
+  "+yS86e": "Tapahtumaa ei ole valittu",
+  "gf0K68": "Valitse tapahtuma kalenterista tai luo uusi.",
+  "OIwTpG": "Yhteystietoa ei ole valittu",
+  "bZDRCm": "Valitse yhteystieto luettelosta tai lisää uusi +-painikkeella."
 }

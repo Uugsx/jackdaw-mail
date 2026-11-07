@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Cancel subscription",
   "6WZ99x": "Subscription is active. Next charge: {0}",
-  "sKIJT1": "Subscription is canceled. Access continues until {0}"
+  "sKIJT1": "Subscription is canceled. Access continues until {0}",
+  "+yS86e": "No event selected",
+  "gf0K68": "Select an event in the calendar, or create a new one.",
+  "OIwTpG": "No contact selected",
+  "bZDRCm": "Select a contact from the list, or add a new one with the + button."
 }

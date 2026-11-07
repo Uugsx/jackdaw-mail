@@ -3371,5 +3371,9 @@
   "6WYHX4": "Wählen Sie oben ein Postfach aus: Ohne Postfach werden Zeitplan und Ausnahmen nicht gespeichert und wirken sich nicht auf die SLA aus.",
   "fHXMPy": "Abonnement kündigen",
   "6WZ99x": "Abonnement aktiv. Nächste Abbuchung: {0}",
-  "sKIJT1": "Abonnement gekündigt. Zugang besteht bis {0}"
+  "sKIJT1": "Abonnement gekündigt. Zugang besteht bis {0}",
+  "+yS86e": "Kein Termin ausgewählt",
+  "gf0K68": "Wählen Sie einen Termin im Kalender aus oder erstellen Sie einen neuen.",
+  "OIwTpG": "Kein Kontakt ausgewählt",
+  "bZDRCm": "Wählen Sie einen Kontakt aus der Liste aus oder fügen Sie mit der Schaltfläche + einen neuen hinzu."
 }

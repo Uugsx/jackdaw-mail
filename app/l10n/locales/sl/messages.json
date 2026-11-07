@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Prekliči naročnino",
   "6WZ99x": "Naročnina je aktivna. Naslednje bremenitev: {0}",
-  "sKIJT1": "Naročnina je preklicana. Dostop velja do {0}"
+  "sKIJT1": "Naročnina je preklicana. Dostop velja do {0}",
+  "+yS86e": "Noben dogodek ni izbran",
+  "gf0K68": "Izberite dogodek v koledarju ali ustvarite novega.",
+  "OIwTpG": "Noben stik ni izbran",
+  "bZDRCm": "Izberite stik s seznama ali dodajte novega z gumbom +."
 }

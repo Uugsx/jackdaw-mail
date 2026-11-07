@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Anuluj subskrypcję",
   "6WZ99x": "Subskrypcja jest aktywna. Następna opłata: {0}",
-  "sKIJT1": "Subskrypcja anulowana. Dostęp trwa do {0}"
+  "sKIJT1": "Subskrypcja anulowana. Dostęp trwa do {0}",
+  "+yS86e": "Nie wybrano wydarzenia",
+  "gf0K68": "Wybierz wydarzenie w kalendarzu lub utwórz nowe.",
+  "OIwTpG": "Nie wybrano kontaktu",
+  "bZDRCm": "Wybierz kontakt z listy lub dodaj nowy przyciskiem +."
 }

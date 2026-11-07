@@ -21,8 +21,16 @@
       <vbox flex class="sidebar" slot="right">
         {#if $selectedEvent && !appGlobal.isMobile}
           <ShowEvent event={$selectedEvent} />
-        {:else}
-          <!--<TaskList />-->
+        {:else if !appGlobal.isMobile}
+          <EmptySelection
+            title={$t`No event selected`}
+            subtitle={$t`Select an event in the calendar, or create a new one.`}>
+            <Button slot="actions"
+              label={$t`New event`}
+              icon={AddIcon}
+              classes="primary"
+              onClick={() => catchErrors(() => createNewEvent($selectedCalendar, $selectedDate ?? new Date(), false))} />
+          </EmptySelection>
         {/if}
       </vbox>
     </Splitter>
@@ -33,7 +41,7 @@
 </vbox>
 
 <script lang="ts">
-  import { isCalendarListOpen, selectedCalendar, selectedEvent, shownCalendarEvents, startDate, type DateInterval } from "./selected";
+  import { isCalendarListOpen, selectedCalendar, selectedDate, selectedEvent, shownCalendarEvents, startDate, type DateInterval } from "./selected";
   import { appGlobal } from "../../logic/app";
   import CalendarList from "./CalendarList.svelte";
   import MainView from "./MainView.svelte";
@@ -41,6 +49,12 @@
   import TitleBarLeft from "./TitleBarLeft.svelte";
   import TitleBarRight from "./TitleBarRight.svelte";
   import ShowEvent from "./DisplayEvent/ShowEvent.svelte";
+  import EmptySelection from "../Shared/EmptySelection.svelte";
+  import Button from "../Shared/Button.svelte";
+  import AddIcon from "lucide-svelte/icons/calendar-plus";
+  import { createNewEvent } from "./event";
+  import { catchErrors } from "../Util/error";
+  import { t } from "../../l10n/l10n";
   import Splitter from "../Shared/Splitter.svelte";
   import { getLocalStorage } from "../Util/LocalStorage";
 

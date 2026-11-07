@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Abonnement opzeggen",
   "6WZ99x": "Abonnement actief. Volgende afschrijving: {0}",
-  "sKIJT1": "Abonnement opgezegd. Toegang loopt tot {0}"
+  "sKIJT1": "Abonnement opgezegd. Toegang loopt tot {0}",
+  "+yS86e": "Geen afspraak geselecteerd",
+  "gf0K68": "Selecteer een afspraak in de agenda of maak een nieuwe.",
+  "OIwTpG": "Geen contact geselecteerd",
+  "bZDRCm": "Selecteer een contact in de lijst of voeg een nieuw contact toe met de knop +."
 }

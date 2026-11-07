@@ -3371,5 +3371,9 @@
   "6WYHX4": "Select a mail account above: without it the schedule and exceptions are not saved and do not affect SLA.",
   "fHXMPy": "Annulla abbonamento",
   "6WZ99x": "Abbonamento attivo. Prossimo addebito: {0}",
-  "sKIJT1": "Abbonamento annullato. L’accesso continua fino al {0}"
+  "sKIJT1": "Abbonamento annullato. L’accesso continua fino al {0}",
+  "+yS86e": "Nessun evento selezionato",
+  "gf0K68": "Seleziona un evento nel calendario o creane uno nuovo.",
+  "OIwTpG": "Nessun contatto selezionato",
+  "bZDRCm": "Seleziona un contatto dall'elenco o aggiungine uno nuovo con il pulsante +."
 }
