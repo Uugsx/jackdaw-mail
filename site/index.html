@@ -4,22 +4,54 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <title data-i18n="page.title">Jackdaw Mail — почтовый клиент для Exchange и OWA с контролем срока ответа</title>
-  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Desktop-клиент для Exchange, OWA, EWS и IMAP. Считает время ответа в рабочих минутах, показывает очередь неотвеченных писем и строит отчёты по скорости ответов.">
-  <link rel="canonical" href="https://jackdaw-mail.pro">
+  <title data-i18n="page.title">Jackdaw Mail — почтовый клиент для Mac и Windows вместо Outlook: Exchange, Gmail, IMAP</title>
+  <meta name="description" data-i18n="page.description" data-i18n-attr="content" content="Почтовый клиент для Exchange (OWA, EWS), Gmail и IMAP на Mac и Windows. Почта, календарь, звонки и чат в одном окне, контроль срока ответа в рабочих минутах. Бесплатно для одного ящика, Pro можно попробовать 7 дней без карты.">
+  <link rel="canonical" href="https://jackdaw-mail.pro/">
 
   <!-- Open Graph / Social -->
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Jackdaw Mail">
   <meta property="og:url" content="https://jackdaw-mail.pro/">
-  <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — почта для Exchange и OWA с контролем срока ответа">
-  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Считает время ответа в рабочих минутах, показывает очередь неотвеченных писем и строит отчёты по скорости ответов.">
-  <meta property="og:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
+  <meta property="og:title" data-i18n="page.ogTitle" data-i18n-attr="content" content="Jackdaw Mail — почтовый клиент вместо Outlook для Mac и Windows">
+  <meta property="og:description" data-i18n="page.ogDescription" data-i18n-attr="content" content="Exchange, Gmail и IMAP, календарь, звонки и чат в одном окне. Очередь неотвеченных писем и отчёты по скорости ответов в рабочих минутах.">
+  <meta property="og:image" content="https://jackdaw-mail.pro/assets/shot-mail-en.jpg">
+  <meta property="og:image:width" content="1800">
+  <meta property="og:image:height" content="1007">
+  <meta property="og:image:alt" data-i18n="page.ogImageAlt" data-i18n-attr="content" content="Окно Jackdaw Mail: список писем и открытое письмо">
 
   <!-- Twitter -->
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" data-i18n="page.twitterTitle" data-i18n-attr="content" content="Jackdaw Mail — почтовый клиент для Exchange и OWA">
-  <meta name="twitter:description" data-i18n="page.twitterDescription" data-i18n-attr="content" content="Время ответа в рабочих минутах, очередь неотвеченных писем и отчёты по скорости ответов.">
-  <meta name="twitter:image" content="https://jackdaw-mail.pro/assets/icon-jackdaw-github.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" data-i18n="page.twitterTitle" data-i18n-attr="content" content="Jackdaw Mail — почтовый клиент вместо Outlook">
+  <meta name="twitter:description" data-i18n="page.twitterDescription" data-i18n-attr="content" content="Exchange, Gmail и IMAP на Mac и Windows. Очередь неотвеченных писем, отчёты, звонки и чат.">
+  <meta name="twitter:image" content="https://jackdaw-mail.pro/assets/shot-mail-en.jpg">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Jackdaw Mail",
+    "url": "https://jackdaw-mail.pro/",
+    "description": "Desktop email client for Exchange (OWA, EWS), Gmail and IMAP on macOS and Windows, with calendar, calls, encrypted chat and response-time tracking in working minutes.",
+    "applicationCategory": "BusinessApplication",
+    "applicationSubCategory": "Email client",
+    "operatingSystem": "macOS 12+, Windows 10, Windows 11",
+    "downloadUrl": "https://github.com/Uugsx/jackdaw-mail/releases",
+    "image": "https://jackdaw-mail.pro/assets/shot-mail-en.jpg",
+    "screenshot": [
+      "https://jackdaw-mail.pro/assets/shot-mail-en.jpg",
+      "https://jackdaw-mail.pro/assets/shot-calendar-en.jpg",
+      "https://jackdaw-mail.pro/assets/shot-sla-en.jpg",
+      "https://jackdaw-mail.pro/assets/shot-report-en.jpg"
+    ],
+    "license": "https://github.com/Uugsx/jackdaw-mail/blob/main/LICENSE",
+    "author": { "@type": "Person", "name": "Nikita Galkin", "url": "https://github.com/Uugsx" },
+    "offers": [
+      { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD", "description": "One mailbox, mail, calendar and contacts" },
+      { "@type": "Offer", "name": "Pro monthly", "price": "9.99", "priceCurrency": "USD", "description": "Per seat: one person, up to 2 devices. 7-day free trial without a card." },
+      { "@type": "Offer", "name": "Pro yearly", "price": "79.99", "priceCurrency": "USD", "description": "Per seat: one person, up to 2 devices. 7-day free trial without a card." }
+    ]
+  }
+  </script>
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
@@ -40,6 +72,7 @@
         <a href="#sla" class="nav-link" data-i18n="nav.sla">Как считается срок</a>
         <a href="#features" class="nav-link" data-i18n="nav.features">Возможности</a>
         <a href="#data" class="nav-link" data-i18n="nav.data">Данные</a>
+          <a href="#compare" class="nav-link" data-i18n="nav.compare">Сравнение</a>
         <a href="#plans" class="nav-link" data-i18n="nav.plans">Цены</a>
         <a href="#downloads" class="nav-link" data-i18n="nav.downloads">Скачать</a>
         <a href="#faq" class="nav-link" data-i18n="nav.faq">Вопросы</a>
@@ -73,6 +106,7 @@
         <a href="https://github.com/Uugsx/jackdaw-mail/releases" id="hero-download-btn" class="btn btn-primary">
           <span id="hero-download-label" data-i18n="hero.download">Скачать Jackdaw Mail</span>
         </a>
+        <a href="#start" class="text-link" data-i18n="hero.trial">Pro — 7 дней бесплатно, без карты</a>
         <a href="https://github.com/Uugsx/jackdaw-mail/releases" class="text-link" data-i18n="hero.allBuilds">Все сборки на GitHub</a>
       </div>
 
@@ -160,6 +194,31 @@
         <li><strong data-i18n="benefits.3.h">Всё в одном окне</strong><span data-i18n="benefits.3.t">Почта, календарь, встречи, звонки и зашифрованный чат с коллегами.</span></li>
         <li><strong data-i18n="benefits.4.h">Данные остаются у вас</strong><span data-i18n="benefits.4.t">Почта загружается напрямую с вашего сервера и хранится на вашем компьютере.</span></li>
       </ul>
+    </section>
+
+    <section id="start" class="section container" aria-labelledby="start-title">
+      <div class="section-grid">
+        <div>
+          <h2 id="start-title" class="section-title" data-i18n="start.title">Как начать</h2>
+          <p class="section-aside" data-i18n="start.aside">Три шага, оплата — только когда решите остаться.</p>
+        </div>
+        <ol class="steps">
+          <li>
+            <strong data-i18n="start.1.h">Скачайте и подключите ящик</strong>
+            <span data-i18n="start.1.t">Установите программу для macOS или Windows и войдите в Exchange, Gmail или любой IMAP-ящик. Один ящик бесплатно и без ограничения по времени.</span>
+            <a href="#downloads" class="text-link" data-i18n="start.1.link">Скачать</a>
+          </li>
+          <li>
+            <strong data-i18n="start.2.h">Включите пробный Pro на 7 дней</strong>
+            <span data-i18n="start.2.t">В программе: Настройки → Jackdaw Pro → «Запустить пробный период на 7 дней». Карта не нужна, нужен только интернет для проверки. Откроются все модули Pro: несколько ящиков, очередь неотвеченных, отчёты, HTML-подписи, звонки и чат.</span>
+          </li>
+          <li>
+            <strong data-i18n="start.3.h">Купите ключ, если подошло</strong>
+            <span data-i18n="start.3.t">$9.99 в месяц или $79.99 в год за место: один человек и до двух его устройств. Ключ появится на сайте сразу после оплаты и придёт на почту; вставьте его в Настройки → Jackdaw Pro.</span>
+            <a href="#plans" class="text-link" data-i18n="start.3.link">Цены</a>
+          </li>
+        </ol>
+      </div>
     </section>
 
     <section id="sla" class="section container" aria-labelledby="sla-title">
@@ -375,6 +434,98 @@
           </div>
           <p class="note" data-i18n="data.storage">Письма, аккаунты, календари и контакты хранятся в локальных базах SQLite в папке данных программы. Между программой и почтовым сервером посредников нет, отчёты и сроки ответа считаются на вашем компьютере.</p>
           <p class="note" data-i18n="data.hidden">Модули видеовстреч и сторонних чатов по умолчанию скрыты. Если их включить, они подключаются к серверам выбранного сервиса. Чат и звонки Jackdaw появляются после подтверждения адреса.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="compare" class="section container" aria-labelledby="compare-title">
+      <div class="section-grid section-grid--wide">
+        <div>
+          <h2 id="compare-title" class="section-title" data-i18n="compare.title">Сравнение с Outlook, Thunderbird и Spark</h2>
+          <p class="section-aside" data-i18n="compare.aside">Для тех, кто уходит с Outlook и не хочет терять Exchange.</p>
+        </div>
+        <div class="section-body">
+          <div class="table-scroll">
+            <table class="data-table compare-table">
+              <caption class="visually-hidden" data-i18n="compare.caption">Сравнение почтовых клиентов</caption>
+              <thead>
+                <tr>
+                  <th scope="col"><span class="visually-hidden" data-i18n="compare.header.feature">Возможность</span></th>
+                  <th scope="col">Jackdaw Mail</th>
+                  <th scope="col">Outlook</th>
+                  <th scope="col">Thunderbird</th>
+                  <th scope="col">Spark</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row" data-i18n="compare.platforms.row">Системы</th>
+                  <td data-i18n="compare.platforms.jackdaw">macOS, Windows</td>
+                  <td data-i18n="compare.platforms.outlook">Windows, macOS, веб, iOS, Android</td>
+                  <td data-i18n="compare.platforms.thunderbird">Windows, macOS, Linux, Android</td>
+                  <td data-i18n="compare.platforms.spark">macOS, Windows, iOS, Android</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.exchange.row">Exchange на своём сервере</th>
+                  <td data-i18n="compare.exchange.jackdaw">OWA, EWS и ActiveSync: почта, календарь, контакты, общие ящики, сетевой архив</td>
+                  <td data-i18n="compare.exchange.outlook">да</td>
+                  <td data-i18n="compare.exchange.thunderbird">почта через EWS с версии 145; календарь и контакты — дополнениями</td>
+                  <td data-i18n="compare.exchange.spark">да</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.accounts.row">Gmail и IMAP</th>
+                  <td data-i18n="compare.accounts.jackdaw">да</td>
+                  <td data-i18n="compare.accounts.outlook">да</td>
+                  <td data-i18n="compare.accounts.thunderbird">да</td>
+                  <td data-i18n="compare.accounts.spark">да</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.storage.row">Где проходит почта</th>
+                  <td data-i18n="compare.storage.jackdaw">напрямую между вашим сервером и компьютером</td>
+                  <td data-i18n="compare.storage.outlook">новый Outlook для Windows предлагает синхронизировать Gmail и IMAP через облако Microsoft</td>
+                  <td data-i18n="compare.storage.thunderbird">напрямую</td>
+                  <td data-i18n="compare.storage.spark">учётные данные хранятся на серверах Readdle для push-уведомлений</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.sla.row">Срок ответа в рабочих минутах, очередь неотвеченных</th>
+                  <td data-i18n="compare.sla.jackdaw">да, Pro</td>
+                  <td data-i18n="compare.sla.outlook">нет</td>
+                  <td data-i18n="compare.sla.thunderbird">нет</td>
+                  <td data-i18n="compare.sla.spark">нет</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.reports.row">Отчёты по скорости ответов</th>
+                  <td data-i18n="compare.reports.jackdaw">да, Pro, с выгрузкой в HTML</td>
+                  <td data-i18n="compare.reports.outlook">нет</td>
+                  <td data-i18n="compare.reports.thunderbird">нет</td>
+                  <td data-i18n="compare.reports.spark">нет</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.calls.row">Звонки и чат с коллегами</th>
+                  <td data-i18n="compare.calls.jackdaw">встроены, сквозное шифрование, Pro</td>
+                  <td data-i18n="compare.calls.outlook">через Microsoft Teams</td>
+                  <td data-i18n="compare.calls.thunderbird">чат Matrix, XMPP, IRC; звонков нет</td>
+                  <td data-i18n="compare.calls.spark">обсуждение писем в команде; звонков нет</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.source.row">Открытый код</th>
+                  <td data-i18n="compare.source.jackdaw">да, EUPL</td>
+                  <td data-i18n="compare.source.outlook">нет</td>
+                  <td data-i18n="compare.source.thunderbird">да, MPL</td>
+                  <td data-i18n="compare.source.spark">нет</td>
+                </tr>
+                <tr>
+                  <th scope="row" data-i18n="compare.price.row">Цена</th>
+                  <td data-i18n="compare.price.jackdaw">бесплатно для одного ящика; Pro — $9.99 в месяц или $79.99 в год</td>
+                  <td data-i18n="compare.price.outlook">бесплатно; часть функций — с подпиской Microsoft 365</td>
+                  <td data-i18n="compare.price.thunderbird">бесплатно, на пожертвования</td>
+                  <td data-i18n="compare.price.spark">бесплатно; расширенные функции — по подписке</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note" data-i18n="compare.honest">Чего в Jackdaw Mail пока нет: версий для Linux, iOS и Android. Microsoft Graph работает в тестовом режиме.</p>
+          <p class="note" data-i18n="compare.sources">Данные о других программах — из их документации и публикаций на ноябрь 2026 года и могут меняться. Нашли неточность — напишите на support@jackdaw-mail.pro.</p>
         </div>
       </div>
     </section>
