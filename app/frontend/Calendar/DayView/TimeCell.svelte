@@ -15,7 +15,7 @@
     {/if}
     {#if $displayEvents?.hasItems}
       {#each $displayEvents.each as event (event.id)}
-        <EventContainer {event} {start} {end} {conflicts}>
+        <EventContainer {event} {start} {end} {conflicts} layout={dayLayout.get(event)}>
           <EventContent {event} {start} {end} forceShowText={conflicts.length > 1} />
         </EventContainer>
       {/each}
@@ -23,7 +23,7 @@
 
     {#if $displayOverlayEvents.hasItems}
       {#each $displayOverlayEvents.each as event}
-        <EventContainer {event} {start} {end} {conflicts}>
+        <EventContainer {event} {start} {end} {conflicts} layout={dayLayout.get(event)}>
           <slot name="event-overlay" start={event.startTime} {end} {event} events={displayEvents} />
         </EventContainer>
       {/each}
@@ -48,6 +48,7 @@
   import EventContent from "./EventContent.svelte";
   import { calendarWorkingHours } from "../workingHours";
   import { workingSpanInCell, type CalendarWorkingHours } from "../../../logic/Calendar/WorkingHours/CalendarWorkingHours";
+  import { layoutDayColumns } from "../../../logic/Calendar/dayColumns";
   import { createEventDispatcher } from 'svelte';
   const dispatchEvent = createEventDispatcher<{ celldblclick: { start: Date, end: Date, mouseEvent: MouseEvent } }>();
 
@@ -81,6 +82,20 @@
   $: conflicts = overlayEvents
         ? displayEvents.concat(displayOverlayEvents)
         : displayEvents;
+
+  /** Колонки считаются на весь день, а не на час: иначе событие перескакивает между колонками */
+  $: dayLayout = layoutForDay(start, $events, $overlayEvents);
+  function layoutForDay(start: Date, ..._changed: unknown[]) {
+    let dayStart = new Date(start);
+    dayStart.setHours(0, 0, 0, 0);
+    let dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    let inDay = (ev: Event) => ev.startTime < dayEnd && ev.endTime > dayStart && !ev.allDay;
+    return layoutDayColumns([
+      ...events.contents.filter(inDay),
+      ...(overlayEvents?.contents.filter(inDay) ?? []),
+    ]);
+  }
 
   let hovering = false;
 
