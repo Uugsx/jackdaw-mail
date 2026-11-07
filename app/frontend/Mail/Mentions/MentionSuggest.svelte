@@ -54,14 +54,31 @@
       attachedTo.off("update", onChange);
       attachedTo.off("selectionUpdate", onChange);
       attachedTo.off("blur", close);
-      attachedTo.view?.dom?.removeEventListener("keydown", onKeydown, true);
+      attachedDOM?.removeEventListener("keydown", onKeydown, true);
+      attachedDOM = null;
     }
     attachedTo = target;
     if (target) {
       target.on("update", onChange);
       target.on("selectionUpdate", onChange);
       target.on("blur", close);
-      target.view?.dom?.addEventListener("keydown", onKeydown, true);
+      attachedDOM = editorDOM(target);
+      attachedDOM?.addEventListener("keydown", onKeydown, true);
+    }
+  }
+
+  /** Элемент редактора, запомненный при подключении. У уничтоженного (или ещё не смонтированного)
+   * редактора tiptap `view.dom` бросает исключение, и `?.` от него не спасает: при закрытии ответа
+   * ошибка из onDestroy заменяла весь экран почты сообщением «[tiptap error]». */
+  let attachedDOM: HTMLElement | null = null;
+  function editorDOM(target: Editor): HTMLElement | null {
+    if (target.isDestroyed) {
+      return null;
+    }
+    try {
+      return target.view.dom as HTMLElement;
+    } catch {
+      return null;
     }
   }
 
