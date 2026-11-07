@@ -147,7 +147,7 @@
   let includeDiagnostics = true;
   let website = "";
   let sending = false;
-  let consented = false;
+  let consented = true;
   let touched = false;
   let error: string | null = null;
   let sentID: string | null = null;

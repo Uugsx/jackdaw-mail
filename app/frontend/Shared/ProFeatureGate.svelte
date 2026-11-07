@@ -21,7 +21,7 @@
 
   let retrying = false;
   let startingTrial = false;
-  let consented = false;
+  let consented = true;
   let trialMessage: string | null = null;
   $: state = $proEntitlement.value;
   // hasProFeature читает хранилище внутри функции, поэтому зависимость от
