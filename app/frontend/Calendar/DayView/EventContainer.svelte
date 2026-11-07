@@ -1,9 +1,9 @@
 <hbox class="event font-small" on:click
   style="
     top: {startPosInPercent}%;
-    left: {conflicts.indexOf(event) / conflicts.length * 100}%;
+    left: {column / columns * 100}%;
     height: {heightInPercent}%;
-    width: {100 / conflicts.length}%;
+    width: {100 / columns}%;
     --color: {event.color ?? event.calendar?.color}"
   class:conflict={conflicts.length > 1}
   class:cancelled={$event.isCancelled}
@@ -15,6 +15,7 @@
   import type { Event } from "../../../logic/Calendar/Event";
   import { selectedEvent } from "../selected";
   import type { ArrayColl } from "svelte-collections";
+  import type { DayColumn } from "../../../logic/Calendar/dayColumns";
 
   export let event: Event;
   /** Time where the cell (not the event) starts */
@@ -23,6 +24,11 @@
   export let end: Date;
   /** event and all other events that happen in this time slot */
   export let conflicts: ArrayColl<Event>;
+  /** Колонка события на весь день. Без неё — старый расчёт по событиям этого часа. */
+  export let layout: DayColumn | undefined = undefined;
+
+  $: column = layout ? layout.column : conflicts.indexOf(event);
+  $: columns = layout ? layout.columns : conflicts.length;
 
   $: blockHeightInMS = end.getTime() - start.getTime();
   $: startPosInPercent = Math.max(0, ($event.startTime.getTime() - start.getTime()) / blockHeightInMS * 100);
