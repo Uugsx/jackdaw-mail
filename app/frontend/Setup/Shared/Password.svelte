@@ -23,6 +23,9 @@
 {#if appPasswordHint}
   <p class="password-hint" id="{id}-hint">
     {$t`Gmail, Yandex, Mail.ru, iCloud and Outlook.com with two-step verification need an app password. Create it in the security settings of your mail account and enter it here instead of your regular password.`}
+    {#if googleAppPassword}
+      <a href={kGoogleAppPasswordsURL} on:click|preventDefault={() => openExternalURL(kGoogleAppPasswordsURL)}>{$t`Create a Google app password`}</a>
+    {/if}
   </p>
 {/if}
 
@@ -33,6 +36,7 @@
   import EyeOffIcon from "lucide-svelte/icons/eye-off";
   import { createEventDispatcher } from 'svelte';
   import { t } from "../../../l10n/l10n";
+  import { openExternalURL } from "../../../logic/util/os-integration";
   const dispatchEvent = createEventDispatcher();
 
   /** in/out */
@@ -41,6 +45,9 @@
   export let autofocus = false;
   /** Подсказка под полем: что такое пароль приложения и где его взять. */
   export let appPasswordHint = false;
+  /** Адрес Gmail: в подсказке ссылка на страницу паролей приложений Google */
+  export let googleAppPassword = false;
+  const kGoogleAppPasswordsURL = "https://myaccount.google.com/apppasswords";
 
   let cleartext = false;
   let inputEl: HTMLInputElement;

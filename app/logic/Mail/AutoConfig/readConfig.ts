@@ -18,7 +18,7 @@ import { OWAAccount } from "../OWA/OWAAccount";
 import type { WebBasedAuth } from "../../Auth/WebBasedAuth";
 import { OWAAuth } from "../../Auth/OWAAuth";
 import { OAuth2 } from "../../Auth/OAuth2";
-import { getOAuth2BuiltIn } from "../../Auth/OAuth2Util";
+import { getOAuth2BuiltIn, getOAuth2BuiltInError } from "../../Auth/OAuth2Util";
 import JXON from "../../../../lib/util/JXON";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { logError } from "../../../frontend/Util/error";
@@ -177,6 +177,10 @@ function getAuthConfig(account: Account, autoConfigXML: any): WebBasedAuth {
   }
   // try built-in
   let oAuth2 = getOAuth2BuiltIn(account);
+  // Известный провайдер (Gmail, Yahoo, AOL) без своего client ID в сборке: чужой ID из XML
+  // провайдер отклоняет («OAuth client was not found»), поэтому переходим ко входу по паролю приложения.
+  let setupError = oAuth2 ? null : getOAuth2BuiltInError(account);
+  assert(!setupError, setupError);
   if (!oAuth2 && autoConfigXML.oAuth2) {
     try {
       let xml = autoConfigXML.oAuth2;
