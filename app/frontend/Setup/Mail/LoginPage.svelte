@@ -31,6 +31,11 @@
   <p class="password-hint">
     {$t`Gmail, Yandex, Mail.ru, iCloud and Outlook.com with two-step verification need an app password. Create it in the security settings of your mail account and enter it here instead of your regular password.`}
   </p>
+  {#if isGmailAddress}
+    <p class="password-hint">
+      <a href={kGoogleAppPasswordsURL} on:click|preventDefault={() => openExternalURL(kGoogleAppPasswordsURL)}>{$t`Create a Google app password`}</a>
+    </p>
+  {/if}
 {/if}
 
 {#if errorMessage}
@@ -51,6 +56,7 @@
   import { Cancelled } from "../../../logic/util/flow/Abortable";
   import { catchErrors, logError } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
+  import { openExternalURL } from "../../../logic/util/os-integration";
 
   export let account: MailAccount;
   export let onContinue = () => undefined;
@@ -60,6 +66,10 @@
   let errorMessage: string = null;
   let errorEx: Error = null;
   $: isGoogleAccount = !!account && getProvider(account) == Provider.Google;
+  /** Вход через Google в сборке не настроен, поэтому Gmail входит по паролю приложения */
+  const kGoogleAppPasswordsURL = "https://myaccount.google.com/apppasswords";
+  $: isGmailAddress = /@(gmail|googlemail)\.com$/i.test(account?.emailAddress ?? "") ||
+    (account as any)?.hostname == "imap.gmail.com";
 
   function showError(ex: Error | string) {
     if (typeof (ex) == "string") {
