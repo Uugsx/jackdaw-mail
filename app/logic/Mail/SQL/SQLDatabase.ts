@@ -16,6 +16,7 @@ import {
   createMessageNoteTable,
   reloadRecentExchangeBodies,
   reloadExchangeBodiesFromServer,
+  createEMailIDCounter,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -52,6 +53,8 @@ export const mailDatabaseMigrations = [
   reloadRecentExchangeBodies,
   // Шестнадцатая: то же после исправления чтения чужого исходника MIME.
   reloadExchangeBodiesFromServer,
+  // Семнадцатая: номера писем больше не переиспользуются.
+  createEMailIDCounter,
 ];
 
 const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {

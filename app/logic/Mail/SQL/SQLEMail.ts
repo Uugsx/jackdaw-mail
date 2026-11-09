@@ -346,13 +346,17 @@ export class SQLEMail {
     // Index HTML-only bodies so global search can find them
     let plaintext = email.rawText
       ?? (email.rawHTMLDangerous ? convertHTMLToText(email.rawHTMLDangerous) : null);
+    // Номер — из растущего счётчика, а не max(id) + 1: номер удалённого письма
+    // не достаётся новому (см. createEMailIDCounter)
     return sql`
       INSERT INTO email (
+        id,
         messageID, folderID, pID, parentMsgID,
         size, dateSent, dateReceived,
         outgoing, contactEmail, contactName,
         subject, plaintext, html
       ) VALUES (
+        (SELECT value + 1 FROM emailIDCounter),
         ${email.id}, ${email.folder.dbID}, ${email.pID}, ${email.inReplyTo},
         ${email.size}, ${email.sent.getTime() / 1000}, ${email.received.getTime() / 1000},
         ${email.outgoing ? 1 : 0}, ${contact?.emailAddress}, ${email.contact?.name},

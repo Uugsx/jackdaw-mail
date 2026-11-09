@@ -257,3 +257,24 @@ test("Миграция: письма Exchange с 08.11.2026 заново заг�
   expect(byID.get(imap)).toMatchObject({ html: "<p>text</p>", downloadComplete: 1 });
   expect(await db.all(sql`SELECT * FROM emailAttachment WHERE emailID = ${recent}`)).toEqual([]);
 });
+
+test("Номер удалённого письма не достаётся новому, даже если удалено последнее письмо", async () => {
+  let db = await getDatabase();
+  let first = newTestEMail(folder, "counter1@example.com");
+  await SQLEMail.save(first);
+  let last = newTestEMail(folder, "counter2@example.com");
+  await SQLEMail.save(last);
+  let lastID = last.dbID as number;
+  await SQLEMail.deleteIt(last);
+  let next = newTestEMail(folder, "counter3@example.com");
+  await SQLEMail.save(next);
+  expect(next.dbID).toBeGreaterThan(lastID);
+  // Пачка новых писем тоже получает разные растущие номера
+  let batch = [newTestEMail(folder, "counter4@example.com"), newTestEMail(folder, "counter5@example.com"), newTestEMail(folder, "counter6@example.com")];
+  await SQLEMail.saveAll(batch);
+  let ids = batch.map(email => email.dbID as number);
+  expect(new Set(ids).size).toBe(3);
+  expect(Math.min(...ids)).toBeGreaterThan(next.dbID as number);
+  let counter = await db.get(sql`SELECT value FROM emailIDCounter`) as any;
+  expect(counter.value).toBe(Math.max(...ids));
+});
