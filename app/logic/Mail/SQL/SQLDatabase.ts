@@ -15,6 +15,7 @@ import {
   createMailTemplateTable,
   createMessageNoteTable,
   reloadRecentExchangeBodies,
+  reloadExchangeBodiesFromServer,
 } from "./SQLEMailMigrate";
 import sql, { type Database } from "../../../../lib/rs-sqlite/index";
 import { getSQLiteDatabase } from "../../util/backend-wrapper";
@@ -49,6 +50,8 @@ export const mailDatabaseMigrations = [
   createMessageNoteTable,
   // Пятнадцатая: письма Exchange с чужим текстом заново загружаются с сервера.
   reloadRecentExchangeBodies,
+  // Шестнадцатая: то же после исправления чтения чужого исходника MIME.
+  reloadExchangeBodiesFromServer,
 ];
 
 const openMailDatabase = openDatabaseOnce(() => getSQLiteDatabase("mail.db"), async database => {
