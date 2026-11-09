@@ -22,6 +22,7 @@ import { IMAPAccount } from './Mail/IMAP/IMAPAccount';
 import { assert, sleep } from './util/util';
 import { refreshProEntitlement } from './Billing/ProEntitlement';
 import { retryWhileDatabaseBusy, type DatabaseBusyCallback } from './util/retryWhileDatabaseBusy';
+import { repairMailDatabaseOnStartup } from './Mail/SQL/repairOnStartup';
 
 /** Read JPC secret from frontent URL hash `jpcSecret=password`.
  * Before svelte-navigator `<Router>` mounts and rewrites `location.hash` */
@@ -149,6 +150,10 @@ async function readStartObjects(): Promise<void> {
  *   May be called multiple times, e.g. once per account.
  */
 export function loginOnStartup(startupErrorCallback: (ex: Error) => void): void {
+  // Только главное окно и не демо: в демо mail.db — витрина, а исходники — настоящие
+  if (!webMail && !isDemoMode()) {
+    repairMailDatabaseOnStartup().catch(logError);
+  }
   let allAccounts = getAllAccounts();
   for (let account of allAccounts) {
     account.errorCallback = (ex) => backgroundErrorInAccount(ex, account);
