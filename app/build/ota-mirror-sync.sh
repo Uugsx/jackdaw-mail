@@ -28,11 +28,27 @@ case "$PLATFORM" in
   win) PATTERNS=('*-setup.exe' '*-setup.exe.blockmap' 'latest.yml') ;;
   *) PATTERNS=('*.dmg' '*.dmg.blockmap' '*-setup.exe' '*-setup.exe.blockmap' 'latest.yml' 'latest-mac.yml') ;;
 esac
-for pattern in "${PATTERNS[@]}"; do
-  if [ "$MANIFESTS" = 0 ] && [[ "$pattern" == *.yml ]]; then
-    continue
-  fi
-  gh release download "$TAG" --repo "$REPO" --dir "$STAGE" --pattern "$pattern" || true
+download_all() {
+  local pattern
+  for pattern in "${PATTERNS[@]}"; do
+    if [ "$MANIFESTS" = 0 ] && [[ "$pattern" == *.yml ]]; then
+      continue
+    fi
+    gh release download "$TAG" --repo "$REPO" --dir "$STAGE" --pattern "$pattern" --clobber || true
+  done
+}
+
+# Файлы, только что загруженные job'ом сборки, GitHub отдаёт не сразу: при пустом результате
+# ждём и повторяем, а не падаем на пустой папке.
+shopt -s nullglob
+DOWNLOAD_ATTEMPTS=10
+for attempt in $(seq 1 "$DOWNLOAD_ATTEMPTS"); do
+  download_all
+  staged=("$STAGE"/*)
+  [ "${#staged[@]}" -gt 0 ] && break
+  [ "$attempt" -lt "$DOWNLOAD_ATTEMPTS" ] || { echo "::error::В релизе $TAG нет файлов для $PLATFORM"; exit 1; }
+  echo "Файлы $TAG ещё не видны, повтор через 30 с (попытка $attempt)" >&2
+  sleep 30
 done
 
 # Пустой или недокачанный файл не должен попасть в зеркало
