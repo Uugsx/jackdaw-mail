@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+# Поддельный gh для проверки ota-channel.sh: состояние в $FAKE_STATE (JSON-массив выпусков)
+import json, os, subprocess, sys
+state_path = os.environ["FAKE_STATE"]
+rel = json.load(open(state_path))
+args = sys.argv[1:]
+assert args[0] == "api", args
+args = args[1:]
+method = "GET"; jq = None; fields = {}; path = None
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "-X": method = args[i+1]; i += 2; continue
+    if a == "--jq": jq = args[i+1]; i += 2; continue
+    if a == "--paginate": i += 1; continue
+    if a in ("-f", "-F"):
+        k, v = args[i+1].split("=", 1)
+        if a == "-F" and v in ("true", "false"): v = v == "true"
+        fields[k] = v; i += 2; continue
+    path = a; i += 1
+p = path.split("?")[0].split("/")  # repos o r releases ...
+def latest():
+    pub = [r for r in rel if not r["draft"] and not r["prerelease"]]
+    marked = [r for r in pub if r.get("_latest")]
+    return marked[0] if marked else None
+def out(obj):
+    data = json.dumps(obj)
+    if jq:
+        r = subprocess.run(["jq", "-r", jq], input=data, capture_output=True, text=True)
+        sys.stdout.write(r.stdout); sys.stderr.write(r.stderr); sys.exit(r.returncode)
+    print(data)
+if method == "GET":
+    if len(p) == 4:
+        out(rel)
+    elif p[4] == "latest":
+        l = latest()
+        if not l: sys.stderr.write("404\n"); sys.exit(1)
+        out(l)
+    elif p[4] == "tags":
+        out(next(r for r in rel if r["tag_name"] == p[5] and not r["draft"]))
+    else:
+        out(next(r for r in rel if str(r["id"]) == p[4]))
+else:
+    r = next(r for r in rel if str(r["id"]) == p[4])
+    for k, v in fields.items():
+        if k == "make_latest":
+            if v == "true":
+                for o in rel: o["_latest"] = False
+                r["_latest"] = True
+        else:
+            r[k] = v
+    if r.get("prerelease"): r["_latest"] = False
+    json.dump(rel, open(state_path, "w"), indent=1)
+    with open(state_path + ".log", "a") as log: log.write(f"PATCH {r['tag_name']} {fields}\n")

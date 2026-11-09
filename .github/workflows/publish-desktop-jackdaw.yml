@@ -69,7 +69,10 @@ jobs:
           git tag -f "$TAG" "$GITHUB_SHA"
           git push origin "$TAG" --force
           gh release delete "$TAG" --repo Uugsx/jackdaw-mail -y 2>/dev/null || true
-          gh release create "$TAG" --repo Uugsx/jackdaw-mail --prerelease \
+          # Черновик: пока файлы загружаются, выпуск не видит никто, даже пробный канал.
+          # finalize публикует его как prerelease (пробный канал), в основной канал
+          # (latest) его переводит только promote-desktop-jackdaw.yml.
+          gh release create "$TAG" --repo Uugsx/jackdaw-mail --draft --prerelease \
             --title "${BASE}.${OTA_BUILD_SUFFIX}" \
             --notes "Jackdaw Mail desktop."
 
@@ -292,11 +295,13 @@ jobs:
               gh api -X DELETE "repos/Uugsx/jackdaw-mail/releases/$ID"
             fi
           done
+          # Пробный канал: опубликованный prerelease. Основной канал (latest) не меняется,
+          # его переводит promote-desktop-jackdaw.yml после выдержки или вручную.
           if [ -n "$KEEP" ]; then
             gh api -X PATCH "repos/Uugsx/jackdaw-mail/releases/$KEEP" \
               -f body="Jackdaw Mail desktop." \
               -f name="${BASE}.${OTA_BUILD_SUFFIX}" \
-              -F prerelease=false -f make_latest=true
+              -F draft=false -F prerelease=true -f make_latest=false
           fi
       - name: Remove other-version assets of a rebuilt platform
         env:
@@ -367,6 +372,8 @@ jobs:
           BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
           TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          # Пробный выпуск: на зеркало только установщики, манифесты основного канала не меняются
+          export MIRROR_MANIFESTS=0
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail mac
       - name: Remove SSH key
         if: always()
@@ -408,6 +415,8 @@ jobs:
           BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
           TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          # Пробный выпуск: на зеркало только установщики, манифесты основного канала не меняются
+          export MIRROR_MANIFESTS=0
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail win
       - name: Remove SSH key
         if: always()
@@ -449,6 +458,8 @@ jobs:
           BASE=$(node -p "require('./app/package.json').version.replace(/-dev.*/, '').split('.').slice(0,2).join('.')")
           TAG="v${BASE}.${OTA_BUILD_SUFFIX}"
           export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          # Пробный выпуск: на зеркало только установщики, манифесты основного канала не меняются
+          export MIRROR_MANIFESTS=0
           bash app/build/ota-mirror-sync.sh "$TAG" Uugsx/jackdaw-mail
       - name: Remove SSH key
         if: always()

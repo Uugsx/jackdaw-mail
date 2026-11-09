@@ -87,6 +87,13 @@ export function testJPCPort(): number | null {
   return testProfileDir && Number.isInteger(port) && port > 1024 && port < 65536 ? port : null;
 }
 
+/** Проверка каналов обновлений: копия спрашивает обновления у локального сервера,
+ * отвечающего как GitHub (`JACKDAW_TEST_UPDATE_FEED=127.0.0.1:<порт>`). Без переменной копия не обновляется. */
+export function testUpdateFeedHost(): string | null {
+  let host = process.env["JACKDAW_TEST_UPDATE_FEED"]?.trim() ?? "";
+  return testProfileDir && /^(127\.0\.0\.1|localhost):\d{2,5}$/.test(host) ? host : null;
+}
+
 /** Каталог файлов (вложения, общий доступ) внутри профиля */
 export function testFilesDir(): string | null {
   return testProfileDir ? path.join(testProfileDir, "files") : null;
