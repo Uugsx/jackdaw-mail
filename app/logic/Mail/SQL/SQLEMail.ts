@@ -107,6 +107,45 @@ function existingRowKey(row: { pID: any, messageID: any }): string {
   return row.pID != null ? `p:${typeof row.pID}:${row.pID}` : `m:${row.messageID}`;
 }
 
+/**
+ * Строка базы — это письмо `email`. Номера строк `email` переиспользуются
+ * (INTEGER PRIMARY KEY без AUTOINCREMENT): если строку удалили, пока объект
+ * в памяти держал её `dbID`, номер достаётся новому письму. Без проверки
+ * сохранение записало бы тему и отправителя в чужую строку, и письмо
+ * показало бы чужой текст и вложения.
+ */
+function rowMatchesEMail(row: { pID: any, messageID: any } | null | undefined, email: EMail): boolean {
+  if (!row) {
+    return false;
+  }
+  let pID = email.pID ?? null;
+  let messageID = email.id || null;
+  if (row.pID != null && pID != null && String(row.pID) == String(pID)) {
+    return true;
+  }
+  if (row.messageID && messageID && row.messageID == messageID) {
+    return true;
+  }
+  // Сравнить нечем — строка своя, как раньше
+  return (row.pID == null || pID == null) && (!row.messageID || !messageID);
+}
+
+/** То же, что `rowMatchesEMail()`, условием SQL для шагов пакета. */
+function rowMatchesEMailSQL(email: EMail, rowID: EMailRowID) {
+  let pID = email.pID ?? null;
+  let messageID = email.id || null;
+  return sql`EXISTS (
+    SELECT 1 FROM email AS own
+    WHERE own.id = ${rowID} AND (
+      own.pID = ${pID} OR
+      own.messageID = ${messageID} OR (
+        (own.pID IS NULL OR ${pID} IS NULL) AND
+        (own.messageID IS NULL OR own.messageID = '' OR ${messageID} IS NULL)
+      )
+    )
+  )`;
+}
+
 export class SQLEMail {
   /**
    * Save complete emails and metadata updates for already persisted emails.
@@ -156,6 +195,7 @@ export class SQLEMail {
     }
     let db = await getDatabase();
     try {
+      await this.forgetForeignDBIDs(db, emails.filter(email => !!email.dbID));
       await this.findExistingEMailIDs(db, emails.filter(email => !email.dbID));
       for (let email of emails) {
         if (!email.sent) {
@@ -213,6 +253,25 @@ export class SQLEMail {
       // В кэше мог остаться id, которого уже нет: следующая попытка ищет заново
       emailPersonIDs.clear();
       throw ex;
+    }
+  }
+
+  /** Забывает `dbID`, если строку удалили или её номер занят другим письмом:
+   * такое письмо сохранится в свою строку (найденную или новую). */
+  protected static async forgetForeignDBIDs(db: Database, emails: EMail[]) {
+    for (let batch of chunks(emails)) {
+      let rows = await db.all(sql`
+        SELECT
+          id, pID, messageID
+        FROM email
+        WHERE id IN ${batch.map(email => email.dbID)}
+        `) as any[];
+      let byID = new Map(rows.map(row => [row.id, row]));
+      for (let email of batch) {
+        if (!rowMatchesEMail(byID.get(email.dbID), email)) {
+          email.dbID = null;
+        }
+      }
     }
   }
 
@@ -380,7 +439,7 @@ export class SQLEMail {
           threadID = COALESCE(${email.threadID}, threadID),
           downloadComplete = MAX(downloadComplete, ${email.downloadComplete ? 1 : 0}),
           json = COALESCE(${jsonStr}, json)
-        WHERE id = ${rowID}
+        WHERE id = ${rowID} AND $${rowMatchesEMailSQL(email, rowID)}
         ` },
       ...this.tagsSteps(email, rowID),
     ];
@@ -613,17 +672,17 @@ export class SQLEMail {
   protected static tagsSteps(email: EMail, rowID: EMailRowID): BatchStep[] {
     let steps: BatchStep[] = [{ query: sql`
       DELETE FROM emailTag
-      WHERE emailID = ${rowID}
+      WHERE emailID = ${rowID} AND $${rowMatchesEMailSQL(email, rowID)}
       ` }];
     for (let tag of email.tags) {
-      // Строку письма могли удалить (синхронизация, чистка дублей), пока объект
-      // в памяти держит её dbID: тогда вставка нарушила бы внешний ключ
-      // и сорвала сохранение всей страницы писем.
+      // Строку письма могли удалить (синхронизация, чистка дублей) или отдать
+      // её номер другому письму, пока объект в памяти держит её dbID: вставка
+      // нарушила бы внешний ключ или записала бы категории чужому письму.
       steps.push({ query: sql`
         INSERT OR IGNORE INTO emailTag (
           emailID, tagName
         ) SELECT ${rowID}, ${tag.name}
-        WHERE EXISTS (SELECT 1 FROM email WHERE id = ${rowID})` });
+        WHERE $${rowMatchesEMailSQL(email, rowID)}` });
     }
     return steps;
   }
@@ -966,11 +1025,16 @@ export class SQLEMail {
     assert(email.dbID, "Need to read email metadata from database first");
     let row = await (await getDatabase()).get(sql`
       SELECT
-        plaintext, html
+        plaintext, html, pID, messageID
       FROM email
       WHERE id = ${email.dbID}
     `) as any;
-    assert(row, "Email DB ID " + email.dbID + " not found in DB");
+    if (!rowMatchesEMail(row, email)) {
+      // Строку удалили или её номер у другого письма: чужой текст не показываем,
+      // письмо загрузится с сервера и сохранится в свою строку
+      email.dbID = null;
+      return;
+    }
     let text = sanitize.string(row.plaintext, null)
     if (text) {
       email.text = text;

@@ -8,6 +8,7 @@ import { getDatabase } from "../../../../logic/Mail/SQL/SQLDatabase";
 import { getTagByName } from "../../../../logic/Abstract/Tag";
 import { beforeAll, expect, test, vi } from "vitest";
 import sql from "../../../../../lib/rs-sqlite";
+import { reloadRecentExchangeBodies } from "../../../../logic/Mail/SQL/SQLEMailMigrate";
 
 let folder: Folder;
 
@@ -193,4 +194,66 @@ test("Флаги и категории письма, строку которог
   await expect(SQLEMail.saveWritableProps(email)).resolves.toBeUndefined();
   await expect(SQLEMail.saveWritablePropsAll([email])).resolves.toBeUndefined();
   expect(await db.all(sql`SELECT * FROM emailTag WHERE emailID = ${rowID}`)).toEqual([]);
+});
+
+test("Номер удалённой строки достался другому письму: сохранение не переписывает чужое письмо", async () => {
+  let db = await getDatabase();
+  let stale = newTestEMail(folder);
+  stale.subject = "Перенос даты доставки";
+  await SQLEMail.save(stale);
+  let rowID = stale.dbID;
+  // Строку удалили, а объект в памяти держит её номер
+  await db.run(sql`DELETE FROM email WHERE id = ${rowID}`);
+  // Новое письмо получает тот же номер строки (INTEGER PRIMARY KEY без AUTOINCREMENT)
+  await db.run(sql`
+    INSERT INTO email (id, messageID, folderID, pID, dateSent, dateReceived, subject, html)
+    VALUES (${rowID}, ${"<returns@example.com>"}, ${folder.dbID}, ${"other-item"}, 0, 0,
+      ${"Возвратные заказы"}, ${"<p>Клиент Спортмастер, возвратные заказы во вложении</p>"})`);
+
+  // Чужой текст не читается: письмо забывает номер и загрузится заново
+  let reader = newTestEMail(folder);
+  reader.pID = stale.pID;
+  reader.id = stale.id;
+  reader.dbID = rowID;
+  await SQLEMail.readBody(reader);
+  expect(reader.dbID).toBeNull();
+  expect(reader.rawHTMLDangerous ?? null).toBeNull();
+
+  // Флажок и категории не пишутся в чужую строку
+  stale.isStarred = true;
+  stale.tags.add(getTagByName("$label1"));
+  await SQLEMail.saveWritableProps(stale);
+  await SQLEMail.saveWritablePropsAll([stale]);
+  let other = await db.get(sql`SELECT subject, isStarred, html FROM email WHERE id = ${rowID}`) as any;
+  expect(other.isStarred).toBe(0);
+  expect(await db.all(sql`SELECT * FROM emailTag WHERE emailID = ${rowID}`)).toEqual([]);
+
+  // Полное сохранение пишет письмо в свою (новую) строку, чужое остаётся целым
+  await SQLEMail.save(stale);
+  expect(stale.dbID).not.toBe(rowID);
+  other = await db.get(sql`SELECT subject, html FROM email WHERE id = ${rowID}`) as any;
+  expect(other.subject).toBe("Возвратные заказы");
+  let own = await db.get(sql`SELECT subject, pID FROM email WHERE id = ${stale.dbID}`) as any;
+  expect(own.subject).toBe("Перенос даты доставки");
+  expect(own.pID).toBe(stale.pID);
+});
+
+test("Миграция: письма Exchange с 08.11.2026 заново загружаются с сервера, остальные не трогаются", async () => {
+  let db = await getDatabase();
+  let exchangeID = "AAMkAGI2" + "x".repeat(140);
+  let insert = (pID: string, received: number) => db.run(sql`
+    INSERT INTO email (messageID, folderID, pID, dateSent, dateReceived, subject, plaintext, html, downloadComplete)
+    VALUES (${"<" + pID.slice(0, 12) + received + "@x>"}, ${folder.dbID}, ${pID}, ${received}, ${received},
+      ${"s"}, ${"text"}, ${"<p>text</p>"}, 1)`);
+  let recent = (await insert(exchangeID + "1", 1794200000)).lastInsertRowid;
+  let old = (await insert(exchangeID + "2", 1794000000)).lastInsertRowid;
+  let imap = (await insert("4711", 1794200000)).lastInsertRowid;
+  await db.run(sql`INSERT INTO emailAttachment (emailID, filename, mimeType) VALUES (${recent}, ${"ReturnGoods.xml"}, ${"text/xml"})`);
+  await db.execute(reloadRecentExchangeBodies);
+  let rows = await db.all(sql`SELECT id, html, plaintext, downloadComplete FROM email WHERE id IN ${[recent, old, imap]} ORDER BY id`) as any[];
+  let byID = new Map(rows.map(row => [row.id, row]));
+  expect(byID.get(recent)).toMatchObject({ html: null, plaintext: null, downloadComplete: 0 });
+  expect(byID.get(old)).toMatchObject({ html: "<p>text</p>", downloadComplete: 1 });
+  expect(byID.get(imap)).toMatchObject({ html: "<p>text</p>", downloadComplete: 1 });
+  expect(await db.all(sql`SELECT * FROM emailAttachment WHERE emailID = ${recent}`)).toEqual([]);
 });

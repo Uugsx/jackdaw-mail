@@ -343,3 +343,26 @@ export const createMessageNoteTable = sql`
 export const rollbackMessageNoteTable = sql`
   DROP TABLE IF EXISTS "messageNote";
 `;
+
+/**
+ * Письма Exchange могли получить чужой текст и вложения: сохранение по номеру
+ * строки, который уже достался другому письму, писало тему и отправителя
+ * в чужую строку. Отличить такие строки от целых нельзя, поэтому у писем
+ * Exchange (длинный ItemId в pID) с 08.11.2026 (порча появилась 09.11) сбрасываем сохранённый текст
+ * и вложения: при открытии письмо заново загрузится с сервера.
+ */
+export const reloadRecentExchangeBodies = sql`
+  DELETE FROM emailAttachment WHERE emailID IN (
+    SELECT id FROM email
+    WHERE dateReceived >= 1794096000 AND length(pID) > 40
+  );
+  UPDATE email SET
+    plaintext = NULL,
+    html = NULL,
+    downloadComplete = 0
+  WHERE dateReceived >= 1794096000 AND length(pID) > 40;
+`;
+
+/** Откат reloadRecentExchangeBodies не нужен и невозможен: текст и вложения
+ * снова приходят с сервера при открытии письма. */
+export const rollbackReloadRecentExchangeBodies = sql`SELECT 1;`;
