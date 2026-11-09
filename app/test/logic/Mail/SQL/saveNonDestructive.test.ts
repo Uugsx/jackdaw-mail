@@ -180,3 +180,17 @@ test("Reads folder tags in one query and keeps them on list rows", async () => {
   expect(loadedFolder.messages.find(message => message.id == taggedEmails[1].id)?.tags.first?.name)
     .toBe("Shared-folder-second-tag");
 });
+
+test("Флаги и категории письма, строку которого уже удалили, сохраняются без ошибки внешнего ключа", async () => {
+  let db = await getDatabase();
+  let email = newTestEMail(folder);
+  await SQLEMail.save(email);
+  let rowID = email.dbID;
+  // Строку удалили (синхронизация, чистка дублей), а объект в памяти держит старый dbID
+  await db.run(sql`DELETE FROM email WHERE id = ${rowID}`);
+  email.isStarred = true;
+  email.tags.add(getTagByName("$label1"));
+  await expect(SQLEMail.saveWritableProps(email)).resolves.toBeUndefined();
+  await expect(SQLEMail.saveWritablePropsAll([email])).resolves.toBeUndefined();
+  expect(await db.all(sql`SELECT * FROM emailTag WHERE emailID = ${rowID}`)).toEqual([]);
+});

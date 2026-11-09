@@ -616,12 +616,14 @@ export class SQLEMail {
       WHERE emailID = ${rowID}
       ` }];
     for (let tag of email.tags) {
+      // Строку письма могли удалить (синхронизация, чистка дублей), пока объект
+      // в памяти держит её dbID: тогда вставка нарушила бы внешний ключ
+      // и сорвала сохранение всей страницы писем.
       steps.push({ query: sql`
         INSERT OR IGNORE INTO emailTag (
           emailID, tagName
-        ) VALUES (
-          ${rowID}, ${tag.name}
-        )` });
+        ) SELECT ${rowID}, ${tag.name}
+        WHERE EXISTS (SELECT 1 FROM email WHERE id = ${rowID})` });
     }
     return steps;
   }
