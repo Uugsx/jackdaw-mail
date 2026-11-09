@@ -366,3 +366,25 @@ export const reloadRecentExchangeBodies = sql`
 /** Откат reloadRecentExchangeBodies не нужен и невозможен: текст и вложения
  * снова приходят с сервера при открытии письма. */
 export const rollbackReloadRecentExchangeBodies = sql`SELECT 1;`;
+
+/**
+ * Миграция 15 не помогла: текст и вложения брались не из mail.db, а из
+ * исходника MIME в mail-backup.db, оставшегося под тем же номером строки от
+ * удалённого письма. Теперь чужой исходник не читается (`SQLSourceEMail`),
+ * а письма Exchange с 05.11.2026 (первые такие письма — 06.11) ещё раз
+ * сбрасываем, чтобы они загрузились с сервера.
+ */
+export const reloadExchangeBodiesFromServer = sql`
+  DELETE FROM emailAttachment WHERE emailID IN (
+    SELECT id FROM email
+    WHERE dateReceived >= 1793836800 AND length(pID) > 40
+  );
+  UPDATE email SET
+    plaintext = NULL,
+    html = NULL,
+    downloadComplete = 0
+  WHERE dateReceived >= 1793836800 AND length(pID) > 40;
+`;
+
+/** Откат не нужен и невозможен: текст и вложения снова приходят с сервера. */
+export const rollbackReloadExchangeBodiesFromServer = sql`SELECT 1;`;
