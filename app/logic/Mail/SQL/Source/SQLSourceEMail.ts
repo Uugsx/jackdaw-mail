@@ -5,30 +5,11 @@ import { getDatabase } from "./SQLSourceDatabase";
 import { SQLEMail } from "../SQLEMail";
 import { assert } from "../../../util/util";
 import sql from "../../../../../lib/rs-sqlite";
+import { mimeMessageID, normalizeMessageID } from "./mimeMessageID";
 
-/** Заголовки MIME длиннее не бывают на практике; дальше — тело письма. */
-const kMaxHeaderBytes = 64 * 1024;
-
-function normalizeMessageID(id: string | null | undefined): string | null {
-  let value = id?.trim().replace(/^<|>$/g, "").toLowerCase();
-  return value || null;
-}
-
-/** Message-ID из заголовков MIME или null, если заголовка нет. */
-export function mimeMessageID(mime: Uint8Array | string | null | undefined): string | null {
-  if (!mime) {
-    return null;
-  }
-  let head = typeof mime == "string"
-    ? mime.slice(0, kMaxHeaderBytes)
-    : new TextDecoder("latin1").decode(mime.subarray(0, kMaxHeaderBytes));
-  let end = head.search(/\r?\n\r?\n/);
-  if (end >= 0) {
-    head = head.slice(0, end);
-  }
-  let match = /^Message-ID:[ \t]*(?:\r?\n[ \t]+)?(<[^>\r\n]*>|\S+)/im.exec(head);
-  return normalizeMessageID(match?.[1]);
-}
+// Разбор Message-ID — в отдельном файле без зависимостей приложения:
+// его использует и скрипт проверки копии базы (scripts/db-integrity-check.ts)
+export { mimeMessageID };
 
 /**
  * Исходник принадлежит письму. Строки `emailMIME` ищутся по номеру строки
