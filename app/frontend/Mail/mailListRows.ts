@@ -361,6 +361,18 @@ const flagSortKeys: Partial<Record<MailListSort, (message: EMail) => boolean>> =
   "attachment-asc": message => !!message.hasVisibleAttachments,
 };
 
+/** Изменяемые свойства письма, от которых зависит порядок при этой сортировке */
+const resortProperties: Partial<Record<MailListSort, string>> = {
+  "flag-desc": "isStarred",
+  "flag-asc": "isStarred",
+  "importance-desc": "isImportant",
+  "importance-asc": "isImportant",
+};
+
+function sortWatchesTags(sort: MailListSort): boolean {
+  return sort == "categories" || sort == "categories-desc";
+}
+
 function messageSize(message: EMail): number {
   let size = Number(message.size);
   return Number.isFinite(size) && size > 0 ? size : 0;
@@ -472,6 +484,11 @@ export class MailListRows {
   protected incidentMode: MailListIncidentMode | null = null;
   protected incidentTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly observer: CollectionObserver<EMail>;
+  /** Подписки на письма, когда порядок зависит от их изменяемых свойств (флажок, важность, категории) */
+  protected readonly watched = new Map<EMail, () => void>();
+  protected resortPending = false;
+  /** Свойство, за которым следят подписки в `watched` */
+  protected watchedKey: string | null = null;
 
   protected unsubscribePinned: () => void;
 
@@ -540,6 +557,68 @@ export class MailListRows {
     this.source?.unregisterObserver(this.observer);
     this.source = null;
     this.clearIncidentTimer();
+    this.watchMessages([]);
+  }
+
+  /** Пересортировать один раз после пачки изменений (например, флажок у 100 писем). */
+  protected scheduleResort() {
+    if (this.resortPending) {
+      return;
+    }
+    this.resortPending = true;
+    void Promise.resolve().then(() => {
+      this.resortPending = false;
+      if (this.source) {
+        this.rebuild();
+      }
+    });
+  }
+
+  /**
+   * Порядок по флажку, важности или категориям меняется без добавления и удаления
+   * писем, поэтому следим за самими письмами — только при такой сортировке.
+   */
+  protected watchMessages(messages: readonly EMail[]) {
+    let property = resortProperties[this.sort];
+    let watchTags = sortWatchesTags(this.sort);
+    let watchKey = property ?? (watchTags ? "tags" : null);
+    let keep = watchKey ? new Set(messages) : new Set<EMail>();
+    // Другая сортировка следит за другим свойством — старые подписки не годятся
+    let resubscribe = watchKey != this.watchedKey;
+    this.watchedKey = watchKey;
+    for (let [message, unwatch] of this.watched) {
+      if (resubscribe || !keep.has(message)) {
+        unwatch();
+        this.watched.delete(message);
+      }
+    }
+    for (let message of keep) {
+      if (this.watched.has(message)) {
+        continue;
+      }
+      let unwatch: () => void = () => undefined;
+      if (property && typeof message.subscribe == "function") {
+        unwatch = message.subscribe((_obj, changed) => {
+          if (changed == property) {
+            this.scheduleResort();
+          }
+        });
+      } else if (watchTags && message.tags?.registerObserver) {
+        let tags = message.tags;
+        let resort = () => this.scheduleResort();
+        let observer = new class extends CollectionObserver<any> {
+          added() {
+            resort();
+          }
+          removed() {
+            resort();
+          }
+        };
+        tags.registerObserver(observer);
+        unwatch = () => tags.unregisterObserver(observer);
+      }
+      this.watched.set(message, unwatch);
+    }
   }
 
   toggleGroup(groupID: string): void {
@@ -590,7 +669,9 @@ export class MailListRows {
       return;
     }
     this.incidentSummary.set(null);
-    let messages = sortMessages(this.source ? this.source.contents : [], this.sort);
+    let contents = this.source ? this.source.contents : [];
+    this.watchMessages(contents);
+    let messages = sortMessages(contents, this.sort);
     let byDate = this.sort == "date-desc" || this.sort == "date-asc";
     let byTopic = this.sort == "subject" || this.sort == "subject-desc";
     let bySender = this.sort == "sender" || this.sort == "sender-desc";
