@@ -388,3 +388,32 @@ export const reloadExchangeBodiesFromServer = sql`
 
 /** Откат не нужен и невозможен: текст и вложения снова приходят с сервера. */
 export const rollbackReloadExchangeBodiesFromServer = sql`SELECT 1;`;
+
+/**
+ * Номера строк писем больше не переиспользуются. `email.id` — INTEGER PRIMARY
+ * KEY без AUTOINCREMENT: после удаления последнего письма его номер получало
+ * следующее, а по номеру ищутся исходник MIME, файлы вложений и объекты в
+ * памяти — письмо показывало чужой текст и вложения. Новые номера выдаются из
+ * счётчика, который только растёт (`SQLEMail.insertEMailQuery`). Старт — на
+ * миллион выше текущего максимума: остатки удалённых писем с большими
+ * номерами (исходники в mail-backup.db) не совпадут с новыми письмами.
+ */
+export const createEMailIDCounter = sql`
+  CREATE TABLE IF NOT EXISTS "emailIDCounter" (
+    "value" INTEGER NOT NULL
+  );
+  INSERT INTO emailIDCounter (value)
+    SELECT COALESCE(MAX(id), 0) + 1000000 FROM email
+    WHERE NOT EXISTS (SELECT 1 FROM emailIDCounter);
+  CREATE TRIGGER IF NOT EXISTS emailIDCounterAfterInsert
+  AFTER INSERT ON email
+  BEGIN
+    UPDATE emailIDCounter SET value = MAX(value, NEW.id);
+  END;
+`;
+
+/** Откат createEMailIDCounter: номера снова выдаёт SQLite (с переиспользованием). */
+export const rollbackEMailIDCounter = sql`
+  DROP TRIGGER IF EXISTS emailIDCounterAfterInsert;
+  DROP TABLE IF EXISTS emailIDCounter;
+`;
