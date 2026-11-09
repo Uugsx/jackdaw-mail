@@ -12,7 +12,8 @@ Related generic docs: [electron-builder.md](./electron-builder.md), [macos.md](.
 
 | Piece | Role |
 |-------|------|
-| **CI** | `.github/workflows/publish-desktop-jackdaw.yml` — builds Mac and/or Windows, one prerelease |
+| **CI** | `.github/workflows/publish-desktop-jackdaw.yml` — builds Mac and/or Windows, one prerelease (**пробный канал**) |
+| **Каналы** | `.github/workflows/promote-desktop-jackdaw.yml` + `.github/scripts/ota-channel.sh` — пробный → основной (через 24 ч или вручную), остановка, откат. См. [«Каналы обновлений»](#каналы-обновлений-пробный-и-основной) |
 | **Version** | `0.10.<run_number>` (обычный semver, без `-dev`) — суффикс из job `prepare` (`OTA_BUILD_SUFFIX` = `github.run_number`). Старые `0.9.x-dev.<UTC>` остаются совместимы: `0.10.N` > `0.9.x-dev.*` |
 | **Updater backend** | `desktop/backend/backend.ts` — `electron-updater`, auth, platform-specific install |
 | **Updater UI** | `app/frontend/Settings/About/Update.svelte`, `About.svelte` |
@@ -33,10 +34,11 @@ Push to `main` builds **both** platforms. Manual **workflow_dispatch** can choos
 и тег не создаются. Этот же workflow запускается для pull request.
 
 ```
-prepare  →  mac  ║  windows  →  carry-forward?  →  finalize
-  │            │       │
-  │            └─ upload assets to ONE prerelease
-  └─ tag + empty GitHub prerelease (required!)
+prepare  →  mac  ║  windows  →  carry-forward?  →  finalize  ┄┄ 24 ч ┄┄→  promote (latest)
+  │            │       │                              │                    │
+  │            └─ upload assets to ONE draft           │                    └─ основной канал
+  │                                                    └─ draft → prerelease: пробный канал
+  └─ tag + empty GitHub draft prerelease (required!)
 ```
 
 ### Platform-independent OTA (`latest.yml` vs `latest-mac.yml`)
@@ -70,7 +72,9 @@ Example after a Windows-only fix:
 1. `OTA_BUILD_SUFFIX=$(date -u +%Y%m%d%H%M%S)`
 2. Tag: `v0.10.${OTA_BUILD_SUFFIX}` on current commit
 3. **Delete** existing release with that tag (if any)
-4. **`gh release create`** empty prerelease
+4. **`gh release create --draft --prerelease`** — пустой черновик. Черновик не виден никому, даже
+   пробному каналу, пока загружаются файлы: клиент не наткнётся на выпуск без `latest*.yml`.
+   electron-builder загружает файлы в черновик с тем же тегом (черновик он принимает всегда).
 
 **Why:** If Mac and Windows both call `electron-builder --publish always` without an existing release, they race and create **two releases with the same tag** — Mac-only (`.dmg`, `latest-mac.yml`) and Windows-only (`setup.exe`, `latest.yml`). Updaters then fail with “not configured” or 404.
 
@@ -93,14 +97,19 @@ Example after a Windows-only fix:
 - Waits for **both** mac and windows (housekeeping only, ~10 s)
 - Deletes duplicate releases with the same tag (keeps the one with **most assets**)
 - Normalizes release title/notes
+- Публикует черновик как **prerelease** (`draft=false, prerelease=true, make_latest=false`) —
+  с этого момента выпуск в **пробном канале**. Основной канал (`latest`) не меняется.
 
-**Users do not wait for finalize or carry-forward.** OTA works once **their** platform job finishes (carry-forward adds the other OS metadata within ~1 min for single-OS dispatches).
+Пробный клиент получает выпуск после `finalize` (обе платформы готовы); основной — только после
+продвижения (`promote-desktop-jackdaw.yml`).
 
 ### Post-push GitHub history cleanup
 
 After a successful push-triggered desktop publish, `.github/workflows/cleanup-github-history.yml`
-keeps the newest non-empty GitHub Release and its tag. It removes older releases, their
-release tags, and completed historical Actions runs. The cleanup deliberately waits for a
+keeps the main-channel release (`latest`), **two previous** main-channel releases (rollback
+targets) and every release newer than `latest` (pilot, held, unfinished drafts). It removes older
+releases, their release tags, and completed historical Actions runs. **Never** reduce this to «keep
+only the newest release»: the newest one is a pilot, and `latest` would disappear. The cleanup deliberately waits for a
 successful publish, so a failed build cannot delete the last working OTA release. In-progress
 runs, the current publish run, and the cleanup run are preserved; tags that are not attached
 to a release are not changed.
@@ -111,12 +120,74 @@ to a release are not changed.
 
 GitHub CDN у части пользователей отдаёт 0,4–0,55 МБ/с, поэтому установщики дублируются на нашем VPS.
 
-- **CI:** jobs `mirror-mac` и `mirror-win` сразу после сборки платформы (манифест на GitHub появляется раньше конца выпуска, иначе клиент в этом окне уходит на GitHub), затем `mirror` после `finalize` (страховка и удаление старых версий), все `continue-on-error` → `app/build/ota-mirror-sync.sh`: выкладывает DMG, `setup.exe`, `latest*.yml`, blockmap через rsync на пользователя `jackdaw-updates` (ключ с `command="rrsync /opt/jackdaw-mail/updates",restrict`), оставляет 3 последние версии. Секреты `UPDATES_MIRROR_SSH_KEY`, `UPDATES_MIRROR_KNOWN_HOSTS`, переменные `UPDATES_MIRROR_HOST`, `UPDATES_MIRROR_USER`; не заданы — шаг пропускается.
+- **CI:** jobs `mirror-mac` и `mirror-win` сразу после сборки платформы, затем `mirror` после `finalize` (страховка и удаление старых версий), все `continue-on-error` → `app/build/ota-mirror-sync.sh` с `MIRROR_MANIFESTS=0`: выкладывает только DMG, `setup.exe` и blockmap пробного выпуска. **`latest*.yml` в корне зеркала — манифесты основного канала**: их выкладывает только `promote-desktop-jackdaw.yml` (job `mirror`) при продвижении или откате. Установщики идут с `--size-only` (уже выложенный файл не перекачивается); при удалении старых версий файлы, на которые ссылаются манифесты основного канала на зеркале, не удаляются. Выкладка через rsync на пользователя `jackdaw-updates` (ключ с `command="rrsync /opt/jackdaw-mail/updates",restrict`), оставляет 3 последние версии. Секреты `UPDATES_MIRROR_SSH_KEY`, `UPDATES_MIRROR_KNOWN_HOSTS`, переменные `UPDATES_MIRROR_HOST`, `UPDATES_MIRROR_USER`; не заданы — шаг пропускается.
 - **VPS:** Caddy `handle_path /updates/*` → `file_server` из `/opt/jackdaw-mail/updates` (без сжатия, Range). Конфигурация VPS хранится в приватном `jackdaw-servers`.
 - **Клиент:** `desktop/backend/updateMirror.ts`. macOS (`downloadMacDmgUpdate`) — DMG с зеркала, любая ошибка/обрыв 20 с без данных/неверная сумма → GitHub. Windows (`downloadWindowsUpdate`) — адреса файлов в провайдере electron-updater подменяются на зеркало, при ошибке или остановке прогресса 20 с — обычная загрузка с GitHub.
 - **Доверие:** манифесты и sha512 клиент берёт только у GitHub; зеркало отдаёт байты, которые сверяются с этой суммой (`verifyMacDmgChecksum`, проверка electron-updater). Подмена файла на зеркале ведёт к откату на GitHub, а не к установке.
 - `JACKDAW_UPDATE_MIRROR=off` отключает зеркало, другой https-адрес (или localhost) подменяет его для проверок.
 - Параллельная публикация по-прежнему только после `prepare`; `mirror` не часть критического пути.
+
+---
+
+## Каналы обновлений: пробный и основной
+
+Цель: новый выпуск сначала получает только приложение владельца; остальным он приходит после
+24 ч без проблем. Если владелец заметил проблему — выпуск останавливается, не дойдя до других.
+
+| Канал | Что на GitHub | Кто получает | Как клиент ищет |
+|-------|---------------|--------------|-----------------|
+| **пробный** | опубликованный prerelease новее `latest` | клиенты с «Получать пробные выпуски» | `allowPrerelease = true`: первый выпуск из `releases.atom` (черновиков там нет) |
+| **основной** | выпуск, отмеченный `latest` | все остальные | `allowPrerelease = false`: `/releases/latest` |
+
+`latest` меняет только `promote-desktop-jackdaw.yml` (логика — `.github/scripts/ota-channel.sh`,
+сценарии проверяются `.github/scripts/test-ota-channel/run.sh` в `check-desktop.yml`).
+
+### Клиент
+
+- Настройки → О программе → **«Получать пробные выпуски»** (по умолчанию выключено). Переключатель
+  виден в сборках с OTA-версией. После переключения сразу идёт новая проверка (если обновление не
+  скачивается и не ждёт установки).
+- Выбор хранится в `update-channel.json` в каталоге данных (`userData`, на Mac
+  `~/Library/Application Support/Jackdaw/update-channel.json`): `{"channel": "pilot"}`. Файл, а не
+  настройки интерфейса: первая проверка идёт из главного процесса до загрузки окна. Повреждённый
+  файл — основной канал. Владельцу канал включается переключателем (или этим файлом).
+- `desktop/backend/updateChannel.ts` (`shouldAllowPrerelease`), `backend.ts` (`applyUpdateChannel`
+  перед каждой проверкой, `getUpdateChannel` / `setUpdateChannel` для окна), `About.svelte`.
+- Старые `0.9.x-dev.*` по-прежнему с `allowPrerelease` (видят и пробные) — таких установок нет.
+- Пробный клиент после продвижения: тот же выпуск теперь `latest`, пробный клиент уже на нём;
+  следующий пробный выпуск он получит как обычно. Выключить канал на пробной версии — следующее
+  обновление придёт, когда основной канал её догонит (понижения версии нет).
+
+### Продвижение (`promote-desktop-jackdaw.yml`)
+
+- **Автоматически, каждый час** (`schedule`, `auto`): самый новый пробный выпуск, которому ≥ 24 ч
+  (переменная репозитория `PILOT_SOAK_HOURS`), с обоими манифестами, **новее последнего
+  остановленного**. Выпуски не новее остановленного сами не продвигаются; более новый (исправление)
+  продвинется после своей выдержки.
+- **Вручную** (Actions → «Jackdaw Mail Promote Desktop Update» → Run workflow):
+  - `promote` — сразу, без выдержки (срочное исправление). Без тега — самый новый пробный, если он не
+    остановлен; с тегом — этот, даже остановленный. Версия ниже основного канала не принимается.
+  - `hold` — остановить (метка `<!-- jackdaw:hold -->` в описании выпуска); без тега — самый новый
+    пробный. `resume` — снять остановку.
+  - `rollback` — см. ниже. `status` — что в каналах.
+- После `promote`/`rollback` job `mirror` выкладывает на зеркало манифесты основного канала.
+
+```bash
+gh workflow run promote-desktop-jackdaw.yml -f action=hold
+gh workflow run promote-desktop-jackdaw.yml -f action=promote -f tag=v0.10.N
+bash .github/scripts/ota-channel.sh status   # локально, нужен gh с доступом к репозиторию
+```
+
+### Срочный откат
+
+`rollback` (без тега — прошлый выпуск основного канала; очистка истории хранит два прошлых):
+
+1. прошлый выпуск снова `latest` — новые обновления основного канала прекращаются сразу;
+2. плохой выпуск становится остановленным prerelease (сам не вернётся);
+3. зеркало получает манифесты прошлого выпуска.
+
+Кто уже установил плохой выпуск, назад не откатится (electron-updater не понижает версию). Для них:
+`git revert` → push в `main` → `promote` нового выпуска с тегом сразу после сборки.
 
 ---
 
@@ -245,6 +316,9 @@ Or push to `main` touching monitored paths.
 | Infinite “Checking…” on About tab | Remount / race on `checkForUpdate(true)` | Poll status; don’t force new check while `checking` |
 | Windows: “Automatic updates are not configured” | Portable/dir build or an installer without `app-update.yml` | Install the latest `setup.exe` from GitHub Releases, or use **Download latest installer** on the About page |
 | `422` / duplicate tag on publish | Tag missing before publish | `prepare` creates tag + release before mac/win |
+| Основной канал не получает новый выпуск | Так и задумано: он в пробном канале 24 ч; или остановлен; или в нём нет манифеста одной платформы | `promote-desktop-jackdaw.yml` → `status`; срочно — `promote` |
+| Пробный клиент не видит новый выпуск | `finalize` ещё не опубликовал черновик, или переключатель выключен (`update-channel.json`) | Дождаться `finalize`; проверить Настройки → О программе |
+| `/releases/latest` 404, у всех ошибка обновления | Кто-то вручную снял `latest` или удалил выпуск основного канала | `promote` нужного тега (или `rollback`) |
 | `422 already_exists` on publish although `prepare` created the release | GitHub sometimes returns `200` with an empty list for `GET /releases`; electron-builder then tries to create the release | The mac/windows publish steps retry up to 4 times; already uploaded files are overwritten |
 
 ---
@@ -254,6 +328,8 @@ Or push to `main` touching monitored paths.
 - Call `autoUpdater.setFeedURL()` — use bundled `app-update.yml` + `addAuthHeader`
 - Inject token via `@rollup/plugin-replace` in backend bundle — breaks esbuild
 - Run Mac and Windows publish **without** `prepare` creating the GitHub release first
+- Mark a fresh build `latest` in `finalize` (bypasses the pilot channel) or clean history down to the newest release
+- Upload `latest*.yml` to the mirror root from the publish workflow (they are main-channel manifests)
 - Use `quitAndInstall` on Mac for ad-hoc (`identity=-`) builds
 - Commit `desktop/build/gh-update-token.txt` or real tokens
 
@@ -281,5 +357,5 @@ Do not poll every few minutes — wastes GitHub API and user bandwidth. 4 h is a
 
 ## Релизы без `-dev` (с 0.10)
 
-- Версия CI: `0.10.<run_number>`; релиз в `prepare` создаётся prerelease (чтобы не стать latest до загрузки файлов), в `finalize` PATCH `prerelease=false, make_latest=true`.
-- Новые клиенты видят только latest; старые `-dev` клиенты (allowPrerelease) тоже видят `0.10.N` как более новую.
+- Версия CI: `0.10.<run_number>`; релиз в `prepare` создаётся черновиком prerelease, в `finalize` публикуется как prerelease (пробный канал), в `latest` его переводит `promote-desktop-jackdaw.yml`.
+- Клиенты основного канала видят только latest; пробные и старые `-dev` клиенты (allowPrerelease) видят и prerelease.

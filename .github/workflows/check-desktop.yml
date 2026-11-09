@@ -9,6 +9,8 @@ on:
       - "desktop/**"
       - ".github/workflows/check-desktop.yml"
       - ".github/workflows/publish-desktop-jackdaw.yml"
+      - ".github/workflows/promote-desktop-jackdaw.yml"
+      - ".github/scripts/**"
 
 permissions:
   contents: read
@@ -44,6 +46,8 @@ jobs:
       - name: Тестовая конфигурация OAuth
         run: cp OAuth2Secrets.local.example.ts OAuth2Secrets.user.ts
         working-directory: app/logic/Auth
+      - name: Каналы обновлений (пробный и основной)
+        run: bash .github/scripts/test-ota-channel/run.sh
       - name: Регрессионные и интеграционные тесты
         run: npm run test:regression
         working-directory: app
