@@ -2,11 +2,12 @@
   {#if !$message.loadedBody}
     {#key loadAttempt}
       {#await loadMessageBody()}
-        {#await sleep(1)}
-          <hbox></hbox>
-        {:then}
-          {$t`Loading...`}
-        {/await}
+        <!-- Появляется с задержкой CSS, а не таймером: таймер перезапускался
+          при каждом изменении письма, и вместо загрузки была пустая область -->
+        <vbox class="body-loading" role="status" aria-busy="true">
+          <Spinner size="24px" />
+          <span>{$t`Loading...`}</span>
+        </vbox>
       {:catch ex}
         <ErrorMessage {ex} onRetry={retryLoad} />
       {/await}
@@ -42,7 +43,7 @@
   import HTMLDisplay from "./HTMLDisplay.svelte";
   import PlaintextDisplay from "./PlaintextDisplay.svelte";
   import ErrorMessage from "../../Shared/ErrorMessageInline.svelte";
-  import { sleep } from "../../../logic/util/util";
+  import Spinner from "../../Shared/Spinner.svelte";
   import { t } from "../../../l10n/l10n";
   import { getMessageTranslation } from "./messageTranslation";
   import {
@@ -119,5 +120,22 @@
     overflow-wrap: anywhere;
     background-color: var(--message-viewer-bg, var(--main-bg));
     color: var(--message-viewer-fg, var(--main-fg));
+  }
+  .body-loading {
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px;
+    opacity: 0;
+    animation: body-loading-appear 200ms ease-out 400ms forwards;
+  }
+  @keyframes body-loading-appear {
+    to {
+      opacity: 0.75;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .body-loading {
+      animation-duration: 1ms;
+    }
   }
 </style>
