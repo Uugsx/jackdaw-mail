@@ -6,7 +6,7 @@ import { SystemNotification, NotificationKinds } from "../Shared/SystemNotificat
 import { getComputerOn } from "../../logic/util/backend-wrapper";
 import { getLocalStorage } from "../Util/LocalStorage";
 import { catchErrors, backgroundError } from "../Util/error";
-import { k1HourMS } from "../Util/date";
+import { k1HourMS, getTimeString } from "../Util/date";
 import CalendarIcon from '../asset/icon/appBar/calendar.svg?raw';
 import { Debounce } from "../../logic/util/flow/Debounce";
 import { sleep } from "../../logic/util/util";
@@ -77,13 +77,26 @@ async function showReminder() {
 
   const kinds = new NotificationKinds(getLocalStorage("notifications.calendar", ["popup", "sound"]).value);
   for (let event of dueEvents) {
-    let notification = new SystemNotification(kinds, event.title, event.descriptionText, event.id, "calendar");
+    // Тело письма-пересылки («Original Appointment…») не показываем: важно, когда и где встреча
+    let notification = new SystemNotification(kinds, event.title, event.location || event.onlineMeetingURL || "", event.id, "calendar");
+    notification.subtitle = reminderSubtitle(event, now);
     notification.icon = CalendarIcon;
     // Бейдж Dock показывает непрочитанную почту; напоминание оставляло на нём «1»
     notification.updatesTaskbarBadge = false;
     notification.onClick = () => openEventInApp(event);
     await notification.show();
   }
+}
+
+/** @returns e.g. "Через 15 мин · 14:00", "Началась · 14:00" */
+function reminderSubtitle(event: Event, now: number): string {
+  let start = event.startTime;
+  if (!start) {
+    return "";
+  }
+  let minutes = Math.round((start.getTime() - now) / 60000);
+  let when = minutes > 0 ? `Через ${minutes} мин` : "Уже началась";
+  return `${when} · ${getTimeString(start)}`;
 }
 
 async function openEventInApp(event: Event) {
