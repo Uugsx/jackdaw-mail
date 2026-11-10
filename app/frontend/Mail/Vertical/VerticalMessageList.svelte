@@ -10,7 +10,7 @@
     <AlertIncidentBar folder={alertBarFolder} incidentMode={!!incidentMode} summary={$incidentSummary} {messages} />
   {/if}
   {#if tableColumns}
-    <MailListHeader columns={tableColumns} sort={$mailListSort} {folder} onSort={sortByColumn} />
+    <MailListHeader columns={tableColumns} sort={listSort} {folder} onSort={sortByColumn} />
   {/if}
   {#if $folderSyncing && $listRows.isEmpty}
     <vbox class="empty-list">
@@ -65,10 +65,10 @@
         </div>
       {:else if item.kind == "message" && item.incidentID}
         <div class="incident-member">
-          <VerticalMessageListItem message={item.message} on:click />
+          <VerticalMessageListItem message={item.message} {showFolder} on:click />
         </div>
       {:else if item.kind == "message"}
-        <VerticalMessageListItem message={item.message} columns={tableColumns} on:click />
+        <VerticalMessageListItem message={item.message} columns={tableColumns} {showFolder} on:click />
       {/if}
     </svelte:fragment>
   </FastList>
@@ -97,6 +97,7 @@
     normalizeMailListLayout,
     resolveMailListLayout,
     visibleMailListColumns,
+    isMailListColumnVisible,
     type MailListSortColumn,
   } from "../mailListColumns";
   import { isMobile } from "../../../logic/build";
@@ -140,6 +141,8 @@
   /** From FastList. out only */
   export let isAtTop: boolean = false;
   export let emptyDueToFilter = false;
+  /** Результаты поиска по всему ящику: у каждого письма видна его папка */
+  export let showFolder = false;
 
   let selectedRow: MailListRow | null = null;
   let selectedRows = new ArrayColl<MailListRow>();
@@ -197,7 +200,12 @@
   // До setSource: папка алертов сразу строится карточками, без лишней сборки обычного списка
   $: rowsModel.setIncidentMode(incidentMode);
   $: activateMailListSort(folder);
-  $: rowsModel.setSource(messages, $mailListSort);
+  /* Сортировка по папке, выбранная в результатах поиска, в обычной папке без
+   * столбца «Папка» ничего не значит: там письма снова идут по дате с группами по дням. */
+  $: columnPrefs = normalizeMailListColumnPrefs($mailListColumnsSetting.value);
+  $: listSort = ($mailListSort == "folder" || $mailListSort == "folder-desc") &&
+    !isMailListColumnVisible(columnPrefs, "folder", showFolder) ? "date-desc" : $mailListSort;
+  $: rowsModel.setSource(messages, listSort);
   // Прочитанность писем меняет счётчики карточек, а не состав папки
   $: scheduleIncidentRefresh(!!incidentMode, $folder?.countUnread);
   $: listVisibleMessages.set(messages);
@@ -211,16 +219,15 @@
   $: syncSelectedMessages($selectedRows, $listRows);
   $: syncRowsFromMessages(selectedMessages, $listRows);
   $: observeSelectedMessages(selectedMessages);
-  $: scrollSelectedMessageIntoView($listRows, selectedMessage, $mailListSort);
-  $: columnPrefs = normalizeMailListColumnPrefs($mailListColumnsSetting.value);
-  $: gridTemplate = mailListGridTemplate(columnPrefs, listWidth);
+  $: scrollSelectedMessageIntoView($listRows, selectedMessage, listSort);
+  $: gridTemplate = mailListGridTemplate(columnPrefs, listWidth, showFolder);
   $: dividers = normalizeMailListDividers($mailListDividersSetting.value);
   $: listLayout = resolveMailListLayout(normalizeMailListLayout($mailListLayoutSetting.value), listWidth,
-    { mobile: isMobile, incidents: !!incidentMode, prefs: columnPrefs });
-  $: tableColumns = listLayout == "table" ? visibleMailListColumns(columnPrefs) : null;
+    { mobile: isMobile, incidents: !!incidentMode, prefs: columnPrefs, search: showFolder });
+  $: tableColumns = listLayout == "table" ? visibleMailListColumns(columnPrefs, showFolder) : null;
 
   function sortByColumn(column: MailListSortColumn) {
-    setMailListSort(folder, nextMailListSort($mailListSort, column));
+    setMailListSort(folder, nextMailListSort(listSort, column));
   }
 
   function incidentModeFor(settingsValue: unknown, quietMinutes: unknown, patterns: unknown): MailListIncidentMode {
@@ -411,7 +418,7 @@
 
   function onListInit(ev: CustomEvent<{ scrollToIndex: (index: number) => void, scrollToItem: (item: MailListRow) => void }>) {
     scrollToMailListItem = ev.detail.scrollToItem;
-    scrollSelectedMessageIntoView(listRows, selectedMessage, $mailListSort);
+    scrollSelectedMessageIntoView(listRows, selectedMessage, listSort);
   }
 </script>
 

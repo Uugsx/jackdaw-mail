@@ -10,6 +10,7 @@ export type MailListColumnId =
   | "from"
   | "subject"
   | "received"
+  | "folder"
   | "size"
   | "categories"
   | "flag";
@@ -32,6 +33,11 @@ export interface MailListColumnDef {
   /** Нельзя скрыть: иначе строке нечего показать */
   required: boolean;
   sortable: boolean;
+  /**
+   * Необязательный столбец: в обычной папке скрыт, пока его не включат,
+   * в результатах поиска виден, пока его не выключат (как «В папке» в Outlook).
+   */
+  optional: boolean;
 }
 
 export interface MailListColumnPrefs {
@@ -39,6 +45,10 @@ export interface MailListColumnPrefs {
   hidden: MailListColumnId[];
   /** Ширина в px; нет значения — ширина по умолчанию */
   widths: Partial<Record<MailListColumnId, number>>;
+  /** Необязательные столбцы, включённые в обычной папке */
+  shown: MailListColumnId[];
+  /** Необязательные столбцы, выключенные в результатах поиска */
+  hiddenInSearch: MailListColumnId[];
 }
 
 const kIconColumnWidth = 24;
@@ -55,13 +65,13 @@ const kScrollbarWidth = 8;
 
 function textColumn(id: MailListColumnId, label: () => string, defaultWidth: number,
   minWidth: number, sortable = true): MailListColumnDef {
-  return { id, label, icon: false, defaultWidth, minWidth, flexible: false, required: false, sortable };
+  return { id, label, icon: false, defaultWidth, minWidth, flexible: false, required: false, sortable, optional: false };
 }
 
 function iconColumn(id: MailListColumnId, label: () => string, sortable = true): MailListColumnDef {
   return {
     id, label, icon: true, defaultWidth: kIconColumnWidth, minWidth: kIconColumnWidth,
-    flexible: false, required: false, sortable,
+    flexible: false, required: false, sortable, optional: false,
   };
 }
 
@@ -75,6 +85,7 @@ export const mailListColumnDefs: Readonly<Record<MailListColumnId, MailListColum
     flexible: true,
     required: true,
   },
+  folder: { ...textColumn("folder", () => gt`Folder *=> Message list column: folder of the message`, 140, 60), optional: true },
   received: textColumn("received", () => gt`Received`, 140, 70),
   size: textColumn("size", () => gt`Size`, 84, 50),
   categories: textColumn("categories", () => gt`Categories`, 180, 60),
@@ -82,13 +93,13 @@ export const mailListColumnDefs: Readonly<Record<MailListColumnId, MailListColum
 };
 
 export const defaultMailListColumnOrder: readonly MailListColumnId[] = [
-  "importance", "status", "attachment", "from", "subject", "received", "size", "categories", "flag",
+  "importance", "status", "attachment", "from", "subject", "folder", "received", "size", "categories", "flag",
 ];
 
 const allColumnIds = new Set<MailListColumnId>(defaultMailListColumnOrder);
 
 export function defaultMailListColumnPrefs(): MailListColumnPrefs {
-  return { order: [...defaultMailListColumnOrder], hidden: [], widths: {} };
+  return { order: [...defaultMailListColumnOrder], hidden: [], widths: {}, shown: [], hiddenInSearch: [] };
 }
 
 export const mailListColumnsSetting = getLocalStorage<MailListColumnPrefs>(
@@ -135,7 +146,11 @@ export function normalizeMailListColumnPrefs(value: unknown): MailListColumnPref
   }
   let hidden = (Array.isArray(raw.hidden) ? raw.hidden : [])
     .filter((id, index, list): id is MailListColumnId =>
-      isColumnId(id) && !mailListColumnDefs[id].required && list.indexOf(id) == index);
+      isColumnId(id) && !mailListColumnDefs[id].required && !mailListColumnDefs[id].optional &&
+      list.indexOf(id) == index);
+  let optionalList = (value: unknown) => (Array.isArray(value) ? value : [])
+    .filter((id, index, list): id is MailListColumnId =>
+      isColumnId(id) && mailListColumnDefs[id].optional && list.indexOf(id) == index);
   let widths: Partial<Record<MailListColumnId, number>> = {};
   if (raw.widths && typeof raw.widths == "object" && !Array.isArray(raw.widths)) {
     for (let [id, width] of Object.entries(raw.widths)) {
@@ -145,11 +160,22 @@ export function normalizeMailListColumnPrefs(value: unknown): MailListColumnPref
       }
     }
   }
-  return { order, hidden, widths };
+  return { order, hidden, widths, shown: optionalList(raw.shown), hiddenInSearch: optionalList(raw.hiddenInSearch) };
 }
 
-export function visibleMailListColumns(prefs: MailListColumnPrefs): MailListColumnId[] {
-  return prefs.order.filter(id => !prefs.hidden.includes(id));
+/** Виден ли столбец; `search` — список показывает результаты поиска */
+export function isMailListColumnVisible(prefs: MailListColumnPrefs, id: MailListColumnId,
+  search = false): boolean {
+  if (mailListColumnDefs[id].optional) {
+    return search
+      ? !(prefs.hiddenInSearch ?? []).includes(id)
+      : (prefs.shown ?? []).includes(id);
+  }
+  return !prefs.hidden.includes(id);
+}
+
+export function visibleMailListColumns(prefs: MailListColumnPrefs, search = false): MailListColumnId[] {
+  return prefs.order.filter(id => isMailListColumnVisible(prefs, id, search));
 }
 
 export function mailListColumnWidth(prefs: MailListColumnPrefs, id: MailListColumnId): number {
@@ -174,8 +200,8 @@ function reservedRowWidth(columnCount: number): number {
  * а остальные текстовые столбцы сжимаются пропорционально до своего минимума;
  * текст в ячейке обрезается многоточием и виден целиком в подсказке.
  */
-export function mailListGridTemplate(prefs: MailListColumnPrefs, listWidth = 0): string {
-  let columns = visibleMailListColumns(prefs);
+export function mailListGridTemplate(prefs: MailListColumnPrefs, listWidth = 0, search = false): string {
+  let columns = visibleMailListColumns(prefs, search);
   let fixedSubject = subjectHasFixedWidth(prefs, columns);
   // Пустая дорожка справа забирает остаток, когда тема не растягивается
   let filler = fixedSubject ? " minmax(0, 1fr)" : "";
@@ -231,9 +257,17 @@ export function mailListGridTemplate(prefs: MailListColumnPrefs, listWidth = 0):
 }
 
 export function setMailListColumnVisible(prefs: MailListColumnPrefs, id: MailListColumnId,
-  visible: boolean): MailListColumnPrefs {
+  visible: boolean, search = false): MailListColumnPrefs {
   if (mailListColumnDefs[id].required) {
     return prefs;
+  }
+  if (mailListColumnDefs[id].optional) {
+    let key = search ? "hiddenInSearch" : "shown";
+    let list = (prefs[key] ?? []).filter(listedID => listedID != id);
+    if (visible != search) {
+      list.push(id);
+    }
+    return { ...prefs, [key]: list };
   }
   let hidden = prefs.hidden.filter(hiddenID => hiddenID != id);
   if (!visible) {
@@ -291,8 +325,8 @@ export function resetMailListColumns(): void {
 }
 
 /** Помещаются ли все видимые столбцы в минимальную ширину */
-export function mailListTableFits(prefs: MailListColumnPrefs, listWidth: number): boolean {
-  let columns = visibleMailListColumns(prefs);
+export function mailListTableFits(prefs: MailListColumnPrefs, listWidth: number, search = false): boolean {
+  let columns = visibleMailListColumns(prefs, search);
   let fixed = reservedRowWidth(columns.length);
   let subjectMin = 0;
   let fixedSubject = subjectHasFixedWidth(prefs, columns);
@@ -313,12 +347,12 @@ export function mailListTableFits(prefs: MailListColumnPrefs, listWidth: number)
  * даже сжатыми, показываем карточки: обрезанный край таблицы скрыл бы столбцы.
  */
 export function resolveMailListLayout(layout: MailListLayout, listWidth: number,
-  options: { mobile?: boolean, incidents?: boolean, prefs?: MailListColumnPrefs } = {}): "table" | "cards" {
+  options: { mobile?: boolean, incidents?: boolean, prefs?: MailListColumnPrefs, search?: boolean } = {}): "table" | "cards" {
   // Карточки инцидентов и мобильный вид рассчитаны на двухстрочные строки
   if (options.mobile || options.incidents || layout == "cards") {
     return "cards";
   }
-  if (!mailListTableFits(options.prefs ?? defaultMailListColumnPrefs(), listWidth)) {
+  if (!mailListTableFits(options.prefs ?? defaultMailListColumnPrefs(), listWidth, options.search)) {
     return "cards";
   }
   if (layout == "table") {
@@ -331,6 +365,7 @@ type ColumnSorts = { asc: MailListSort, desc: MailListSort, first: MailListSortD
 
 const columnSorts: Record<MailListSortColumn, ColumnSorts> = {
   received: { asc: "date-asc", desc: "date-desc", first: "desc" },
+  folder: { asc: "folder", desc: "folder-desc", first: "asc" },
   from: { asc: "sender", desc: "sender-desc", first: "asc" },
   subject: { asc: "subject", desc: "subject-desc", first: "asc" },
   size: { asc: "size-asc", desc: "size-desc", first: "desc" },
@@ -382,6 +417,8 @@ export function mailListSortLabel(sort: MailListSort): string {
     case "size-asc": return gt`Smallest first`;
     case "categories": return gt`By category`;
     case "categories-desc": return gt`By category, Z to A`;
+    case "folder": return gt`By folder`;
+    case "folder-desc": return gt`By folder, Z to A`;
     case "flag-desc": return gt`Flagged first`;
     case "flag-asc": return gt`Unflagged first`;
     case "importance-desc": return gt`Important first`;

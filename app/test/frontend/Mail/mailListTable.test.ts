@@ -83,6 +83,34 @@ describe("строка табличного вида", () => {
     expect(target.querySelector(".top-row")).toBeNull();
   });
 
+  test("столбец «Папка»: имя папки, полный путь в подсказке", async () => {
+    let account = new MailAccountClass();
+    let parent = new FolderClass(account);
+    parent.name = "Входящие";
+    let folder = new FolderClass(account);
+    folder.name = "DPD";
+    folder.parent = parent;
+    let message = new EMailClass(folder);
+    message.subject = "Письмо из подпапки";
+    message.received = new Date(2026, 9, 9, 12, 0);
+    let target = mountInto(VerticalMessageListItem, { message, columns: ["subject", "folder"] });
+    await tick();
+    let cell = target.querySelector(".t-folder");
+    expect(cell?.textContent).toBe("DPD");
+    expect(cell?.getAttribute("title")).toBe("Входящие › DPD");
+  });
+
+  test("карточка в результатах поиска подписывает папку, без поиска — нет", async () => {
+    let message = createMessage();
+    message.folder.name = "Архив";
+    let target = mountInto(VerticalMessageListItem, { message, showFolder: true });
+    await tick();
+    expect(target.querySelector(".t-folder-label")?.textContent?.trim()).toBe("Архив");
+    let plain = mountInto(VerticalMessageListItem, { message: createMessage() });
+    await tick();
+    expect(plain.querySelector(".t-folder-label")).toBeNull();
+  });
+
   test("без столбцов остаётся двухстрочная карточка", async () => {
     let target = mountInto(VerticalMessageListItem, { message: createMessage() });
     await tick();

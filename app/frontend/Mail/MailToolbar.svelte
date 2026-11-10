@@ -77,7 +77,7 @@
   import type { SearchEMail } from "../../logic/Mail/Store/SearchEMail";
   import { newSearchEMail } from "../../logic/Mail/Store/setStorage";
   import SearchField from "../Shared/SearchField.svelte";
-  import { mailSearchInProgress, mailServerSearch } from "./Search/searchProgress";
+  import { mailSearchInProgress, mailSearchResultsShown, mailServerSearch } from "./Search/searchProgress";
   import CreateItemMenu from "./CreateItemMenu.svelte";
   import QuickFilterBar from "./LeftPane/QuickFilterBar.svelte";
   import ClassicRibbon from "./3pane/ClassicRibbon.svelte";
@@ -169,6 +169,8 @@
     : $globalSearchTerm
       ? globalSearchResults
       : filterSearchMessages;
+
+  $: $mailSearchResultsShown = usingAdvancedSearch || !!$globalSearchTerm;
 
   $: $globalSearchTerm, onGlobalSearchTermChanged();
   function onGlobalSearchTermChanged() {
@@ -339,6 +341,7 @@
     runGlobalSearchDebounced.cancel();
     refreshAdvancedSearchDebounced.cancel();
     $mailSearchInProgress = false;
+    $mailSearchResultsShown = false;
   });
 </script>
 

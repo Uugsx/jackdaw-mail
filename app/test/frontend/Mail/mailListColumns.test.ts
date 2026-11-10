@@ -213,3 +213,41 @@ test("размер письма", () => {
   expect(mailSizeLabel(182 * 1024)).toMatch(/^182 /);
   expect(mailSizeLabel(1024 * 1024)).toMatch(/^1 /);
 });
+
+describe("столбец «Папка» для результатов поиска", () => {
+  test("в обычной папке скрыт, в результатах поиска виден", () => {
+    let prefs = defaultMailListColumnPrefs();
+    expect(visibleMailListColumns(prefs)).not.toContain("folder");
+    let search = visibleMailListColumns(prefs, true);
+    expect(search).toContain("folder");
+    expect(search.indexOf("folder")).toBe(search.indexOf("subject") + 1);
+    // Старые настройки без нового столбца ведут себя так же
+    let old = normalizeMailListColumnPrefs({ order: ["from", "subject", "received"], hidden: ["size"] });
+    expect(old.hidden).toEqual(["size"]);
+    expect(visibleMailListColumns(old)).not.toContain("folder");
+    expect(visibleMailListColumns(old, true)).toContain("folder");
+  });
+
+  test("включается в обычной папке и выключается в поиске независимо", () => {
+    let prefs = setMailListColumnVisible(defaultMailListColumnPrefs(), "folder", true);
+    expect(visibleMailListColumns(prefs)).toContain("folder");
+    prefs = setMailListColumnVisible(prefs, "folder", false, true);
+    expect(visibleMailListColumns(prefs, true)).not.toContain("folder");
+    expect(visibleMailListColumns(prefs)).toContain("folder");
+    prefs = normalizeMailListColumnPrefs(JSON.parse(JSON.stringify(prefs)));
+    expect(prefs.shown).toEqual(["folder"]);
+    expect(prefs.hiddenInSearch).toEqual(["folder"]);
+    // Обычный список скрытых столбцов не принимает необязательный столбец
+    expect(normalizeMailListColumnPrefs({ hidden: ["folder"], shown: ["size", "folder"] }))
+      .toMatchObject({ hidden: [], shown: ["folder"] });
+  });
+
+  test("сетка и сортировка", () => {
+    let prefs = defaultMailListColumnPrefs();
+    expect(mailListGridTemplate(prefs, 1600, true).split(" ").length)
+      .toBe(mailListGridTemplate(prefs, 1600).split(" ").length + 1);
+    expect(nextMailListSort("date-desc", "folder")).toBe("folder");
+    expect(nextMailListSort("folder", "folder")).toBe("folder-desc");
+    expect(mailListSortColumn("folder-desc")).toEqual({ column: "folder", direction: "desc" });
+  });
+});

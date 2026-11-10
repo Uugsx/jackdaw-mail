@@ -22,3 +22,10 @@ export interface MailServerSearchStatus {
 
 /** null — сервер в текущем поиске не участвует */
 export const mailServerSearch = writable<MailServerSearchStatus | null>(null);
+
+/**
+ * Список показывает результаты поиска по всему ящику (строка поиска или
+ * расширенный поиск), а не одну папку: у писем нужна подпись папки.
+ * Быстрые фильтры ищут в текущей папке и сюда не относятся.
+ */
+export const mailSearchResultsShown = writable(false);

@@ -301,6 +301,9 @@
       const { testDataOn } = await import("../../logic/testData");
       const { unlockProForDemo } = await import("../../logic/Billing/ProEntitlement");
       unlockProForDemo();
+      const { useMemoryMailSearch } = await import("../../logic/Mail/Store/setStorage");
+      const { MemorySearchEMail } = await import("../../logic/Mail/Store/MemorySearchEMail");
+      useMemoryMailSearch(() => new MemorySearchEMail());
       const { isShowcaseRequested, showcaseDataOn } = await import("../../logic/showcaseData");
       if (isShowcaseRequested()) {
         // Витрина для снимков экрана: правдоподобные данные на языке интерфейса
