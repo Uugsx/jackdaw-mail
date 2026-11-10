@@ -26,6 +26,10 @@ rtk npm run build
 дополнительно проверяют на копии реальной базы — см.
 [mail-db-integrity.md](../mail-db-integrity.md).
 
+Открытие письма Exchange без текста проверяют `priorityQueue.test.ts` и
+`openMessagePriority.test.ts`: запрос текста идёт вне очереди синхронизации
+(приоритетная полоса в `Semaphore`/`Throttle`/`callOWA`).
+
 Эти проверки выполняются в `check-desktop.yml` для pull request и перед
 созданием релиза в `publish-desktop-jackdaw.yml`. После их успешного завершения
 сохраняется порядок `prepare` → параллельные сборки macOS и Windows.
