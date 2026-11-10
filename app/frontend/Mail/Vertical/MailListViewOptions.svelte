@@ -40,7 +40,7 @@
     closeOnClick={false}
     onClick={() => toggleColumn(id)}>
     <svelte:fragment slot="icon">
-      {#if !prefs.hidden.includes(id)}
+      {#if isMailListColumnVisible(prefs, id, $mailSearchResultsShown)}
         <CheckIcon size="16px" aria-hidden="true" />
       {:else}
         <span class="icon-space" />
@@ -66,10 +66,12 @@
     normalizeMailListLayout,
     resetMailListColumns,
     setMailListColumnVisible,
+    isMailListColumnVisible,
     updateMailListColumns,
     type MailListColumnId,
     type MailListLayout,
   } from "../mailListColumns";
+  import { mailSearchResultsShown } from "../Search/searchProgress";
   import { focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
   import { gt, t } from "../../../l10n/l10n";
 
@@ -94,7 +96,9 @@
   }
 
   function toggleColumn(id: MailListColumnId) {
-    updateMailListColumns(current => setMailListColumnVisible(current, id, current.hidden.includes(id)));
+    let search = $mailSearchResultsShown;
+    updateMailListColumns(current =>
+      setMailListColumnVisible(current, id, !isMailListColumnVisible(current, id, search), search));
   }
 </script>
 

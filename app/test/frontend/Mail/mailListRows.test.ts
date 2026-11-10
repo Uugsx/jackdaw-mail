@@ -433,3 +433,26 @@ describe("сортировка по столбцам таблицы", () => {
     model.dispose();
   });
 });
+
+describe("сортировка по столбцу «Папка»", () => {
+  function inFolder(subject: string, sent: Date, folderName: string | null): EMail {
+    let mail = fakeMail(subject, sent) as any;
+    mail.folder = folderName == null ? null : { name: folderName, parent: null, account: { name: "Работа" } };
+    return mail as EMail;
+  }
+
+  test("по имени папки, внутри папки — новые сверху; без папки — в конце", () => {
+    let messages = new ArrayColl<EMail>([
+      inFolder("Входящее старое", new Date(2026, 0, 1), "Входящие"),
+      inFolder("Архивное", new Date(2026, 0, 2), "Архив"),
+      inFolder("Без папки", new Date(2026, 0, 5), null),
+      inFolder("Входящее новое", new Date(2026, 0, 3), "Входящие"),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "folder");
+    expect(subjects(model.rows)).toEqual(["Архивное", "Входящее новое", "Входящее старое", "Без папки"]);
+    model.setSource(messages, "folder-desc");
+    expect(subjects(model.rows)).toEqual(["Входящее новое", "Входящее старое", "Архивное", "Без папки"]);
+    model.dispose();
+  });
+});

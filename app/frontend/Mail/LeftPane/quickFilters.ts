@@ -24,6 +24,7 @@ export type MailListSort =
   | "subject" | "subject-desc"
   | "size-desc" | "size-asc"
   | "categories" | "categories-desc"
+  | "folder" | "folder-desc"
   | "flag-desc" | "flag-asc"
   | "importance-desc" | "importance-asc"
   | "attachment-desc" | "attachment-asc";
@@ -34,6 +35,7 @@ export const allMailListSorts: readonly MailListSort[] = [
   "sender-desc", "subject-desc", "size-desc", "size-asc",
   "categories", "categories-desc", "flag-desc", "flag-asc",
   "importance-desc", "importance-asc", "attachment-desc", "attachment-asc",
+  "folder", "folder-desc",
 ];
 
 export interface QuickFilterDef {

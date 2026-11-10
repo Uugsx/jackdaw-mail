@@ -6,6 +6,7 @@ import { gt } from "../../l10n/l10n";
 import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
 import { writable } from "svelte/store";
 import { messagesRepresentSameMail } from "./mailReadActions";
+import { mailFolderSortKey } from "./mailFolderLabel";
 import { hasPinnedMessages, isMessagePinned, pinnedMessagesChanged } from "../../logic/Mail/Pin/PinnedMessages";
 import {
   buildAlertIncidents,
@@ -347,7 +348,7 @@ type MailSortItem = {
   timestamp: number;
   subjectKey: string;
   senderKey: string;
-  /** Значение столбца для сортировки по размеру, категориям или признаку (1/0) */
+  /** Значение столбца для сортировки по размеру, категориям, папке или признаку (1/0) */
   columnKey: number | string;
 };
 
@@ -391,11 +392,14 @@ function columnKeyFor(message: EMail, sort: MailListSort): number | string {
   if (sort == "categories" || sort == "categories-desc") {
     return mailCategoriesKey(message);
   }
+  if (sort == "folder" || sort == "folder-desc") {
+    return mailFolderSortKey(message.folder);
+  }
   let flag = flagSortKeys[sort];
   return flag ? (flag(message) ? 1 : 0) : 0;
 }
 
-/** Письма без категорий — в конце при любом направлении, как пустые значения в Outlook */
+/** Письма без категорий (или без папки) — в конце при любом направлении, как пустые значения в Outlook */
 function compareCategories(a: MailSortItem, b: MailSortItem, direction: 1 | -1): number {
   let aKey = a.columnKey as string;
   let bKey = b.columnKey as string;
@@ -427,6 +431,10 @@ function sortComparator(sort: MailListSort): (a: MailSortItem, b: MailSortItem) 
   case "categories":
     return (a, b) => compareCategories(a, b, 1) || b.timestamp - a.timestamp;
   case "categories-desc":
+    return (a, b) => compareCategories(a, b, -1) || b.timestamp - a.timestamp;
+  case "folder":
+    return (a, b) => compareCategories(a, b, 1) || b.timestamp - a.timestamp;
+  case "folder-desc":
     return (a, b) => compareCategories(a, b, -1) || b.timestamp - a.timestamp;
   case "size-asc":
   case "flag-asc":

@@ -10,6 +10,12 @@
       {#key $message.dbID ?? $message.messageID}
         <RelatedMessages message={$message} />
       {/key}
+      {#if showFolderLabel}
+        <hbox class="folder-label font-small" title={$t`In folder: ${folderTitle}`}>
+          <FolderIcon size="12px" aria-hidden="true" />
+          <span class="folder-label-text">{folderName}</span>
+        </hbox>
+      {/if}
       <value class="date font-small">
         {getDateTimeString($message.sent)}
       </value>
@@ -130,6 +136,9 @@
   import type { Tag } from "../../../logic/Abstract/Tag";
   import { appGlobal } from "../../../logic/app";
   import MessageToolbar from "./MessageToolbar.svelte";
+  import FolderIcon from "lucide-svelte/icons/folder";
+  import { mailFolderName, mailFolderTitle } from "../mailFolderLabel";
+  import { mailSearchResultsShown } from "../Search/searchProgress";
   import RelatedMessages from "./RelatedMessages.svelte";
   import RecipientsList from "./RecipientsList.svelte";
   import Recipient from "./Recipient.svelte";
@@ -159,6 +168,11 @@
   export let readOnly = false;
   export let onReply: (() => void | Promise<void>) | null = null;
   export let onReplyAll: (() => void | Promise<void>) | null = null;
+
+  /** Письмо открыто из результатов поиска по всему ящику: видно, в какой папке оно лежит */
+  $: folderName = $mailSearchResultsShown ? mailFolderName($message.folder) : "";
+  $: showFolderLabel = !readOnly && !!folderName;
+  $: folderTitle = folderName ? mailFolderTitle($message.folder, appGlobal.emailAccounts.length > 1) : "";
 
   $: tags = message.tags;
   $: density = normalizeUIDensity($uiDensitySetting.value);
@@ -403,6 +417,26 @@
   .subject-tools {
     flex-shrink: 0;
     gap: 2px;
+  }
+  .folder-label {
+    align-self: center;
+    align-items: center;
+    gap: 4px;
+    max-width: 220px;
+    margin-inline-end: 6px;
+    padding: 1px 8px;
+    border-radius: 4px;
+    color: color-mix(in srgb, var(--main-fg, var(--fg)) 72%, transparent);
+    background-color: color-mix(in srgb, var(--main-fg, var(--fg)) 7%, transparent);
+    white-space: nowrap;
+  }
+  .folder-label :global(svg) {
+    flex-shrink: 0;
+  }
+  .folder-label-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .display-mode {
     justify-content: end;
