@@ -52,6 +52,11 @@
             <NoteIcon size="13px" />
           </hbox>
         {/if}
+        {#if replyReminder}
+          <hbox class="reply-reminder t-reply-reminder" class:due={replyReminderDue} title={replyReminderTooltip}>
+            <BellIcon size="13px" />
+          </hbox>
+        {/if}
       </hbox>
     {:else if column == "received"}
       <hbox class="cell text-cell t-date" title={fullDate}>{getDateTimeString(listDate)}</hbox>
@@ -121,6 +126,12 @@
         <NoteIcon size="14px" />
       </hbox>
     {/if}
+    {#if replyReminder}
+      <hbox class="reply-reminder" class:due={replyReminderDue} title={replyReminderTooltip}>
+        <BellIcon size="14px" />
+        <span class="reply-reminder-time">{replyReminderTime}</span>
+      </hbox>
+    {/if}
     {#if pinned}
       <hbox class="pinned" title={$t`Pinned`}>
         <PinIcon size="14px" />
@@ -175,6 +186,8 @@
   import StarIcon from "lucide-svelte/icons/star";
   import PinIcon from "lucide-svelte/icons/pin";
   import NoteIcon from "lucide-svelte/icons/notebook-pen";
+  import BellIcon from "lucide-svelte/icons/bell-ring";
+  import { findReplyReminder, replyRemindersChanged, removeReplyReminderRecord } from "../../../logic/Mail/ReplyReminder/ReplyReminder";
   import { getMessageNoteText, messageNotesChanged } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import { noteTooltip } from "../../../logic/Mail/MessageNotes/MessageNote";
   import { isMessagePinned, pinnedMessagesChanged } from "../../../logic/Mail/Pin/PinnedMessages";
@@ -197,6 +210,18 @@
   $: noteText = $messageNotesChanged >= 0 ? getMessageNoteText(message) : null;
   $: noted = !!noteText;
   $: notedTooltip = noteText ? noteTooltip(noteText) : "";
+  $: replyReminder = $replyRemindersChanged >= 0 && $message.isReplied ? dropAnswered() : $replyRemindersChanged >= 0 ? findReplyReminder(message) : null;
+  $: replyReminderDue = !!replyReminder && new Date(replyReminder.at) <= new Date();
+  $: replyReminderTime = replyReminder ? getDateTimeString(new Date(replyReminder.at)) : "";
+  $: replyReminderTooltip = replyReminder ? $t`Reminder to reply: ${replyReminderTime}` : "";
+  /** Ответили — напоминание больше не нужно */
+  function dropAnswered() {
+    let record = findReplyReminder(message);
+    if (record) {
+      removeReplyReminderRecord(record);
+    }
+    return null;
+  }
   $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
   /** Столбцы табличного вида; null — двухстрочная карточка */
   export let columns: MailListColumnId[] | null = null;
@@ -379,6 +404,20 @@
     align-self: center;
     color: var(--icon-primary, currentColor);
     margin-inline-end: 4px;
+  }
+  .reply-reminder {
+    align-self: center;
+    align-items: center;
+    gap: 3px;
+    color: var(--icon-primary, currentColor);
+    margin-inline-end: 4px;
+  }
+  .reply-reminder-time {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .reply-reminder.due {
+    color: var(--error, #d13438);
   }
   .pinned {
     align-self: center;
