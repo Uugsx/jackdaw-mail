@@ -41,7 +41,7 @@
     </hbox>
 
     <hbox class="password">
-      <PasswordChange bind:password={config.password}  />
+      <PasswordChange bind:password={config.password} showHint={!isSetup} />
     </hbox>
   {/if}
 </grid>

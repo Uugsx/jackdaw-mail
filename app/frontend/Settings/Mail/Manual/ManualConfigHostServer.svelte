@@ -92,7 +92,7 @@
 
     <hbox class="password">
       {#if config.authMethod != AuthMethod.None}
-        <PasswordChange bind:password={config.password} tabindex={7} />
+        <PasswordChange bind:password={config.password} tabindex={7} showHint={!isSetup} />
       {/if}
     </hbox>
   {/if}

@@ -21,7 +21,12 @@ export function showError(ex: Error) {
     return;
   }
   if (shouldShow(ex)) {
-    notifications.add(new Notification(userMessage(ex), NotificationSeverity.Error, ex));
+    let notification = new Notification(userMessage(ex), NotificationSeverity.Error, ex);
+    let failedAccount = (ex as any)?.authFail ? (ex as any).failedAccount : null;
+    if (failedAccount) {
+      void import("../Mail/passwordRejected").then(module => module.addEnterPasswordButton(notification, failedAccount));
+    }
+    notifications.add(notification);
     logErrorToServer(ex);
   }
 }

@@ -1,6 +1,7 @@
 import type { Account } from "../../logic/Abstract/Account";
 import { ButtonData, Notification, NotificationSeverity, notifications } from "../MainWindow/Notification";
-import { openSettingsCategoryForAccount } from "../Settings/Window/CategoriesUtils";
+import { getSettingsCategoryForAccount, openSettingsCategoryForAccount } from "../Settings/Window/CategoriesUtils";
+import { requestPasswordFocus } from "../Settings/Shared/passwordFocus";
 import { gt } from "../../l10n/l10n";
 
 /**
@@ -17,7 +18,26 @@ export function showPasswordRejected(account: Account, ex: Error): void {
   let notification = new Notification(message, NotificationSeverity.LoggedOut, ex);
   notification.buttons.add(new ButtonData(gt`Enter password`, async () => {
     notifications.remove(notification);
-    openSettingsCategoryForAccount(passwordAccount, "mail-server");
+    openPasswordField(passwordAccount);
   }));
   notifications.add(notification);
+}
+
+/** Открывает страницу «Сервер» ящика (для отдельных ящиков — основного
+ * аккаунта, где хранится пароль) и ставит фокус в поле пароля. */
+export function openPasswordField(account: Account): void {
+  let passwordAccount = account.mainAccount ?? account;
+  requestPasswordFocus();
+  openSettingsCategoryForAccount(passwordAccount, "mail-server");
+}
+
+/** Обычная плашка «Сервер не принял логин или пароль»: добавляем кнопку,
+ * которая ведёт к полю нового пароля. */
+export function addEnterPasswordButton(notification: Notification, account: Account): void {
+  if (!getSettingsCategoryForAccount(account.mainAccount ?? account, "mail-server")) {
+    return;
+  }
+  notification.buttons.add(new ButtonData(gt`Enter new password`, async () => {
+    openPasswordField(account);
+  }));
 }
