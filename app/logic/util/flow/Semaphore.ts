@@ -62,11 +62,22 @@ export class Semaphore {
     this.maxParallel = maxParallel;
   }
 
-  async lock(): Promise<Locked> {
+  /**
+   * @param priority Встать в очередь перед обычными задачами (после других
+   *   приоритетных): например, загрузка письма, которое пользователь открыл,
+   *   не ждёт сотни запросов синхронизации.
+   */
+  async lock(priority = false): Promise<Locked> {
     let locked = new Locked(this);
+    locked.priority = priority;
     locked.wasWaiting = this.needToWait;
     if (locked.wasWaiting) {
-      this.waiting.push(locked);
+      if (priority) {
+        let firstNormal = this.waiting.findIndex(waiting => !waiting.priority);
+        this.waiting.splice(firstNormal < 0 ? this.waiting.length : firstNormal, 0, locked);
+      } else {
+        this.waiting.push(locked);
+      }
       do {
         if (this.running.length) {
           // Wait for `Locked.release()` of any of the other running tasks
@@ -80,7 +91,7 @@ export class Semaphore {
         // All waiting continue at the same time, but one runs first, and removes itself from waiting,
         // the others also think they are next. Thus, need to check running as well.
       } while (this.waiting[0] != locked || this.running.length >= this.maxParallel)
-      this.waiting.shift(); // remove self
+      arrayRemove(this.waiting, locked); // remove self (first in queue)
       // now, we can run
     }
     this.running.push(locked);
@@ -107,6 +118,8 @@ export class Semaphore {
 export class Locked {
   static _nextID = 1;
   wasWaiting: boolean;
+  /** Ждёт в очереди перед обычными задачами */
+  priority = false;
   _promise: Promise<null>;
   _resolve: (value: null) => void;
   _semaphore: Semaphore;

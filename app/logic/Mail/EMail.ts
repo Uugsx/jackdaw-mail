@@ -728,7 +728,7 @@ export class EMail extends Message {
           console.error(ex);
         }
       }
-      await this.download();
+      await this.download(true);
     });
   }
 
@@ -772,7 +772,8 @@ export class EMail extends Message {
           await this.storage.readMessageBody(this);
         }
         if (!this._rawHTML && !this._text) {
-          await this.download();
+          // Пользователь ждёт текст: запрос встаёт перед синхронизацией
+          await this.download(true);
         }
       }
 
@@ -807,7 +808,11 @@ export class EMail extends Message {
   }
 
   readonly downloadRunOnce = new RunOnce<void>();
-  async download() {
+  /**
+   * @param priority Письмо открыл пользователь: загрузить раньше фоновой
+   *   синхронизации, если протокол это умеет.
+   */
+  async download(priority = false) {
     throw new AbstractFunction();
     //this.mime = await SMTPAccount.getMIME(this);
   }

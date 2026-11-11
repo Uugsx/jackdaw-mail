@@ -27,9 +27,10 @@
     {#each prefs.order as id, index (id)}
       {@const def = mailListColumnDefs[id]}
       <hbox class="column-row" role="listitem">
-        <label class="checkbox column-label" title={def.required ? $t`This column is always shown` : undefined}>
+        <label class="checkbox column-label" title={def.required ? $t`This column is always shown`
+          : def.optional ? $t`Shown in search results; turn on to show it in every folder` : undefined}>
           <input type="checkbox"
-            checked={!prefs.hidden.includes(id)}
+            checked={isMailListColumnVisible(prefs, id)}
             disabled={def.required}
             on:change={event => setVisible(id, event.currentTarget.checked)} />
           <span class="name">{def.label()}</span>
@@ -65,6 +66,7 @@
     normalizeMailListLayout,
     resetMailListColumns,
     setMailListColumnVisible,
+    isMailListColumnVisible,
     updateMailListColumns,
     type MailListColumnId,
     type MailListLayout,

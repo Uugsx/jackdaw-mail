@@ -34,7 +34,17 @@ export function setContentStorage(acc: MailAccount) {
   // #endif
 }
 
+let memorySearch: (() => SearchEMail) | null = null;
+
+/** Демо-режим: ящики только в памяти, поиск идёт по загруженным письмам, а не по базе */
+export function useMemoryMailSearch(create: () => SearchEMail): void {
+  memorySearch = create;
+}
+
 export function newSearchEMail(): SearchEMail {
+  if (memorySearch) {
+    return memorySearch();
+  }
   // #if [!WEBMAIL]
   return new SQLSearchEMail();
   // #else

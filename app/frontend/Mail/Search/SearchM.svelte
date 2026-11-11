@@ -1,7 +1,7 @@
 <SearchPane bind:searchMessages />
 <vbox class="results">
   {#if searchMessages}
-    <VerticalMessageList {messages} emptyDueToFilter={!!searchMessages} bind:selectedMessage bind:selectedMessages on:click={() => catchErrors(goToMessage)} />
+    <VerticalMessageList {messages} emptyDueToFilter={!!searchMessages} showFolder bind:selectedMessage bind:selectedMessages on:click={() => catchErrors(goToMessage)} />
     <FolderFooter folder={null} bind:searchMessages />
   {/if}
 </vbox>

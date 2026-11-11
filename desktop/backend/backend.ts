@@ -9,7 +9,8 @@ import { WebContents } from './WebContents';
 import { expectedSha512ForAsset, isSha512Match, pickMacDmgAsset } from './updateAssets';
 import { applyMirrorToProvider, kMirrorStallTimeoutMs, mirrorUrlFor, resolveUpdateMirrorBase } from './updateMirror';
 import { isPublicFetchHost } from './netGuard';
-import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort } from './testProfile';
+import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort, testUpdateFeedHost } from './testProfile';
+import { kUpdateChannelFileName, parseUpdateChannel, serializeUpdateChannel, shouldAllowPrerelease, type UpdateChannel } from './updateChannel';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
 import { SQLiteHost, type RemoteSQLiteDatabase } from "./sqlite/SQLiteHost";
@@ -209,6 +210,8 @@ async function createSharedAppObject() {
     openPendingReleaseDownload,
     isQuittingForUpdate,
     getUpdateStatus,
+    getUpdateChannel,
+    setUpdateChannel,
     updateStatus: updateState,
     setTheme,
     openMenu,
@@ -900,11 +903,43 @@ function ensureGhUpdateAuth(): boolean {
   return true;
 }
 
+function updateChannelPath(): string {
+  return path.join(app.getPath("userData"), kUpdateChannelFileName);
+}
+
+function readUpdateChannel(): UpdateChannel {
+  try {
+    return parseUpdateChannel(fs.readFileSync(updateChannelPath(), "utf8"));
+  } catch {
+    return "stable";
+  }
+}
+
+/** Канал применяется к electron-updater перед каждой проверкой */
+function applyUpdateChannel(channel: UpdateChannel = readUpdateChannel()) {
+  autoUpdater.allowPrerelease = shouldAllowPrerelease(app.getVersion(), channel);
+}
+
+/** «Получать пробные выпуски» (Настройки → О программе) */
+export async function getUpdateChannel(): Promise<UpdateChannel> {
+  return readUpdateChannel();
+}
+
+export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateChannel> {
+  let next: UpdateChannel = channel === "pilot" ? "pilot" : "stable";
+  await fsPromises.writeFile(updateChannelPath(), serializeUpdateChannel(next), "utf8");
+  applyUpdateChannel(next);
+  return next;
+}
+
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  if (app.getVersion().includes("-dev")) {
-    autoUpdater.allowPrerelease = true;
+  applyUpdateChannel();
+  let testFeedHost = testUpdateFeedHost();
+  if (testFeedHost) {
+    // Только профиль автопроверок (его нет в выпусках): ответы GitHub подменяет локальный сервер
+    autoUpdater.setFeedURL({ provider: "github", owner: kGhOwner, repo: kGhRepo, host: testFeedHost, protocol: "http" });
   }
 
   autoUpdater.on("checking-for-update", () => {
@@ -1329,11 +1364,12 @@ function markUpdateUnavailable(code: string) {
 
 async function runUpdateCheck(check: () => Promise<UpdateCheckResult | null>): Promise<boolean> {
   // Копия для автопроверок не обновляется
-  if (!hasAppUpdateConfig() || isTestProfile()) {
+  if (!hasAppUpdateConfig() || (isTestProfile() && !testUpdateFeedHost())) {
     markUpdateUnavailable("ota-not-configured");
     return false;
   }
   ensureGhUpdateAuth();
+  applyUpdateChannel();
   updateState.beginCheck();
   try {
     updateState.update = await ignoreMissingUpdateConfig(withTimeout(

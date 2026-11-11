@@ -2705,6 +2705,11 @@
   "hc7unL": "Smallest first",
   "8OATUT": "By category",
   "TIjqHq": "By category, Z to A",
+  "yHXL3P": "Folder",
+  "LF7d4l": "By folder",
+  "AWihdx": "By folder, Z to A",
+  "6CS7Py": "Shown in search results; turn on to show it in every folder",
+  "lfij6N": "In folder: {0}",
   "mXYplT": "Flagged first",
   "nVe0r7": "Unflagged first",
   "Q0SIrB": "Important first",
@@ -3343,5 +3348,7 @@
   "/T1AW3": "Remove reminder",
   "kMj7IK": "Reply to the message “{0}”",
   "RXfnKf": "This message cannot have a reminder",
-  "x5s6Bt": "Time to reply"
+  "x5s6Bt": "Time to reply",
+  "IZGv/J": "Receive early test releases",
+  "JT8GFg": "New versions reach this computer first, about a day before everyone else. If something goes wrong, the release can be stopped before it reaches others."
 }

@@ -30,6 +30,7 @@
           <MailUndoToast />
           {#key selectedFolder?.id ?? ""}
             <VerticalMessageList {messages} folder={selectedFolder} emptyDueToFilter={!!searchMessages}
+              showFolder={!!searchMessages && $mailSearchResultsShown}
               bind:selectedMessage bind:selectedMessages />
           {/key}
         </vbox>
@@ -63,6 +64,7 @@
   import OutOfOfficeBar from "../OutOfOfficeBar.svelte";
   import { ArrayColl, type Collection } from 'svelte-collections';
   import FocusedTabs from "../Focused/FocusedTabs.svelte";
+  import { mailSearchResultsShown } from "../Search/searchProgress";
   import { focusedMessages, focusedTab } from "../Focused/focusedView";
   import { focusedClassificationChanged, focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
   const focusedEnabled = focusedInboxEnabled();

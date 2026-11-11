@@ -2,8 +2,10 @@
 # Зеркало обновлений на VPS (jackdaw-mail.pro/updates/): копирует из релиза GitHub
 # DMG, setup.exe, latest*.yml и blockmap-файлы, затем удаляет старые версии.
 # GitHub остаётся источником правды: клиент берёт контрольные суммы из манифеста GitHub.
-# Использование: ota-mirror-sync.sh <tag> <owner/repo>
+# Использование: ota-mirror-sync.sh <tag> <owner/repo> [mac|win|all]
 # Окружение: MIRROR_SSH_KEY_FILE, MIRROR_KNOWN_HOSTS_FILE, MIRROR_HOST, MIRROR_USER, GH_TOKEN
+# MIRROR_MANIFESTS=0 — только установщики (пробный выпуск): latest*.yml в корне зеркала —
+# манифесты основного канала, их меняет только продвижение (promote-desktop-jackdaw.yml).
 set -euo pipefail
 
 TAG="${1:?tag}"
@@ -12,6 +14,7 @@ REPO="${2:?owner/repo}"
 # не попадал в окно, когда манифест на GitHub уже есть, а файла на зеркале ещё нет
 PLATFORM="${3:-all}"
 KEEP="${MIRROR_KEEP_VERSIONS:-3}"
+MANIFESTS="${MIRROR_MANIFESTS:-1}"
 
 STAGE="$(mktemp -d)"
 EMPTY="$(mktemp -d)"
@@ -25,8 +28,27 @@ case "$PLATFORM" in
   win) PATTERNS=('*-setup.exe' '*-setup.exe.blockmap' 'latest.yml') ;;
   *) PATTERNS=('*.dmg' '*.dmg.blockmap' '*-setup.exe' '*-setup.exe.blockmap' 'latest.yml' 'latest-mac.yml') ;;
 esac
-for pattern in "${PATTERNS[@]}"; do
-  gh release download "$TAG" --repo "$REPO" --dir "$STAGE" --pattern "$pattern" || true
+download_all() {
+  local pattern
+  for pattern in "${PATTERNS[@]}"; do
+    if [ "$MANIFESTS" = 0 ] && [[ "$pattern" == *.yml ]]; then
+      continue
+    fi
+    gh release download "$TAG" --repo "$REPO" --dir "$STAGE" --pattern "$pattern" --clobber || true
+  done
+}
+
+# Файлы, только что загруженные job'ом сборки, GitHub отдаёт не сразу: при пустом результате
+# ждём и повторяем, а не падаем на пустой папке.
+shopt -s nullglob
+DOWNLOAD_ATTEMPTS=10
+for attempt in $(seq 1 "$DOWNLOAD_ATTEMPTS"); do
+  download_all
+  staged=("$STAGE"/*)
+  [ "${#staged[@]}" -gt 0 ] && break
+  [ "$attempt" -lt "$DOWNLOAD_ATTEMPTS" ] || { echo "::error::В релизе $TAG нет файлов для $PLATFORM"; exit 1; }
+  echo "Файлы $TAG ещё не видны, повтор через 30 с (попытка $attempt)" >&2
+  sleep 30
 done
 
 # Пустой или недокачанный файл не должен попасть в зеркало
@@ -46,8 +68,19 @@ rsync_retry() {
   done
   return 1
 }
-rsync_retry -rlt --no-perms --chmod=D755,F644 --partial --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
-rsync_retry -rlt --no-perms --chmod=D755,F644 -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
+# --size-only: в имени установщика есть версия, тот же размер — тот же файл (продвижение
+# не перекачивает уже выложенный установщик); недокачанный файл меньше и отправится заново.
+rsync_retry -rlt --no-perms --chmod=D755,F644 --partial --size-only --exclude='*.yml' -e "$SSH" "$STAGE/" "$REMOTE"
+if [ "$MANIFESTS" != 0 ]; then
+  rsync_retry -rlt --no-perms --chmod=D755,F644 -e "$SSH" --include='*.yml' --exclude='*' "$STAGE/" "$REMOTE"
+fi
+
+# Установщики, на которые ссылаются манифесты основного канала на зеркале, не удаляются,
+# даже если после них вышло больше $KEEP пробных версий.
+PROTECTED="$(mktemp -d)"
+trap 'rm -rf "$STAGE" "$EMPTY" "$PROTECTED"' EXIT
+rsync_retry -r -e "$SSH" --include='latest*.yml' --exclude='*' "$REMOTE" "$PROTECTED/" || true
+PROTECT_LIST=$(cat "$PROTECTED"/*.yml 2>/dev/null | sed -n -E 's/^ *(- url|path): *//p' | sort -u || true)
 
 # Храним последние $KEEP версий каждого установщика
 prune() {
@@ -57,6 +90,10 @@ prune() {
     | sort -r | awk -v k="$KEEP" 'NR>k { print $2 }' \
     | while read -r old; do
         [ -n "$old" ] || continue
+        if printf '%s\n' "$PROTECT_LIST" | grep -qxF "$old"; then
+          echo "Оставляю $old: на него ссылается основной канал"
+          continue
+        fi
         echo "Удаляю старую версию $old"
         for victim in "$old" "$old.blockmap"; do
           rsync_retry -r --delete -e "$SSH" --include="$victim" --exclude='*' "$EMPTY/" "$REMOTE"

@@ -2081,13 +2081,17 @@ export class OWAAccount extends ExchangeMailAccount {
     }
   }
 
-  async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string): Promise<any> {
+  /**
+   * @param priority Запрос ждёт пользователь (текст открытого письма): встаёт
+   *   в очереди запросов перед синхронизацией. Паузы, которые просит сервер, соблюдаются.
+   */
+  async callOWA(aRequest: any, mailbox?: string, delegateAnchor?: string, priority = false): Promise<any> {
     if (this.mainAccount) {
       let mainAccount = this.mainAccount as OWAAccount;
       if (this.sharedFolderRoot && !mailbox && !OWAAccount.needsExplicitLogon(aRequest)) {
-        return await mainAccount.callOWA(aRequest, undefined, this.emailAddress);
+        return await mainAccount.callOWA(aRequest, undefined, this.emailAddress, priority);
       }
-      return await mainAccount.callOWA(aRequest, mailbox ?? this.username);
+      return await mainAccount.callOWA(aRequest, mailbox ?? this.username, undefined, priority);
     }
     if (mailbox && !delegateAnchor) {
       let blockedUntil = this.sharedMailboxBlockedUntil.get(mailbox.toLowerCase()) ?? 0;
@@ -2122,7 +2126,7 @@ export class OWAAccount extends ExchangeMailAccount {
       headers["x-owa-explicitlogonuser"] = mailbox;
     }
     if (mailbox && !delegateAnchor) {
-      let lock = await this.sharedMailboxSemaphore.lock();
+      let lock = await this.sharedMailboxSemaphore.lock(priority);
       try {
         let gap = Date.now() - this.lastSharedMailboxRequestAt;
         if (gap < 100) {
@@ -2133,7 +2137,7 @@ export class OWAAccount extends ExchangeMailAccount {
           body: jsonBody,
           headers: headers,
           method: "POST",
-        });
+        }, 0, false, priority);
       } finally {
         lock.release();
       }
@@ -2142,7 +2146,7 @@ export class OWAAccount extends ExchangeMailAccount {
       body: jsonBody,
       headers: headers,
       method: "POST",
-    });
+    }, 0, false, priority);
   }
 
   protected isMailboxSessionLimitError(response: any): boolean {
@@ -2186,12 +2190,12 @@ export class OWAAccount extends ExchangeMailAccount {
     this.connectionStatus.reportHTTPResponse(Number(response?.status) || 0, response?.statusText ?? "", !!response?.json);
   }
 
-  async callOWAShared(url: string, options: RequestInit, throttleRetries = 0, sessionRetried = false) {
+  async callOWAShared(url: string, options: RequestInit, throttleRetries = 0, sessionRetried = false, priority = false) {
     if (!this.hasLoggedIn) {
       throw new LoginError(null, gt`Please login`);
     }
-    await this.throttle.throttle();
-    let lock = await this.semaphore.lock();
+    await this.throttle.throttle(priority);
+    let lock = await this.semaphore.lock(priority);
     let response: any;
     try {
       if (this.authorizationHeader) {
@@ -2245,7 +2249,7 @@ export class OWAAccount extends ExchangeMailAccount {
       // are gone and the next login needs the password form or a login tab.
       // Try to refresh the session silently and replay the request once.
       if (!sessionRetried && await this.refreshSessionSilently()) {
-        return await this.callOWAShared(url, options, throttleRetries, true);
+        return await this.callOWAShared(url, options, throttleRetries, true, priority);
       }
       await this.logout(true);
       throw new LoginError(null, gt`Please login`);
@@ -2283,7 +2287,7 @@ export class OWAAccount extends ExchangeMailAccount {
       if (throttleRetries >= kOWAMaxThrottleRetries) {
         throw new OWAError({ message: gt`Too many active sessions for this mailbox. Please wait a few minutes.` });
       }
-      return await this.callOWAShared(url, options, throttleRetries + 1, sessionRetried);
+      return await this.callOWAShared(url, options, throttleRetries + 1, sessionRetried, priority);
     }
     // Only treat real errors as failures. Success MoveItem responses must not
     // throw just because MessageText is present on some Exchange builds.
