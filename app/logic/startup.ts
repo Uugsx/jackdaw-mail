@@ -241,5 +241,9 @@ function backgroundErrorInAccount(ex: Error, account: Account) {
 function addAccountName(ex: Error, account: Account) {
   if (ex) {
     (ex as any).accountName = account.name;
+    if ((ex as any).authFail) {
+      // Для кнопки «Ввести новый пароль» в плашке; не сериализуется в журнал
+      Object.defineProperty(ex, "failedAccount", { value: account, enumerable: false, configurable: true });
+    }
   }
 }
