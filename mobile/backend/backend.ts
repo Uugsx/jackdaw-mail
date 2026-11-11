@@ -1,5 +1,4 @@
 import JPCWebSocket from '../../lib/jpc-ws';
-import { production } from '../../app/logic/build';
 import { Database } from "@radically-straightforward/sqlite"; // formerly @leafac/sqlite
 import Zip from "adm-zip";
 import { createType1Message, decodeType2Message, createType3Message } from "../../desktop/backend/ntlm"; // TODO move to lib/?
@@ -22,7 +21,7 @@ let jpc: JPCWebSocket | null = null;
 export async function startupBackend(jpcSecret: string) {
   let appGlobal = await createSharedAppObject();
   jpc = new JPCWebSocket(appGlobal);
-  await jpc.listen(jpcSecret, production ? 5455 : 5453, false);
+  await jpc.listen(jpcSecret, 5457, false);
 }
 
 export async function shutdownBackend() {

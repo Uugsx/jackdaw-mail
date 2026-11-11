@@ -14,7 +14,7 @@ import { loadTagCombinations } from './Abstract/TagCombination';
 import { type Account, getAllAccounts, setMainAccounts } from './Abstract/Account';
 import { getComputerOn } from './util/backend-wrapper';
 import JPCWebSocket from '../../lib/jpc-ws';
-import { production, webMail } from './build';
+import { production, webMail, isMobile } from './build';
 import { retryOnTransientError } from './util/netUtil';
 import { catchErrors, logError, showError } from '../frontend/Util/error';
 import { OWAAccount } from './Mail/OWA/OWAAccount';
@@ -96,7 +96,7 @@ export async function getStartObjects(onDatabaseBusy?: DatabaseBusyCallback): Pr
   if (!appGlobal.remoteApp) {
     const secret = await getJPCSecret();
     let jpc = new JPCWebSocket(null);
-    await connectToBackend(jpc, secret, jpcPortFromURL ?? (production ? 5455 : 5453));
+    await connectToBackend(jpc, secret, jpcPortFromURL ?? (isMobile ? 5457 : production ? 5455 : 5453));
     jpc.errorCallback = showError;
     jpc.reconnectCallback = checkAccounts;
     console.log("Connected to backend");
