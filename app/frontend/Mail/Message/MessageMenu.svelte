@@ -143,6 +143,9 @@
   <SubMenu label={$t`Snooze`} icon={SnoozeIcon}>
     <SnoozeMenuItems {message} />
   </SubMenu>
+  <SubMenu label={$t`Remind me to reply`} icon={ReplyReminderIcon}>
+    <ReplyReminderMenuItems {message} />
+  </SubMenu>
 {/if}
 <MenuItem
   onClick={() => toggleMessagePinned(message)}
@@ -285,6 +288,8 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
   import { hasMessageNote, messageNotesChanged, requestNoteEdit } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import UnpinIcon from "lucide-svelte/icons/pin-off";
   import SnoozeMenuItems from "../Snooze/SnoozeMenuItems.svelte";
+  import ReplyReminderMenuItems from "../ReplyReminder/ReplyReminderMenuItems.svelte";
+  import ReplyReminderIcon from "lucide-svelte/icons/bell-ring";
   import { isMessagePinned, toggleMessagePinned } from "../../../logic/Mail/Pin/PinnedMessages";
   import QuickStepIcon from "lucide-svelte/icons/zap";
   import SettingsIcon from "lucide-svelte/icons/settings";

@@ -5,6 +5,7 @@
   import { startResponseReminderWatcher } from "./ResponseReminderWatcher";
   import { startFollowUpWatcher } from "./FollowUp/followUpReminders";
   import { startSnoozeWatcher } from "./Snooze/snoozeWatcher";
+  import { startReplyReminderWatcher } from "./ReplyReminder/replyReminderWatcher";
   import { startConnectionProblemNotifications } from "./connectionProblemNotice";
   import { startMailUnreadTracking } from "./mailUnreadCounts";
   import { startFavoriteFolderTracking } from "./LeftPane/favoriteFolders";
@@ -25,6 +26,7 @@
     catchErrors(startResponseReminderWatcher);
     catchErrors(startFollowUpWatcher);
     catchErrors(startSnoozeWatcher);
+    catchErrors(startReplyReminderWatcher);
     startConnectionProblemNotifications();
     startMailUnreadTracking();
   });

@@ -9,6 +9,7 @@
  *   node jd.mjs eval <порт> <выражение JS>             результат выражения (await можно)
  *   node jd.mjs click <порт> <селектор>                клик мышью по центру элемента
  *   node jd.mjs clickxy <порт> <x> <y>                 клик по точке (пиксели CSS)
+ *   node jd.mjs rclickxy <порт> <x> <y>                правый клик по точке (контекстное меню)
  *   node jd.mjs hover <порт> <селектор>                навести мышь без клика
  *   node jd.mjs movexy <порт> <x1> <y1> <x2> <y2> [мс] плавно провести мышь (пиксели CSS)
  *   node jd.mjs drag <порт> <x1> <y1> <x2> <y2> [мс]   перетащить с зажатой кнопкой (пиксели CSS)
@@ -315,6 +316,15 @@ const commands = {
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
       await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
       await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
+    });
+  },
+
+  async rclickxy(port, x, y) {
+    await withPage(port, async cdp => {
+      let point = { x: Number(x), y: Number(y) };
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "right", buttons: 2, clickCount: 1 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "right", buttons: 0, clickCount: 1 });
     });
   },
 
