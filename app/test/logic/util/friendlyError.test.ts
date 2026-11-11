@@ -258,3 +258,23 @@ describe("переводы", () => {
     }
   });
 });
+
+describe("подсказки про VPN и порты без шифрования", () => {
+  test("ECONNREFUSED на порту 143 — совет про шифрованный порт", () => {
+    let described = describeError(Object.assign(new Error("connect ECONNREFUSED 10.0.0.5:143"), { code: "ECONNREFUSED" }));
+    expect(described.kind).toBe("server-unreachable");
+    expect(described.hint).toMatch(/Port 143 is not encrypted/);
+    expect(described.hint).toMatch(/993/);
+  });
+  test("таймаут на порту 25 — тот же совет, исходная подсказка сохранена", () => {
+    let described = describeError(Object.assign(new Error("connect ETIMEDOUT 10.0.0.5:25"), { code: "ETIMEDOUT" }));
+    expect(described.kind).toBe("timeout");
+    expect(described.hint).toMatch(/internet connection/);
+    expect(described.hint).toMatch(/Port 25 is not encrypted/);
+  });
+  test("отказ на порту 993 — совет про VPN / доступ от ИТ", () => {
+    let described = describeError(Object.assign(new Error("connect ECONNREFUSED 10.0.0.5:993"), { code: "ECONNREFUSED" }));
+    expect(described.hint).toMatch(/VPN/);
+    expect(described.hint).toMatch(/firewall/);
+  });
+});
