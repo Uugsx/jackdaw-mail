@@ -3351,6 +3351,8 @@
   "x5s6Bt": "Time to reply",
   "VR9WbL": "Early access",
   "7bLh+J": "Get new versions a day before everyone else. They may be less stable. Turn off to stay on the stable channel.",
+  "u7SFhF": "If this is a company mailbox, the server may be reachable only from the office network or over a VPN. Connect to the VPN, or ask your IT administrator to allow access.",
+  "lCGZYf": "Port {0} is not encrypted, and many networks block it. In the account settings, try the encrypted port (993 for IMAP, 465 or 587 for sending) with SSL/TLS or STARTTLS.",
   "VpwcSk": "Enter new password",
   "lx/02w": "Password changed? Enter the new one here"
 }

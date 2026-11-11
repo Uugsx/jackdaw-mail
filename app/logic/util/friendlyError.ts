@@ -127,7 +127,33 @@ export function describeError(ex: unknown): FriendlyError {
     };
   }
   let { message, hint, action } = textForKind(kind);
+  hint = withNetworkAdvice(kind, hint, rawMessage);
   return { kind, message, hint, action, technical };
+}
+
+/** Порты без шифрования: их часто закрывают провайдеры и корпоративные сети. */
+const kPlainPorts = ["25", "110", "143"];
+
+/**
+ * Дополняет подсказку для сетевых сбоев: почтовый сервер может быть доступен
+ * только из рабочей сети или по VPN, а порты 143/25/110 без шифрования
+ * часто закрыты. Исходная подсказка остаётся первой.
+ * @param message Исходный текст ошибки: из него берётся порт («host:143»).
+ */
+function withNetworkAdvice(kind: FriendlyErrorKind, hint: string | null, message: string): string | null {
+  if (kind != "server-unreachable" && kind != "timeout" && kind != "connection-lost") {
+    return hint;
+  }
+  let port = /:(\d{2,5})\b/.exec(message)?.[1];
+  let advice: string;
+  if (port && kPlainPorts.includes(port)) {
+    advice = gt`Port ${port} is not encrypted, and many networks block it. In the account settings, try the encrypted port (993 for IMAP, 465 or 587 for sending) with SSL/TLS or STARTTLS.`;
+  } else if (kind == "server-unreachable") {
+    advice = gt`If this is a company mailbox, the server may be reachable only from the office network or over a VPN. Connect to the VPN, or ask your IT administrator to allow access.`;
+  } else {
+    return hint;
+  }
+  return hint ? `${hint} ${advice}` : advice;
 }
 
 /** Короткий текст ошибки для мест, где помещается одна строка:
