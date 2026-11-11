@@ -25,10 +25,10 @@
           checked={pilotChannel}
           allowIndetermined={false}
           disabled={savingChannel}
-          label={$t`Receive early test releases`}
+          label={$t`Early access`}
           on:change={event => void onPilotChange(event.detail === true)} />
         <p class="ota-hint">
-          {$t`New versions reach this computer first, about a day before everyone else. If something goes wrong, the release can be stopped before it reaches others.`}
+          {$t`Get new versions a day before everyone else. They may be less stable. Turn off to stay on the stable channel.`}
         </p>
         {#if channelError}
           <ErrorMessageInline ex={channelError} />
