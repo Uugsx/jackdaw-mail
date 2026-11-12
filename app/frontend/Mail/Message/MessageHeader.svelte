@@ -438,6 +438,45 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Единая сетка кнопок справа: рамка 28×28, иконка 16px, радиус 6px,
+   * одинаковые наведение, выбор и фокус (ритм 4px). */
+  .message-header .subject-tools :global(button) {
+    box-sizing: border-box;
+    min-width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+  .message-header .subject-tools :global(button .icon) {
+    align-items: center;
+    justify-content: center;
+  }
+  .message-header .subject-tools :global(button svg) {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.5px;
+  }
+  .message-header .subject-tools :global(button:focus-visible) {
+    outline: 2px solid var(--icon-primary);
+    outline-offset: 1px;
+  }
+  .message-header .subject-tools :global(.message-zoom) {
+    gap: 2px;
+    margin-inline-end: 0;
+  }
+  .message-header .subject-tools :global(.related-trigger) {
+    margin-inline-end: 0;
+  }
+  .message-header .subject-tools :global(.related-trigger.has-results) {
+    padding-inline: 6px;
+  }
+  .message-header .subject-tools :global(.island) {
+    gap: 2px;
+  }
   .display-mode {
     justify-content: end;
   }
