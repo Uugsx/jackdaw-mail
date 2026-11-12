@@ -32,6 +32,9 @@ export interface DirectoryInfo {
   department: string | null;
   office: string | null;
   company: string | null;
+  /** Рабочий телефон, `null` — в каталоге не указан */
+  businessPhone?: string | null;
+  mobilePhone?: string | null;
   manager: DirectoryEntry | null;
   directReports: DirectoryEntry[];
 }
@@ -109,6 +112,8 @@ export function parseDirectoryInfo(response: any, emailAddress: string): Directo
   }
   let mailbox = resolution.Mailbox ?? {};
   let contact = resolution.Contact ?? {};
+  let businessPhone = phoneByKey(contact.PhoneNumbers, ["BusinessPhone", "BusinessPhone2"]);
+  let mobilePhone = phoneByKey(contact.PhoneNumbers, ["MobilePhone"]);
   let reports = contact.DirectReports;
   reports = Array.isArray(reports) ? reports : ensureArray(reports?.Mailbox);
   return {
@@ -119,11 +124,26 @@ export function parseDirectoryInfo(response: any, emailAddress: string): Directo
     department: text(contact.Department),
     office: text(contact.OfficeLocation),
     company: text(contact.CompanyName),
+    // Телефоны — только если есть в каталоге: форма прежнего ответа не меняется
+    ...(businessPhone ? { businessPhone } : {}),
+    ...(mobilePhone ? { mobilePhone } : {}),
     manager: parseMailboxes(ensureArray(contact.ManagerMailbox?.Mailbox ?? contact.ManagerMailbox))[0]
       ?? managerByName(contact.Manager),
     directReports: parseMailboxes(reports)
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
+}
+
+/** Телефон из `PhoneNumbers/Entry` (`Key`/`Value`) по первому найденному ключу */
+export function phoneByKey(phoneNumbers: any, keys: string[]): string | null {
+  let entries = Array.isArray(phoneNumbers) ? phoneNumbers : ensureArray(phoneNumbers?.Entry);
+  for (let key of keys) {
+    let entry = entries.find(candidate => candidate?.Key == key && text(candidate?.Value));
+    if (entry) {
+      return text(entry.Value);
+    }
+  }
+  return null;
 }
 
 /** Старые серверы отдают руководителя только именем, без адреса */

@@ -229,3 +229,27 @@ describe("ExchangeDirectory", () => {
     }
   });
 });
+
+describe("Телефоны из каталога", () => {
+  test("EWS: Entry с Key/Value", () => {
+    let info = parseDirectoryInfo({
+      ResolutionSet: { Resolution: {
+        Mailbox: { Name: "Анна", EmailAddress: "anna@example.com", RoutingType: "SMTP", MailboxType: "Mailbox" },
+        Contact: { PhoneNumbers: { Entry: [
+          { Key: "MobilePhone", Value: "+7 900 000-00-01" },
+          { Key: "BusinessPhone", Value: " +7 495 000-00-02 " },
+        ] } },
+      } },
+    }, "anna@example.com");
+    expect(info.businessPhone).toBe("+7 495 000-00-02");
+    expect(info.mobilePhone).toBe("+7 900 000-00-01");
+  });
+
+  test("нет телефонов — полей нет", () => {
+    let info = parseDirectoryInfo({
+      ResolutionSet: { Resolution: { Mailbox: { Name: "Анна", EmailAddress: "anna@example.com" }, Contact: {} } },
+    }, "anna@example.com");
+    expect(info.businessPhone).toBeUndefined();
+    expect(info.mobilePhone).toBeUndefined();
+  });
+});

@@ -26,8 +26,11 @@
 </Clickable>
 
 <Menu bind:isMenuOpen={isPopupOpen} {anchor} placement="bottom-start">
-  <RecipientDirectory person={recipient} inMenu />
-  {#if existingPersons?.hasItems}
+  <RecipientCard person={recipient}
+    onSave={!recipient.findPerson() && appGlobal.addressbooks.first ? saveToFirstAddressbook : null}
+    onOpenContact={recipient.findPerson() ? openContact : null}
+    onDone={() => isPopupOpen = false} />
+  {#if existingPersons?.hasItems && !recipient.findPerson()}
     <MenuLabel label={$t`Add ${recipient.emailAddress} to existing contact`} />
     {#each existingPersons.each as otherPerson}
       <MenuItem
@@ -36,12 +39,14 @@
     {/each}
   {/if}
 
-  <MenuLabel label={$t`Add ${recipient.emailAddress} to addressbook`} />
-  {#each appGlobal.addressbooks.each as addressbook}
-    <MenuItem
-      label={$t`Add to ${addressbook.name}`}
-      onClick={() => addToAddressbook(addressbook)} />
-  {/each}
+  {#if !recipient.findPerson()}
+    <MenuLabel label={$t`Add ${recipient.emailAddress} to addressbook`} />
+    {#each appGlobal.addressbooks.each as addressbook}
+      <MenuItem
+        label={$t`Add to ${addressbook.name}`}
+        onClick={() => addToAddressbook(addressbook)} />
+    {/each}
+  {/if}
 
   <MenuLabel label={$t`Other actions`} />
   <MenuItem
@@ -60,7 +65,7 @@
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import MenuLabel from "../../Shared/Menu/MenuLabel.svelte";
   import Clickable from "../../Shared/Clickable.svelte";
-  import RecipientDirectory from "../../Contacts/Directory/RecipientDirectory.svelte";
+  import RecipientCard from "../../Contacts/Directory/RecipientCard.svelte";
   import { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
 
@@ -84,16 +89,24 @@
   let existingPersons: ArrayColl<Person>;
 
   function onOpen(event: Event) {
-    let person = recipient.findPerson(); // based on email address
-    if (person) {
-      openPersonFromOtherApp(person);
-      return;
-    }
-    if (recipient.isProxyAddress) {
+    if (recipient.isProxyAddress && !recipient.findPerson()) {
       return;
     }
     existingPersons = recipient.name ? findPersonsWithName(recipient.name) : null;
     isPopupOpen = true;
+  }
+
+  function openContact() {
+    let person = recipient.findPerson();
+    isPopupOpen = false;
+    if (person) {
+      openPersonFromOtherApp(person);
+    }
+  }
+
+  async function saveToFirstAddressbook() {
+    await addToAddressbook(appGlobal.addressbooks.first);
+    isPopupOpen = false;
   }
 
   async function addToAddressbook(addressbook: Addressbook) {
