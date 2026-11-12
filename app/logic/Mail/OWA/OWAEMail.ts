@@ -80,9 +80,9 @@ export class OWAEMail extends ExchangeEMail {
     }
   }
 
-  async download() {
+  async download(priority = false) {
     await this.downloadRunOnce.runOnce(async () => {
-      let result = await this.folder.account.callOWA(owaDownloadMsgsRequest([ this ]));
+      let result = await this.folder.account.callOWA(owaDownloadMsgsRequest([ this ]), undefined, undefined, priority);
       let mimeBase64 = sanitize.nonemptystring(result?.Items?.[0]?.MimeContent?.Value, null);
       if (!mimeBase64) {
         throw new OWAError({ message: gt`This was deleted on the server` });

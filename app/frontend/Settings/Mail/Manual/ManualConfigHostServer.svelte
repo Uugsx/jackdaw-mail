@@ -30,6 +30,9 @@
       on:input={onHostnameChanged}
       on:keydown={event => catchErrors(() => onKeyInHostname(event))}
       />
+    <HelpHint title={outgoing
+      ? $t`Address of the server that sends your mail, for example smtp.example.com. You can find it on your provider's help page, or ask your IT administrator.`
+      : $t`Address of the server that receives your mail, for example imap.example.com. You can find it on your provider's help page, or ask your IT administrator.`} />
   </hbox>
 
   {#if stepFull}
@@ -38,6 +41,7 @@
       {#if !isStandardPort && defaultPort}
         <hbox class="default">{$t`Default: ${defaultPort}`}</hbox>
       {/if}
+      <HelpHint title={$t`Usually 993 for IMAP with SSL/TLS, and 465 or 587 for sending. Ports 143 and 25 are not encrypted, and many networks block them.`} />
     </hbox>
 
     <vbox class="tls" class:error={tlsError} tls={config.tls}>
@@ -66,6 +70,7 @@
             <ShieldOKIcon size={20} />
           {/if}
         </hbox>
+        <HelpHint title={$t`Encrypts the connection. Choose TLS (SSL) for ports 993 and 465, or STARTTLS for ports 143 and 587. Unprotected lets others read your password.`} />
       </hbox>
     </vbox>
 
@@ -82,17 +87,19 @@
           <option value={AuthMethod.None}>{$t`No authentication`}</option>
         {/if}
       </select>
+      <HelpHint title={$t`How you prove it is you. Password is the usual choice. For Gmail, Yahoo, AOL, iCloud or Mail.ru with two-step verification, create an app password in your account's security settings and enter it as the password.`} />
     </hbox>
 
     <hbox class="username">
       {#if config.authMethod != AuthMethod.None}
         <input type="text" bind:value={config.username} tabindex={6} />
+        <HelpHint title={$t`Usually your full email address. Some company servers also want the domain, for example COMPANY/name.`} />
       {/if}
     </hbox>
 
     <hbox class="password">
       {#if config.authMethod != AuthMethod.None}
-        <PasswordChange bind:password={config.password} tabindex={7} />
+        <PasswordChange bind:password={config.password} tabindex={7} showHint={!isSetup} />
       {/if}
     </hbox>
   {/if}
@@ -109,6 +116,7 @@
   import ProtocolSelector from "./ProtocolSelector.svelte";
   import PasswordChange from "../../Shared/PasswordChange.svelte";
   import Checkbox from "../../../Shared/Checkbox.svelte";
+  import HelpHint from "../../../Shared/HelpHint.svelte";
   import ShieldOKIcon from "lucide-svelte/icons/shield-check";
   import ShieldAlertIcon from "lucide-svelte/icons/shield-alert";
   import ShieldQuestionIcon from "lucide-svelte/icons/shield-question";

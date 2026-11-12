@@ -18,6 +18,23 @@
     <vbox class="update">
       <Update />
     </vbox>
+
+    {#if otaCapable && pilotChannel !== null}
+      <vbox class="channel">
+        <Checkbox toggle
+          checked={pilotChannel}
+          allowIndetermined={false}
+          disabled={savingChannel}
+          label={$t`Early access`}
+          on:change={event => void onPilotChange(event.detail === true)} />
+        <p class="ota-hint">
+          {$t`Get new versions a day before everyone else. They may be less stable. Turn off to stay on the stable channel.`}
+        </p>
+        {#if channelError}
+          <ErrorMessageInline ex={channelError} />
+        {/if}
+      </vbox>
+    {/if}
   </vbox>
 </hbox>
 
@@ -26,6 +43,8 @@
   import { appGlobal } from "../../../logic/app";
   import { appName, appVersion, siteRoot } from '../../../logic/build';
   import Update from './Update.svelte';
+  import Checkbox from '../../Shared/Checkbox.svelte';
+  import ErrorMessageInline from '../../Shared/ErrorMessageInline.svelte';
   import T from '../../../l10n/T.svelte';
   import appIcon from '../../asset/icon/general/app-icon.png';
   import { t } from '../../../l10n/l10n';
@@ -37,6 +56,33 @@
 
   let displayVersion = appVersion;
   let otaCapable = isOtaVersion(appVersion);
+  /** Пробный канал обновлений; null — backend ещё не ответил или старый backend без каналов */
+  let pilotChannel: boolean | null = null;
+  let savingChannel = false;
+  let channelError: Error | undefined;
+
+  async function onPilotChange(pilot: boolean) {
+    let remoteApp = appGlobal.remoteApp;
+    if (typeof remoteApp?.setUpdateChannel != "function") {
+      return;
+    }
+    savingChannel = true;
+    channelError = undefined;
+    try {
+      let channel = await remoteApp.setUpdateChannel(pilot ? "pilot" : "stable");
+      pilotChannel = channel === "pilot";
+      // Новый канал — новая проверка, если обновление не скачивается и не ждёт установки
+      let status = await remoteApp.getUpdateStatus?.();
+      if (!status || ["idle", "uptodate", "unsupported"].includes(status.phase)) {
+        await remoteApp.checkForUpdate?.(true);
+      }
+    } catch (ex) {
+      channelError = ex as Error;
+      pilotChannel = !pilot;
+    } finally {
+      savingChannel = false;
+    }
+  }
 
   onMount(() => {
     let loadedRemoteApp: any;
@@ -61,6 +107,13 @@
         }
       } catch {
         // keep compile-time fallback
+      }
+      try {
+        if (typeof remoteApp.getUpdateChannel == "function") {
+          pilotChannel = await remoteApp.getUpdateChannel() === "pilot";
+        }
+      } catch {
+        pilotChannel = null;
       }
     }
 
@@ -100,5 +153,8 @@
   }
   .update {
     margin-block-start: 24px;
+  }
+  .channel {
+    margin-block-start: 20px;
   }
 </style>

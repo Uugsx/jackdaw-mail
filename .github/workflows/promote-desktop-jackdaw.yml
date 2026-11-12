@@ -1,0 +1,98 @@
+name: Jackdaw Mail Promote Desktop Update
+
+# Пробный канал → основной. Новый выпуск publish-desktop-jackdaw.yml публикует как prerelease:
+# его получают только клиенты с «Получать пробные выпуски». Остальные видят выпуск latest,
+# а latest меняет только этот workflow:
+# - каждый час (auto): самый новый пробный выпуск, выдержанный 24 ч и не остановленный;
+# - вручную: promote (срочно, без выдержки), hold / resume (остановить / снять остановку),
+#   rollback (вернуть основной канал на прошлый выпуск), status.
+# Логика — .github/scripts/ota-channel.sh, схема — docs/systems/desktop-build/ota-jackdaw.md.
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        description: "promote — сразу в основной канал; hold — остановить; resume — снять остановку; rollback — вернуть прошлый выпуск; status — показать"
+        options:
+          - status
+          - promote
+          - hold
+          - resume
+          - rollback
+        default: status
+      tag:
+        type: string
+        description: "Тег (v0.10.N). Пусто: promote/hold — самый новый пробный, resume — самый новый остановленный, rollback — прошлый выпуск основного канала"
+        required: false
+        default: ''
+
+concurrency:
+  group: promote-desktop
+  cancel-in-progress: false
+
+jobs:
+  channel:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      promoted: ${{ steps.channel.outputs.promoted }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Каналы обновлений
+        id: channel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PILOT_SOAK_HOURS: ${{ vars.PILOT_SOAK_HOURS || '24' }}
+          ACTION: ${{ github.event_name == 'schedule' && 'auto' || inputs.action }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          bash .github/scripts/ota-channel.sh "$ACTION" "$TAG" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$ACTION" != status ]; then
+            echo >> "$GITHUB_STEP_SUMMARY"
+            bash .github/scripts/ota-channel.sh status | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Манифесты основного канала на зеркале (jackdaw-mail.pro/updates/) — только при продвижении
+  # или откате. Установщики выложены ещё при публикации пробного выпуска; клиент сверяет их
+  # с sha512 из манифеста GitHub, так что упавшее зеркало не ломает обновление.
+  mirror:
+    needs: channel
+    if: needs.channel.outputs.promoted != ''
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    concurrency:
+      group: updates-mirror
+      cancel-in-progress: false
+    env:
+      MIRROR_SSH_KEY: ${{ secrets.UPDATES_MIRROR_SSH_KEY }}
+      MIRROR_KNOWN_HOSTS: ${{ secrets.UPDATES_MIRROR_KNOWN_HOSTS }}
+      MIRROR_HOST: ${{ vars.UPDATES_MIRROR_HOST }}
+      MIRROR_USER: ${{ vars.UPDATES_MIRROR_USER }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sync main channel to the update mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.channel.outputs.promoted }}
+        run: |
+          if [ -z "$MIRROR_SSH_KEY" ] || [ -z "$MIRROR_KNOWN_HOSTS" ] || [ -z "$MIRROR_HOST" ] || [ -z "$MIRROR_USER" ]; then
+            echo "::warning::Update mirror is not configured, skipping."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$MIRROR_SSH_KEY" > ~/.ssh/updates_mirror
+          chmod 600 ~/.ssh/updates_mirror
+          printf '%s\n' "$MIRROR_KNOWN_HOSTS" > ~/.ssh/updates_mirror_known_hosts
+          export MIRROR_SSH_KEY_FILE=~/.ssh/updates_mirror MIRROR_KNOWN_HOSTS_FILE=~/.ssh/updates_mirror_known_hosts
+          export MIRROR_MANIFESTS=1
+          bash app/build/ota-mirror-sync.sh "$TAG" "${{ github.repository }}"
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/updates_mirror ~/.ssh/updates_mirror_known_hosts

@@ -100,7 +100,14 @@ export async function serializeComposeMail(
     await mail.loadBody();
   }
   if (mail.composeSource && (options.loadBody ?? true)) {
-    await mail.composeSource.loadBody();
+    // Цитата исходного письма уже лежит в теле ответа. Сбой догрузки исходника
+    // (сеть, сервер) не должен уводить ответ из отдельного окна во встроенную
+    // форму главного окна — та выглядит как окно без кнопок macOS.
+    try {
+      await mail.composeSource.loadBody();
+    } catch (ex) {
+      console.error("Compose window: original message body is unavailable", ex);
+    }
   }
   let account = mail.folder?.account ?? mail.identity?.account;
   assert(account, "Compose window: mail account is missing");

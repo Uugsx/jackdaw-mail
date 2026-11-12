@@ -1,6 +1,6 @@
 <vbox class="results" flex>
   {#if searchMessages}
-    <VerticalMessageList messages={searchMessages} emptyDueToFilter={!!searchMessages} bind:selectedMessage bind:selectedMessages on:click={() => catchErrors(goToMessage)} />
+    <VerticalMessageList messages={searchMessages} emptyDueToFilter={!!searchMessages} showFolder bind:selectedMessage bind:selectedMessages on:click={() => catchErrors(goToMessage)} />
     <FolderFooter folder={null} bind:searchMessages />
   {/if}
 </vbox>

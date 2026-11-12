@@ -52,9 +52,16 @@
             <NoteIcon size="13px" />
           </hbox>
         {/if}
+        {#if replyReminder}
+          <hbox class="reply-reminder t-reply-reminder" class:due={replyReminderDue} title={replyReminderTooltip}>
+            <BellIcon size="13px" />
+          </hbox>
+        {/if}
       </hbox>
     {:else if column == "received"}
       <hbox class="cell text-cell t-date" title={fullDate}>{getDateTimeString(listDate)}</hbox>
+    {:else if column == "folder"}
+      <hbox class="cell text-cell t-folder" title={folderTitle}>{folderName}{#if folderAccount}<span class="folder-account"> · {folderAccount}</span>{/if}</hbox>
     {:else if column == "size"}
       <hbox class="cell text-cell t-size" title={sizeLabel}>{sizeLabel}</hbox>
     {:else if column == "categories"}
@@ -88,6 +95,12 @@
     </hbox>
     <hbox class="contact font-small" title={contactName}>{contactName}</hbox>
     <hbox flex />
+    {#if showFolder && folderName}
+      <hbox class="folder-label font-smallest t-folder-label" title={folderTitle}>
+        <FolderIcon size="11px" aria-hidden="true" />
+        <span class="folder-label-text">{folderName}</span>
+      </hbox>
+    {/if}
     <hbox class="date font-smallest">{getDateTimeString($message.listDisplayDate())}</hbox>
     <hbox class="unread-dot button" class:unread={!$message.isRead}>
       <Button
@@ -119,6 +132,12 @@
     {#if noted}
       <hbox class="noted" title={notedTooltip}>
         <NoteIcon size="14px" />
+      </hbox>
+    {/if}
+    {#if replyReminder}
+      <hbox class="reply-reminder" class:due={replyReminderDue} title={replyReminderTooltip}>
+        <BellIcon size="14px" />
+        <span class="reply-reminder-time">{replyReminderTime}</span>
       </hbox>
     {/if}
     {#if pinned}
@@ -175,6 +194,8 @@
   import StarIcon from "lucide-svelte/icons/star";
   import PinIcon from "lucide-svelte/icons/pin";
   import NoteIcon from "lucide-svelte/icons/notebook-pen";
+  import BellIcon from "lucide-svelte/icons/bell-ring";
+  import { findReplyReminder, replyRemindersChanged, removeReplyReminderRecord } from "../../../logic/Mail/ReplyReminder/ReplyReminder";
   import { getMessageNoteText, messageNotesChanged } from "../../../logic/Mail/MessageNotes/MessageNotes";
   import { noteTooltip } from "../../../logic/Mail/MessageNotes/MessageNote";
   import { isMessagePinned, pinnedMessagesChanged } from "../../../logic/Mail/Pin/PinnedMessages";
@@ -191,15 +212,31 @@
   import { t } from "../../../l10n/l10n";
   import CollisionBadge from "../Collision/CollisionBadge.svelte";
   import { mailSizeLabel, type MailListColumnId } from "../mailListColumns";
+  import { mailFolderName, mailFolderTitle } from "../mailFolderLabel";
+  import FolderIcon from "lucide-svelte/icons/folder";
   import { hoverMessageRow } from "../hoveredMessage";
 
   export let message: EMail;
   $: noteText = $messageNotesChanged >= 0 ? getMessageNoteText(message) : null;
   $: noted = !!noteText;
   $: notedTooltip = noteText ? noteTooltip(noteText) : "";
+  $: replyReminder = $replyRemindersChanged >= 0 && $message.isReplied ? dropAnswered() : $replyRemindersChanged >= 0 ? findReplyReminder(message) : null;
+  $: replyReminderDue = !!replyReminder && new Date(replyReminder.at) <= new Date();
+  $: replyReminderTime = replyReminder ? getDateTimeString(new Date(replyReminder.at)) : "";
+  $: replyReminderTooltip = replyReminder ? $t`Reminder to reply: ${replyReminderTime}` : "";
+  /** Ответили — напоминание больше не нужно */
+  function dropAnswered() {
+    let record = findReplyReminder(message);
+    if (record) {
+      removeReplyReminderRecord(record);
+    }
+    return null;
+  }
   $: pinned = $pinnedMessagesChanged >= 0 && isMessagePinned(message);
   /** Столбцы табличного вида; null — двухстрочная карточка */
   export let columns: MailListColumnId[] | null = null;
+  /** Двухстрочная карточка в результатах поиска: подпись папки письма */
+  export let showFolder = false;
 
   $: tags = message.tags;
   $: contactName = personDisplayName($message.contact);
@@ -220,6 +257,10 @@
     })
     : "";
   $: sizeLabel = columns ? mailSizeLabel($message.size) : "";
+  $: folderName = (showFolder || columns?.includes("folder")) ? mailFolderName($message.folder) : "";
+  $: folderTitle = folderName ? mailFolderTitle($message.folder, $emailAccounts.length > 1) : "";
+  /** С несколькими ящиками в столбце виден и ящик: одинаковые «Входящие» у разных аккаунтов различимы */
+  $: folderAccount = columns && folderName && $emailAccounts.length > 1 ? $message.folder?.account?.name ?? "" : "";
   $: readTitle =$message.isRead ? $t`Mark this message as unread` : $t`Mark this message as read`;
   $: statusTitle = actionTitle ? `${actionTitle}. ${readTitle}` : readTitle;
   /** Непрочитанное без ответа и пересылки: залитая точка, как в Outlook */
@@ -379,6 +420,20 @@
     align-self: center;
     color: var(--icon-primary, currentColor);
     margin-inline-end: 4px;
+  }
+  .reply-reminder {
+    align-self: center;
+    align-items: center;
+    gap: 3px;
+    color: var(--icon-primary, currentColor);
+    margin-inline-end: 4px;
+  }
+  .reply-reminder-time {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .reply-reminder.due {
+    color: var(--error, #d13438);
   }
   .pinned {
     align-self: center;
@@ -559,6 +614,42 @@
   .t-size {
     font-size: var(--msg-list-fs-sm, 12px);
     font-variant-numeric: tabular-nums;
+  }
+  .t-folder {
+    color: color-mix(in srgb, var(--main-fg, var(--fg)) 72%, transparent);
+  }
+  :global(.row.selected) .t-folder {
+    color: inherit;
+  }
+  .folder-account {
+    opacity: 0.75;
+  }
+  /* Папка письма в результатах поиска: тихая подпись перед датой */
+  .folder-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    align-items: center;
+    gap: 3px;
+    margin-inline-end: 8px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: var(--msg-list-fs-sm, 11px);
+    color: color-mix(in srgb, var(--main-fg, var(--fg)) 68%, transparent);
+    background-color: color-mix(in srgb, var(--main-fg, var(--fg)) 7%, transparent);
+    white-space: nowrap;
+  }
+  .folder-label :global(svg) {
+    flex-shrink: 0;
+  }
+  .folder-label-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :global(.row.selected) .folder-label {
+    color: inherit;
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
   }
   .t-size {
     text-align: end;

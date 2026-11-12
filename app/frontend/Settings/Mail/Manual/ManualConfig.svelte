@@ -31,7 +31,10 @@
   import SaveIcon from "lucide-svelte/icons/save";
   import { t } from "../../../../l10n/l10n";
   import { appGlobal } from "../../../../logic/app";
-  import { clearLoginNotifications } from "../../../Util/error";
+  import { clearLoginNotifications, showError } from "../../../Util/error";
+  import { newPasswordEntered } from "../../Shared/passwordFocus";
+  import { get } from "svelte/store";
+  import { tick, onDestroy } from "svelte";
 
   /** in/out
    * The entire object changes only when the user changes the protocol,
@@ -48,6 +51,9 @@
   }
 
   async function onSave() {
+    await saveAndRecheck();
+  }
+  async function saveAndRecheck() {
     await config.save();
     // config.saveAll() would save all dependent accounts,
     // but we're only interested in the outgoing account.
@@ -62,6 +68,20 @@
         .filter(account => account.mainAccount == config)].map(account => account.name));
     }
   }
+
+  // Новый пароль в настройках: сохраняем и сразу перепроверяем вход,
+  // не дожидаясь «Сохранить». Баннер уходит только при успехе.
+  let passwordEntries = get(newPasswordEntered);
+  const unsubscribePassword = newPasswordEntered.subscribe(count => {
+    if (count == passwordEntries) {
+      return;
+    }
+    passwordEntries = count;
+    if (!isSetup) {
+      void tick().then(saveAndRecheck).catch(showError);
+    }
+  });
+  onDestroy(unsubscribePassword);
 
   let el: ManualConfigURL | ManualConfigHost  = null;
   export async function onContinue(): Promise<boolean> {

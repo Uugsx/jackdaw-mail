@@ -343,3 +343,77 @@ export const createMessageNoteTable = sql`
 export const rollbackMessageNoteTable = sql`
   DROP TABLE IF EXISTS "messageNote";
 `;
+
+/**
+ * Письма Exchange могли получить чужой текст и вложения: сохранение по номеру
+ * строки, который уже достался другому письму, писало тему и отправителя
+ * в чужую строку. Отличить такие строки от целых нельзя, поэтому у писем
+ * Exchange (длинный ItemId в pID) с 08.11.2026 (порча появилась 09.11) сбрасываем сохранённый текст
+ * и вложения: при открытии письмо заново загрузится с сервера.
+ */
+export const reloadRecentExchangeBodies = sql`
+  DELETE FROM emailAttachment WHERE emailID IN (
+    SELECT id FROM email
+    WHERE dateReceived >= 1794096000 AND length(pID) > 40
+  );
+  UPDATE email SET
+    plaintext = NULL,
+    html = NULL,
+    downloadComplete = 0
+  WHERE dateReceived >= 1794096000 AND length(pID) > 40;
+`;
+
+/** Откат reloadRecentExchangeBodies не нужен и невозможен: текст и вложения
+ * снова приходят с сервера при открытии письма. */
+export const rollbackReloadRecentExchangeBodies = sql`SELECT 1;`;
+
+/**
+ * Миграция 15 не помогла: текст и вложения брались не из mail.db, а из
+ * исходника MIME в mail-backup.db, оставшегося под тем же номером строки от
+ * удалённого письма. Теперь чужой исходник не читается (`SQLSourceEMail`),
+ * а письма Exchange с 05.11.2026 (первые такие письма — 06.11) ещё раз
+ * сбрасываем, чтобы они загрузились с сервера.
+ */
+export const reloadExchangeBodiesFromServer = sql`
+  DELETE FROM emailAttachment WHERE emailID IN (
+    SELECT id FROM email
+    WHERE dateReceived >= 1793836800 AND length(pID) > 40
+  );
+  UPDATE email SET
+    plaintext = NULL,
+    html = NULL,
+    downloadComplete = 0
+  WHERE dateReceived >= 1793836800 AND length(pID) > 40;
+`;
+
+/** Откат не нужен и невозможен: текст и вложения снова приходят с сервера. */
+export const rollbackReloadExchangeBodiesFromServer = sql`SELECT 1;`;
+
+/**
+ * Номера строк писем больше не переиспользуются. `email.id` — INTEGER PRIMARY
+ * KEY без AUTOINCREMENT: после удаления последнего письма его номер получало
+ * следующее, а по номеру ищутся исходник MIME, файлы вложений и объекты в
+ * памяти — письмо показывало чужой текст и вложения. Новые номера выдаются из
+ * счётчика, который только растёт (`SQLEMail.insertEMailQuery`). Старт — на
+ * миллион выше текущего максимума: остатки удалённых писем с большими
+ * номерами (исходники в mail-backup.db) не совпадут с новыми письмами.
+ */
+export const createEMailIDCounter = sql`
+  CREATE TABLE IF NOT EXISTS "emailIDCounter" (
+    "value" INTEGER NOT NULL
+  );
+  INSERT INTO emailIDCounter (value)
+    SELECT COALESCE(MAX(id), 0) + 1000000 FROM email
+    WHERE NOT EXISTS (SELECT 1 FROM emailIDCounter);
+  CREATE TRIGGER IF NOT EXISTS emailIDCounterAfterInsert
+  AFTER INSERT ON email
+  BEGIN
+    UPDATE emailIDCounter SET value = MAX(value, NEW.id);
+  END;
+`;
+
+/** Откат createEMailIDCounter: номера снова выдаёт SQLite (с переиспользованием). */
+export const rollbackEMailIDCounter = sql`
+  DROP TRIGGER IF EXISTS emailIDCounterAfterInsert;
+  DROP TABLE IF EXISTS emailIDCounter;
+`;

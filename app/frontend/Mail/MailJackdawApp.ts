@@ -51,9 +51,15 @@ export class MailJackdawApp extends JackdawApp {
     if (shouldOpenComposeInWindow() || options.nativeWindowID) {
       if (supportsNativeComposeWindow()) {
         void openNativeComposeWindow(composerApp, mail)
-          .catch(() => options.nativeWindowID
-            ? openComposeInMainWindow(composerApp, mail)
-            : openFloatingCompose(composerApp, mail));
+          .catch(ex => {
+            // Причина отката во встроенную форму иначе нигде не видна
+            console.error("Compose window failed to open, using in-window composer", ex);
+            if (options.nativeWindowID) {
+              openComposeInMainWindow(composerApp, mail);
+            } else {
+              openFloatingCompose(composerApp, mail);
+            }
+          });
       } else if (options.nativeWindowID) {
         openComposeInMainWindow(composerApp, mail);
       } else {

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:regression": "vitest run test/frontend/Files/drag.test.ts test/frontend/Mail/verticalMessageListItem.test.ts test/desktop/oauth2Window.test.ts test/desktop/HTTPServer.test.ts test/logic/Auth/OAuth2Window.test.ts test/logic/Auth/OAuth2Localhost.test.ts test/logic/Auth/OAuth2MailRu.test.ts test/logic/Files/WebDAV/WebDAV.test.ts test/logic/Mail/OWA/networkRecovery.test.ts test/logic/Mail/OWA/deletionSync.test.ts test/logic/Mail/OWA/openFolderSync.test.ts test/logic/Mail/OWA/sharedMailboxFastSync.test.ts test/desktop/sqliteHost.test.ts test/logic/Mail/SQL/batchSave.hosted.test.ts test/logic/Mail/SQL/batchSave.fallback.test.ts test/logic/Mail/SQL/migrateDedupe.test.ts test/security/clientHardening.test.ts test/desktop/updateAssets.test.ts test/logic/util/convertHTML.test.ts test/logic/Calendar/dayColumns.test.ts test/frontend/Mail/mentionSuggestDestroy.test.ts",
+    "test:regression": "vitest run test/logic/util/flow/priorityQueue.test.ts test/logic/Mail/OWA/openMessagePriority.test.ts test/frontend/Files/drag.test.ts test/frontend/Mail/verticalMessageListItem.test.ts test/desktop/oauth2Window.test.ts test/desktop/HTTPServer.test.ts test/logic/Auth/OAuth2Window.test.ts test/logic/Auth/OAuth2Localhost.test.ts test/logic/Auth/OAuth2MailRu.test.ts test/logic/Files/WebDAV/WebDAV.test.ts test/logic/Mail/OWA/networkRecovery.test.ts test/logic/Mail/OWA/deletionSync.test.ts test/logic/Mail/OWA/openFolderSync.test.ts test/logic/Mail/OWA/sharedMailboxFastSync.test.ts test/desktop/sqliteHost.test.ts test/logic/Mail/SQL/batchSave.hosted.test.ts test/logic/Mail/SQL/batchSave.fallback.test.ts test/logic/Mail/SQL/migrateDedupe.test.ts test/logic/Mail/SQL/integrityFuzz.test.ts test/logic/Mail/SQL/sourceEMail.test.ts test/security/clientHardening.test.ts test/desktop/updateAssets.test.ts test/desktop/updateChannel.test.ts test/logic/util/convertHTML.test.ts test/logic/Calendar/dayColumns.test.ts test/frontend/Mail/mentionSuggestDestroy.test.ts",
     "l10n:extract": "npx tsx l10n/extractor/extractor.ts",
     "l10n:check": "npx tsx l10n/extractor/extractor.ts --check",
     "l10n:placeholder": "npx json-autotranslate --input l10n/locales --service dry-run --delete-unused-strings --type key-based --exclude **/*.template.json",
@@ -114,7 +114,8 @@
     "webdav-server": "^2.6.2"
   },
   "resolutions": {
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "compute-scroll-into-view": "3.1.1"
   },
   "author": "Jackdaw Mail",
   "copyright": "Jackdaw Mail",

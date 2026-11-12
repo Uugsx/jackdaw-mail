@@ -43,32 +43,38 @@ jobs:
               gh api -X DELETE "repos/$REPOSITORY/actions/runs/$RUN_ID"
             done
 
-      - name: Keep the newest non-empty release and its tag
+      # Каналы обновлений (docs/systems/desktop-build/ota-jackdaw.md): нельзя оставлять только
+      # самый новый выпуск — он пробный, и основной канал (latest) остался бы без выпуска.
+      # Оставляем выпуск основного канала, два прошлых (для rollback) и всё, что новее
+      # основного (пробные, остановленные, незаконченные черновики).
+      - name: Keep main channel, rollback targets and pilot releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
+          KEEP_PREVIOUS_STABLE: 2
         shell: bash
         run: |
           set -euo pipefail
-          KEEP_TAG=$(
-            gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
-              --jq '.[] | select(.draft == false and (.assets | length) > 0) | [.created_at, .tag_name] | @tsv' |
-              sort -r | head -n 1 | cut -f 2-
-          )
-
-          if [ -z "$KEEP_TAG" ]; then
-            echo "No non-empty release found; leaving releases and tags untouched."
+          STABLE=$(gh api "repos/$REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ -z "$STABLE" ]; then
+            echo "No main-channel (latest) release found; leaving releases and tags untouched."
             exit 0
           fi
-
-          echo "Keeping newest non-empty release: $KEEP_TAG"
-          gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
-            --jq '.[].tag_name' |
-            while IFS= read -r TAG; do
-              [ -z "$TAG" ] && continue
-              if [ "$TAG" = "$KEEP_TAG" ]; then
-                continue
-              fi
-              echo "Deleting old release and tag: $TAG"
-              gh release delete "$TAG" --repo "$REPOSITORY" --yes --cleanup-tag
-            done
+          ver() { printf '%s' "${1#v}"; }
+          newer() { [ "$(ver "$1")" != "$(ver "$2")" ] && [ "$(printf '%s\n%s\n' "$(ver "$1")" "$(ver "$2")" | sort -V | tail -n 1)" = "$(ver "$1")" ]; }
+          RELEASES=$(gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
+            --jq '.[] | [.tag_name, (.prerelease | tostring), ((.assets | length) | tostring)] | @tsv')
+          PREVIOUS=$(printf '%s\n' "$RELEASES" | awk -F'\t' '$2 == "false" && $3 > 0 { print $1 }' |
+            while read -r TAG; do
+              if [ -n "$TAG" ] && newer "$STABLE" "$TAG"; then echo "$TAG"; fi
+            done | sort -V | tail -n "$KEEP_PREVIOUS_STABLE")
+          echo "Main channel: $STABLE; rollback targets: $(echo $PREVIOUS)"
+          printf '%s\n' "$RELEASES" | while IFS=$'\t' read -r TAG PRE ASSETS; do
+            [ -z "$TAG" ] && continue
+            if [ "$TAG" = "$STABLE" ] || newer "$TAG" "$STABLE" || printf '%s\n' "$PREVIOUS" | grep -qxF "$TAG"; then
+              echo "Keeping $TAG"
+              continue
+            fi
+            echo "Deleting old release and tag: $TAG"
+            gh release delete "$TAG" --repo "$REPOSITORY" --yes --cleanup-tag
+          done

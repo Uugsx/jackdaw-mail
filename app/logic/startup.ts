@@ -14,7 +14,7 @@ import { loadTagCombinations } from './Abstract/TagCombination';
 import { type Account, getAllAccounts, setMainAccounts } from './Abstract/Account';
 import { getComputerOn } from './util/backend-wrapper';
 import JPCWebSocket from '../../lib/jpc-ws';
-import { production, webMail } from './build';
+import { production, webMail, isMobile } from './build';
 import { retryOnTransientError } from './util/netUtil';
 import { catchErrors, logError, showError } from '../frontend/Util/error';
 import { OWAAccount } from './Mail/OWA/OWAAccount';
@@ -22,6 +22,7 @@ import { IMAPAccount } from './Mail/IMAP/IMAPAccount';
 import { assert, sleep } from './util/util';
 import { refreshProEntitlement } from './Billing/ProEntitlement';
 import { retryWhileDatabaseBusy, type DatabaseBusyCallback } from './util/retryWhileDatabaseBusy';
+import { repairMailDatabaseOnStartup } from './Mail/SQL/repairOnStartup';
 
 /** Read JPC secret from frontent URL hash `jpcSecret=password`.
  * Before svelte-navigator `<Router>` mounts and rewrites `location.hash` */
@@ -95,7 +96,7 @@ export async function getStartObjects(onDatabaseBusy?: DatabaseBusyCallback): Pr
   if (!appGlobal.remoteApp) {
     const secret = await getJPCSecret();
     let jpc = new JPCWebSocket(null);
-    await connectToBackend(jpc, secret, jpcPortFromURL ?? (production ? 5455 : 5453));
+    await connectToBackend(jpc, secret, jpcPortFromURL ?? (isMobile ? 5457 : production ? 5455 : 5453));
     jpc.errorCallback = showError;
     jpc.reconnectCallback = checkAccounts;
     console.log("Connected to backend");
@@ -149,6 +150,10 @@ async function readStartObjects(): Promise<void> {
  *   May be called multiple times, e.g. once per account.
  */
 export function loginOnStartup(startupErrorCallback: (ex: Error) => void): void {
+  // Только главное окно и не демо: в демо mail.db — витрина, а исходники — настоящие
+  if (!webMail && !isDemoMode()) {
+    repairMailDatabaseOnStartup().catch(logError);
+  }
   let allAccounts = getAllAccounts();
   for (let account of allAccounts) {
     account.errorCallback = (ex) => backgroundErrorInAccount(ex, account);
@@ -236,5 +241,9 @@ function backgroundErrorInAccount(ex: Error, account: Account) {
 function addAccountName(ex: Error, account: Account) {
   if (ex) {
     (ex as any).accountName = account.name;
+    if ((ex as any).authFail) {
+      // Для кнопки «Ввести новый пароль» в плашке; не сериализуется в журнал
+      Object.defineProperty(ex, "failedAccount", { value: account, enumerable: false, configurable: true });
+    }
   }
 }

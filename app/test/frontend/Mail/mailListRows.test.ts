@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ArrayColl } from "svelte-collections";
+import { Observable } from "../../../logic/util/Observable";
 import type { EMail } from "../../../logic/Mail/EMail";
 import {
   findMailListRowForMessage,
@@ -349,6 +350,61 @@ describe("сортировка по столбцам таблицы", () => {
     model.dispose();
   });
 
+  test("снятый флажок сразу перемещает письмо к неотмеченным, повторная установка — обратно", async () => {
+    let flagged = Object.assign(new Observable(), fakeMail("flagged", jan1), { isStarred: true }) as unknown as EMail;
+    let plain = Object.assign(new Observable(), fakeMail("plain", jan2), { isStarred: false }) as unknown as EMail;
+    let messages = new ArrayColl<EMail>([plain, flagged]);
+    let model = new MailListRows();
+    model.setSource(messages, "flag-desc");
+    expect(subjects(model.rows)).toEqual(["flagged", "plain"]);
+    flagged.isStarred = false;
+    flagged.notifyObservers("isStarred", true);
+    await Promise.resolve();
+    expect(subjects(model.rows)).toEqual(["plain", "flagged"]);
+    plain.isStarred = true;
+    plain.notifyObservers("isStarred", false);
+    await Promise.resolve();
+    expect(subjects(model.rows)).toEqual(["plain", "flagged"]);
+    // По дате изменения флажка не трогают порядок и подписки снимаются
+    model.setSource(messages, "date-desc");
+    flagged.isStarred = true;
+    flagged.notifyObservers("isStarred", false);
+    await Promise.resolve();
+    expect(subjects(model.rows)).toEqual(["plain", "flagged"]);
+    expect((flagged as any)._observers.length).toBe(0);
+    model.dispose();
+  });
+
+  test("переход с сортировки по флажку на важность следит уже за важностью", async () => {
+    let important = Object.assign(new Observable(), fakeMail("important", jan1), { isImportant: false }) as unknown as EMail;
+    let plain = Object.assign(new Observable(), fakeMail("plain", jan2), { isImportant: false }) as unknown as EMail;
+    let messages = new ArrayColl<EMail>([plain, important]);
+    let model = new MailListRows();
+    model.setSource(messages, "flag-desc");
+    model.setSource(messages, "importance-desc");
+    expect(subjects(model.rows)).toEqual(["plain", "important"]);
+    important.isImportant = true;
+    important.notifyObservers("isImportant", false);
+    await Promise.resolve();
+    expect(subjects(model.rows)).toEqual(["important", "plain"]);
+    expect((important as any)._observers.length).toBe(1);
+    model.dispose();
+    expect((important as any)._observers.length).toBe(0);
+  });
+
+  test("новая категория у письма пересортировывает список по категориям", async () => {
+    let none = mailWith("none", jan3, { tags: tags() });
+    let beta = mailWith("beta", jan1, { tags: tags("Бета") });
+    let messages = new ArrayColl<EMail>([none, beta]);
+    let model = new MailListRows();
+    model.setSource(messages, "categories");
+    expect(subjects(model.rows)).toEqual(["beta", "none"]);
+    (none.tags as any).add({ name: "Альфа" });
+    await Promise.resolve();
+    expect(subjects(model.rows)).toEqual(["none", "beta"]);
+    model.dispose();
+  });
+
   test("категории: по алфавиту, письма без категорий в конце при любом направлении", () => {
     let messages = new ArrayColl<EMail>([
       mailWith("none", jan3, {}),
@@ -374,6 +430,29 @@ describe("сортировка по столбцам таблицы", () => {
     expect(senderRows(model.rows).map(row => row.label)).toEqual(["boris@example.com", "anna@example.com"]);
     model.setSource(messages, "subject-desc");
     expect(topicLabels(model.rows)).toEqual(["Beta", "Alpha"]);
+    model.dispose();
+  });
+});
+
+describe("сортировка по столбцу «Папка»", () => {
+  function inFolder(subject: string, sent: Date, folderName: string | null): EMail {
+    let mail = fakeMail(subject, sent) as any;
+    mail.folder = folderName == null ? null : { name: folderName, parent: null, account: { name: "Работа" } };
+    return mail as EMail;
+  }
+
+  test("по имени папки, внутри папки — новые сверху; без папки — в конце", () => {
+    let messages = new ArrayColl<EMail>([
+      inFolder("Входящее старое", new Date(2026, 0, 1), "Входящие"),
+      inFolder("Архивное", new Date(2026, 0, 2), "Архив"),
+      inFolder("Без папки", new Date(2026, 0, 5), null),
+      inFolder("Входящее новое", new Date(2026, 0, 3), "Входящие"),
+    ]);
+    let model = new MailListRows();
+    model.setSource(messages, "folder");
+    expect(subjects(model.rows)).toEqual(["Архивное", "Входящее новое", "Входящее старое", "Без папки"]);
+    model.setSource(messages, "folder-desc");
+    expect(subjects(model.rows)).toEqual(["Входящее новое", "Входящее старое", "Архивное", "Без папки"]);
     model.dispose();
   });
 });
