@@ -25,7 +25,8 @@
   </hbox>
 </Clickable>
 
-<Menu bind:isMenuOpen={isPopupOpen} {anchor} placement="bottom-start">
+<!-- Письмо лежит в отдельном webview: клики внутри него до окна не доходят, поэтому закрываем и по уходу курсора -->
+<Menu bind:isMenuOpen={isPopupOpen} {anchor} placement="bottom-start" dismissOnPointerLeave dismissDelayMs={500}>
   <RecipientCard person={recipient}
     onSave={!recipient.findPerson() && appGlobal.addressbooks.first ? saveToFirstAddressbook : null}
     onOpenContact={recipient.findPerson() ? openContact : null}
