@@ -73,6 +73,9 @@ export class WebMailBackend {
   }
   async setTheme() {
   }
+  async setGlass(on: boolean): Promise<boolean> {
+    return false;
+  }
 }
 
 export class HTTPFetchError extends Error {

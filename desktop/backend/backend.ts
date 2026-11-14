@@ -214,6 +214,7 @@ async function createSharedAppObject() {
     setUpdateChannel,
     updateStatus: updateState,
     setTheme,
+    setGlass,
     openMenu,
     getConfigDir,
     getFilesDir,
@@ -1615,6 +1616,25 @@ function setTheme(theme: "system" | "light" | "dark" | "gray") {
     throw new Error("Bad theme name " + theme);
   }
   nativeTheme.themeSource = theme == "gray" ? "dark" : theme;
+}
+
+/**
+ * Нативная полупрозрачность главного окна (vibrancy, только macOS) для «Liquid Glass».
+ * Выключена: её нельзя проверить автотестом (окно рисуется чёрным), стекло рисует CSS.
+ */
+const kNativeGlass = false;
+async function setGlass(on: boolean): Promise<boolean> {
+  if (!kNativeGlass || process.platform != "darwin" || !mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  try {
+    mainWindow.setVibrancy(on ? "under-window" : null);
+    mainWindow.setBackgroundColor(on ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#0B0F14" : "#F6F7F9");
+    return on;
+  } catch (ex) {
+    console.error("Liquid Glass vibrancy failed", ex);
+    return false;
+  }
 }
 
 async function openExternalURL(url: string) {

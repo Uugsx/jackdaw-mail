@@ -3373,5 +3373,8 @@
   "uB3tFV": "Usually 993 for IMAP with SSL/TLS, and 465 or 587 for sending. Ports 143 and 25 are not encrypted, and many networks block them.",
   "tOAkrH": "Encrypts the connection. Choose TLS (SSL) for ports 993 and 465, or STARTTLS for ports 143 and 587. Unprotected lets others read your password.",
   "H53V1G": "How you prove it is you. Password is the usual choice. For Gmail, Yahoo, AOL, iCloud or Mail.ru with two-step verification, create an app password in your account's security settings and enter it as the password.",
-  "4bJkHe": "Usually your full email address. Some company servers also want the domain, for example COMPANY/name."
+  "4bJkHe": "Usually your full email address. Some company servers also want the domain, for example COMPANY/name.",
+  "jvBDGR": "Liquid Glass",
+  "rcId0P": "Translucent glass surfaces with blur",
+  "Vc0Nkv": "Applies to side panels, toolbars and menus. Falls back to the regular look when the system reduces transparency"
 }
