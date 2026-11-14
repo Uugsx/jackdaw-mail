@@ -140,7 +140,12 @@ export class OWAAddressbook extends ExchangeAddressbook {
           }
         }
       } catch (ex) {
-        this.account.errorCallback(ex);
+        // Старые OWA не понимают GetAttachment в JSON: фото контактов — не повод для окна с ошибкой
+        if (/Cannot deserialize object of type GetAttachmentJsonRequest/i.test((ex as Error)?.message ?? "")) {
+          console.warn("OWA: сервер не отдаёт фото контактов (GetAttachment)");
+        } else {
+          this.account.errorCallback(ex);
+        }
       }
     }
   }
