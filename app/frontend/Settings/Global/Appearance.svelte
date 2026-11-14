@@ -43,6 +43,17 @@
   </HeaderGroupBox>
 
   <HeaderGroupBox>
+    <hbox slot="header">{$t`Liquid Glass`}</hbox>
+    <vbox class="density-setting">
+      <label class="checkbox-row">
+        <Checkbox bind:checked={liquidGlassSetting.value} />
+        {$t`Translucent glass surfaces with blur`}
+      </label>
+      <hbox class="density-hint font-small">{$t`Applies to side panels, toolbars and menus. Falls back to the regular look when the system reduces transparency`}</hbox>
+    </vbox>
+  </HeaderGroupBox>
+
+  <HeaderGroupBox>
     <hbox slot="header">{$t`Language`}</hbox>
     <hbox class="wrap">
       <vbox class="setting language">
@@ -101,6 +112,7 @@
   import { catchErrors } from "../../Util/error";
   import { widgetsEnabled } from "../../Widgets/widgetState";
   import { webMail } from "../../../logic/build";
+  import { liquidGlassSetting } from "./liquidGlass";
   import { normalizeUIDensity, uiDensitySetting, type UIDensity } from "./uiDensity";
 
   let language = getUILocalePref();

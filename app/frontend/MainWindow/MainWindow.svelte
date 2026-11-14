@@ -129,6 +129,7 @@
   import { categoriesLoaded } from "../Settings/SettingsCategories";
   import { applyColors } from "../Settings/Global/AppThemeColors";
   import { applyThemeAttribute } from "../Settings/Global/themeAttribute";
+  import { applyGlassAttribute, applyGlassNativeAttribute, glassSupported, liquidGlassSetting, normalizeLiquidGlass } from "../Settings/Global/liquidGlass";
   import AppBar from "../AppsBar/AppBar.svelte";
   import AppContentRoutes from "../AppsBar/AppContentRoutes.svelte";
   import NotificationBar from "./NotificationBar.svelte";
@@ -353,6 +354,20 @@
     applyThemeAttribute(theme);
     // Серая тема — тёмная схема ОС с переопределённой палитрой (data-theme="gray")
     appGlobal.remoteApp.setTheme(theme == "gray" ? "dark" : theme);
+  }
+  $: changeGlass(normalizeLiquidGlass($liquidGlassSetting.value));
+  async function changeGlass(on: boolean) {
+    applyGlassAttribute(on);
+    on = on && glassSupported();
+    if (!appGlobal?.remoteApp?.setGlass) {
+      return;
+    }
+    try {
+      // На macOS окно получает нативную полупрозрачность; иначе стекло рисует только CSS.
+      applyGlassNativeAttribute(on && await appGlobal.remoteApp.setGlass(on));
+    } catch (ex) {
+      applyGlassNativeAttribute(false);
+    }
   }
   let colorsSetting = getLocalStorage("appearance.colors", {});
   // Читаем актуальное значение при каждом уведомлении. Реактивная запись

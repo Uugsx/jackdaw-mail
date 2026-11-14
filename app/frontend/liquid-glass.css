@@ -1,0 +1,109 @@
+/* Опциональное оформление «Liquid Glass» (macOS/iOS 26).
+ * Включается атрибутом data-glass="on" на <html> (Настройки → Внешний вид); без него файл
+ * ничего не меняет. Цвета берутся только из токенов темы через color-mix, поэтому работает
+ * в светлой, тёмной и серой темах. Отключается при системной «уменьшить прозрачность»
+ * и там, где нет backdrop-filter. */
+@media all {
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-glass="on"] {
+      --border-radius: 12px;
+      --glass-blur: 28px;
+      --glass-saturate: 180%;
+      --glass-bg: color-mix(in srgb, var(--main-bg) 52%, transparent);
+      --glass-bg-elevated: color-mix(in srgb, var(--main-bg) 74%, transparent);
+      --glass-bg-subtle: color-mix(in srgb, var(--main-bg) 38%, transparent);
+      --glass-border: color-mix(in srgb, #fff 55%, transparent);
+      --glass-border-subtle: color-mix(in srgb, #fff 38%, transparent);
+      --glass-highlight:
+        inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent),
+        inset 0 0 0 1px color-mix(in srgb, #fff 14%, transparent);
+      --glass-shadow: 0 10px 32px rgba(var(--shadow-color), 0.16);
+      --glass-hover-bg: color-mix(in srgb, var(--main-bg) 46%, transparent);
+      /* Мягкий фон, сквозь который просвечивают стеклянные панели */
+      background-image:
+        radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, var(--icon-primary) 38%, transparent), transparent 70%),
+        radial-gradient(55% 60% at 92% 18%, color-mix(in srgb, var(--link-fg) 26%, transparent), transparent 70%),
+        radial-gradient(70% 60% at 60% 100%, color-mix(in srgb, var(--outstanding-bg) 45%, transparent), transparent 70%);
+      background-attachment: fixed;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root[data-glass="on"] {
+        --glass-border: color-mix(in srgb, #fff 20%, transparent);
+        --glass-border-subtle: color-mix(in srgb, #fff 12%, transparent);
+        --glass-highlight:
+          inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent),
+          inset 0 0 0 1px color-mix(in srgb, #fff 6%, transparent);
+        --glass-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+      }
+    }
+
+    /* Нативная прозрачность окна (macOS vibrancy): подложка прозрачна */
+    :root[data-glass="on"][data-glass-native="on"],
+    :root[data-glass="on"][data-glass-native="on"] body,
+    :root[data-glass="on"][data-glass-native="on"] #app,
+    :root[data-glass="on"][data-glass-native="on"] .main-window:not(.mobile) {
+      background-color: transparent !important;
+      background-image: none;
+    }
+
+    /* Подложка окна прозрачная, иначе градиент <html> закрыт и стеклу нечего размывать */
+    :root[data-glass="on"] .main-window:not(.mobile) {
+      background-color: transparent !important;
+    }
+
+    /* Слои внутри панелей тоже полупрозрачны, чтобы стекло было видно */
+    :root[data-glass="on"] .main-window:not(.mobile) .mail-main :is(.message-list-pane, .message-display-pane) {
+      background-color: transparent !important;
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .message-list-pane .message:not(.selected) {
+      background-color: color-mix(in srgb, var(--main-bg) 40%, transparent) !important;
+    }
+
+    /* Панели и тулбары */
+    :root[data-glass="on"] .main-window:not(.mobile) :is(.app-bar, .window-header) {
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .window-header {
+      background-color: color-mix(in srgb, var(--windowheader-bg) 55%, transparent) !important;
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .app-bar {
+      background-color: color-mix(in srgb, var(--main-bg) 55%, transparent) !important;
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .folder-pane {
+      background: color-mix(in srgb, var(--leftbar-bg) 58%, transparent) !important;
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .mail-main {
+      background: color-mix(in srgb, var(--main-bg) 72%, transparent) !important;
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .mail-toolbar {
+      background: color-mix(in srgb, var(--main-bg) 55%, transparent) !important;
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+
+    /* Всплывающие окна и меню */
+    :root[data-glass="on"] .main-window:not(.mobile) .popup {
+      border-radius: calc(var(--border-radius) + 4px);
+      box-shadow: var(--glass-highlight), 0 0 0 1px rgba(var(--shadow-color), 0.06), var(--glass-shadow);
+    }
+    :root[data-glass="on"] .main-window:not(.mobile) .menuitem {
+      border-radius: calc(var(--border-radius) - 2px);
+    }
+  }
+}
+
+@media all {
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-glass="on"] .main-window:not(.mobile) .content-shell {
+      background-color: transparent !important;
+    }
+  }
+}

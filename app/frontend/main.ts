@@ -1,4 +1,5 @@
 import './app.css';
+import './liquid-glass.css';
 import './icon-motion.css';
 import { loadUILocale } from '../l10n/l10n';
 
