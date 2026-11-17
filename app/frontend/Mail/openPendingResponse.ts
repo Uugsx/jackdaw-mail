@@ -1,6 +1,7 @@
 import { appGlobal } from "../../logic/app";
 import { MailAccount } from "../../logic/Mail/MailAccount";
 import type { PendingResponseRequest } from "../../logic/Reports/ResponseReminder";
+import type { EMail } from "../../logic/Mail/EMail";
 import { openEMailMessage } from "./open";
 import { gt } from "../../l10n/l10n";
 

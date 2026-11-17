@@ -33,7 +33,7 @@
       icon={OpenIcon}
       plain
       disabled={busy}
-      onClick={() => openFlaggedEMail(row)} />
+      onClick={() => run(() => openFlaggedEMail(row))} />
     <Button
       label={$t`Mark as complete`}
       icon={CheckIcon}
