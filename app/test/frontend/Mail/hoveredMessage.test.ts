@@ -16,6 +16,7 @@ import {
   getHoveredMessage,
   hotkeysOnHoveredMessageSetting,
   getMailActionTargets,
+  hoverMessageRow,
   resolveMailActionTargets,
 } from "../../../frontend/Mail/hoveredMessage";
 import { selectedMessage, selectedMessages } from "../../../frontend/Mail/Selected";
@@ -114,6 +115,17 @@ describe("отслеживание строки под курсором", () => 
     selectedMessages.set(new ArrayColl([c]));
     selectedMessage.set(a);
     expect(getHoveredMessage()).toBe(b);
+  });
+
+  test("список сдвинулся под неподвижной мышью — новое письмо не считается наведённым", () => {
+    hover = hoverRow(b);
+    let old = document.createElement("div");
+    document.body.append(old);
+    hoverMessageRow(old, a);
+    old.dispatchEvent(new Event("pointermove", { bubbles: true }));
+    // :hover теперь указывает на строку b, а мышь последний раз двигалась над a
+    expect(getHoveredMessage()).toBeNull();
+    old.remove();
   });
 
   test("курсор над телом письма (WebView) не считается наведением на строку", () => {

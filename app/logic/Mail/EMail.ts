@@ -428,8 +428,10 @@ export class EMail extends Message {
     for (let tag of toAdd) {
       this.tags.add(tag);
     }
-    await this.storage.saveMessageTags(this);
-    await this.addTagsOnServer(toAdd);
+    await this.enqueueTagWrite(async () => {
+      await this.storage.saveMessageTags(this);
+      await this.addTagsOnServer(toAdd);
+    });
   }
 
   async removeTag(tag: Tag) {
@@ -444,8 +446,19 @@ export class EMail extends Message {
     for (let tag of toRemove) {
       this.tags.remove(tag);
     }
-    await this.storage.saveMessageTags(this);
-    await this.removeTagsOnServer(toRemove);
+    await this.enqueueTagWrite(async () => {
+      await this.storage.saveMessageTags(this);
+      await this.removeTagsOnServer(toRemove);
+    });
+  }
+
+  private tagWriteQueue: Promise<unknown> = Promise.resolve();
+
+  /** Записи категорий одного письма идут строго по порядку: быстрое «поставить-снять» не перепутается на сервере. */
+  private enqueueTagWrite(write: () => Promise<void>): Promise<void> {
+    let result = this.tagWriteQueue.then(write);
+    this.tagWriteQueue = result.catch(() => { });
+    return result;
   }
 
   async clearTags() {

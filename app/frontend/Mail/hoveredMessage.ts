@@ -39,6 +39,14 @@ const rowMessages = new WeakMap<Element, EMail>();
 let pointerMovedSinceKeyboardNavigation = false;
 let trackingInstalled = false;
 
+/**
+ * Письмо, на которое курсор реально навёл пользователь (последнее движение мыши).
+ * Если список сдвинулся под неподвижной мышью (пришло новое письмо), `:hover`
+ * указывает уже на другое письмо — оно не считается наведённым.
+ * "any" — после прокрутки колесом доверяем `:hover`.
+ */
+let pointerMessage: EMail | null | "any" = "any";
+
 const kNavigationKeys = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"]);
 
 function installTracking(): void {
@@ -46,8 +54,18 @@ function installTracking(): void {
     return;
   }
   trackingInstalled = true;
-  document.addEventListener("pointermove", () => {
+  document.addEventListener("pointermove", event => {
     pointerMovedSinceKeyboardNavigation = true;
+    let target = event.target;
+    if (!(target instanceof Element)) {
+      pointerMessage = "any";
+      return;
+    }
+    let row = target.closest(`[${kRowAttribute}]`);
+    pointerMessage = row ? rowMessages.get(row) ?? null : null;
+  }, { capture: true, passive: true });
+  document.addEventListener("wheel", () => {
+    pointerMessage = "any";
   }, { capture: true, passive: true });
   document.addEventListener("keydown", event => {
     if (kNavigationKeys.has(event.key)) {
@@ -90,7 +108,11 @@ export function getHoveredMessage(): EMail | null {
   }
   let rows = document.querySelectorAll(`[${kRowAttribute}]:hover`);
   let row = rows[rows.length - 1];
-  return row?.isConnected ? rowMessages.get(row) ?? null : null;
+  let hovered = row?.isConnected ? rowMessages.get(row) ?? null : null;
+  if (hovered && pointerMessage !== "any" && pointerMessage !== hovered) {
+    return null;
+  }
+  return hovered;
 }
 
 export type MailActionTargets = {
