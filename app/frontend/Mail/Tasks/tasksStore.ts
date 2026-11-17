@@ -10,6 +10,7 @@ import {
   isTaskCompleted, taskDueGroup, type ExchangeTask, type ExchangeTaskInput, type FlagDueChoice, type TaskDueGroup,
 } from "../../../logic/Mail/Tasks/ExchangeTask";
 import { openPendingResponseMessage } from "../openPendingResponse";
+import type { Workspace } from "../../../logic/Abstract/Workspace";
 import { gt } from "../../../l10n/l10n";
 
 /** Страница «Задачи» вместо списка писем */
@@ -45,6 +46,25 @@ let refreshGeneration = 0;
 function accountByDBID(id: number): MailAccount | null {
   return appGlobal.emailAccounts.contents
     .find((account): account is MailAccount => account instanceof MailAccount && String(account.dbID) == String(id)) ?? null;
+}
+
+/** Элемент относится к ящикам пространства; `null`/нет пространства — все ящики. */
+export function isItemInWorkspace(item: TaskListItem, workspace: Workspace | null | undefined): boolean {
+  if (!workspace) {
+    return true;
+  }
+  return item.account?.workspace === workspace;
+}
+
+let warmedUp = false;
+
+/** Один раз при запуске: читает кэш и сервер, чтобы счётчик «Задачи» был без открытия страницы. */
+export function warmUpTasks(): void {
+  if (warmedUp) {
+    return;
+  }
+  warmedUp = true;
+  refreshTasks().catch(() => { });
 }
 
 function publish(patch: Partial<TasksState> = {}) {
