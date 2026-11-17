@@ -9,7 +9,9 @@ import { loadFlaggedEMails, type FlaggedEMailRow } from "../../../logic/Mail/Tas
 import {
   isTaskCompleted, taskDueGroup, type ExchangeTask, type ExchangeTaskInput, type FlagDueChoice, type TaskDueGroup,
 } from "../../../logic/Mail/Tasks/ExchangeTask";
-import { openPendingResponseMessage } from "../openPendingResponse";
+import { loadReportMessage } from "../openPendingResponse";
+import { classifyMessage, focusedInboxEnabled } from "../../../logic/Mail/Focused/FocusedInbox";
+import { SpecialFolder } from "../../../logic/Mail/Folder";
 import type { Workspace } from "../../../logic/Abstract/Workspace";
 import { gt } from "../../../l10n/l10n";
 
@@ -64,7 +66,15 @@ export function warmUpTasks(): void {
     return;
   }
   warmedUp = true;
-  refreshTasks().catch(() => { });
+  // Аккаунты могут появиться уже после запуска: обновляем при каждом изменении их числа
+  let lastCount = -1;
+  appGlobal.emailAccounts.subscribe(() => {
+    let count = appGlobal.emailAccounts.length;
+    if (count > 0 && count != lastCount) {
+      lastCount = count;
+      refreshTasks().catch(() => { });
+    }
+  });
 }
 
 function publish(patch: Partial<TasksState> = {}) {
@@ -176,8 +186,20 @@ export async function resolveFlaggedEMail(row: FlaggedEMailRow): Promise<EMail> 
 }
 
 export async function openFlaggedEMail(row: FlaggedEMailRow): Promise<void> {
+  let email = await loadReportMessage({ accountId: row.accountId, folderId: row.folderId, emailId: row.emailId });
+  const { openEMailMessage } = await import("../open");
+  const { selectedSearchTab } = await import("../Selected");
+  const { focusedTab } = await import("../Focused/focusedView");
+  // Список не должен прятать письмо: поиск и вкладка «Другие» сбрасываются
+  selectedSearchTab.set(0); // SearchView.Folder
+  if (focusedInboxEnabled().value && email.folder?.specialFolder == SpecialFolder.Inbox) {
+    focusedTab.set(classifyMessage(email));
+  }
+  if (!email.folder.messages.contains(email)) {
+    email.folder.messages.add(email);
+  }
   tasksViewOpen.set(false);
-  await openPendingResponseMessage({ accountId: row.accountId, folderId: row.folderId, emailId: row.emailId });
+  await openEMailMessage(email);
 }
 
 async function updateFlaggedRow(row: FlaggedEMailRow, action: (email: EMail) => Promise<void>): Promise<void> {
