@@ -3,7 +3,7 @@ import { SpecialFolder } from "./Folder";
 import type { MailAccount } from "./MailAccount";
 import { newSearchEMail } from "./Store/setStorage";
 
-/** Последний доступный локально ответ на это письмо, или undefined. */
+/** Последний доступный локально ответ НАШЕГО аккаунта на это письмо (чужие ответы в цепочке игнорируются), или undefined. */
 export async function findReplyToMessage(original: EMail): Promise<EMail | undefined> {
   if (!original.isReplied || !original.messageID) {
     return undefined;
@@ -42,7 +42,7 @@ function findReplyInAccount(parentMessageID: string, account: MailAccount): EMai
   let candidates: EMail[] = [];
   for (let folder of account.getAllFolders()) {
     for (let message of folder.messages) {
-      if (message.inReplyTo == parentMessageID) {
+      if (message.inReplyTo == parentMessageID && message.outgoing) {
         candidates.push(message);
       }
     }
@@ -51,7 +51,7 @@ function findReplyInAccount(parentMessageID: string, account: MailAccount): EMai
 }
 
 function pickLatestReply(messages: readonly EMail[], parentMessageID: string): EMail | undefined {
-  let replies = messages.filter(message => message.inReplyTo == parentMessageID);
+  let replies = messages.filter(message => message.inReplyTo == parentMessageID && message.outgoing);
   if (!replies.length) {
     return undefined;
   }

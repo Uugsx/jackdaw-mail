@@ -156,7 +156,7 @@
   import HourglassIcon from "lucide-svelte/icons/hourglass";
   import AwaitingReplyList from "../FollowUp/AwaitingReplyList.svelte";
   import { followUpSnapshot } from "../FollowUp/followUpReminders";
-  import { tasksState, tasksViewOpen, groupOpenItems } from "../Tasks/tasksStore";
+  import { tasksState, tasksViewOpen, groupOpenItems, isItemInWorkspace, warmUpTasks } from "../Tasks/tasksStore";
   import ListChecksIcon from "lucide-svelte/icons/list-checks";
   import { notesViewOpen } from "../Notes/notesStore";
   import StickyNoteIcon from "lucide-svelte/icons/sticky-note";
@@ -165,6 +165,7 @@
   import { scheduledSends } from "../SendLater/sendQueue";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { onMount } from "svelte";
+  import { selectedWorkspace } from "../../MainWindow/Selected";
   import CheckIcon from "lucide-svelte/icons/check";
   import ChevronUpIcon from "lucide-svelte/icons/chevron-up";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
@@ -219,13 +220,14 @@
   $: scheduledFailedCount = scheduledVisible.filter(item => item.status == "failed").length;
   let minuteTick = Date.now();
   onMount(() => {
+    warmUpTasks();
     let interval = setInterval(() => minuteTick = Date.now(), 60_000);
     return () => clearInterval(interval);
   });
   $: awaitingOverdueCount = $followUpSnapshot.reminders
     .filter(reminder => reminder.dueAt.getTime() <= minuteTick).length;
   // Сроки «сегодня» и просроченные — после первого открытия страницы задач
-  $: dueTaskSections = groupOpenItems($tasksState.items, new Date(minuteTick))
+  $: dueTaskSections = groupOpenItems($tasksState.items.filter(item => isItemInWorkspace(item, $selectedWorkspace)), new Date(minuteTick))
     .filter(section => section.group == "overdue" || section.group == "today");
   $: dueTaskCount = dueTaskSections.reduce((sum, section) => sum + section.items.length, 0);
   $: overdueTaskCount = dueTaskSections.find(section => section.group == "overdue")?.items.length ?? 0;

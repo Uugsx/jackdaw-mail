@@ -78,3 +78,28 @@ test("выбирает самый поздний ответ", async () => {
 
   expect(await findReplyToMessage(original)).toBe(newer);
 });
+
+test("игнорирует более поздний чужой ответ в цепочке", async () => {
+  let folder = await setupFolder();
+  let original = newTestEMail(folder, "orig5@example.com");
+  original.isReplied = true;
+  await SQLEMail.save(original);
+
+  let mine = newTestEMail(folder, "reply-mine@example.com");
+  mine.inReplyTo = original.messageID;
+  mine.outgoing = true;
+  mine.sent = new Date("2026-07-14T09:48:00Z");
+  await SQLEMail.save(mine);
+
+  let foreign = newTestEMail(folder, "reply-foreign@example.com");
+  foreign.inReplyTo = original.messageID;
+  foreign.outgoing = false;
+  foreign.sent = new Date("2026-07-14T10:03:00Z");
+  await SQLEMail.save(foreign);
+
+  folder.messages.add(original);
+  folder.messages.add(mine);
+  folder.messages.add(foreign);
+
+  expect(await findReplyToMessage(original)).toBe(mine);
+});

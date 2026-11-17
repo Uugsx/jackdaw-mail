@@ -131,7 +131,7 @@
 
 <script lang="ts">
   import {
-    addTask, completedItems, groupOpenItems, openFlaggedEMail, refreshTasks, taskAccounts, tasksState, tasksViewOpen,
+    addTask, completedItems, groupOpenItems, isItemInWorkspace, openFlaggedEMail, refreshTasks, taskAccounts, tasksState, tasksViewOpen,
     type TaskListItem,
   } from "./tasksStore";
   import { flagDaysForChoice, newTaskInput, type FlagDueChoice, type TaskDueGroup } from "../../../logic/Mail/Tasks/ExchangeTask";
@@ -151,6 +151,7 @@
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import { catchErrors } from "../../Util/error";
+  import { selectedWorkspace } from "../../MainWindow/Selected";
   import { onMount } from "svelte";
   import { t } from "../../../l10n/l10n";
 
@@ -173,8 +174,9 @@
     return () => clearInterval(interval);
   });
 
-  $: groups = groupOpenItems($tasksState.items, now);
-  $: completed = completedItems($tasksState.items);
+  $: workspaceItems = $tasksState.items.filter(item => isItemInWorkspace(item, $selectedWorkspace));
+  $: groups = groupOpenItems(workspaceItems, now);
+  $: completed = completedItems(workspaceItems);
   $: openCount = groups.reduce((sum, section) => sum + section.items.length, 0);
   $: selectedItem = $tasksState.items.find(item => item.key == selectedKey) ?? null;
 
