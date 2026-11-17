@@ -126,7 +126,7 @@
   import { moveMessagesToArchive } from "../mailArchiveActions";
   import { withMailTransferProgress } from "../mailTransferProgress";
   import { gt } from "../../../l10n/l10n";
-  import { listVisibleMessages, listRowsInView, folderSyncing } from "../Selected";
+  import { listVisibleMessages, listRowsInView, folderSyncing, revealMessageRequest } from "../Selected";
   import Spinner from "../../Shared/Spinner.svelte";
   import { catchErrors } from "../../Util/error";
   import { ArrayColl, CollectionObserver, type Collection } from "svelte-collections";
@@ -146,6 +146,7 @@
 
   let selectedRow: MailListRow | null = null;
   let selectedRows = new ArrayColl<MailListRow>();
+  const kRevealRetryMs = 250;
   let scrollToMailListItem: ((item: MailListRow) => void) | null = null;
   let scrollRequestVersion = 0;
   let lastScrolledMessage: EMail | null = null;
@@ -220,6 +221,7 @@
   $: syncRowsFromMessages(selectedMessages, $listRows);
   $: observeSelectedMessages(selectedMessages);
   $: scrollSelectedMessageIntoView($listRows, selectedMessage, listSort);
+  $: revealRequestedMessage($revealMessageRequest, $listRows);
   $: gridTemplate = mailListGridTemplate(columnPrefs, listWidth, showFolder);
   $: dividers = normalizeMailListDividers($mailListDividersSetting.value);
   $: listLayout = resolveMailListLayout(normalizeMailListLayout($mailListLayoutSetting.value), listWidth,
@@ -399,6 +401,40 @@
           scrollToMailListItem?.(currentRow);
         }
       }
+    });
+  }
+
+  /** Письмо, открытое из задач: выбираем строку и прокручиваем к ней при каждой пересборке строк,
+   * пока запрос активен (папка может догружаться, а высота строки — измеряться позже). */
+  function revealRequestedMessage(request: EMail | null, rows: Collection<MailListRow>): void {
+    if (!request) {
+      return;
+    }
+    let row = findMailListRowShowingMessage(rows, request);
+    if (!row) {
+      return;
+    }
+    if (selectedMessage !== request) {
+      selectedMessage = request;
+    }
+    if (row !== selectedRow) {
+      selectedRow = row;
+      selectedRows.replaceAll([row]);
+    }
+    let requestVersion = ++scrollRequestVersion;
+    let reveal = () => {
+      if (requestVersion != scrollRequestVersion || get(revealMessageRequest) !== request) {
+        return;
+      }
+      let current = findMailListRowShowingMessage(rows, request);
+      if (current) {
+        scrollToMailListItem?.(current);
+      }
+    };
+    void tick().then(() => {
+      reveal();
+      requestAnimationFrame(reveal);
+      setTimeout(reveal, kRevealRetryMs);
     });
   }
 

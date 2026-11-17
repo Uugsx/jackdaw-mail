@@ -11,6 +11,9 @@ export const selectedAccount = writable<MailAccount>();
 export const selectedFolder = writable<Folder>();
 export const selectedMessage = writable<EMail>();
 
+/** Письмо, которое список обязан показать (например, из задач): прокрутка повторяется, пока строки загружаются. */
+export const revealMessageRequest = writable<EMail | null>(null);
+
 /** Selection to restore when leaving a message opened from a file/attachment (e.g. nested .eml). */
 export const selectionToRestore = writable<{ account: MailAccount, folder: Folder, message: EMail } | null>(null);
 
