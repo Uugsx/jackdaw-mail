@@ -460,6 +460,16 @@ import ShareChatIcon from "lucide-svelte/icons/message-square-share";
       .map(tag => tag.name));
   $: anyTargetHasTags = tagTargets.some(m => m.tags.hasItems);
 
+  /* Теги письма меняются сразу, а запись на сервер (OWA — секунды) завершается позже:
+   * чекмарки следуют за самими `m.tags`, а не за концом записи. */
+  let tagWatchers: (() => void)[] = [];
+  $: watchTagTargets($selectedMessages, message);
+  function watchTagTargets(_selected: unknown, _message: EMail) {
+    tagWatchers.forEach(stop => stop());
+    tagWatchers = actionTargets().map(m => m.tags.subscribe(() => { tagsEpoch++; }));
+  }
+  onDestroy(() => tagWatchers.forEach(stop => stop()));
+
   /* The parameters are the dependencies of the statement above; the values
    * come from `actionTargets()`. */
   function currentTagTargets(_epoch: number, _selected: unknown, _message: EMail): EMail[] {
