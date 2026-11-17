@@ -65,7 +65,7 @@
 
   const FLYOUT_OVERLAP_PX = 12;
 
-  type SubmenuRegistry = { register: (fn: () => void) => () => void };
+  type SubmenuRegistry = { register: (fn: () => void) => () => void, closeOthers?: (except: () => void) => void };
   let submenuRegistry = getContext<SubmenuRegistry | undefined>("submenuRegistry");
 
   $: hasIcon = !!icon || $$slots.icon;
@@ -119,6 +119,7 @@
 
   async function open() {
     clearCloseTimer();
+    submenuRegistry?.closeOthers?.(close);
     positionFlyout();
     isOpen = true;
     await tick();

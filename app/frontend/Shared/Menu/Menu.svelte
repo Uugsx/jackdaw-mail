@@ -30,6 +30,14 @@
           fn();
         }
       },
+      /** Одновременно открыто одно подменю: остальные закрываются сразу */
+      closeOthers(except: () => void) {
+        for (let fn of closers) {
+          if (fn !== except) {
+            fn();
+          }
+        }
+      },
     };
   }
 
