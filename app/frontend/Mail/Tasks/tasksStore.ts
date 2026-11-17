@@ -188,7 +188,7 @@ export async function resolveFlaggedEMail(row: FlaggedEMailRow): Promise<EMail> 
 export async function openFlaggedEMail(row: FlaggedEMailRow): Promise<void> {
   let email = await loadReportMessage({ accountId: row.accountId, folderId: row.folderId, emailId: row.emailId });
   const { openEMailMessage } = await import("../open");
-  const { selectedSearchTab } = await import("../Selected");
+  const { selectedSearchTab, revealMessageRequest } = await import("../Selected");
   const { focusedTab } = await import("../Focused/focusedView");
   // Список не должен прятать письмо: поиск и вкладка «Другие» сбрасываются
   selectedSearchTab.set(0); // SearchView.Folder
@@ -199,8 +199,17 @@ export async function openFlaggedEMail(row: FlaggedEMailRow): Promise<void> {
     email.folder.messages.add(email);
   }
   tasksViewOpen.set(false);
+  revealMessageRequest.set(email);
   await openEMailMessage(email);
+  setTimeout(() => {
+    if (get(revealMessageRequest) === email) {
+      revealMessageRequest.set(null);
+    }
+  }, kRevealWindowMs);
 }
+
+/** Сколько секунд после открытия из задач список повторно прокручивается к письму */
+const kRevealWindowMs = 8000;
 
 async function updateFlaggedRow(row: FlaggedEMailRow, action: (email: EMail) => Promise<void>): Promise<void> {
   let email = await resolveFlaggedEMail(row);
