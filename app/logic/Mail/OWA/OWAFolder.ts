@@ -2132,8 +2132,23 @@ export class OWAFolder extends ExchangeFolder {
       }
       let serverMoved = false;
       let localMutationChanged = false;
+      // Письмо пропадает из списка сразу, не дожидаясь ответа сервера
+      // (на общем ящике он идёт секунды). При ошибке письмо возвращается.
+      let hiddenOptimistically = batch.filter(message => sourceFolder.messages.contains(message));
+      if (hiddenOptimistically.length) {
+        sourceFolder.messages.removeAll(hiddenOptimistically);
+      }
       try {
-        let newItemIDs = await this.moveOrCopyMessagesReturningIDs("move", new ArrayColl([...batch]));
+        let newItemIDs: Map<string, string>;
+        try {
+          newItemIDs = await this.moveOrCopyMessagesReturningIDs("move", new ArrayColl([...batch]));
+        } catch (ex) {
+          if (hiddenOptimistically.length) {
+            sourceFolder.messages.addAll(hiddenOptimistically);
+            sourceFolder.notifyObservers();
+          }
+          throw ex;
+        }
         serverMoved = true;
         sourceOWAFolder?.beginObserverMute();
         this.beginObserverMute();

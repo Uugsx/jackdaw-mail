@@ -394,7 +394,6 @@
   const saveWindowSettingsDebounced = debounce(() => catchErrors(saveWindowSettings), 1000);
   const pressedCategoryShortcutCodes = new KeyboardCategoryShortcutPressGuard();
   const pressedConfiguredShortcutCodes = new KeyboardShortcutPressGuard();
-  let categoryShortcutApplicationInProgress = false;
   let configuredShortcutExecutionInProgress = false;
 
   function clearPressedCategoryShortcutCodes(): void {
@@ -570,15 +569,8 @@
   }
 
   async function applyCategoryShortcutOnce(target: CategoryShortcutTarget): Promise<void> {
-    if (categoryShortcutApplicationInProgress) {
-      return;
-    }
-    categoryShortcutApplicationInProgress = true;
-    try {
-      await applyCategoryShortcut(target);
-    } finally {
-      categoryShortcutApplicationInProgress = false;
-    }
+    // Не ждём сервер: следующее нажатие не должно теряться; дубли гасит PressGuard
+    await applyCategoryShortcut(target);
   }
 
   function onGlobalShortcutKeyup(event: KeyboardEvent): void {

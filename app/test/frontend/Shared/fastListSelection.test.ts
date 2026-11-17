@@ -106,4 +106,29 @@ describe("FastList mail selection", () => {
 
     expect(selectedItems.contents).toEqual(rebuiltItems);
   });
+  test("keeps the selected row when a new row arrives above it", async () => {
+    let a = { id: 1 }, b = { id: 2 }, c = { id: 3 };
+    let items = new ArrayColl<TestItem>([a, b, c]);
+    let selectedItems = new ArrayColl<TestItem>();
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted = mount(FastList, {
+      target,
+      props: { items, selectedItems, selectionKey: (item: TestItem) => item.id },
+    });
+    await tick();
+    (target.querySelectorAll(".row")[1] as HTMLElement).click();
+    expect(selectedItems.contents).toEqual([b]);
+
+    // Новое письмо сверху, строки пересоздаются
+    items.replaceAll([{ id: 9 }, { id: 1 }, { id: 2 }, { id: 3 }]);
+    await tick();
+    expect(selectedItems.contents.map(i => i.id)).toEqual([2]);
+
+    // То же, но добавлением без пересоздания
+    items.add({ id: 10 });
+    items.replaceAll([{ id: 10 }, ...items.contents.filter(i => i.id != 10)]);
+    await tick();
+    expect(selectedItems.contents.map(i => i.id)).toEqual([2]);
+  });
 });
