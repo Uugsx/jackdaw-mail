@@ -3376,5 +3376,8 @@
   "4bJkHe": "Usually your full email address. Some company servers also want the domain, for example COMPANY/name.",
   "jvBDGR": "Liquid Glass",
   "rcId0P": "Translucent glass surfaces with blur",
-  "Vc0Nkv": "Applies to side panels, toolbars and menus. Falls back to the regular look when the system reduces transparency"
+  "Vc0Nkv": "Applies to side panels, toolbars and menus. Falls back to the regular look when the system reduces transparency",
+  "pHBVnw": "Anonymous statistics",
+  "fgu0E6": "Send anonymous usage statistics",
+  "J8tW74": "Once a day, the app sends a random installation ID, the app version, the operating system and the processor type. No email, names, addresses or message content are sent. This helps us count how many people use the app and which versions are in use"
 }
