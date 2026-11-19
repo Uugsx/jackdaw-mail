@@ -257,6 +257,7 @@ async function createSharedAppObject() {
     fs: fsPromises,
     directory,
     platform,
+    arch,
     path: {
       dirname: path.dirname,
       join: path.join,
@@ -2184,6 +2185,11 @@ async function getThumbnailForLocalFile(fullPath: string, width: number, height:
 
 function platform(): string {
   return os.platform();
+}
+
+/** Архитектура процессора для анонимной статистики, например arm64 или x64. */
+function arch(): string {
+  return process.arch;
 }
 
 /**

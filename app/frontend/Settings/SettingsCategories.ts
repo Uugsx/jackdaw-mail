@@ -9,6 +9,7 @@ import { myHarddrive } from "../../logic/Files/Harddrive/HarddriveAccount";
 import { appGlobal } from "../../logic/app";
 import GlobalAppearance from "./Global/Appearance.svelte";
 import GlobalWorkspaces from "./Global/Workspaces.svelte";
+import GlobalPrivacy from "./Global/Privacy.svelte";
 import GlobalSystemIntegration from "./Global/SystemIntegration.svelte";
 import GlobalKeyboardShortcuts from "./Global/KeyboardShortcuts.svelte";
 import MailAppearance from "./Mail/Appearance.svelte";
@@ -78,6 +79,7 @@ globalSettings.subCategories.addAll([
   new SettingsCategory("global-appearance", gt`Appearance`, GlobalAppearance),
   new SettingsCategory("global-workspaces", gt`Workspaces`, GlobalWorkspaces),
   new SettingsCategory("global-system-integration", gt`System integration`, GlobalSystemIntegration),
+  new SettingsCategory("global-privacy", gt`Privacy`, GlobalPrivacy),
   new SettingsCategory("global-keyboard-shortcuts", gt`Keyboard shortcuts`, GlobalKeyboardShortcuts),
   // Окно настроек показывает только «Общие» и «Почту», поэтому рабочее время календаря здесь
   new SettingsCategory("calendar-working-hours", gt`Work time`, CalendarWorkingHours),

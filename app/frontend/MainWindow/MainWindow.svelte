@@ -175,6 +175,7 @@
     updatePaneFocusFromPointer,
   } from "./paneFocus";
   import { startUpdateNotificationWatcher } from "./UpdateNotification";
+  import { startUsageStatsPing } from "./usageStats";
   import { assert } from "../../logic/util/util";
   import { searchContacts } from "../../logic/Contacts/Search";
   import type { ComposeWindowPerson } from "../../logic/Mail/Composer/ComposeWindowProtocol";
@@ -317,6 +318,7 @@
     }
     // #endif
     startUpdateNotificationWatcher();
+    startUsageStatsPing();
     if (appGlobal.emailAccounts.isEmpty && appGlobal.chatAccounts.isEmpty) {
       await setup();
     } else {
