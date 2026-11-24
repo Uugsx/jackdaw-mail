@@ -10,6 +10,7 @@ import { expectedSha512ForAsset, isSha512Match, pickMacDmgAsset } from './update
 import { applyMirrorToProvider, kMirrorStallTimeoutMs, mirrorUrlFor, resolveUpdateMirrorBase } from './updateMirror';
 import { isPublicFetchHost } from './netGuard';
 import { applyTestProfile, isTestProfile, testFilesDir, testJPCPort, testUpdateFeedHost } from './testProfile';
+import { kTimeZoneFileName, parseTimeZone, serializeTimeZone, validTimeZone } from './timeZone';
 import { kUpdateChannelFileName, parseUpdateChannel, serializeUpdateChannel, shouldAllowPrerelease, type UpdateChannel } from './updateChannel';
 import { Observable, notifyChangedProperty } from '../../lib/util/Observable';
 import { ImapFlow } from 'imapflow';
@@ -212,6 +213,8 @@ async function createSharedAppObject() {
     getUpdateStatus,
     getUpdateChannel,
     setUpdateChannel,
+    getTimeZoneSetting,
+    setTimeZoneSetting,
     updateStatus: updateState,
     setTheme,
     setGlass,
@@ -932,6 +935,76 @@ export async function setUpdateChannel(channel: UpdateChannel): Promise<UpdateCh
   await fsPromises.writeFile(updateChannelPath(), serializeUpdateChannel(next), "utf8");
   applyUpdateChannel(next);
   return next;
+}
+
+let appTimeZone: string | null = null;
+const timeZoneDebuggers = new WeakSet<Electron.WebContents>();
+
+function timeZonePath(): string {
+  return path.join(app.getPath("userData"), kTimeZoneFileName);
+}
+
+/** Читает сохранённый пояс и ставит его процессу; вызывать до создания окон. */
+export function loadAppTimeZone(): string | null {
+  try {
+    appTimeZone = parseTimeZone(fs.readFileSync(timeZonePath(), "utf8"));
+  } catch {
+    appTimeZone = null;
+  }
+  applyProcessTimeZone();
+  return appTimeZone;
+}
+
+let systemTimeZoneEnv: string | undefined = process.env.TZ;
+
+function applyProcessTimeZone() {
+  if (appTimeZone) {
+    process.env.TZ = appTimeZone;
+  } else if (systemTimeZoneEnv === undefined) {
+    delete process.env.TZ;
+  } else {
+    process.env.TZ = systemTimeZoneEnv;
+  }
+}
+
+/** Подменяет пояс в странице (Chromium не читает TZ на Windows, поэтому через отладчик). */
+export async function applyTimeZoneToWebContents(wc: Electron.WebContents) {
+  try {
+    if (wc.isDestroyed()) {
+      return;
+    }
+    if (!timeZoneDebuggers.has(wc)) {
+      if (!appTimeZone) {
+        return;
+      }
+      if (!wc.debugger.isAttached()) {
+        wc.debugger.attach("1.3");
+      }
+      timeZoneDebuggers.add(wc);
+      wc.once("destroyed", () => timeZoneDebuggers.delete(wc));
+    }
+    // Пустое значение возвращает пояс системы
+    await wc.debugger.sendCommand("Emulation.setTimezoneOverride", { timezoneId: appTimeZone ?? "" });
+  } catch (ex) {
+    console.warn("Could not apply time zone to window", ex);
+  }
+}
+
+export async function getTimeZoneSetting(): Promise<string | null> {
+  return appTimeZone;
+}
+
+/** «Часовой пояс программы» (Настройки → Внешний вид); null = как на компьютере. */
+export async function setTimeZoneSetting(timeZone: string | null): Promise<string | null> {
+  let next = timeZone == null ? null : validTimeZone(timeZone);
+  if (timeZone != null && !next) {
+    throw new Error("Unknown time zone");
+  }
+  await fsPromises.writeFile(timeZonePath(), serializeTimeZone(next), "utf8");
+  appTimeZone = next;
+  applyProcessTimeZone();
+  await Promise.all(webContents.getAllWebContents().map(applyTimeZoneToWebContents));
+  return appTimeZone;
 }
 
 function configureAutoUpdater() {
