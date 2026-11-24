@@ -6,7 +6,9 @@
  * хранится в служебных data-атрибутах, а применяется отдельной таблицей стилей.
  * Перед сохранением черновика и отправкой атрибуты снимаются.
  */
-import { readable } from "svelte/store";
+import { derived, readable, type Readable } from "svelte/store";
+import { getLocalStorage } from "../../Util/LocalStorage";
+import { getMessageViewerBackgroundSetting, normalizeMessageViewerBackground } from "../Message/messageViewerAppearance";
 import { adaptBackgroundColor, adaptTextColor, parseCssColor } from "../Message/emailDarkMode";
 
 type RGB = { r: number; g: number; b: number };
@@ -35,6 +37,41 @@ export const darkColorScheme = readable(false, set => {
   query.addEventListener("change", onChange);
   return () => query.removeEventListener("change", onChange);
 });
+
+/**
+ * Тёмный ли редактор письма. Совпадает с фоном письма в просмотре (настройка «Фон письма»):
+ * белый — светлый, тёмный — тёмный, «как тема» — по теме приложения. Иначе ответ открывался
+ * тёмным, а то же письмо в окне просмотра — белым.
+ */
+let editorDarkStore: Readable<boolean> | null = null;
+
+function createEditorDarkStore(): Readable<boolean> {
+  let backgroundSetting = getMessageViewerBackgroundSetting();
+  let themeSetting = getLocalStorage("appearance.theme", "system");
+  return derived([backgroundSetting, themeSetting, darkColorScheme], ([background, theme, systemDark]) => {
+    let mode = normalizeMessageViewerBackground(background.value);
+    if (mode == "white") {
+      return false;
+    }
+    if (mode == "dark") {
+      return true;
+    }
+    let name = theme.value;
+    return name == "dark" || name == "gray" ? true : name == "light" ? false : systemDark;
+  });
+}
+
+export const composeEditorDark: Readable<boolean> = {
+  subscribe(run, invalidate) {
+    try {
+      editorDarkStore ??= createEditorDarkStore();
+      return editorDarkStore.subscribe(run, invalidate);
+    } catch {
+      // Нет хранилища настроек (тесты, нет окна): следуем теме приложения
+      return darkColorScheme.subscribe(run, invalidate);
+    }
+  },
+};
 
 /**
  * Читаемый на тёмном фоне цвет текста или null, если исходный уже читается.

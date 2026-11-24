@@ -157,7 +157,7 @@
             />
         </vbox>
       {/if}
-      <vbox flex class="editor-wrapper">
+      <vbox flex class="editor-wrapper" class:is-dark={$composeEditorDark} class:paper-white={!$composeEditorDark && $darkColorScheme} class:paper-dark={$composeEditorDark && !$darkColorScheme}>
         <Paper>
             <Scroll visibleScrollbars={floating} hideHorizontalScrollbar={standalone && !floating}>
             <SMLComposer {mail} />
@@ -283,6 +283,7 @@
   import { get } from "svelte/store";
   import type { Editor } from '@tiptap/core';
   import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
+  import { composeEditorDark, darkColorScheme } from "./composeDarkColors";
 
   export let mail: EMail;
   export let floating = false;
@@ -1322,11 +1323,9 @@
   }
   /* Тёмная тема: ссылки читаемые голубые, как в просмотре письма.
      Остальные цвета адаптирует расширение DarkModeColors. */
-  @media (prefers-color-scheme: dark) {
-    .editor :global(.ProseMirror a),
-    .editor :global(.ProseMirror a span) {
-      color: #6cb4ff !important;
-    }
+  .editor-wrapper.is-dark .editor :global(.ProseMirror a),
+  .editor-wrapper.is-dark .editor :global(.ProseMirror a span) {
+    color: #6cb4ff !important;
   }
   .compose-quote {
     margin: 0 12px 12px;
@@ -1368,6 +1367,17 @@
     box-shadow: none;
     min-width: 0;
     min-height: 0;
+  }
+  /* Фон письма отличается от темы приложения: бумага редактора — как в просмотре письма */
+  .editor-wrapper.paper-white :global(.paper) {
+    background-color: #ffffff;
+    color: #111827;
+    color-scheme: light;
+  }
+  .editor-wrapper.paper-dark :global(.paper) {
+    background-color: #1a1a1c;
+    color: #e5e7eb;
+    color-scheme: dark;
   }
   .attachments-row {
     flex: 0 0 auto;
