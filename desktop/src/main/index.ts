@@ -1,4 +1,4 @@
-import { setMainWindow, startupBackend, shutdownBackend, startupArgs, updateState, checkForUpdateAndNotify, createJPCSecret, isQuittingForUpdate, prepareUpdaterAuth } from '../../backend/backend';
+import { loadAppTimeZone, applyTimeZoneToWebContents, setMainWindow, startupBackend, shutdownBackend, startupArgs, updateState, checkForUpdateAndNotify, createJPCSecret, isQuittingForUpdate, prepareUpdaterAuth } from '../../backend/backend';
 import { app, shell, BrowserWindow, dialog, session, Menu, MenuItemConstructorOptions, type ContextMenuParams, type WebContents } from 'electron'
 import { ipcMain } from 'electron/main';
 import { join } from 'path'
@@ -995,6 +995,8 @@ async function whenReady() {
   // <https://learn.microsoft.com/en-us/windows/win32/shell/appids>
   electronApp.setAppUserModelId('app.jackdaw');
 
+  loadAppTimeZone();
+
   // Remove exec path
   handleCommandline(process.argv.splice(1));
 
@@ -1040,6 +1042,9 @@ const kBackgroundUpdateCheckMs = 4 * 60 * 60 * 1000; // every 4 hours
 
 app.on('web-contents-created', (_event, webContents) => {
   setWindowOpenHandler(webContents);
+  // Пояс программы действует в каждой странице, в том числе в новых окнах
+  webContents.on('did-start-navigation', () => void applyTimeZoneToWebContents(webContents));
+  void applyTimeZoneToWebContents(webContents);
   // В <webview> показывается недоверенный контент: Node.js и preload ему не положены,
   // даже если атрибуты тега будут подменены.
   webContents.on('will-attach-webview', (attachEvent, webPreferences, params) => {

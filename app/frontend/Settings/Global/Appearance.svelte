@@ -88,6 +88,8 @@
     </hbox>
   </HeaderGroupBox>
 
+  <TimeZoneSetting />
+
   {#if !appGlobal.isMobile && !webMail}
   <HeaderGroupBox>
     <hbox slot="header">{$t`Side panel`}</hbox>
@@ -105,6 +107,7 @@
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
   import AppThemeColors from "./AppThemeColors.svelte";
   import LanguageDropDown from "./LanguageDropDown.svelte";
+  import TimeZoneSetting from "./TimeZoneSetting.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
   import Button from "../../Shared/Button.svelte";
   import Checkbox from "../../Shared/Checkbox.svelte";
