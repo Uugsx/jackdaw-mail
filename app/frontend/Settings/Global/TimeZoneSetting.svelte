@@ -79,8 +79,10 @@
 
   async function onChange(value: string) {
     selected = (await remoteApp.setTimeZoneSetting(value || null)) ?? "";
-    // Все даты считаются заново: перезагружаем окно, чтобы ничего не осталось в старом поясе
-    location.reload();
+    // Все даты считаются заново: перезапускаем приложение, чтобы ничего не осталось в старом поясе.
+    // Простая перезагрузка окна не годится: секрет соединения с backend живёт в адресе страницы,
+    // а роутер его стирает.
+    await remoteApp.restartApp();
   }
 </script>
 
