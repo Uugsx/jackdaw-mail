@@ -1,40 +1,37 @@
-{#if selection && !popupOpen}
-  <button class="selection-translate-button" style:left="{selection.x}px" style:top="{selection.y}px"
-    title={$t`Translate selected text`} on:mousedown|preventDefault on:click={openPopup}>
-    <LanguagesIcon size="16" />
-    <span>{$t`Translate`}</span>
-  </button>
-{/if}
-{#if selection && popupOpen}
-  <vbox class="selection-translate-popup" style:left="{selection.x}px" style:top="{selection.y}px" on:mousedown|stopPropagation>
-    <hbox class="head">
-      <select value={target} on:change={event => changeTarget(event.currentTarget.value)} aria-label={$t`Translate into`}>
-        {#each languages as language (language)}
-          <option value={language}>{capitalizeLanguageName(translationLanguageName(language, getUILocale()), getUILocale())}</option>
-        {/each}
-      </select>
-      <button class="close" aria-label={$t`Close`} on:click={close}><CloseIcon size="14" /></button>
-    </hbox>
-    <div class="result" class:error={!!error}>
+{#if selection}
+  <hbox class="selection-translate" style:left="{selection.x}px" style:top="{selection.y}px"
+    class:error={!!error}>
+    <button class="translate" title={error || $t`Translate selected text`} disabled={loading}
+      on:mousedown|preventDefault on:click={() => translate(target)}>
       {#if loading}
-        <LoaderIcon size="16" class="spin" /> {$t`Translating…`}
+        <LoaderIcon size="15" class="spin" />
+        <span>{$t`Translating…`}</span>
       {:else if error}
-        {error}
+        <span class="error-text">{error}</span>
       {:else}
-        {result}
+        <LanguagesIcon size="15" />
+        <span>{$t`Translate`}</span>
       {/if}
-    </div>
-    {#if result && !loading && !error}
-      <button class="copy" on:click={copy}>{copied ? $t`Copied` : $t`Copy`}</button>
+    </button>
+    {#if !loading}
+      <label class="language" title={$t`Translate into`}>
+        <ChevronDownIcon size="14" />
+        <select value="" aria-label={$t`Translate into`} on:change={event => pickLanguage(event.currentTarget)}>
+          <option value="" disabled>{$t`Translate into`}</option>
+          {#each languages as language (language)}
+            <option value={language}>{capitalizeLanguageName(translationLanguageName(language, getUILocale()), getUILocale())}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
-  </vbox>
+  </hbox>
 {/if}
 
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import LanguagesIcon from "lucide-svelte/icons/languages";
   import LoaderIcon from "lucide-svelte/icons/loader-circle";
-  import CloseIcon from "lucide-svelte/icons/x";
+  import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import { getUILocale, t } from "../../../l10n/l10n";
   import {
     capitalizeLanguageName,
@@ -45,19 +42,17 @@
     translationLanguages,
     translationTargetLanguage,
   } from "./messageTranslation";
+  import { installSelectionTools } from "./selectionReplace";
 
   /** Окно письма (iframe), в котором выделяют текст */
   export let webview: HTMLIFrameElement | null = null;
 
   const kMaxChars = 5000;
   let selection: { x: number, y: number, text: string } | null = null;
-  let popupOpen = false;
   let target = translationTargetLanguage();
   let languages: string[] = [target];
-  let result = "";
   let error = "";
   let loading = false;
-  let copied = false;
   let run = 0;
   let attachedDoc: Document | null = null;
 
@@ -78,19 +73,20 @@
   function show(text: string, x: number, y: number) {
     text = text.trim();
     if (text.length < 2) {
-      if (!popupOpen) {
+      if (!loading) {
         selection = null;
       }
       return;
     }
-    if (popupOpen) {
+    if (loading) {
       return;
     }
+    error = "";
     let host = (webview as HTMLElement).offsetParent?.getBoundingClientRect();
     let width = host?.width ?? 600;
     selection = {
       text: text.slice(0, kMaxChars),
-      x: Math.max(4, Math.min(x, width - 350)),
+      x: Math.max(4, Math.min(x, width - 180)),
       y,
     };
   }
@@ -102,14 +98,16 @@
       show("", 0, 0);
       return;
     }
-    let rect = sel.getRangeAt(0).getBoundingClientRect();
+    let range = sel.getRangeAt(0);
+    (iframeDocument()?.defaultView as any).__jackdawRange = sel.isCollapsed ? null : range.cloneRange();
+    let rect = range.getBoundingClientRect();
     let frame = webview.getBoundingClientRect();
     let host = webview.offsetParent?.getBoundingClientRect() ?? frame;
     show(sel.toString(), frame.left - host.left + rect.left, frame.top - host.top + rect.bottom + 6);
   }
 
   function onIframeMouseDown() {
-    if (!popupOpen) {
+    if (!loading) {
       selection = null;
     }
   }
@@ -141,6 +139,7 @@
         var sel = window.getSelection();
         var text = sel ? sel.toString() : "";
         var x = 0, y = 0;
+        window.__jackdawRange = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
         if (sel && sel.rangeCount) {
           var rect = sel.getRangeAt(0).getBoundingClientRect();
           x = rect.left;
@@ -218,30 +217,51 @@
     detach();
   });
 
-  async function openPopup() {
-    popupOpen = true;
-    await translate();
+  function pickLanguage(select: HTMLSelectElement) {
+    let language = select.value;
+    select.value = "";
+    if (language) {
+      target = language;
+      void translate(language);
+    }
   }
 
-  async function changeTarget(language: string) {
-    target = language;
-    await translate();
-  }
-
-  async function translate() {
-    if (!selection) {
+  /** Перевод выделенного и замена его в письме (оригинал — во всплывающей подсказке) */
+  async function translate(language: string) {
+    if (!selection || loading) {
       return;
     }
     let id = ++run;
     loading = true;
     error = "";
-    result = "";
-    copied = false;
     try {
-      let translated = await translateSelection(selection.text, target);
-      if (id == run) {
-        result = translated.text;
+      let doc = iframeDocument();
+      let guest = webview as GuestWebview;
+      let texts: string[];
+      let apply: (translations: string[]) => Promise<unknown>;
+      if (doc?.defaultView) {
+        let win = doc.defaultView as any;
+        installSelectionTools(win);
+        texts = win.__jackdawSel.collect();
+        apply = async translations => win.__jackdawSel.apply(translations);
+      } else if (typeof guest?.executeJavaScript == "function") {
+        texts = await guest.executeJavaScript(
+          `(${installSelectionTools.toString()})(window); window.__jackdawSel.collect()`) as string[];
+        apply = translations => guest.executeJavaScript(
+          `window.__jackdawSel.apply(${JSON.stringify(translations)})`);
+      } else {
+        return;
       }
+      if (!Array.isArray(texts) || !texts.length) {
+        selection = null;
+        return;
+      }
+      let translated = await translateSelection(texts.map(text => text.slice(0, kMaxChars)), language);
+      if (id != run) {
+        return;
+      }
+      await apply(translated.texts);
+      selection = null;
     } catch (ex) {
       if (id == run) {
         error = (ex as Error)?.message ?? String(ex);
@@ -252,69 +272,54 @@
       }
     }
   }
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(result);
-      copied = true;
-    } catch {
-      // Буфер обмена недоступен
-    }
-  }
-
-  function close() {
-    run++;
-    popupOpen = false;
-    selection = null;
-  }
 </script>
 
 <style>
-  .selection-translate-button,
-  .selection-translate-popup {
+  .selection-translate {
     position: absolute;
     z-index: 20;
+    align-items: stretch;
+    max-width: 320px;
     background: var(--bg, #fff);
     color: var(--fg, #111);
-    border: 1px solid rgba(128, 128, 128, 0.4);
+    border: 1px solid rgba(128, 128, 128, 0.35);
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    font-size: 13px;
   }
-  .selection-translate-button {
+  button.translate {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    cursor: pointer;
-  }
-  .selection-translate-popup {
-    width: 340px;
-    max-width: calc(100% - 8px);
-    padding: 8px;
-    gap: 8px;
-  }
-  .head {
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .result {
-    max-height: 220px;
-    overflow: auto;
-    white-space: pre-wrap;
-    user-select: text;
-  }
-  .result.error {
-    color: var(--error, #c0392b);
-  }
-  .close,
-  .copy {
     background: none;
     border: none;
-    cursor: pointer;
     color: inherit;
+    cursor: pointer;
   }
-  .copy {
-    align-self: flex-end;
-    opacity: 0.8;
+  button.translate:hover,
+  .language:hover {
+    background: rgba(128, 128, 128, 0.14);
+  }
+  .error-text {
+    color: var(--error, #c0392b);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .language {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    border-left: 1px solid rgba(128, 128, 128, 0.3);
+    cursor: pointer;
+  }
+  .language select {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
 </style>

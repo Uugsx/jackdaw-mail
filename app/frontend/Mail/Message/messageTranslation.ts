@@ -196,6 +196,53 @@ export function languageSampleFromHTML(html: string | null | undefined): string 
   return text.split("\n").filter(line => !isMessageHeaderLine(line) && !looksLikeCodeOrNoise(line)).join("\n");
 }
 
+const kForeignLineMinChars = 20;
+const kForeignMinChars = 40;
+
+function textLinesFromHTML(html: string): string[] {
+  let doc = new DOMParser().parseFromString(html, "text/html");
+  for (let el of doc.querySelectorAll("style, script, code, pre")) {
+    el.remove();
+  }
+  for (let el of doc.querySelectorAll("p, div, br, li, tr, h1, h2, h3, h4, h5, h6, blockquote, hr")) {
+    el.after(doc.createTextNode("\n"));
+  }
+  return (doc.body?.textContent ?? "").split("\n");
+}
+
+/**
+ * Язык, на котором написана заметная часть письма (вместе с цитатами), кроме `target`.
+ * Переписка бывает на нескольких языках: последний ответ на русском, а ниже — английский и турецкий.
+ */
+export function foreignLanguageIn(html: string | null | undefined, text: string | null | undefined, target: string): string | null {
+  let lines = html && typeof DOMParser != "undefined" ? textLinesFromHTML(html) : (text ?? "").split("\n");
+  let total = new Map<string, number>();
+  for (let line of lines) {
+    line = line.trim();
+    if (line.length < kForeignLineMinChars || isMessageHeaderLine(line) || looksLikeCodeOrNoise(line)) {
+      continue;
+    }
+    let detected = detectLanguage(line);
+    if (!detected) {
+      continue;
+    }
+    let language = normalizeTranslationLanguage(detected.language);
+    if (!language || sameTranslationLanguage(language, target)) {
+      continue;
+    }
+    total.set(language, (total.get(language) ?? 0) + line.length);
+  }
+  let best: string | null = null;
+  let bestChars = 0;
+  for (let [language, chars] of total) {
+    if (chars > bestChars) {
+      best = language;
+      bestChars = chars;
+    }
+  }
+  return bestChars >= kForeignMinChars ? best : null;
+}
+
 export function detectMessageLanguage(message: EMail): DetectedLanguage | null {
   let html = message?.html;
   let detected = detectLanguage(languageSampleFromHTML(html));
@@ -329,12 +376,22 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
       this.update({ status: "choose-language", sourceLanguage: null });
       return;
     }
-    if (source && sameTranslationLanguage(source, target)) {
+    let kind = this.requestedKind;
+    let original = kind == "text" ? this.message.text ?? "" : this.requestedSource || this.message.html;
+    /** Письмо в основном на нужном языке, но в цитатах есть другие: переводим только их */
+    let mixed = false;
+    if (source && sameTranslationLanguage(source, target) && !this.chosenLanguage) {
+      let foreign = foreignLanguageIn(kind == "html" ? original : null, kind == "text" ? original : null, target);
+      if (!foreign) {
+        this.update({ status: "same-language", sourceLanguage: source });
+        return;
+      }
+      source = foreign;
+      mixed = true;
+    } else if (source && sameTranslationLanguage(source, target)) {
       this.update({ status: "same-language", sourceLanguage: source });
       return;
     }
-    let kind = this.requestedKind;
-    let original = kind == "text" ? this.message.text ?? "" : this.requestedSource || this.message.html;
     let key = this.resultKey(kind, original, source ?? "", target, engine);
     if (this.results.has(key)) {
       this.update({ status: "translated", sourceLanguage: source });
@@ -350,7 +407,7 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
       let detectedByService: string | null = null;
       let batch: TranslateBatch = engine == "deepl"
         ? async (texts, isHTML) => {
-          let result = await translateTextsWithDeepL(await this.deeplKey(), source, target, texts, isHTML);
+          let result = await translateTextsWithDeepL(await this.deeplKey(), mixed ? null : source, target, texts, isHTML);
           detectedByService ??= result.detectedLanguage;
           return result.texts;
         }
@@ -377,7 +434,11 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
       if (this.abort != abort) {
         return;
       }
-      let finalSource = source ?? normalizeTranslationLanguage(detectedByService);
+      let finalSource = mixed ? source : source ?? normalizeTranslationLanguage(detectedByService);
+      if (!source && finalSource && sameTranslationLanguage(finalSource, target)) {
+        // Сервис узнал язык по первой части; в цитатах могут быть другие языки
+        finalSource = foreignLanguageIn(kind == "html" ? original : null, kind == "text" ? original : null, target) ?? finalSource;
+      }
       if (finalSource && sameTranslationLanguage(finalSource, target)) {
         this.update({ status: "same-language", sourceLanguage: finalSource });
         return;
@@ -551,25 +612,25 @@ export async function translationSuggestionFor(message: EMail): Promise<string |
  * поэтому внешний сервис используется и без включённой настройки (текст уходит только этого фрагмента).
  * DeepL — если выбран в настройках, иначе онлайн-движок; на устройстве — когда онлайн недоступен.
  */
-export async function translateSelection(text: string, target: string): Promise<{ text: string; engine: TranslationEngineID }> {
+export async function translateSelection(texts: string[], target: string): Promise<{ texts: string[]; engine: TranslationEngineID }> {
   let chosen = getTranslationEngineSetting().value;
   if (chosen == "deepl" && isTranslationEngineAvailable("deepl")) {
     let key = await passwordDecrypt(getDeepLKeySetting().value || null);
     if (!key) {
       throw new UserError(gt`Enter your DeepL API key in Settings → Mail → Read.`);
     }
-    let result = await translateTextsWithDeepL(key, null, target, [text], false);
-    return { text: result.texts[0] ?? "", engine: "deepl" };
+    let result = await translateTextsWithDeepL(key, null, target, texts, false);
+    return { texts: result.texts, engine: "deepl" };
   }
   if (isOnlineTranslationAvailable()) {
-    let result = await translateTextsOnline(null, target, [text], false);
-    return { text: result.texts[0] ?? "", engine: "online" };
+    let result = await translateTextsOnline(null, target, texts, false);
+    return { texts: result.texts, engine: "online" };
   }
-  let detected = detectLanguage(text);
+  let detected = detectLanguage(texts.join("\n"));
   if (!detected) {
     throw new UserError(gt`Could not detect the language of the selected text.`);
   }
   let source = normalizeTranslationLanguage(detected.language);
-  let translated = await translateTextsLocally(source, target, [text], false);
-  return { text: translated[0] ?? "", engine: "local" };
+  let translated = await translateTextsLocally(source, target, texts, false);
+  return { texts: translated, engine: "local" };
 }

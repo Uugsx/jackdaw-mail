@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { segmentSkipper } from "../../../../frontend/Mail/Message/messageTranslation";
+import { foreignLanguageIn, segmentSkipper } from "../../../../frontend/Mail/Message/messageTranslation";
 
 const ru = "Добрый день! Прошу проверить отправку заказа, потому что курьер не приехал в назначенное время.";
 const en = "Hello team, please check the shipment of the order because the courier did not arrive on time today.";
@@ -52,5 +52,22 @@ describe("шапки и подписи", () => {
     expect(skip("Старший инженер по сопровождению программного обеспечения")).toBe(true);
     expect(skip("From: A <a@b.c>")).toBe(true);
     expect(skip(ru)).toBe(false);
+  });
+});
+
+describe("foreignLanguageIn", () => {
+  test("находит английский и турецкий в цитатах русского письма", () => {
+    let text = [
+      "Коллеги, добрый день. Проверим ошибку и вернёмся с ответом сегодня вечером.",
+      "From: Burcu <b@flo.com.tr>",
+      "I want to create one order for test. I'm getting the following error from the service. Could you please check why this error is occurring?",
+      "Requestte gönderdiğimiz randevulu teslimat parametresini kabul etmiyor.",
+    ].join("\n");
+    expect(foreignLanguageIn(null, text, "ru")).toBe("en");
+  });
+
+  test("письмо целиком на нужном языке", () => {
+    let text = "Коллеги, добрый день. Проверим ошибку и вернёмся с ответом сегодня вечером.\nСпасибо за терпение, всё исправим до пятницы.";
+    expect(foreignLanguageIn(null, text, "ru")).toBeNull();
   });
 });
