@@ -28,6 +28,13 @@
         {$t`The text of emails stays on this device. Language models, 20–45 MB per pair of languages, are downloaded once from Mozilla servers.`}
       </p>
       <label class="radio">
+        <input type="radio" value="online" bind:group={$engineSetting.value} disabled={!onlineAvailable} />
+        <span>{$t`Online, no key and no download`}</span>
+      </label>
+      <p class="hint">
+        {$t`Translates right away, but the text of each translated email is sent to Google Translate. Not for confidential mail.`}
+      </p>
+      <label class="radio">
         <input type="radio" value="deepl" bind:group={$engineSetting.value} disabled={!deeplAvailable} />
         <span>{$t`DeepL, with your API key`}</span>
       </label>
@@ -99,6 +106,7 @@
     deleteLocalModels,
     getLocalModelsSize,
     isDeepLTranslationAvailable,
+    isOnlineTranslationAvailable,
     isLocalTranslationAvailable,
     capitalizeLanguageName,
     normalizeTranslationLanguage,
@@ -117,6 +125,7 @@
 
   let localAvailable = isLocalTranslationAvailable();
   let deeplAvailable = isDeepLTranslationAvailable();
+  let onlineAvailable = isOnlineTranslationAvailable();
   let uiLanguage = normalizeTranslationLanguage(getUILocale());
   let keyInput = "";
   let modelsSize = 0;

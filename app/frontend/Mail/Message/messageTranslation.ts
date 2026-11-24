@@ -12,6 +12,7 @@ import {
   normalizeTranslationLanguage,
   sameTranslationLanguage,
   translateTextsLocally,
+  translateTextsOnline,
   translateTextsWithDeepL,
   type TranslationEngineID,
   type TranslationLanguages,
@@ -49,13 +50,18 @@ export function getDeepLConsentSetting() {
   return getLocalStorage<boolean>("mail.translate.deepl.consent", false);
 }
 
+/** Пользователь знает, что текст писем уходит в онлайн-переводчик */
+export function getOnlineConsentSetting() {
+  return getLocalStorage<boolean>("mail.translate.online.consent", false);
+}
+
 /** @param target значение настройки; по умолчанию — текущее */
 export function translationTargetLanguage(target = getTranslationTargetSetting().value): string {
   return normalizeTranslationLanguage(target || getUILocale());
 }
 
 export function currentTranslationEngine(engine: string = getTranslationEngineSetting().value): TranslationEngineID {
-  return engine == "deepl" ? "deepl" : "local";
+  return engine == "deepl" ? "deepl" : engine == "online" ? "online" : "local";
 }
 
 /** @param engine значение настройки; по умолчанию — текущее */
@@ -168,6 +174,8 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
   private requestedKind: TranslationKind = "html";
   private requestedSource = "";
   private chosenLanguage: string | null = null;
+  /** «Перевести онлайн» для этого письма, пока модель не скачана */
+  private engineOverride: TranslationEngineID | null = null;
 
   constructor(private message: EMail) {
     this.state = {
@@ -230,14 +238,14 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
     if (from) {
       this.chosenLanguage = normalizeTranslationLanguage(from);
     }
-    let engine = currentTranslationEngine();
+    let engine = this.engineOverride ?? currentTranslationEngine();
     let target = translationTargetLanguage();
     this.update({ engine, targetLanguage: target, showOriginal: false, error: null });
     if (!isTranslationEngineAvailable(engine)) {
       this.fail(new UserError(gt`Translation is available only in the desktop app.`));
       return;
     }
-    if (engineSendsTextOutside(engine) && !getDeepLConsentSetting().value) {
+    if (engineSendsTextOutside(engine) && !(engine == "online" ? getOnlineConsentSetting() : getDeepLConsentSetting()).value) {
       this.update({ status: "consent" });
       return;
     }
@@ -268,6 +276,12 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
       let batch: TranslateBatch = engine == "deepl"
         ? async (texts, isHTML) => {
           let result = await translateTextsWithDeepL(await this.deeplKey(), source, target, texts, isHTML);
+          detectedByService ??= result.detectedLanguage;
+          return result.texts;
+        }
+        : engine == "online"
+        ? async (texts, isHTML) => {
+          let result = await translateTextsOnline(source, target, texts, isHTML);
           detectedByService ??= result.detectedLanguage;
           return result.texts;
         }
@@ -347,9 +361,18 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
     return () => clearInterval(timer);
   }
 
-  /** Пользователь согласился отправить текст в DeepL */
+  /** Пользователь согласился отправить текст во внешний сервис (DeepL или онлайн-переводчик) */
   async acceptConsent(): Promise<void> {
-    getDeepLConsentSetting().value = true;
+    let engine = this.engineOverride ?? currentTranslationEngine();
+    (engine == "online" ? getOnlineConsentSetting() : getDeepLConsentSetting()).value = true;
+    await this.translate();
+  }
+
+  /** Не ждать загрузку модели: перевести это письмо онлайн */
+  async translateOnline(): Promise<void> {
+    this.abort?.abort();
+    this.abort = null;
+    this.engineOverride = "online";
     await this.translate();
   }
 
@@ -392,6 +415,7 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
   reset(): void {
     this.abort?.abort();
     this.abort = null;
+    this.engineOverride = null;
     this.update({ status: "idle", showOriginal: false, error: null, model: null });
   }
 }

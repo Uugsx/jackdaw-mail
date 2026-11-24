@@ -9,8 +9,12 @@
 {:else if $translation.status == "consent"}
   <vbox class="translate-consent" class:compact>
     <Notice tone="warning"
-      message={$t`The text of this email will be sent to DeepL for translation`}
-      hint={$t`DeepL SE processes it on its servers in the EU. Switch to translation on this computer in Settings → Mail → Read to keep emails on this device.`}
+      message={$translation.engine == "online"
+        ? $t`The text of this email will be sent to an online translator (Google) for translation`
+        : $t`The text of this email will be sent to DeepL for translation`}
+      hint={$translation.engine == "online"
+        ? $t`Google processes it on its servers. Switch to translation on this computer in Settings → Mail → Read to keep emails on this device.`
+        : $t`DeepL SE processes it on its servers in the EU. Switch to translation on this computer in Settings → Mail → Read to keep emails on this device.`}
       onClose={() => translation.reset()}
       >
       <hbox class="actions">
@@ -43,6 +47,8 @@
         {/if}
         {#if $translation.engine == "deepl"}
           <span class="engine">· DeepL</span>
+        {:else if $translation.engine == "online"}
+          <span class="engine">· Google</span>
         {/if}
       {:else if bar == "original"}
         {$t`Showing the original`}
@@ -59,6 +65,9 @@
         <Button plain label={$t`Never for ${languageName(suggestedLanguage, "genitive")}`}
           onClick={neverForLanguage} />
       {:else if bar == "translating"}
+        {#if $translation.model}
+          <Button classes="secondary" label={$t`Translate online`} onClick={() => translation.translateOnline()} />
+        {/if}
         <Button plain label={$t`Cancel`} onClick={() => translation.cancel()} />
       {:else if bar == "translated"}
         <Button plain label={$t`Show original`} onClick={() => translation.showOriginal()} />

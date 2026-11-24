@@ -639,3 +639,83 @@ export async function translateMailTextsWithDeepL(
     detectedLanguage: detected,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Онлайн без ключа
+
+const kOnlineEndpoint = "https://translate.googleapis.com/translate_a/t";
+
+/** Языковой код веб-переводчика: китайский — с письменностью, остальные — базовый */
+function onlineLanguage(code: string): string {
+  if (code == "zh-Hans") {
+    return "zh-CN";
+  }
+  if (code == "zh-Hant") {
+    return "zh-TW";
+  }
+  return code.split("-")[0];
+}
+
+/**
+ * Онлайн-перевод без ключа и без загрузки моделей: публичный веб-переводчик Google.
+ * Текст писем уходит на серверы Google, интерфейс предупреждает об этом до первой отправки.
+ * Эндпоинт неофициальный: при сбое пользователю остаётся перевод на этом компьютере.
+ *
+ * @param from null — язык определит сервис
+ */
+export async function translateMailTextsOnline(
+  from: string | null,
+  to: string,
+  texts: string[],
+  html: boolean,
+): Promise<{ texts: string[]; detectedLanguage: string | null }> {
+  assertTexts(texts);
+  assertLanguageCode(to);
+  if (from) {
+    assertLanguageCode(from);
+  }
+  if (!texts.length) {
+    return { texts: [], detectedLanguage: null };
+  }
+  let query = new URLSearchParams({
+    client: "gtx",
+    sl: from ? onlineLanguage(from) : "auto",
+    tl: onlineLanguage(to),
+    format: html ? "html" : "text",
+  });
+  let body = new URLSearchParams();
+  for (let text of texts) {
+    body.append("q", text);
+  }
+  let response: Response;
+  try {
+    response = await modelsFetch(`${kOnlineEndpoint}?${query}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: body.toString(),
+    });
+  } catch (ex) {
+    throw translationError("Online translation is unreachable", "TranslationServiceFailed");
+  }
+  if (!response.ok) {
+    let code = response.status == 429 ? "TranslationRateLimited" : "TranslationServiceFailed";
+    throw translationError(`Online translation HTTP ${response.status}`, code, { status: response.status });
+  }
+  let json = await response.json();
+  let items: unknown[] = Array.isArray(json) ? json : [];
+  if (items.length != texts.length) {
+    throw translationError("Online translation returned a different number of texts", "TranslationServiceFailed");
+  }
+  // С автоопределением языка каждый элемент — [текст, язык], иначе просто текст
+  let detected: string | null = null;
+  let result = items.map(item => {
+    if (Array.isArray(item)) {
+      if (typeof item[1] == "string") {
+        detected ??= item[1].toLowerCase();
+      }
+      return String(item[0] ?? "");
+    }
+    return String(item ?? "");
+  });
+  return { texts: result, detectedLanguage: detected };
+}

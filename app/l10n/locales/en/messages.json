@@ -3381,5 +3381,11 @@
   "fgu0E6": "Send anonymous usage statistics",
   "J8tW74": "Once a day, the app sends a random installation ID, the app version, the operating system and the processor type. No email, names, addresses or message content are sent. This helps us count how many people use the app and which versions are in use",
   "iMgigu": "Same as this computer",
-  "WayE8k": "All times in mail and calendar are shown in this time zone, regardless of the computer's time zone."
+  "WayE8k": "All times in mail and calendar are shown in this time zone, regardless of the computer's time zone.",
+  "22WueU": "The text of this email will be sent to an online translator (Google) for translation",
+  "JdLpE5": "Google processes it on its servers. Switch to translation on this computer in Settings → Mail → Read to keep emails on this device.",
+  "16vRrU": "Translate online",
+  "FpEGBU": "Online, no key and no download",
+  "YVDGNp": "Translates right away, but the text of each translated email is sent to Google Translate. Not for confidential mail.",
+  "+5JqcB": "The translation service did not answer. Try again or switch to translation on this computer in Settings → Mail → Read."
 }
