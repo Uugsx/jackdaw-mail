@@ -47,6 +47,7 @@ import {
   getMailTranslationProgress,
   translateMailTexts,
   translateMailTextsWithDeepL,
+  translateMailTextsOnline,
 } from "./translation";
 const { autoUpdater, CancellationToken } = electronUpdater;
 
@@ -230,6 +231,7 @@ async function createSharedAppObject() {
     getMailTranslationProgress,
     translateMailTexts,
     translateMailTextsWithDeepL,
+    translateMailTextsOnline,
     deleteMailTranslationModels,
     // openFileInExternalApp,
     createIMAPFlowConnection,

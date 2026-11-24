@@ -7,8 +7,9 @@ import { gt } from "../../../l10n/l10n";
  *
  * `local` — на этом компьютере (Bergamot в процессе Electron), текст писем
  * никуда не отправляется. `deepl` — облачный DeepL с ключом пользователя.
+ * `online` — публичный веб-переводчик без ключа и без загрузки моделей.
  */
-export type TranslationEngineID = "local" | "deepl";
+export type TranslationEngineID = "local" | "deepl" | "online";
 
 export interface TranslationLanguages {
   from: string[];
@@ -110,13 +111,19 @@ export function isDeepLTranslationAvailable(): boolean {
   return typeof remoteApp()?.translateMailTextsWithDeepL == "function";
 }
 
+export function isOnlineTranslationAvailable(): boolean {
+  return typeof remoteApp()?.translateMailTextsOnline == "function";
+}
+
 export function isTranslationEngineAvailable(engine: TranslationEngineID): boolean {
-  return engine == "deepl" ? isDeepLTranslationAvailable() : isLocalTranslationAvailable();
+  return engine == "deepl" ? isDeepLTranslationAvailable() :
+    engine == "online" ? isOnlineTranslationAvailable() :
+    isLocalTranslationAvailable();
 }
 
 /** Отправляет ли движок текст писем за пределы компьютера */
 export function engineSendsTextOutside(engine: TranslationEngineID): boolean {
-  return engine == "deepl";
+  return engine == "deepl" || engine == "online";
 }
 
 /**
@@ -151,6 +158,8 @@ function friendlyMessageForCode(code: string): string | null {
     return gt`Could not download the language model. Check the internet connection and try again.`;
   case "TranslationEngineFailed":
     return gt`The translation engine stopped unexpectedly. Try again.`;
+  case "TranslationServiceFailed":
+    return gt`The translation service did not answer. Try again or switch to translation on this computer in Settings → Mail → Read.`;
   case "TranslationNoKey":
     return gt`Enter your DeepL API key in Settings → Mail → Read.`;
   case "TranslationKeyRejected":
@@ -166,7 +175,7 @@ function friendlyMessageForCode(code: string): string | null {
 
 /** Языки движка; для DeepL — постоянный список */
 export async function getTranslationLanguages(engine: TranslationEngineID): Promise<TranslationLanguages> {
-  if (engine == "deepl") {
+  if (engine == "deepl" || engine == "online") {
     return { from: kDeepLLanguages, to: kDeepLLanguages };
   }
   try {
@@ -218,6 +227,20 @@ export async function translateTextsWithDeepL(
 ): Promise<{ texts: string[]; detectedLanguage: string | null }> {
   try {
     return await remoteApp().translateMailTextsWithDeepL(apiKey, from, to, texts, isHTML);
+  } catch (ex) {
+    throw cleanTranslationError(ex);
+  }
+}
+
+/** Онлайн-перевод без ключа. null вместо языка — определит сервис */
+export async function translateTextsOnline(
+  from: string | null,
+  to: string,
+  texts: string[],
+  isHTML: boolean,
+): Promise<{ texts: string[]; detectedLanguage: string | null }> {
+  try {
+    return await remoteApp().translateMailTextsOnline(from, to, texts, isHTML);
   } catch (ex) {
     throw cleanTranslationError(ex);
   }
