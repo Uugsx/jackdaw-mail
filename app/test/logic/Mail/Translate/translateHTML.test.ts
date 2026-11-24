@@ -199,3 +199,27 @@ describe("перевод обычного текста", () => {
     expect(result).toBe("HELLO,\n\n> OLD REPLY\n>> OLDER\n-- \nJOHN");
   });
 });
+
+describe("пропуск частей (skipSegment)", () => {
+  test("HTML: пропущенная часть остаётся как есть, остальные переводятся; предикат видит текст без тегов", async () => {
+    let seen: string[] = [];
+    let result = await translateHTML(
+      "<p>Hello <b>team</b></p><p>Привет</p>", upper, {
+        skipSegment: text => {
+          seen.push(text);
+          return text.includes("Привет");
+        },
+      });
+    expect(result).toContain("HELLO");
+    expect(result).toContain("Привет");
+    expect(result).not.toContain("ПРИВЕТ");
+    expect(seen.every(text => !text.includes("<"))).toBe(true);
+  });
+
+  test("простой текст: пропуск строк", async () => {
+    let result = await translatePlainText("Hello\nПривет", upper, {
+      skipSegment: text => text == "Привет",
+    });
+    expect(result).toBe("HELLO\nПривет");
+  });
+});
