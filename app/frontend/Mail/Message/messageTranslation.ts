@@ -8,6 +8,7 @@ import {
   engineSendsTextOutside,
   getLocalModelStatus,
   getTranslationLanguages,
+  isOnlineTranslationAvailable,
   isTranslationEngineAvailable,
   normalizeTranslationLanguage,
   sameTranslationLanguage,
@@ -77,6 +78,25 @@ export function isMailTranslationAvailable(engine: string = getTranslationEngine
  */
 const kForeignSkipConfidence = 0.8;
 
+const kStrongHeaderLabel = "from|sent|subject|от|отправлено|откуда|тема|von|gesendet|betreff|kimden|gönderilen|konu|de|enviado|asunto";
+const kWeakHeaderLabel = "to|cc|bcc|date|кому|копия|дата|an|kime|bilgi|tarih|para";
+const kHeaderStrong = new RegExp(`^\\s*(?:${kStrongHeaderLabel})\\s*:`, "i");
+const kHeaderWeak = new RegExp(`^\\s*(?:${kWeakHeaderLabel})\\s*:`, "i");
+const kHeaderAnyLabel = new RegExp(`(?:^|\\s)(?:${kStrongHeaderLabel}|${kWeakHeaderLabel})\\s*:`, "gi");
+const kSignatureStart = /^(?:--+|—+|с уважением|с наилучшими пожеланиями|best regards|kind regards|warm regards|regards|sincerely|saygılarımla|saygılarımızla|mit freundlichen|cordialement)(?![\p{L}\d])/iu;
+
+/** «От: …», «From: …», «Sent: …»: строки-заголовки пересланного или процитированного письма */
+export function isMessageHeaderLine(text: string): boolean {
+  let plain = text.replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&amp;/gi, "&");
+  if (kHeaderStrong.test(plain)) {
+    return true;
+  }
+  if (!kHeaderWeak.test(plain)) {
+    return false;
+  }
+  return plain.includes("@") || (plain.match(kHeaderAnyLabel)?.length ?? 0) >= 2;
+}
+
 /** XML/JSON/разметка в тексте письма и строки из точек, нот и символов: перевод только портит их */
 export function looksLikeCodeOrNoise(text: string): boolean {
   let plain = text.replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&amp;/gi, "&").trim();
@@ -95,8 +115,18 @@ export function segmentSkipper(
   source: string | null,
   target: string,
 ): (text: string) => boolean {
+  let inSignature = false;
   return text => {
-    if (looksLikeCodeOrNoise(text)) {
+    if (isMessageHeaderLine(text)) {
+      // Дальше цитата прошлого письма: подпись закончилась
+      inSignature = false;
+      return true;
+    }
+    if (kSignatureStart.test(text.trim()) && text.trim().length <= 60) {
+      inSignature = true;
+      return true;
+    }
+    if (inSignature || looksLikeCodeOrNoise(text)) {
       return true;
     }
     let detected = detectLanguage(text);
@@ -161,7 +191,9 @@ export function languageSampleFromHTML(html: string | null | undefined): string 
   for (let el of doc.querySelectorAll("p, div, br, li, tr, h1, h2, h3, h4, h5, h6, blockquote, hr")) {
     el.after(doc.createTextNode("\n"));
   }
-  return doc.body?.textContent ?? "";
+  let text = doc.body?.textContent ?? "";
+  // Шапки пересланных писем, XML и строки из точек язык не выдают, а только сбивают определение
+  return text.split("\n").filter(line => !isMessageHeaderLine(line) && !looksLikeCodeOrNoise(line)).join("\n");
 }
 
 export function detectMessageLanguage(message: EMail): DetectedLanguage | null {
@@ -512,4 +544,32 @@ export async function translationSuggestionFor(message: EMail): Promise<string |
     // Список языков недоступен (нет сети и кеша): не навязываемся
     return null;
   }
+}
+
+/**
+ * Перевод выделенного фрагмента на выбранный язык. Выделение — явное действие,
+ * поэтому внешний сервис используется и без включённой настройки (текст уходит только этого фрагмента).
+ * DeepL — если выбран в настройках, иначе онлайн-движок; на устройстве — когда онлайн недоступен.
+ */
+export async function translateSelection(text: string, target: string): Promise<{ text: string; engine: TranslationEngineID }> {
+  let chosen = getTranslationEngineSetting().value;
+  if (chosen == "deepl" && isTranslationEngineAvailable("deepl")) {
+    let key = await passwordDecrypt(getDeepLKeySetting().value || null);
+    if (!key) {
+      throw new UserError(gt`Enter your DeepL API key in Settings → Mail → Read.`);
+    }
+    let result = await translateTextsWithDeepL(key, null, target, [text], false);
+    return { text: result.texts[0] ?? "", engine: "deepl" };
+  }
+  if (isOnlineTranslationAvailable()) {
+    let result = await translateTextsOnline(null, target, [text], false);
+    return { text: result.texts[0] ?? "", engine: "online" };
+  }
+  let detected = detectLanguage(text);
+  if (!detected) {
+    throw new UserError(gt`Could not detect the language of the selected text.`);
+  }
+  let source = normalizeTranslationLanguage(detected.language);
+  let translated = await translateTextsLocally(source, target, [text], false);
+  return { text: translated[0] ?? "", engine: "local" };
 }
