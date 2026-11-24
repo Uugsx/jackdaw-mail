@@ -453,11 +453,26 @@ export class EMail extends Message {
   }
 
   private tagWriteQueue: Promise<unknown> = Promise.resolve();
+  private tagWritesPending = 0;
+  private tagWriteSettledAt = 0;
+  /** Сколько после записи категорий серверные данные ещё могут быть устаревшими (индекс Exchange отстаёт). */
+  static readonly kTagServerLagGuardMs = 15_000;
+
+  /** Локальные категории свежее серверных: идёт запись или она только что закончилась.
+   * Синхронизация в этот момент не должна откатывать отметку к старому состоянию сервера. */
+  get tagsAreLocallyAuthoritative(): boolean {
+    return this.tagWritesPending > 0 ||
+      Date.now() - this.tagWriteSettledAt < EMail.kTagServerLagGuardMs;
+  }
 
   /** Записи категорий одного письма идут строго по порядку: быстрое «поставить-снять» не перепутается на сервере. */
   private enqueueTagWrite(write: () => Promise<void>): Promise<void> {
+    this.tagWritesPending++;
     let result = this.tagWriteQueue.then(write);
-    this.tagWriteQueue = result.catch(() => { });
+    this.tagWriteQueue = result.catch(() => { }).finally(() => {
+      this.tagWritesPending--;
+      this.tagWriteSettledAt = Date.now();
+    });
     return result;
   }
 
