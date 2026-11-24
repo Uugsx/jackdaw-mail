@@ -3,7 +3,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { get } from "svelte/store";
-import { darkBlockStyle, darkColorScheme, readableDarkTextColor } from "../../Mail/Composer/composeDarkColors";
+import { composeEditorDark, darkBlockStyle, readableDarkTextColor } from "../../Mail/Composer/composeDarkColors";
 
 type DarkModeColorsState = { dark: boolean; decorations: DecorationSet };
 
@@ -51,7 +51,7 @@ export const DarkModeColors = Extension.create({
       new Plugin<DarkModeColorsState>({
         key: darkModeColorsKey,
         state: {
-          init: (_, state) => stateFor(state.doc, get(darkColorScheme)),
+          init: (_, state) => stateFor(state.doc, get(composeEditorDark)),
           apply(tr, value, _oldState, newState) {
             let dark = tr.getMeta(darkModeColorsKey) as boolean | undefined;
             if (dark !== undefined && dark !== value.dark) {
@@ -66,7 +66,7 @@ export const DarkModeColors = Extension.create({
           },
         },
         view(view) {
-          let unsubscribe = darkColorScheme.subscribe(dark => {
+          let unsubscribe = composeEditorDark.subscribe(dark => {
             if (darkModeColorsKey.getState(view.state)?.dark !== dark) {
               view.dispatch(view.state.tr.setMeta(darkModeColorsKey, dark).setMeta("addToHistory", false));
             }

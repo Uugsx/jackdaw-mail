@@ -27,7 +27,7 @@
     type QuoteEditorStyle,
   } from "./quoteEditorCommands";
   import { applyQuoteTextInput } from "./quoteEditorInput";
-  import { clearDarkColorMarks, darkColorScheme, htmlWithoutDarkColorMarks, markDarkColors } from "./composeDarkColors";
+  import { clearDarkColorMarks, composeEditorDark, htmlWithoutDarkColorMarks, markDarkColors } from "./composeDarkColors";
 
   /** Sanitized HTML (original message body or forward quote). */
   export let html: string;
@@ -206,7 +206,7 @@
       }
     }
 
-    let unsubscribeDark = darkColorScheme.subscribe(value => {
+    let unsubscribeDark = composeEditorDark.subscribe(value => {
       dark = value;
       refreshDarkColors();
     });
@@ -298,15 +298,13 @@
     margin-inline-start: 0;
   }
   /* Как в просмотре письма (content-body-dark.css): ссылки читаемые голубые. */
-  @media (prefers-color-scheme: dark) {
-    .compose-quote-html :global(a),
-    .compose-quote-html :global(a span),
-    .compose-quote-html :global(a font) {
-      color: #6cb4ff !important;
-    }
-    .compose-quote-html :global(blockquote) {
-      border-inline-start-color: #6cb4ff;
-    }
+  :global(.editor-wrapper.is-dark) .compose-quote-html :global(a),
+  :global(.editor-wrapper.is-dark) .compose-quote-html :global(a span),
+  :global(.editor-wrapper.is-dark) .compose-quote-html :global(a font) {
+    color: #6cb4ff !important;
+  }
+  :global(.editor-wrapper.is-dark) .compose-quote-html :global(blockquote) {
+    border-inline-start-color: #6cb4ff;
   }
   .compose-quote-html :global(img) {
     max-width: 100%;
