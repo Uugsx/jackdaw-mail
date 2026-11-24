@@ -3,6 +3,7 @@ import { appGlobal } from "../../logic/app";
 import type { Event } from "../../logic/Calendar/Event";
 
 const kRefreshMS = 60 * 1000;
+const kChangeDebounceMS = 500;
 
 /** Событие ещё предстоит или идёт сегодня: не отменено, не закончилось, начинается до конца дня. */
 export function isEventLeftToday(event: Pick<Event, "startTime" | "endTime" | "allDay" | "isCancelled">, now = new Date()): boolean {
@@ -34,11 +35,27 @@ export const calendarTodayCount = readable(0, set => {
     return n;
   }
   let update = () => set(count());
-  let stop = appGlobal.calendarEvents.subscribe(update);
+  // Во время синхронизации календаря коллекция меняется на каждое событие;
+  // пересчёт по всем событиям на каждое изменение грузил интерфейс.
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  let scheduleUpdate = () => {
+    if (pending) {
+      return;
+    }
+    pending = setTimeout(() => {
+      pending = null;
+      update();
+    }, kChangeDebounceMS);
+  };
+  let stop = appGlobal.calendarEvents.subscribe(scheduleUpdate);
   let timer = setInterval(update, kRefreshMS);
   update();
   return () => {
     stop();
     clearInterval(timer);
+    if (pending) {
+      clearTimeout(pending);
+      pending = null;
+    }
   };
 });
