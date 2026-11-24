@@ -69,6 +69,33 @@ export function isMailTranslationAvailable(engine: string = getTranslationEngine
   return isTranslationEngineAvailable(currentTranslationEngine(engine));
 }
 
+/**
+ * Письмо с цепочкой ответов бывает на нескольких языках, а модель одна (`источник → цель`).
+ * Части на языке перевода не переводим никогда; части на постороннем языке — тоже, если
+ * движок привязан к модели: чужой язык она превращает в мусор. Короткие тексты язык не выдают,
+ * их переводим как обычно.
+ */
+const kForeignSkipConfidence = 0.8;
+
+export function segmentSkipper(
+  engine: TranslationEngineID,
+  source: string | null,
+  target: string,
+): (text: string) => boolean {
+  return text => {
+    let detected = detectLanguage(text);
+    if (!detected || detected.confidence < 0.5) {
+      return false;
+    }
+    if (sameTranslationLanguage(detected.language, target)) {
+      return true;
+    }
+    // Чужой язык пропускаем только при уверенном определении: короткий турецкий детектор путает с немецким
+    return engine == "local" && !!source && detected.confidence >= kForeignSkipConfidence &&
+      !sameTranslationLanguage(detected.language, source);
+  };
+}
+
 export function neverSuggestLanguage(language: string): void {
   let setting = getTranslationNeverSuggestSetting();
   let code = normalizeTranslationLanguage(language);
@@ -281,13 +308,15 @@ export class MessageTranslation implements Readable<MessageTranslationState> {
         }
         : engine == "online"
         ? async (texts, isHTML) => {
-          let result = await translateTextsOnline(source, target, texts, isHTML);
+          // Язык определяет сам сервис по каждой части: в письме с цепочкой ответов их несколько
+          let result = await translateTextsOnline(null, target, texts, isHTML);
           detectedByService ??= result.detectedLanguage;
           return result.texts;
         }
         : (texts, isHTML) => translateTextsLocally(source, target, texts, isHTML);
       let options = {
         signal: abort.signal,
+        skipSegment: segmentSkipper(engine, source, target),
         onProgress: (done: number, total: number) => {
           if (this.abort == abort) {
             this.update({ done, total });

@@ -38,6 +38,17 @@ export interface TranslateHTMLOptions {
   maxSegmentChars?: number;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
+  /** true — часть не переводить (уже на языке перевода или на постороннем языке); получает текст без тегов */
+  skipSegment?: (text: string) => boolean;
+}
+
+/** Части, которые надо перевести, без пропущенных по `skipSegment` */
+function selectSegments(segments: TranslationSegment[], options: TranslateHTMLOptions): TranslationSegment[] {
+  let skip = options.skipSegment;
+  if (!skip) {
+    return segments;
+  }
+  return segments.filter(segment => !skip(segment.isHTML ? segment.source.replace(/<[^>]*>/g, " ") : segment.source));
 }
 
 export const kDefaultMaxChunkChars = 4000;
@@ -447,7 +458,7 @@ export async function translateHTML(
   if (!segments.length) {
     return html;
   }
-  await translateSegments(segments, translate, options);
+  await translateSegments(selectSegments(segments, options), translate, options);
   return doc.documentElement.outerHTML;
 }
 
@@ -477,6 +488,6 @@ export async function translatePlainText(
       fallback: () => [],
     });
   });
-  await translateSegments(segments, translate, options);
+  await translateSegments(selectSegments(segments, options), translate, options);
   return lines.join("\n");
 }
