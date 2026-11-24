@@ -77,12 +77,28 @@ export function isMailTranslationAvailable(engine: string = getTranslationEngine
  */
 const kForeignSkipConfidence = 0.8;
 
+/** XML/JSON/разметка в тексте письма и строки из точек, нот и символов: перевод только портит их */
+export function looksLikeCodeOrNoise(text: string): boolean {
+  let plain = text.replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&amp;/gi, "&").trim();
+  if (!plain) {
+    return true;
+  }
+  if (/[<>{}]/.test(plain) || /\b[\w-]+"?\s*[:=]\s*["{\[]/.test(plain)) {
+    return true;
+  }
+  let letters = plain.match(/\p{L}/gu)?.length ?? 0;
+  return letters < plain.replace(/\s/g, "").length * 0.5;
+}
+
 export function segmentSkipper(
   engine: TranslationEngineID,
   source: string | null,
   target: string,
 ): (text: string) => boolean {
   return text => {
+    if (looksLikeCodeOrNoise(text)) {
+      return true;
+    }
     let detected = detectLanguage(text);
     if (!detected || detected.confidence < 0.5) {
       return false;
