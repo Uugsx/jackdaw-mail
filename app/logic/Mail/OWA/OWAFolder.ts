@@ -2258,6 +2258,12 @@ export class OWAFolder extends ExchangeFolder {
       }
     };
     let mailbox = this.account.isDependentAccount ? this.account.username : undefined;
+    // Письма пропадают из списка сразу, не дожидаясь ответа сервера
+    // (на общем ящике он идёт секунды). Не удалённые на сервере возвращаются.
+    let hiddenOptimistically = messages.filter(message => this.messages.contains(message));
+    if (hiddenOptimistically.length) {
+      this.messages.removeAll(hiddenOptimistically);
+    }
     try {
       for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
         let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
@@ -2316,6 +2322,12 @@ export class OWAFolder extends ExchangeFolder {
         if (!serverDeleted.has(itemID)) {
           this.deletions.delete(itemID);
         }
+      }
+      let toRestore = hiddenOptimistically.filter(message =>
+        !message.isDeleted && !(message.itemID && serverDeleted.has(message.itemID)));
+      if (toRestore.length) {
+        this.addMessagesIfAbsent(toRestore);
+        this.notifyObservers();
       }
     }
   }

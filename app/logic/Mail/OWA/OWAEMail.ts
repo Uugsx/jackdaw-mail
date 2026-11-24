@@ -211,6 +211,10 @@ export class OWAEMail extends ExchangeEMail {
     } else {
       tagNames = oldTagNames;
     }
+    // Только что поставленная/снятая категория не откатывается отстающим ответом сервера
+    if (this.tagsAreLocallyAuthoritative) {
+      tagNames = oldTagNames;
+    }
     let iconIndex = extendedPropertyValue(json, IconIndexPidTag) ?? propertyValue(json.IconIndex);
     let isReplied = this.isReplied;
     let isForwarded = this.isForwarded;
