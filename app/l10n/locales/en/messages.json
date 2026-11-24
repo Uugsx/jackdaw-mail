@@ -3387,5 +3387,7 @@
   "16vRrU": "Translate online",
   "FpEGBU": "Online, no key and no download",
   "YVDGNp": "Translates right away, but the text of each translated email is sent to Google Translate. Not for confidential mail.",
-  "+5JqcB": "The translation service did not answer. Try again or switch to translation on this computer in Settings → Mail → Read."
+  "+5JqcB": "The translation service did not answer. Try again or switch to translation on this computer in Settings → Mail → Read.",
+  "Amqnvl": "Translate selected text",
+  "s7NnYa": "Could not detect the language of the selected text."
 }

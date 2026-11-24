@@ -1,5 +1,8 @@
 <vbox class="html-display" bind:this={displayE}>
-  <WebView html={displayHtml} {headHTML} {bodyClass} title="" allowServerCalls={allowExternalImages} {allowImageOpen} autoSize={fitContent} enableZoomWheel forwardKeysToMail contentZoom={zoom} on:webview on:zoomwheel />
+  {#if !fitContent}
+    <SelectionTranslate webview={webviewE} />
+  {/if}
+  <WebView html={displayHtml} {headHTML} {bodyClass} title="" allowServerCalls={allowExternalImages} {allowImageOpen} autoSize={fitContent} enableZoomWheel forwardKeysToMail contentZoom={zoom} on:webview on:webview={event => webviewE = event.detail} on:zoomwheel />
 </vbox>
 
 <script lang="ts">
@@ -9,6 +12,7 @@
   import cssBodyEmbed from "./content-body-embed.css?inline";
   import { adaptEmailHtmlForDarkMode } from "./emailDarkMode";
   import WebView from "../../Shared/WebView.svelte";
+  import SelectionTranslate from "./SelectionTranslate.svelte";
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { darkColorScheme } from "../Composer/composeDarkColors";
   import {
@@ -133,6 +137,7 @@
 
 <style>
   .html-display {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
     width: 100%;

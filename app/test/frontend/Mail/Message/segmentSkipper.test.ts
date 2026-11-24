@@ -35,3 +35,22 @@ describe("looksLikeCodeOrNoise", () => {
     expect(looksLikeCodeOrNoise("Ок")).toBe(false);
   });
 });
+
+import { isMessageHeaderLine } from "../../../../frontend/Mail/Message/messageTranslation";
+
+describe("шапки и подписи", () => {
+  test("строки-заголовки пересланного письма", () => {
+    expect(isMessageHeaderLine("From: Burcu UCUZAL <burcu@flo.com.tr>")).toBe(true);
+    expect(isMessageHeaderLine("Отправлено: Вторник, 24 Ноября 2026 16:52")).toBe(true);
+    expect(isMessageHeaderLine("To: integrators &lt;integrators@smartds.ru&gt;")).toBe(true);
+    expect(isMessageHeaderLine("To be or not to be: that is the question")).toBe(false);
+  });
+  test("подпись после «С уважением» пропускается до следующей шапки", () => {
+    let skip = segmentSkipper("online", null, "en");
+    expect(skip(ru)).toBe(false);
+    expect(skip("С уважением,")).toBe(true);
+    expect(skip("Старший инженер по сопровождению программного обеспечения")).toBe(true);
+    expect(skip("From: A <a@b.c>")).toBe(true);
+    expect(skip(ru)).toBe(false);
+  });
+});
