@@ -23,3 +23,15 @@ describe("segmentSkipper", () => {
     expect(segmentSkipper("local", "tr", "ru")("Ok")).toBe(false);
   });
 });
+
+import { looksLikeCodeOrNoise } from "../../../../frontend/Mail/Message/messageTranslation";
+
+describe("looksLikeCodeOrNoise", () => {
+  test("разметка, JSON и разделители не переводятся", () => {
+    expect(looksLikeCodeOrNoise("&lt;infoParam&gt;")).toBe(true);
+    expect(looksLikeCodeOrNoise('"name": "value"')).toBe(true);
+    expect(looksLikeCodeOrNoise("........ ........")).toBe(true);
+    expect(looksLikeCodeOrNoise("Open the portal, please")).toBe(false);
+    expect(looksLikeCodeOrNoise("Ок")).toBe(false);
+  });
+});
