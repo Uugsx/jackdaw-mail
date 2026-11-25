@@ -114,22 +114,22 @@
 
   :global(.main-window:not(.mobile)) .mail-app-root > :global(.splitter) > :global(.right) > :global(.mail-main) {
     box-sizing: border-box;
-    margin-inline-start: 6px;
+    margin-inline-start: 2px;
     border: 1px solid var(--glass-border-subtle);
     border-radius: var(--border-radius);
     background: var(--main-bg);
     overflow: hidden;
   }
 
-  /* Keep one 8px surface gap when the outer widget splitter is present.
-   * Its hidden drag bar takes 2px; the expanded widget panel adds 4px of
+  /* Keep one 4px surface gap when the outer widget splitter is present.
+   * Its hidden drag bar takes 2px; the expanded widget panel adds 2px of
    * leading padding, while the collapsed rail has no leading padding. */
   :global(.main-window:not(.mobile).widgets-enabled) .mail-app-root {
-    margin-inline-end: 6px;
+    margin-inline-end: 2px;
   }
 
   :global(.main-window:not(.mobile).widgets-enabled.widgets-expanded) .mail-app-root {
-    margin-inline-end: 2px;
+    margin-inline-end: 0;
   }
 
   :global(.main-window.mobile) .mail-app-root {
