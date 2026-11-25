@@ -100,19 +100,24 @@
       <FolderIcon size="16px" slot="icon" />
     </Checkbox>
     {#if hasFolder}
-      <vbox flex class="listbox">
-        <FolderList folders={search.account.rootFolders} bind:selectedFolder={search.folder} bind:selectedFolders
-          on:selectFolder={notifyCriteriaChanged} />
-      </vbox>
       {#if archiveMailboxRoot}
-        <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
-          <ArchiveIcon size="14px" />
-          <span>{$t`Online archive`}</span>
-        </hbox>
-        <vbox class="listbox archive-listbox">
+        <!-- Папки ящика и архива в одном списке той же высоты: окно фильтров не растёт. -->
+        <vbox class="listbox folders-with-archive">
+          <FolderList folders={search.account.rootFolders} embedded
+            selectedFolder={search.folder}
+            on:selectFolder={onFolderSelected} />
+          <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
+            <ArchiveIcon size="14px" />
+            <span>{$t`Online archive`}</span>
+          </hbox>
           <FolderList folders={archiveMailboxRoot.subFolders} embedded
             selectedFolder={search.folder}
-            on:selectFolder={onArchiveFolderSelected} />
+            on:selectFolder={onFolderSelected} />
+        </vbox>
+      {:else}
+        <vbox flex class="listbox">
+          <FolderList folders={search.account.rootFolders} bind:selectedFolder={search.folder} bind:selectedFolders
+            on:selectFolder={notifyCriteriaChanged} />
         </vbox>
       {/if}
     {/if}
@@ -265,7 +270,7 @@
       ? `${folder.name} · ${$t`Online archive`}`
       : folder.name;
   }
-  function onArchiveFolderSelected(event: CustomEvent<Folder>) {
+  function onFolderSelected(event: CustomEvent<Folder>) {
     search.folder = event.detail;
     notifyCriteriaChanged();
   }
@@ -406,14 +411,21 @@
     background: var(--glass-bg-subtle);
   }
   .archive-mailbox-label {
+    flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    margin-inline-start: 28px;
+    padding: 6px 8px 2px;
+    border-block-start: 1px solid var(--glass-border-subtle);
     font-size: 0.9em;
     font-weight: 500;
   }
-  .archive-listbox {
+  .search-criteria .listbox.folders-with-archive {
     overflow-y: auto;
+  }
+  /* Подсветка строки на всю ширину списка, как в основном списке папок. */
+  .folders-with-archive :global(.fast-list .canvas) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .search-criteria.compact .listbox :global(.fast-list) {
     min-height: 0;
