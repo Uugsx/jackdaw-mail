@@ -96,7 +96,7 @@
   {#if search.account}
     <Checkbox bind:checked={hasFolder} allowFalse={false} allowIndetermined={true}
       on:change={updateFolder}
-      label={search.folder ? $t`${search.folder.name} folder only` : $t`Folder`}>
+      label={search.folder ? $t`${folderLabel(search.folder)} folder only` : $t`Folder`}>
       <FolderIcon size="16px" slot="icon" />
     </Checkbox>
     {#if hasFolder}
@@ -104,6 +104,17 @@
         <FolderList folders={search.account.rootFolders} bind:selectedFolder={search.folder} bind:selectedFolders
           on:selectFolder={notifyCriteriaChanged} />
       </vbox>
+      {#if archiveMailboxRoot}
+        <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
+          <ArchiveIcon size="14px" />
+          <span>{$t`Online archive`}</span>
+        </hbox>
+        <vbox class="listbox archive-listbox">
+          <FolderList folders={archiveMailboxRoot.subFolders} embedded
+            selectedFolder={search.folder}
+            on:selectFolder={onArchiveFolderSelected} />
+        </vbox>
+      {/if}
     {/if}
   {/if}
 </vbox>
@@ -129,12 +140,14 @@
   import CircleIcon from "lucide-svelte/icons/circle";
   import AttachmentIcon from "lucide-svelte/icons/paperclip";
   import AccountIcon from "lucide-svelte/icons/mail";
+  import ArchiveIcon from "lucide-svelte/icons/archive";
+  import { ExchangeMailAccount } from "../../../logic/Mail/EWS/ExchangeMailAccount";
   import FolderIcon from "lucide-svelte/icons/folder";
   import TagIcon from "lucide-svelte/icons/tag";
   import PersonIcon from "lucide-svelte/icons/user-round";
   import { ArrayColl, Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy } from "svelte";
   import type { MailAccount } from "../../../logic/Mail/MailAccount";
 
   const dispatchEvent = createEventDispatcher<{ change: void }>();
@@ -220,6 +233,43 @@
     search.folder = hasFolder ? folder : null;
     notifyCriteriaChanged();
   }
+  /** Папки сетевого архива Exchange: в `rootFolders` аккаунта их нет. */
+  let archiveMailboxRoot: Folder | null = null;
+  let observedAccount: MailAccount | null = null;
+  let accountUnsubscribe: (() => void) | undefined;
+  let accountEpoch = 0;
+  $: if (search.account !== observedAccount) {
+    accountUnsubscribe?.();
+    observedAccount = search.account;
+    accountUnsubscribe = observedAccount?.subscribe(() => accountEpoch++);
+  }
+  $: {
+    accountEpoch;
+    archiveMailboxRoot = search.account instanceof ExchangeMailAccount
+      ? search.account.archiveMailboxRoot
+      : null;
+  }
+  onDestroy(() => accountUnsubscribe?.());
+
+  function isInArchiveMailbox(folder: Folder): boolean {
+    for (let cur: Folder | null = folder; cur; cur = cur.parent) {
+      if (cur == archiveMailboxRoot) {
+        return true;
+      }
+    }
+    return false;
+  }
+  /** Одноимённые папки ящика и архива («Входящие») различаются в подписи. */
+  function folderLabel(folder: Folder): string {
+    return archiveMailboxRoot && isInArchiveMailbox(folder)
+      ? `${folder.name} · ${$t`Online archive`}`
+      : folder.name;
+  }
+  function onArchiveFolderSelected(event: CustomEvent<Folder>) {
+    search.folder = event.detail;
+    notifyCriteriaChanged();
+  }
+
   function onAccountSelected(event: CustomEvent<MailAccount>) {
     let account = event.detail;
     if (account) {
@@ -354,6 +404,16 @@
     border: 1px solid var(--glass-border-subtle);
     border-radius: 10px;
     background: var(--glass-bg-subtle);
+  }
+  .archive-mailbox-label {
+    align-items: center;
+    gap: 6px;
+    margin-inline-start: 28px;
+    font-size: 0.9em;
+    font-weight: 500;
+  }
+  .archive-listbox {
+    overflow-y: auto;
   }
   .search-criteria.compact .listbox :global(.fast-list) {
     min-height: 0;
