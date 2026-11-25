@@ -356,9 +356,9 @@
     width: 100%;
     align-items: center;
     gap: 8px;
-    height: 56px;
-    min-height: 56px;
-    padding: 10px 16px 8px;
+    height: 48px;
+    min-height: 48px;
+    padding: 7px 12px;
     box-sizing: border-box;
     background: var(--headerbar-bg);
     border-block-end: 1px solid var(--glass-border-subtle);

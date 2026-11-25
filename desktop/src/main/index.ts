@@ -632,6 +632,8 @@ async function createWindow(): Promise<void> {
       show: false,
       autoHideMenuBar: true,
       titleBarStyle: process.platform == 'darwin' ? 'hiddenInset' : 'customButtonsOnHover',
+      // Кнопки окна по центру шапки высотой 32px (WindowHeader.svelte).
+      ...(process.platform == 'darwin' ? { trafficLightPosition: { x: 14, y: 10 } } : {}),
       titleBarOverlay: true,
       frame: false,
       ...(process.platform === 'linux' ? { icon } : {}),

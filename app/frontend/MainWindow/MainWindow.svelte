@@ -680,8 +680,8 @@
 <style>
   .main-window:not(.mobile) {
     min-width: 640px;
-    --chrome-inset-block: 8px;
-    --appbar-column-width: 104px;
+    --chrome-inset-block: 4px;
+    --appbar-column-width: 90px;
   }
   .main-window:not(.mobile) .body-row {
     background: transparent;

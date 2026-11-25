@@ -83,8 +83,8 @@
     position: relative;
     z-index: 10;
     align-items: center;
-    min-height: 36px;
-    height: 36px;
+    min-height: 32px;
+    height: 32px;
     box-sizing: border-box;
     app-region: drag;
     background-color: var(--windowheader-bg);
@@ -147,7 +147,7 @@
   /* Поле поиска в тон заголовку: без градиента цвета пространства, который давал красные и прочие пятна.
      Цвет пространства и так виден у его названия слева. */
   .window-header :global(.search) {
-    margin: 4px 8px;
+    margin: 3px 8px;
     border: 1px solid color-mix(in srgb, var(--windowheader-fg) 14%, transparent);
     border-radius: 8px;
     outline: none;

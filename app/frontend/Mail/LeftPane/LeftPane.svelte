@@ -251,9 +251,9 @@
   }
   .brand-bar {
     align-items: center;
-    height: 56px;
-    min-height: 56px;
-    padding: 0 12px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0 8px;
     box-sizing: border-box;
     border-block-end: 1px solid var(--glass-border-subtle);
   }
@@ -315,7 +315,7 @@
     color: var(--leftbar-fg);
   }
   .mode-switcher {
-    padding: 0 12px 8px;
+    padding: 0 8px 6px;
   }
   .mode-switcher :global(.island) {
     width: 100%;
@@ -324,7 +324,7 @@
   .section-label {
     align-items: center;
     min-height: 24px;
-    padding: 8px 16px 2px;
+    padding: 6px 12px 2px;
     box-sizing: border-box;
     color: color-mix(in srgb, var(--leftbar-fg) 58%, transparent);
     font-weight: 650;
@@ -348,10 +348,10 @@
     padding-block-end: 8px;
   }
   .folder-pane :global(.account-row) {
-    margin-inline: 8px;
+    margin-inline: 6px;
     border-radius: var(--border-radius);
-    min-height: 30px;
-    padding-block: 3px;
+    min-height: 26px;
+    padding-block: 2px;
   }
   .folder-pane :global(.account-row:hover:not(.selected)) {
     background-color: var(--hover-bg);
@@ -370,11 +370,11 @@
     color: var(--icon-primary);
   }
   .folder-pane :global(.folder) {
-    margin-inline-end: 8px;
+    margin-inline-end: 6px;
     border-radius: var(--border-radius);
-    min-height: 30px;
-    padding-block: 3px;
-    padding-inline: 8px 6px;
+    min-height: 26px;
+    padding-block: 2px;
+    padding-inline: 6px;
   }
   .folder-pane :global(.folder-list.embedded .fast-list .row.selected > *:not(.folder)),
   .folder-pane :global(.folder-list.embedded .fast-list .row:not(.selected):hover > *:not(.folder)),

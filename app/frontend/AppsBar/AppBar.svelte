@@ -98,14 +98,14 @@
     justify-content: center;
     width: var(--appbar-column-width, 104px);
     padding-block: var(--chrome-inset-block, 8px);
-    padding-inline: 12px 10px;
+    padding-inline: 4px;
     box-sizing: border-box;
     z-index: 4;
   }
   .app-bar-shell.collapsed {
-    --appbar-column-width: 52px;
+    --appbar-column-width: 42px;
     width: var(--appbar-column-width);
-    padding-inline: 10px 8px;
+    padding-inline: 4px;
     padding-block: var(--chrome-inset-block, 8px);
   }
   .app-bar {

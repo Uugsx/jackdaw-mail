@@ -497,7 +497,8 @@
     overflow: hidden;
     gap: 4px;
     /* Верх и низ островов совпадают с остальными панелями окна. */
-    padding: 0 4px;
+    padding-block: 0;
+    padding-inline: 2px 4px;
     background: transparent;
     color: var(--leftbar-fg);
   }
@@ -623,9 +624,9 @@
     box-sizing: border-box;
     align-items: center;
     gap: 4px;
-    height: 56px;
-    min-height: 56px;
-    padding: 10px 8px 8px 16px;
+    height: 48px;
+    min-height: 48px;
+    padding: 6px 6px 6px 12px;
     border-block-end: 1px solid var(--glass-border-subtle);
     background: var(--main-bg);
   }
