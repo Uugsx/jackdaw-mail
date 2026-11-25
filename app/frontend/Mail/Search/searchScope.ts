@@ -20,6 +20,14 @@ export function syncSearchToCurrentMailbox(
   let account = currentMailSearchAccount(selectedAccount, selectedFolder);
   if (search.account == account &&
       (!search.folder || search.folder.account == account)) {
+    // Фильтр «Только папка» следует за папкой, открытой слева: иначе после
+    // перехода, например, в «Сетевой архив → Входящие» поиск оставался в
+    // прежней папке с тем же названием.
+    if (search.folder && selectedFolder && account &&
+        selectedFolder.account == account && search.folder != selectedFolder) {
+      search.folder = selectedFolder;
+      return true;
+    }
     return false;
   }
   let accountChanged = search.account != account;

@@ -55,6 +55,25 @@ describe("область поиска почты", () => {
     expect(syncSearchToCurrentMailbox(search, currentAccount, null)).toBe(false);
   });
 
+  test("фильтр «Только папка» переходит на открытую папку того же ящика", () => {
+    let currentAccount = account("current-account");
+    let inbox = folder(currentAccount);
+    let archiveInbox = folder(currentAccount);
+    let search = { account: currentAccount, folder: inbox } as any;
+
+    expect(syncSearchToCurrentMailbox(search, currentAccount, archiveInbox)).toBe(true);
+    expect(search.folder).toBe(archiveInbox);
+    expect(syncSearchToCurrentMailbox(search, currentAccount, archiveInbox)).toBe(false);
+  });
+
+  test("без фильтра по папке смена папки не меняет область поиска", () => {
+    let currentAccount = account("current-account");
+    let search = { account: currentAccount, folder: null } as any;
+
+    expect(syncSearchToCurrentMailbox(search, currentAccount, folder(currentAccount))).toBe(false);
+    expect(search.folder).toBeNull();
+  });
+
   test("сбрасывает ящик и папку для объединённого вида", () => {
     let oldAccount = account("old-account");
     let allAccounts = account("all-accounts", "all");

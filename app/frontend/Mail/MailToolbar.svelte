@@ -131,6 +131,7 @@
 
   $: selectedAccount, selectedFolder, syncSearchScope();
   function syncSearchScope() {
+    let accountBefore = globalSearch.account;
     if (!syncSearchToCurrentMailbox(globalSearch, selectedAccount, selectedFolder)) {
       return;
     }
@@ -142,6 +143,11 @@
       $selectedMessageStore = null;
       $mailSearchInProgress = true;
       refreshAdvancedSearchDebounced();
+      return;
+    }
+    if (globalSearch.account == accountBefore) {
+      // Сменилась только папка в ещё не применённом фильтре — критерии
+      // остаются, папка уже перенесена.
       return;
     }
     globalSearch = newCurrentMailboxSearch();
