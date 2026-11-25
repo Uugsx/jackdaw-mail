@@ -13,28 +13,38 @@
       <hbox class="knob" />
     </hbox>
   {:else}
-    {#if checked === true}
-      <input type="checkbox"
-        checked
-        {id}
-        {disabled}
-        />
-    {:else if checked == false && allowIndetermined}
-      <input type="checkbox"
-        indeterminate
-        {id}
-        {disabled}
-        class="indetermined"
-        />
-    {:else}
-      <input type="checkbox"
-        {id}
-        {disabled}
-        />
-    {/if}
+    <!-- Галка лежит в одной рамке с квадратом и не съезжает при прокрутке. -->
+    <span class="box">
+      {#if checked === true}
+        <input type="checkbox"
+          checked
+          {id}
+          {disabled}
+          />
+      {:else if checked == false && allowIndetermined}
+        <input type="checkbox"
+          indeterminate
+          {id}
+          {disabled}
+          class="indetermined"
+          />
+      {:else}
+        <input type="checkbox"
+          {id}
+          {disabled}
+          />
+      {/if}
+      <hbox class="state-icon-wrapper">
+        {#if checked === true}
+          <CheckIcon strokeWidth={5} size={12} />
+        {:else if checked == false && allowIndetermined}
+          <MinusIcon strokeWidth={5} size={12} />
+        {/if}
+      </hbox>
+    </span>
   {/if}
 
-  {#if !toggle || allowIndetermined}
+  {#if toggle && allowIndetermined}
     <hbox class="state-icon-wrapper">
       {#if checked === true}
         <CheckIcon strokeWidth={5} size={12} />
@@ -197,6 +207,16 @@
     left: 16px;
   }
 
+  .box {
+    position: relative;
+    display: flex;
+    flex: 0 0 auto;
+  }
+  .box .state-icon-wrapper {
+    inset: 0;
+    width: auto;
+    height: auto;
+  }
   .state-icon-wrapper {
     position: absolute;
     width: 20px;
