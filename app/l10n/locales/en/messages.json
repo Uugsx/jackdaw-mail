@@ -3389,5 +3389,7 @@
   "YVDGNp": "Translates right away, but the text of each translated email is sent to Google Translate. Not for confidential mail.",
   "+5JqcB": "The translation service did not answer. Try again or switch to translation on this computer in Settings → Mail → Read.",
   "Amqnvl": "Translate selected text",
-  "s7NnYa": "Could not detect the language of the selected text."
+  "s7NnYa": "Could not detect the language of the selected text.",
+  "KoKbEZ": "The server did not allow saving the draft in the mailbox {0}. The draft was saved in Drafts of {1}.",
+  "/Se0xx": "The server did not allow this action in the mailbox {0}."
 }

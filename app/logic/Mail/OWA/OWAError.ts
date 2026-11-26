@@ -4,6 +4,9 @@ export class OWAError extends Error {
   readonly type: string;
   /** Sync / session noise — do not toast the user. */
   doNotShow = false;
+  /** Сервер отказал в доступе к общему ящику (Explicit Logon), а сессия
+   * основного ящика при этом жива. */
+  mailboxAccessDenied = false;
 
   constructor(response: any) {
     let message = response.message || `HTTP ${response.status} ${response.statusText}`;

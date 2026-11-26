@@ -22,6 +22,22 @@ import { normalizeSignatureHTML } from "./SignatureHTML";
 import { splitComposeQuote } from "../../frontend/Mail/Composer/composeQuote";
 import { hasProFeature, proEntitlement, refreshProEntitlement } from "../Billing/ProEntitlement";
 import { notifyMailSent } from "./Collision/mailSent";
+import type { MailAccount } from "./MailAccount";
+import { Notification, NotificationSeverity, notifications } from "../../frontend/MainWindow/Notification";
+import { describeError } from "../util/friendlyError";
+
+/** Сервер отказал в записи в ящик (нет прав или не принял вход для этого
+ * ящика), а не сеть или прочий сбой: тогда есть смысл сохранить в другой ящик. */
+export function isMailboxWriteDenied(ex: any): boolean {
+  if (!ex) {
+    return false;
+  }
+  if (ex.mailboxAccessDenied || ex.authFail || ex.type == "ErrorAccessDenied") {
+    return true;
+  }
+  let kind = describeError(ex).kind;
+  return kind == "login" || kind == "password-rejected" || kind == "forbidden";
+}
 
 /** Functions based on the email, which are either
  * not changing the email itself, but are based on the email,
@@ -639,6 +655,24 @@ export class ComposeActions {
   async saveAsDraft(): Promise<void> {
     let account = this.email.folder?.account ?? this.email.identity?.account;
     assert(account, "Need mail account to save draft");
+    try {
+      await this.saveAsDraftIn(account);
+    } catch (ex) {
+      // Общий ящик (Exchange): сервер может не дать записать в его «Черновики»,
+      // хотя читать ящик можно. Как Outlook, сохраняем в основной ящик.
+      let mainAccount = account.mainAccount as MailAccount | null;
+      if (!mainAccount || mainAccount == account || !isMailboxWriteDenied(ex)) {
+        throw ex;
+      }
+      await this.saveAsDraftIn(mainAccount);
+      let notice = new Notification(
+        gt`The server did not allow saving the draft in the mailbox ${account.name}. The draft was saved in Drafts of ${mainAccount.name}.`,
+        NotificationSeverity.Warning);
+      notifications.add(notice);
+    }
+  }
+
+  protected async saveAsDraftIn(account: MailAccount): Promise<void> {
     let draftFolder = account.getSpecialFolder(SpecialFolder.Drafts);
     if (!draftFolder) {
       draftFolder = await account.createToplevelFolder("Drafts");
