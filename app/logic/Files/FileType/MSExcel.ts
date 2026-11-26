@@ -96,7 +96,12 @@ export function sheetToHTML(doc: Document, sharedStrings: string[]): string {
     width = Math.max(width, cells.length);
     rows.push(cells);
   }
-  // Пустые строки в конце листа не показываем
+  return rowsToHTML(rows, width);
+}
+
+/** Таблица из значений ячеек; пустые строки в конце листа не показываются */
+export function rowsToHTML(rows: string[][], width = Math.max(0, ...rows.map(cells => cells.length))): string {
+  rows = rows.slice();
   while (rows.length && !rows[rows.length - 1].some(text => text)) {
     rows.pop();
   }

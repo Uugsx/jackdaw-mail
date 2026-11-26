@@ -2,6 +2,7 @@ import { Attachment } from "../../../logic/Abstract/Attachment";
 import { docxToHTML } from "../../../logic/Files/FileType/MSWord";
 import { odtToHTML } from "../../../logic/Files/FileType/ODT";
 import { xlsxToHTML } from "../../../logic/Files/FileType/MSExcel";
+import { xlsToHTML } from "../../../logic/Files/FileType/MSExcelBinary";
 import { escapeHTML } from "../../../logic/Files/FileType/htmlHelper";
 import AttachmentPreview from "./AttachmentPreview.svelte";
 import { mount, unmount } from "svelte";
@@ -16,7 +17,7 @@ export type PreviewKind = "pdf" | "image" | "document" | "text";
 const kImageExt = ["png", "gif", "jpg", "jpeg", "jpe", "webp", "bmp"];
 /** Для файлов без расширения, например картинки из буфера обмена в чате */
 const kImageMIMETypes = ["image/png", "image/gif", "image/jpeg", "image/webp", "image/bmp"];
-const kDocumentExt = ["docx", "odt", "xlsx"];
+const kDocumentExt = ["docx", "odt", "xlsx", "xls"];
 const kTextExt = ["txt", "md", "csv", "log"];
 
 export function previewKind(filename: string | null | undefined, mimeType?: string | null): PreviewKind | null {
@@ -76,6 +77,8 @@ export async function previewHTML(kind: PreviewKind, filename: string, content: 
     body = await docxToHTML(content);
   } else if (ext == "odt") {
     body = await odtToHTML(content);
+  } else if (ext == "xls") {
+    body = await xlsToHTML(content);
   } else {
     body = await xlsxToHTML(content);
   }
