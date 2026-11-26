@@ -253,6 +253,7 @@ async function createSharedAppObject() {
     getCACertificates,
     readFile,
     writeFile,
+    saveFileAs,
     deleteFile,
     statFile,
     getIconForLocalFile,
@@ -386,6 +387,19 @@ async function writeFile(path: string, permissions: number, contents: Uint8Array
   let fileHandle = await fsPromises.open(path, "w", permissions);
   await fileHandle.write(contents);
   await fileHandle.close();
+}
+/** Сохранение файла через системное окно «Сохранить как»: путь выбирает пользователь.
+ * @returns выбранный путь или null, если окно закрыли */
+async function saveFileAs(suggestedName: string, contents: Uint8Array): Promise<string | null> {
+  let name = path.basename(String(suggestedName || "file")).replace(/[\/\\:*?"<>|\x00-\x1f]/g, "_") || "file";
+  let options = { defaultPath: path.join(app.getPath("downloads"), name) };
+  let parent = BrowserWindow.getFocusedWindow();
+  let result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+  await fsPromises.writeFile(result.filePath, contents, { mode: 0o644 });
+  return result.filePath;
 }
 async function deleteFile(path: string): Promise<void> {
   await fsPromises.unlink(path);
