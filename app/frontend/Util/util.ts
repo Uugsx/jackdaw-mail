@@ -1,5 +1,6 @@
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
 import { blobToDataURL, type URLString } from "../../logic/util/util";
+import { appGlobal } from "../../logic/app";
 
 /** Returns what `onEnter` returns, so that an async `onEnter` can be awaited,
  * e.g. by the `catchErrors()` around the call. */
@@ -13,6 +14,16 @@ export function onKeyEnter(event: KeyboardEvent, onEnter: () => void | Promise<v
 }
 
 export async function saveBlobAsFile(blob: Blob, filename?: string) {
+  if (blob instanceof File) {
+    filename = blob.name;
+  }
+  // В приложении — системное окно и запись через backend: запись через showSaveFilePicker
+  // Chromium запрещает для части файлов и папок (NotAllowedError в createWritable)
+  let remoteApp = appGlobal.remoteApp as any;
+  if (typeof remoteApp?.saveFileAs == "function") {
+    await remoteApp.saveFileAs(filename || "file", new Uint8Array(await blob.arrayBuffer()));
+    return;
+  }
   const showSaveFilePicker = (window as any).showSaveFilePicker;
   if (typeof(showSaveFilePicker) != "function") { // Fallback
     saveBlobAsFileViaA(blob, filename);

@@ -51,12 +51,27 @@ const kDocumentStyle = `<style>
   pre { white-space: pre-wrap; word-break: break-word; font: 13px ui-monospace, Menlo, monospace; }
 </style>`;
 
+/** Текст вложения: UTF-8 (с BOM или без), UTF-16 с BOM; иначе — однобайтовая кириллица Windows (Windows-1251) */
+export function decodeText(bytes: Uint8Array): string {
+  if (bytes[0] == 0xFF && bytes[1] == 0xFE) {
+    return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  }
+  if (bytes[0] == 0xFE && bytes[1] == 0xFF) {
+    return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1251").decode(bytes);
+  }
+}
+
 /** HTML для документа или текста; показывается в iframe без скриптов */
 export async function previewHTML(kind: PreviewKind, filename: string, content: Blob): Promise<string> {
   let ext = filename.split(".").pop().toLowerCase();
   let body: string;
   if (kind == "text") {
-    body = `<pre>${escapeHTML(await content.text())}</pre>`;
+    body = `<pre>${escapeHTML(decodeText(new Uint8Array(await content.arrayBuffer())))}</pre>`;
   } else if (ext == "docx") {
     body = await docxToHTML(content);
   } else if (ext == "odt") {
