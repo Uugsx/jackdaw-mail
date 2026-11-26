@@ -2251,6 +2251,15 @@ export class OWAAccount extends ExchangeMailAccount {
       if (!sessionRetried && await this.refreshSessionSilently()) {
         return await this.callOWAShared(url, options, throttleRetries, true, priority);
       }
+      // Сессия основного ящика проверена и жива, а сервер повторно отказал
+      // только в Explicit Logon к общему ящику: это нет прав на запись в тот
+      // ящик, а не неверный пароль. Выход из основного ящика здесь всё ломал.
+      let explicitMailbox = (options.headers as Record<string, string> | undefined)?.["x-owa-explicitlogonuser"];
+      if (sessionRetried && explicitMailbox) {
+        let error = new OWAError({ message: gt`The server did not allow this action in the mailbox ${explicitMailbox}.` });
+        error.mailboxAccessDenied = true;
+        throw error;
+      }
       await this.logout(true);
       throw new LoginError(null, gt`Please login`);
     }
